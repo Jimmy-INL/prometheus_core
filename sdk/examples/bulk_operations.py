@@ -9,13 +9,8 @@ from storage_client import (
 
 
 def main():
-    # Configure connection
-    config = ConnectionConfig(
-        organization_id=123,  # Replace with your organization ID
-        project_id=456,       # Replace with your project ID
-        api_key="your-api-key",
-        api_secret="your-api-secret"
-    )
+    # Configure connection from .env file
+    config = ConnectionConfig.from_env()
 
     with StorageClient(config) as client:
         print("=== Bulk creating items ===")
@@ -24,13 +19,14 @@ def main():
         items_to_create = [
             ItemCreate(
                 name=f"Sensor {i:03d}",
+                description=f"Sensor device number {i:03d}",
                 properties={
                     "sensor_id": f"S{i:03d}",
                     "type": "temperature" if i % 2 == 0 else "pressure",
                     "location": f"Zone {(i % 10) + 1}",
-                    "status": "active"
-                },
-                tags=["sensor", "monitoring"]
+                    "status": "active",
+                    "_example_script": True
+                }
             )
             for i in range(50)
         ]
@@ -48,7 +44,12 @@ def main():
         # Create a hub item
         hub = client.items.create(ItemCreate(
             name="Sensor Network Hub",
-            properties={"type": "hub", "location": "Central"}
+            description="Central hub for sensor network",
+            properties={
+                "type": "hub",
+                "location": "Central",
+                "_example_script": True
+            }
         ))
         print(f"Created hub: {hub.name} (ID: {hub.id})")
 

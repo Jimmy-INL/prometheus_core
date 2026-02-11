@@ -7,13 +7,8 @@ import shutil
 
 
 def main():
-    # Configure connection
-    config = ConnectionConfig(
-        organization_id=123,  # Replace with your organization ID
-        project_id=456,       # Replace with your project ID
-        api_key="your-api-key",
-        api_secret="your-api-secret"
-    )
+    # Configure connection from .env file
+    config = ConnectionConfig.from_env()
 
     with StorageClient(config) as client:
         print("=== Creating a test file ===")
@@ -41,9 +36,11 @@ def main():
         print("\n=== Creating item and linking file ===")
         item = client.items.create(ItemCreate(
             name="Data Analysis Project",
+            description="Project with attached data file",
             properties={
                 "project_type": "analysis",
-                "data_source": "experimental"
+                "data_source": "experimental",
+                "_example_script": True
             }
         ))
         print(f"Created item: {item.name} (ID: {item.id})")

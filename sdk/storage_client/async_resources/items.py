@@ -67,8 +67,9 @@ class AsyncItemsResource(AsyncBaseResource):
         if update.original_id is not None:
             payload["original_data_id"] = update.original_id
 
+        # Use PUT for full update (PATCH tries to unarchive which can fail)
         response = await self._client._request(
-            "PATCH",
+            "PUT",
             f"{self._base_path}/records/{item_id}",
             json=payload
         )
@@ -104,9 +105,14 @@ class AsyncItemsResource(AsyncBaseResource):
         )
 
         data = response.json()
-        items = [self._parse_item(item_data) for item_data in data.get("records", [])]
 
-        total_count = data.get("total", len(items))
+        # API returns array directly, not wrapped in object
+        if isinstance(data, list):
+            items = [self._parse_item(item_data) for item_data in data]
+            total_count = len(items) if len(items) < page_size else page * page_size + 1
+        else:
+            items = [self._parse_item(item_data) for item_data in data.get("records", [])]
+            total_count = data.get("total", len(items))
         page_info = PageInfo(
             page_number=page,
             page_size=page_size,
@@ -159,7 +165,11 @@ class AsyncItemsResource(AsyncBaseResource):
         )
 
         data = response.json()
-        return [self._parse_item(item_data) for item_data in data.get("records", [])]
+        # API returns array directly
+        if isinstance(data, list):
+            return [self._parse_item(item_data) for item_data in data]
+        else:
+            return [self._parse_item(item_data) for item_data in data.get("records", [])]
 
     async def add_tags(self, item_id: int, tags: List[str]) -> Item:
         """Add tags to an item asynchronously."""
@@ -214,7 +224,7 @@ class AsyncItemsResource(AsyncBaseResource):
             original_id=data.get("originalId"),
             created_at=timestamp,
             updated_at=timestamp,
-            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in data.get("tags", [])],
+            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in (data.get("tags") or [])],
             metatype_id=data.get("classId"),
             metatype_name=data.get("className"),
             data_source_id=data.get("dataSourceId"),

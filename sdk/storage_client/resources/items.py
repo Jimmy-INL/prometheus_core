@@ -112,8 +112,9 @@ class ItemsResource(BaseResource):
         if update.original_id is not None:
             payload["original_id"] = update.original_id
 
+        # Use PUT for full update (PATCH tries to unarchive which can fail)
         response = self._client._request(
-            "PATCH",
+            "PUT",
             f"{self._base_path}/records/{item_id}",
             json=payload
         )
@@ -173,11 +174,15 @@ class ItemsResource(BaseResource):
 
         data = response.json()
 
-        # Parse items
-        items = [self._parse_item(item_data) for item_data in data.get("records", [])]
-
-        # Build page info
-        total_count = data.get("total", len(items))
+        # API returns array directly, not wrapped in object
+        if isinstance(data, list):
+            items = [self._parse_item(item_data) for item_data in data]
+            # Without total count from API, estimate based on page size
+            total_count = len(items) if len(items) < page_size else page * page_size + 1
+        else:
+            # Fallback for wrapped response
+            items = [self._parse_item(item_data) for item_data in data.get("records", [])]
+            total_count = data.get("total", len(items))
         page_info = PageInfo(
             page_number=page,
             page_size=page_size,
@@ -258,7 +263,11 @@ class ItemsResource(BaseResource):
         )
 
         data = response.json()
-        return [self._parse_item(item_data) for item_data in data.get("records", [])]
+        # API returns array directly
+        if isinstance(data, list):
+            return [self._parse_item(item_data) for item_data in data]
+        else:
+            return [self._parse_item(item_data) for item_data in data.get("records", [])]
 
     def add_tags(self, item_id: int, tags: List[str]) -> Item:
         """Add tags to an item.
@@ -347,7 +356,7 @@ class ItemsResource(BaseResource):
             original_id=data.get("originalId"),
             created_at=timestamp,  # Use lastUpdatedAt as both created and updated
             updated_at=timestamp,
-            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in data.get("tags", [])],
+            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in (data.get("tags") or [])],
             metatype_id=data.get("classId"),
             metatype_name=data.get("className"),
             data_source_id=data.get("dataSourceId"),

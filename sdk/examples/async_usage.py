@@ -5,13 +5,8 @@ from storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
 
 
 async def main():
-    # Configure connection
-    config = ConnectionConfig(
-        organization_id=123,  # Replace with your organization ID
-        project_id=456,       # Replace with your project ID
-        api_key="your-api-key",
-        api_secret="your-api-secret"
-    )
+    # Configure connection from .env file
+    config = ConnectionConfig.from_env()
 
     # Use the asynchronous client
     async with AsyncStorageClient(config) as client:
@@ -21,7 +16,12 @@ async def main():
         items_to_create = [
             ItemCreate(
                 name=f"Async Item {i}",
-                properties={"index": i, "batch": "async-demo"}
+                description=f"Async test item number {i}",
+                properties={
+                    "index": i,
+                    "batch": "async-demo",
+                    "_example_script": True
+                }
             )
             for i in range(5)
         ]

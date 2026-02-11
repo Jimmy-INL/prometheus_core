@@ -1,16 +1,15 @@
 """Basic usage example for the storage client library."""
 
-from storage_client import StorageClient, ConnectionConfig, ItemCreate
-from pathlib import Path
+from storage_client import StorageClient, ConnectionConfig, ItemCreate, ItemUpdate
 
 def main():
-    # Configure connection
-    config = ConnectionConfig(
-        organization_id=123,  # Replace with your organization ID
-        project_id=456,       # Replace with your project ID
-        api_key="your-api-key",
-        api_secret="your-api-secret"
-    )
+    # Configure connection from .env file
+    # Make sure you have a .env file with:
+    #   DEEPLYNX_KEY=...
+    #   DEEPLYNX_SECRET=...
+    #   DEEPLYNX_ORG_ID=...
+    #   DEEPLYNX_PROJECT_ID=...
+    config = ConnectionConfig.from_env()
 
     # Use the synchronous client
     with StorageClient(config) as client:
@@ -22,14 +21,14 @@ def main():
                 "experiment_id": "EXP-001",
                 "status": "active",
                 "temperature": 298.15,
-                "pressure": 101.325
-            },
-            tags=["example", "test", "2024"]
+                "pressure": 101.325,
+                "_example_script": True  # Mark as from example script
+            }
         ))
         print(f"Created item with ID: {item.id}")
         print(f"Name: {item.name}")
         print(f"Properties: {item.properties}")
-        print(f"Tags: {[tag.name for tag in item.tags]}")
+        print(f"Created at: {item.created_at}")
 
         print("\n=== Listing items ===")
         page = client.items.list(page=1, page_size=10)
@@ -37,20 +36,23 @@ def main():
         for i, item in enumerate(page.items, 1):
             print(f"{i}. {item.name} (ID: {item.id})")
 
-        print("\n=== Searching by tags ===")
-        results = client.search.by_tags(["example"], page_size=5)
-        print(f"Found {len(results.items)} items with 'example' tag")
-        for item in results.items:
-            print(f"  - {item.name}")
+        print("\n=== Searching for recent items ===")
+        try:
+            recent = client.search.recent(limit=5)
+            print(f"Found {len(recent)} recent items")
+            for recent_item in recent[:3]:
+                print(f"  - {recent_item.name} (ID: {recent_item.id})")
+        except Exception as e:
+            print(f"Search not available: {e}")
 
         print("\n=== Updating an item ===")
-        from storage_client import ItemUpdate
         updated = client.items.update(
             item_id=item.id,
             update=ItemUpdate(
                 properties={
                     **item.properties,
-                    "status": "completed"
+                    "status": "completed",
+                    "completion_time": "2026-02-11T12:00:00Z"
                 }
             )
         )

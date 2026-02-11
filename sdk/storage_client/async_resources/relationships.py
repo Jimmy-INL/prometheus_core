@@ -17,10 +17,15 @@ class AsyncRelationshipsResource(AsyncBaseResource):
             "properties": relationship.properties,
         }
 
+        params = {
+            "dataSourceId": await self._client._get_data_source_id()
+        }
+
         response = await self._client._request(
             "POST",
             f"{self._base_path}/edges",
-            json=payload
+            json=payload,
+            params=params
         )
 
         return self._parse_relationship(response.json())
@@ -53,10 +58,15 @@ class AsyncRelationshipsResource(AsyncBaseResource):
             for rel in relationships
         ]
 
+        params = {
+            "dataSourceId": await self._client._get_data_source_id()
+        }
+
         response = await self._client._request(
             "POST",
             f"{self._base_path}/edges/bulk",
-            json=payload
+            json=payload,
+            params=params
         )
 
         data = response.json()

@@ -34,10 +34,15 @@ class RelationshipsResource(BaseResource):
             "properties": relationship.properties,
         }
 
+        params = {
+            "dataSourceId": self._client._get_data_source_id()
+        }
+
         response = self._client._request(
             "POST",
             f"{self._base_path}/edges",
-            json=payload
+            json=payload,
+            params=params
         )
 
         return self._parse_relationship(response.json())
@@ -102,10 +107,15 @@ class RelationshipsResource(BaseResource):
             for rel in relationships
         ]
 
+        params = {
+            "dataSourceId": self._client._get_data_source_id()
+        }
+
         response = self._client._request(
             "POST",
             f"{self._base_path}/edges/bulk",
-            json=payload
+            json=payload,
+            params=params
         )
 
         data = response.json()
