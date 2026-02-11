@@ -15,13 +15,13 @@ vim .env
 nano .env
 ```
 
-3. **Fill in your values:**
-```bash
-DEEPLYNX_KEY=your-actual-api-key
-DEEPLYNX_SECRET=your-actual-api-secret
-DEEPLYNX_ORG_ID=123
-DEEPLYNX_PROJECT_ID=456
-```
+3. **Fill in your actual values:**
+
+Add your credentials to the `.env` file:
+- `DEEPLYNX_KEY` - Your API key
+- `DEEPLYNX_SECRET` - Your API secret
+- `DEEPLYNX_ORG_ID` - Your organization ID
+- `DEEPLYNX_PROJECT_ID` - Your project ID
 
 4. **Use in your code:**
 ```python

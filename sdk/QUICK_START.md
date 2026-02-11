@@ -20,11 +20,8 @@ pip install -e .
 # 1. Copy the example file
 cp .env.example .env
 
-# 2. Edit .env with your credentials
-# DEEPLYNX_KEY=your-api-key
-# DEEPLYNX_SECRET=your-api-secret
-# DEEPLYNX_ORG_ID=123
-# DEEPLYNX_PROJECT_ID=456
+# 2. Edit .env and add your actual credentials
+#    (see .env.example for the required variable names)
 ```
 
 ## Basic Usage (30 seconds)

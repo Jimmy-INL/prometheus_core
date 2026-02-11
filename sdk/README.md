@@ -123,12 +123,12 @@ cp .env.example .env
 ```
 
 2. **Edit `.env` with your credentials**:
-```bash
-DEEPLYNX_KEY=your-api-key-here
-DEEPLYNX_SECRET=your-api-secret-here
-DEEPLYNX_ORG_ID=123
-DEEPLYNX_PROJECT_ID=456
-```
+
+Your `.env` file must contain:
+- `DEEPLYNX_KEY` - Your API key
+- `DEEPLYNX_SECRET` - Your API secret
+- `DEEPLYNX_ORG_ID` - Your organization ID
+- `DEEPLYNX_PROJECT_ID` - Your project ID
 
 3. **Load configuration from environment**:
 ```python
