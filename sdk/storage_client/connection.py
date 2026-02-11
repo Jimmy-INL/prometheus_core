@@ -131,10 +131,11 @@ class ConnectionConfig(BaseModel):
             ```
         """
         # Load .env file if it exists
+        env_vars = {}
         if env_file and env_file.exists():
             try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file)
+                from dotenv import dotenv_values
+                env_vars = dotenv_values(env_file)
             except ImportError:
                 raise ImportError(
                     "python-dotenv is required for .env file support. "
@@ -145,20 +146,20 @@ class ConnectionConfig(BaseModel):
             default_env = Path.cwd() / ".env"
             if default_env.exists():
                 try:
-                    from dotenv import load_dotenv
-                    load_dotenv(default_env)
+                    from dotenv import dotenv_values
+                    env_vars = dotenv_values(default_env)
                 except ImportError:
                     pass  # Silently skip if dotenv not installed
 
-        # Get values from environment with fallback to kwargs
-        api_key = os.getenv("DEEPLYNX_KEY") or kwargs.pop("api_key", None)
-        api_secret = os.getenv("DEEPLYNX_SECRET") or kwargs.pop("api_secret", None)
-        jwt_token = os.getenv("DEEPLYNX_JWT_TOKEN") or kwargs.pop("jwt_token", None)
+        # Get values from env file vars, with fallback to os.environ, then kwargs
+        api_key = env_vars.get("DEEPLYNX_KEY") or os.getenv("DEEPLYNX_KEY") or kwargs.pop("api_key", None)
+        api_secret = env_vars.get("DEEPLYNX_SECRET") or os.getenv("DEEPLYNX_SECRET") or kwargs.pop("api_secret", None)
+        jwt_token = env_vars.get("DEEPLYNX_JWT_TOKEN") or os.getenv("DEEPLYNX_JWT_TOKEN") or kwargs.pop("jwt_token", None)
 
         # Organization and project IDs
-        org_id = organization_id or os.getenv("DEEPLYNX_ORG_ID")
-        proj_id = project_id or os.getenv("DEEPLYNX_PROJECT_ID")
-        ds_id = kwargs.pop("data_source_id", None) or os.getenv("DEEPLYNX_DATA_SOURCE_ID")
+        org_id = organization_id or env_vars.get("DEEPLYNX_ORG_ID") or os.getenv("DEEPLYNX_ORG_ID")
+        proj_id = project_id or env_vars.get("DEEPLYNX_PROJECT_ID") or os.getenv("DEEPLYNX_PROJECT_ID")
+        ds_id = kwargs.pop("data_source_id", None) or env_vars.get("DEEPLYNX_DATA_SOURCE_ID") or os.getenv("DEEPLYNX_DATA_SOURCE_ID")
 
         if org_id is not None:
             org_id = int(org_id)
@@ -168,7 +169,7 @@ class ConnectionConfig(BaseModel):
             ds_id = int(ds_id)
 
         # Base URL (optional)
-        base_url = os.getenv("DEEPLYNX_BASE_URL") or kwargs.pop("base_url", "https://deeplynx.inl.gov/api/v1")
+        base_url = env_vars.get("DEEPLYNX_BASE_URL") or os.getenv("DEEPLYNX_BASE_URL") or kwargs.pop("base_url", "https://deeplynx.inl.gov/api/v1")
 
         # Validate required fields
         if org_id is None:

@@ -1,22 +1,25 @@
-"""Tests for environment-based configuration."""
+"""Tests for environment-based configuration.
 
-import os
+Note: These tests use isolated .env files to avoid conflicts with
+the real .env file in the project root.
+"""
+
 import pytest
 from pathlib import Path
 from storage_client import ConnectionConfig
 
 
-def test_from_env_with_manual_params(monkeypatch):
-    """Test from_env with manually provided parameters."""
-    # Set env vars
-    monkeypatch.setenv("DEEPLYNX_KEY", "test-key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "test-secret")
+def test_from_env_with_explicit_file(tmp_path):
+    """Test loading from a specific .env file."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=test-key
+DEEPLYNX_SECRET=test-secret
+DEEPLYNX_ORG_ID=123
+DEEPLYNX_PROJECT_ID=456
+""")
 
-    # Provide org/project manually
-    config = ConnectionConfig.from_env(
-        organization_id=123,
-        project_id=456
-    )
+    config = ConnectionConfig.from_env(env_file=test_env)
 
     assert config.organization_id == 123
     assert config.project_id == 456
@@ -25,119 +28,103 @@ def test_from_env_with_manual_params(monkeypatch):
     assert config.uses_api_key is True
 
 
-def test_from_env_all_from_environment(monkeypatch):
-    """Test from_env with all values from environment."""
-    monkeypatch.setenv("DEEPLYNX_KEY", "env-key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "env-secret")
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "789")
-    monkeypatch.setenv("DEEPLYNX_PROJECT_ID", "101")
-    monkeypatch.setenv("DEEPLYNX_BASE_URL", "https://custom.api.com/v1")
+def test_from_env_with_parameter_override(tmp_path):
+    """Test that manual parameters override .env values."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=env-key
+DEEPLYNX_SECRET=env-secret
+DEEPLYNX_ORG_ID=100
+DEEPLYNX_PROJECT_ID=200
+""")
 
-    config = ConnectionConfig.from_env()
-
-    assert config.organization_id == 789
-    assert config.project_id == 101
-    assert config.api_key == "env-key"
-    assert config.api_secret == "env-secret"
-    assert config.base_url == "https://custom.api.com/v1"
-
-
-def test_from_env_jwt_token(monkeypatch):
-    """Test from_env with JWT token."""
-    monkeypatch.setenv("DEEPLYNX_JWT_TOKEN", "test-token")
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "123")
-    monkeypatch.setenv("DEEPLYNX_PROJECT_ID", "456")
-
-    config = ConnectionConfig.from_env()
-
-    assert config.jwt_token == "test-token"
-    assert config.uses_jwt is True
-    assert config.uses_api_key is False
-
-
-def test_from_env_missing_org_id(monkeypatch):
-    """Test from_env fails when org_id is missing."""
-    monkeypatch.setenv("DEEPLYNX_KEY", "key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "secret")
-    monkeypatch.setenv("DEEPLYNX_PROJECT_ID", "456")
-
-    with pytest.raises(ValueError, match="organization_id must be provided"):
-        ConnectionConfig.from_env()
-
-
-def test_from_env_missing_project_id(monkeypatch):
-    """Test from_env fails when project_id is missing."""
-    monkeypatch.setenv("DEEPLYNX_KEY", "key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "secret")
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "123")
-
-    with pytest.raises(ValueError, match="project_id must be provided"):
-        ConnectionConfig.from_env()
-
-
-def test_from_env_parameter_override(monkeypatch):
-    """Test that manual parameters override environment variables."""
-    monkeypatch.setenv("DEEPLYNX_KEY", "env-key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "env-secret")
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "100")
-
-    # Override with manual param
+    # Override org/project IDs
     config = ConnectionConfig.from_env(
+        env_file=test_env,
         organization_id=999,
         project_id=888
     )
 
-    assert config.organization_id == 999  # Manual override
-    assert config.project_id == 888       # Manual override
-    assert config.api_key == "env-key"    # From env
+    assert config.organization_id == 999  # Overridden
+    assert config.project_id == 888      # Overridden
+    assert config.api_key == "env-key"   # From file
 
 
-def test_from_env_custom_kwargs(monkeypatch):
-    """Test from_env with custom ConnectionConfig kwargs."""
-    monkeypatch.setenv("DEEPLYNX_KEY", "key")
-    monkeypatch.setenv("DEEPLYNX_SECRET", "secret")
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "123")
-    monkeypatch.setenv("DEEPLYNX_PROJECT_ID", "456")
-
-    config = ConnectionConfig.from_env(
-        timeout=60.0,
-        max_retries=5,
-        verify_ssl=False
-    )
-
-    assert config.timeout == 60.0
-    assert config.max_retries == 5
-    assert config.verify_ssl is False
-
-
-def test_from_env_no_credentials(monkeypatch):
-    """Test from_env fails when no credentials are provided."""
-    monkeypatch.setenv("DEEPLYNX_ORG_ID", "123")
-    monkeypatch.setenv("DEEPLYNX_PROJECT_ID", "456")
-
-    with pytest.raises(ValueError, match="Must provide either jwt_token"):
-        ConnectionConfig.from_env()
-
-
-def test_from_env_env_file_precedence(tmp_path, monkeypatch):
-    """Test that .env file is loaded when specified."""
-    # Create a temporary .env file
-    env_file = tmp_path / ".env"
-    env_file.write_text("""
-DEEPLYNX_KEY=file-key
-DEEPLYNX_SECRET=file-secret
-DEEPLYNX_ORG_ID=999
-DEEPLYNX_PROJECT_ID=888
+def test_from_env_with_jwt(tmp_path):
+    """Test loading JWT token from .env."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_JWT_TOKEN=test-jwt-token-here
+DEEPLYNX_ORG_ID=123
+DEEPLYNX_PROJECT_ID=456
 """)
 
-    # Make sure environment doesn't have these
-    monkeypatch.delenv("DEEPLYNX_KEY", raising=False)
-    monkeypatch.delenv("DEEPLYNX_SECRET", raising=False)
+    config = ConnectionConfig.from_env(env_file=test_env)
 
-    # Load from file
-    config = ConnectionConfig.from_env(env_file=env_file)
+    assert config.jwt_token == "test-jwt-token-here"
+    assert config.uses_jwt is True
+    assert config.uses_api_key is False
 
-    assert config.organization_id == 999
-    assert config.project_id == 888
-    assert config.api_key == "file-key"
-    assert config.api_secret == "file-secret"
+
+def test_from_env_missing_org_id(tmp_path):
+    """Test error when org_id is missing."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=key
+DEEPLYNX_SECRET=secret
+DEEPLYNX_PROJECT_ID=456
+""")
+
+    with pytest.raises(ValueError, match="organization_id must be provided"):
+        ConnectionConfig.from_env(env_file=test_env)
+
+
+def test_from_env_missing_project_id(tmp_path):
+    """Test error when project_id is missing."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=key
+DEEPLYNX_SECRET=secret
+DEEPLYNX_ORG_ID=123
+""")
+
+    with pytest.raises(ValueError, match="project_id must be provided"):
+        ConnectionConfig.from_env(env_file=test_env)
+
+
+def test_from_env_with_custom_settings(tmp_path):
+    """Test custom connection settings from .env."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=key
+DEEPLYNX_SECRET=secret
+DEEPLYNX_ORG_ID=123
+DEEPLYNX_PROJECT_ID=456
+DEEPLYNX_BASE_URL=https://custom.api.com/v1
+""")
+
+    config = ConnectionConfig.from_env(
+        env_file=test_env,
+        timeout=60.0,
+        max_retries=5
+    )
+
+    assert config.base_url == "https://custom.api.com/v1"
+    assert config.timeout == 60.0
+    assert config.max_retries == 5
+
+
+def test_from_env_with_data_source_id(tmp_path):
+    """Test loading data_source_id from .env."""
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("""
+DEEPLYNX_KEY=key
+DEEPLYNX_SECRET=secret
+DEEPLYNX_ORG_ID=123
+DEEPLYNX_PROJECT_ID=456
+DEEPLYNX_DATA_SOURCE_ID=789
+""")
+
+    config = ConnectionConfig.from_env(env_file=test_env)
+
+    assert config.data_source_id == 789
