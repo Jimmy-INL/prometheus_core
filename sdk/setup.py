@@ -8,12 +8,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="storage-client",
     version="0.1.0",
-    author="Your Organization",
-    author_email="your-email@example.com",
+    author="INL Genesis",
+    author_email="daniel.schwen@inl.gov",
     description="A generic storage client library abstracting backend implementation details",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/storage-client",
+    url="https://github.inl.gov/genesis/prometheus_api",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
