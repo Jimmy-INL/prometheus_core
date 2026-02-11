@@ -113,6 +113,50 @@ asyncio.run(main())
 
 ## Configuration
 
+### Using Environment Variables (Recommended)
+
+The easiest way to configure the client is using environment variables:
+
+1. **Create a `.env` file** (copy from `.env.example`):
+```bash
+cp .env.example .env
+```
+
+2. **Edit `.env` with your credentials**:
+```bash
+DEEPLYNX_KEY=your-api-key-here
+DEEPLYNX_SECRET=your-api-secret-here
+DEEPLYNX_ORG_ID=123
+DEEPLYNX_PROJECT_ID=456
+```
+
+3. **Load configuration from environment**:
+```python
+from storage_client import ConnectionConfig, StorageClient
+
+# Automatically loads from .env file
+config = ConnectionConfig.from_env()
+
+with StorageClient(config) as client:
+    # Use the client
+    items = client.items.list()
+```
+
+**Benefits:**
+- Keeps credentials out of code
+- `.env` file is gitignored automatically
+- Easy to switch between environments
+
+**Supported Environment Variables:**
+- `DEEPLYNX_KEY` - API key (required with DEEPLYNX_SECRET)
+- `DEEPLYNX_SECRET` - API secret (required with DEEPLYNX_KEY)
+- `DEEPLYNX_JWT_TOKEN` - JWT token (alternative to key/secret)
+- `DEEPLYNX_ORG_ID` - Organization ID (required)
+- `DEEPLYNX_PROJECT_ID` - Project ID (required)
+- `DEEPLYNX_BASE_URL` - Custom base URL (optional)
+
+### Manual Configuration
+
 The `ConnectionConfig` class supports multiple configuration options:
 
 ```python

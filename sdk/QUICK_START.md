@@ -12,18 +12,36 @@ Or install in development mode:
 pip install -e .
 ```
 
+## Setup Credentials
+
+**Using .env file (Recommended):**
+
+```bash
+# 1. Copy the example file
+cp .env.example .env
+
+# 2. Edit .env with your credentials
+# DEEPLYNX_KEY=your-api-key
+# DEEPLYNX_SECRET=your-api-secret
+# DEEPLYNX_ORG_ID=123
+# DEEPLYNX_PROJECT_ID=456
+```
+
 ## Basic Usage (30 seconds)
 
 ```python
 from storage_client import StorageClient, ConnectionConfig, ItemCreate
 
-# 1. Configure connection
-config = ConnectionConfig(
-    organization_id=123,      # Your org ID
-    project_id=456,           # Your project ID
-    api_key="your-api-key",
-    api_secret="your-api-secret"
-)
+# 1. Configure connection (from .env file)
+config = ConnectionConfig.from_env()
+
+# Or configure manually:
+# config = ConnectionConfig(
+#     organization_id=123,
+#     project_id=456,
+#     api_key="your-api-key",
+#     api_secret="your-api-secret"
+# )
 
 # 2. Create a client and use it
 with StorageClient(config) as client:
@@ -157,7 +175,22 @@ asyncio.run(main())
 
 ## Authentication Options
 
-### API Key (recommended for server-side)
+### Environment Variables (Recommended)
+```python
+# Load from .env file
+config = ConnectionConfig.from_env()
+
+# Or load from specific file
+config = ConnectionConfig.from_env(env_file=Path("config/prod.env"))
+
+# Or override specific values
+config = ConnectionConfig.from_env(
+    organization_id=999,  # Override env var
+    timeout=60.0
+)
+```
+
+### API Key (manual)
 ```python
 config = ConnectionConfig(
     organization_id=123,
@@ -167,7 +200,7 @@ config = ConnectionConfig(
 )
 ```
 
-### JWT Token
+### JWT Token (manual)
 ```python
 config = ConnectionConfig(
     organization_id=123,

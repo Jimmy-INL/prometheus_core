@@ -31,6 +31,7 @@ setup(
         "httpx>=0.24.0",
         "pydantic>=2.0.0",
         "python-dateutil>=2.8.0",
+        "python-dotenv>=1.0.0",
     ],
     extras_require={
         "dev": [
