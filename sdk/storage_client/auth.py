@@ -25,23 +25,17 @@ class AuthHandler:
     def get_headers(self) -> Dict[str, str]:
         """Get authentication headers for API requests.
 
-        Returns appropriate headers based on authentication method.
-        For API key auth, returns x-api-key and x-api-secret headers.
-        For JWT auth, returns Authorization header with Bearer token.
+        Returns Authorization header with Bearer token.
+        For API key auth, gets a JWT token first.
         """
+        # For API key auth, get JWT token first
         if self.config.uses_api_key:
-            return {
-                "x-api-key": self.config.api_key,
-                "x-api-secret": self.config.api_secret,
-            }
-        else:
-            # Check if token needs refresh
-            if self._managed_token and self._needs_refresh():
+            if not self._jwt_token or (self._managed_token and self._needs_refresh()):
                 self._refresh_token()
 
-            return {
-                "Authorization": f"Bearer {self._jwt_token}"
-            }
+        return {
+            "Authorization": f"Bearer {self._jwt_token}"
+        }
 
     def _needs_refresh(self) -> bool:
         """Check if the JWT token needs to be refreshed."""
@@ -57,26 +51,34 @@ class AuthHandler:
             raise AuthenticationError("Cannot refresh token without API credentials")
 
         try:
+            # DeepLynx uses /oauth/tokens endpoint with JSON body
             response = self.client.post(
-                f"{self.config.base_url}/auth/token",
-                headers={
-                    "x-api-key": self.config.api_key,
-                    "x-api-secret": self.config.api_secret,
+                f"{self.config.base_url}/oauth/tokens",
+                json={
+                    "apiKey": self.config.api_key,
+                    "apiSecret": self.config.api_secret,
+                    "expirationMinutes": None  # Use default expiration
                 },
+                headers={"Content-Type": "application/json"},
                 timeout=self.config.timeout,
             )
             response.raise_for_status()
 
-            data = response.json()
-            self._jwt_token = data.get("token")
+            # DeepLynx returns the JWT token directly as plain text
+            self._jwt_token = response.text.strip()
 
-            # Set expiry (typically tokens are valid for 24 hours)
-            expires_in = data.get("expires_in", 86400)  # Default 24 hours
+            if not self._jwt_token:
+                raise AuthenticationError("No token in response")
+
+            # Default expiration is 1 hour (60 minutes)
+            expires_in = 3600  # 1 hour in seconds
             self._token_expiry = time.time() + expires_in
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("Invalid API credentials")
+            elif e.response.status_code == 404:
+                raise AuthenticationError("OAuth endpoint not found - check base URL")
             raise AuthenticationError(f"Token refresh failed: {e}")
         except Exception as e:
             raise AuthenticationError(f"Token refresh failed: {e}")
@@ -100,23 +102,17 @@ class AsyncAuthHandler:
     async def get_headers(self) -> Dict[str, str]:
         """Get authentication headers for API requests.
 
-        Returns appropriate headers based on authentication method.
-        For API key auth, returns x-api-key and x-api-secret headers.
-        For JWT auth, returns Authorization header with Bearer token.
+        Returns Authorization header with Bearer token.
+        For API key auth, gets a JWT token first.
         """
+        # For API key auth, get JWT token first
         if self.config.uses_api_key:
-            return {
-                "x-api-key": self.config.api_key,
-                "x-api-secret": self.config.api_secret,
-            }
-        else:
-            # Check if token needs refresh
-            if self._managed_token and self._needs_refresh():
+            if not self._jwt_token or (self._managed_token and self._needs_refresh()):
                 await self._refresh_token()
 
-            return {
-                "Authorization": f"Bearer {self._jwt_token}"
-            }
+        return {
+            "Authorization": f"Bearer {self._jwt_token}"
+        }
 
     def _needs_refresh(self) -> bool:
         """Check if the JWT token needs to be refreshed."""
@@ -132,26 +128,34 @@ class AsyncAuthHandler:
             raise AuthenticationError("Cannot refresh token without API credentials")
 
         try:
+            # DeepLynx uses /oauth/tokens endpoint with JSON body
             response = await self.client.post(
-                f"{self.config.base_url}/auth/token",
-                headers={
-                    "x-api-key": self.config.api_key,
-                    "x-api-secret": self.config.api_secret,
+                f"{self.config.base_url}/oauth/tokens",
+                json={
+                    "apiKey": self.config.api_key,
+                    "apiSecret": self.config.api_secret,
+                    "expirationMinutes": None  # Use default expiration
                 },
+                headers={"Content-Type": "application/json"},
                 timeout=self.config.timeout,
             )
             response.raise_for_status()
 
-            data = response.json()
-            self._jwt_token = data.get("token")
+            # DeepLynx returns the JWT token directly as plain text
+            self._jwt_token = response.text.strip()
 
-            # Set expiry (typically tokens are valid for 24 hours)
-            expires_in = data.get("expires_in", 86400)  # Default 24 hours
+            if not self._jwt_token:
+                raise AuthenticationError("No token in response")
+
+            # Default expiration is 1 hour (60 minutes)
+            expires_in = 3600  # 1 hour in seconds
             self._token_expiry = time.time() + expires_in
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("Invalid API credentials")
+            elif e.response.status_code == 404:
+                raise AuthenticationError("OAuth endpoint not found - check base URL")
             raise AuthenticationError(f"Token refresh failed: {e}")
         except Exception as e:
             raise AuthenticationError(f"Token refresh failed: {e}")
