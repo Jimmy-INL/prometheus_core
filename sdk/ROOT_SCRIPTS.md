@@ -78,10 +78,6 @@ pytest tests/test_integration.py # Integration tests
 ./run_integration_tests.sh      # Run with nice output
 ```
 
-## Debug Scripts
-
-Historical debugging scripts are in `debug_scripts/` (not needed for normal use).
-
 ## Quick Reference
 
 ```bash
