@@ -16,6 +16,7 @@ class ConnectionConfig(BaseModel):
     # Backend configuration (hidden from users)
     organization_id: int = Field(..., description="Organization identifier")
     project_id: int = Field(..., description="Project identifier")
+    data_source_id: Optional[int] = Field(None, description="Data source identifier (optional)")
 
     # Base URL
     base_url: str = Field(
@@ -157,11 +158,14 @@ class ConnectionConfig(BaseModel):
         # Organization and project IDs
         org_id = organization_id or os.getenv("DEEPLYNX_ORG_ID")
         proj_id = project_id or os.getenv("DEEPLYNX_PROJECT_ID")
+        ds_id = kwargs.pop("data_source_id", None) or os.getenv("DEEPLYNX_DATA_SOURCE_ID")
 
         if org_id is not None:
             org_id = int(org_id)
         if proj_id is not None:
             proj_id = int(proj_id)
+        if ds_id is not None:
+            ds_id = int(ds_id)
 
         # Base URL (optional)
         base_url = os.getenv("DEEPLYNX_BASE_URL") or kwargs.pop("base_url", "https://deeplynx.inl.gov/api/v1")
@@ -182,6 +186,7 @@ class ConnectionConfig(BaseModel):
         return cls(
             organization_id=org_id,
             project_id=proj_id,
+            data_source_id=ds_id,
             api_key=api_key,
             api_secret=api_secret,
             jwt_token=jwt_token,

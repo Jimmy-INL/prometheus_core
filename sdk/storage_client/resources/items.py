@@ -27,24 +27,27 @@ class ItemsResource(BaseResource):
             ))
             ```
         """
-        # Prepare payload
+        # Prepare payload with snake_case field names for DeepLynx API
         payload = {
             "name": item.name,
-            "properties": item.properties,
+            "description": item.description or "",  # Required field
+            "properties": item.properties,  # Required field
+            "original_id": item.original_id or f"client-{item.name}-{id(item)}",  # Required field
         }
 
-        if item.description:
-            payload["description"] = item.description
         if item.class_id:
-            payload["metatype_id"] = item.class_id
-        if item.original_id:
-            payload["original_data_id"] = item.original_id
+            payload["class_id"] = item.class_id
 
-        # Create the item
+        # Create the item (dataSourceId query parameter required)
+        params = {
+            "dataSourceId": self._client._get_data_source_id()
+        }
+
         response = self._client._request(
             "POST",
             f"{self._base_path}/records",
-            json=payload
+            json=payload,
+            params=params
         )
 
         item_data = response.json()
@@ -105,9 +108,9 @@ class ItemsResource(BaseResource):
         if update.properties is not None:
             payload["properties"] = update.properties
         if update.class_id is not None:
-            payload["metatype_id"] = update.class_id
+            payload["class_id"] = update.class_id
         if update.original_id is not None:
-            payload["original_data_id"] = update.original_id
+            payload["original_id"] = update.original_id
 
         response = self._client._request(
             "PATCH",
@@ -235,18 +238,23 @@ class ItemsResource(BaseResource):
         payload = [
             {
                 "name": item.name,
-                "description": item.description,
+                "description": item.description or "",
                 "properties": item.properties,
-                "metatype_id": item.class_id,
-                "original_data_id": item.original_id,
+                "original_id": item.original_id or f"client-{item.name}-{i}",
+                "class_id": item.class_id,
             }
-            for item in items
+            for i, item in enumerate(items)
         ]
+
+        params = {
+            "dataSourceId": self._client._get_data_source_id()
+        }
 
         response = self._client._request(
             "POST",
             f"{self._base_path}/records/bulk",
-            json=payload
+            json=payload,
+            params=params
         )
 
         data = response.json()
@@ -307,18 +315,40 @@ class ItemsResource(BaseResource):
         Returns:
             Parsed Item object
         """
-        # Map DeepLynx fields to our generic model
+        import json as json_lib
+        from datetime import datetime
+
+        # Parse properties if it's a JSON string
+        properties = data.get("properties", {})
+        if isinstance(properties, str):
+            try:
+                properties = json_lib.loads(properties)
+            except:
+                properties = {}
+
+        # Parse timestamp
+        timestamp_str = data.get("lastUpdatedAt")
+        if timestamp_str:
+            # Handle ISO format with optional microseconds
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except:
+                timestamp = datetime.now()
+        else:
+            timestamp = datetime.now()
+
+        # Map DeepLynx fields to our generic model (API uses camelCase in response)
         return Item(
             id=data["id"],
             name=data.get("name", ""),
             description=data.get("description"),
-            properties=data.get("properties", {}),
-            class_id=data.get("metatype_id"),
-            original_id=data.get("original_data_id"),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
-            tags=[Tag(id=t.get("id"), name=t["name"]) for t in data.get("tags", [])],
-            metatype_id=data.get("metatype_id"),
-            metatype_name=data.get("metatype_name"),
-            data_source_id=data.get("data_source_id"),
+            properties=properties,
+            class_id=data.get("classId"),
+            original_id=data.get("originalId"),
+            created_at=timestamp,  # Use lastUpdatedAt as both created and updated
+            updated_at=timestamp,
+            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in data.get("tags", [])],
+            metatype_id=data.get("classId"),
+            metatype_name=data.get("className"),
+            data_source_id=data.get("dataSourceId"),
         )

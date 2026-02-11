@@ -23,10 +23,15 @@ class AsyncItemsResource(AsyncBaseResource):
         if item.original_id:
             payload["original_data_id"] = item.original_id
 
+        params = {
+            "dataSourceId": await self._client._get_data_source_id()
+        }
+
         response = await self._client._request(
             "POST",
             f"{self._base_path}/records",
-            json=payload
+            json=payload,
+            params=params
         )
 
         item_data = response.json()
@@ -142,10 +147,15 @@ class AsyncItemsResource(AsyncBaseResource):
             for item in items
         ]
 
+        params = {
+            "dataSourceId": await self._client._get_data_source_id()
+        }
+
         response = await self._client._request(
             "POST",
             f"{self._base_path}/records/bulk",
-            json=payload
+            json=payload,
+            params=params
         )
 
         data = response.json()
@@ -173,17 +183,39 @@ class AsyncItemsResource(AsyncBaseResource):
 
     def _parse_item(self, data: Dict[str, Any]) -> Item:
         """Parse API response data into an Item model."""
+        import json as json_lib
+        from datetime import datetime
+
+        # Parse properties if it's a JSON string
+        properties = data.get("properties", {})
+        if isinstance(properties, str):
+            try:
+                properties = json_lib.loads(properties)
+            except:
+                properties = {}
+
+        # Parse timestamp
+        timestamp_str = data.get("lastUpdatedAt")
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except:
+                timestamp = datetime.now()
+        else:
+            timestamp = datetime.now()
+
+        # Map DeepLynx fields to our generic model (API uses camelCase in response)
         return Item(
             id=data["id"],
             name=data.get("name", ""),
             description=data.get("description"),
-            properties=data.get("properties", {}),
-            class_id=data.get("metatype_id"),
-            original_id=data.get("original_data_id"),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
-            tags=[Tag(id=t.get("id"), name=t["name"]) for t in data.get("tags", [])],
-            metatype_id=data.get("metatype_id"),
-            metatype_name=data.get("metatype_name"),
-            data_source_id=data.get("data_source_id"),
+            properties=properties,
+            class_id=data.get("classId"),
+            original_id=data.get("originalId"),
+            created_at=timestamp,
+            updated_at=timestamp,
+            tags=[Tag(id=t.get("id"), name=t.get("name", "")) for t in data.get("tags", [])],
+            metatype_id=data.get("classId"),
+            metatype_name=data.get("className"),
+            data_source_id=data.get("dataSourceId"),
         )

@@ -45,8 +45,8 @@ def main():
                     "test": True,
                     "source": "test_connection.py",
                     "message": "Hello from the storage client!"
-                },
-                tags=["test", "verification"]
+                }
+                # Note: Tags removed for now - will implement proper tag handling
             )
 
             created_item = client.items.create(test_item)

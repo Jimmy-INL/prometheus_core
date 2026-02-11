@@ -49,6 +49,7 @@ class StorageClient:
         self.config = config
         self._http_client: Optional[httpx.Client] = None
         self._auth_handler: Optional[AuthHandler] = None
+        self._default_data_source_id: Optional[int] = None  # Cached default data source
 
         # Resource handlers (lazy-loaded)
         self._items: Optional[ItemsResource] = None
@@ -163,6 +164,46 @@ class StorageClient:
                 raise StorageClientError(f"Request failed: {e}")
 
         raise StorageClientError(f"Request failed: {last_error}")
+
+    def _get_data_source_id(self) -> int:
+        """Get the data source ID to use for requests.
+
+        Returns the configured data_source_id if available, otherwise fetches
+        the default data source for the project.
+
+        Returns:
+            Data source ID
+
+        Raises:
+            StorageClientError: If no data source is available
+        """
+        # Use configured data source if available
+        if self.config.data_source_id:
+            return self.config.data_source_id
+
+        # Use cached default if we've fetched it before
+        if self._default_data_source_id:
+            return self._default_data_source_id
+
+        # Fetch default data source from API
+        try:
+            response = self._request(
+                "GET",
+                f"/projects/{self.config.project_id}/datasources/default"
+            )
+            data = response.json()
+            self._default_data_source_id = data.get("id")
+
+            if not self._default_data_source_id:
+                raise StorageClientError("No default data source found")
+
+            return self._default_data_source_id
+
+        except Exception as e:
+            raise StorageClientError(
+                f"Failed to get data source ID. Please set DEEPLYNX_DATA_SOURCE_ID "
+                f"in your .env file. Error: {e}"
+            )
 
     def _handle_response(self, response: httpx.Response) -> None:
         """Handle API response and raise appropriate exceptions.
