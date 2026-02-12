@@ -11,11 +11,8 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from anthropic import Anthropic
 from a2a_sdk import AgentExecutor
-
-# Prometheus API is available - uncomment if needed
-# import prometheus_api
+import prometheus_api
 
 # Add shared directory to path
 sys.path.insert(0, "/app")
@@ -38,16 +35,7 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
     def __init__(self):
         """Initialize the agent executor."""
         super().__init__()
-
-        # Initialize Claude client
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-
-        self.client = Anthropic(api_key=api_key)
-        self.model_name = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
-
-        logger.info(f"Initialized TEMPLATE_NAME Agent with model {self.model_name}")
+        logger.info("Initialized TEMPLATE_NAME Agent")
 
     def execute(self, context: Dict[str, Any], event_queue) -> Dict[str, Any]:
         """
@@ -131,7 +119,7 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
 
     def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process the analysis request using Claude.
+        Process the analysis request.
 
         This is the main method you should customize for your agent's specific logic.
 
@@ -147,82 +135,30 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
         if not input_data:
             raise ValueError("input_data parameter is required")
 
-        # Build the prompt for Claude
-        # Customize this for your agent's specific domain
-        prompt = self._build_prompt(input_data, params)
+        # ============================================================
+        # CUSTOMIZE THIS SECTION FOR YOUR AGENT'S LOGIC
+        # ============================================================
+        # Example: Use prometheus_api to process the data
+        # result = prometheus_api.some_function(input_data)
 
-        # Call Claude API
-        logger.info("Calling Claude API for analysis")
-        response = self.client.messages.create(
-            model=self.model_name,
-            max_tokens=4096,
-            temperature=0.7,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
+        # For now, return a placeholder result
+        result = {
+            "status": "success",
+            "input_received": input_data,
+            "message": "Replace this with your agent's processing logic"
+        }
 
-        # Extract and parse the response
-        result_text = response.content[0].text
-
-        try:
-            result = json.loads(result_text)
-        except json.JSONDecodeError:
-            # If Claude didn't return valid JSON, wrap the response
-            result = {
-                "analysis": result_text,
-                "raw_response": True
-            }
+        # You can access other parameters from params
+        # optional_param = params.get("optional_param", "default_value")
+        # ============================================================
 
         # Add metadata
         result.update({
             "agent": "TEMPLATE_NAME",
-            "timestamp": datetime.utcnow().isoformat(),
-            "model": self.model_name
+            "timestamp": datetime.utcnow().isoformat()
         })
 
         return result
-
-    def _build_prompt(self, input_data: str, params: Dict[str, Any]) -> str:
-        """
-        Build the prompt for Claude.
-
-        Customize this method for your agent's specific domain.
-
-        Args:
-            input_data: The main input data
-            params: Additional parameters
-
-        Returns:
-            Formatted prompt string
-        """
-        # This is a basic template - customize for your domain
-        prompt = f"""You are TEMPLATE_NAME, a specialized AI agent.
-
-Your task is to analyze the following input and provide a detailed response.
-
-Input Data: {input_data}
-
-Additional Context:
-{json.dumps(params, indent=2)}
-
-Please provide your analysis in the following JSON format:
-{{
-    "summary": "Brief summary of your analysis",
-    "findings": ["Finding 1", "Finding 2", ...],
-    "recommendations": ["Recommendation 1", "Recommendation 2", ...],
-    "confidence": 0.95,
-    "details": {{
-        // Add domain-specific details here
-    }}
-}}
-
-Ensure your response is valid JSON."""
-
-        return prompt
 
 
 def create_agent_card() -> Dict[str, Any]:

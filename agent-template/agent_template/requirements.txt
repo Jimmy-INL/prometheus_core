@@ -1,9 +1,6 @@
 # A2A SDK - Agent-to-Agent protocol implementation
 a2a-sdk[http-server]>=0.3.0
 
-# Claude API client
-anthropic>=0.18.0
-
 # Data validation and serialization
 pydantic>=2.5.3
 
