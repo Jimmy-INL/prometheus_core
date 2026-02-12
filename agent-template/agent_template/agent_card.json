@@ -1,0 +1,27 @@
+{
+  "name": "TEMPLATE_NAME Agent",
+  "description": "TEMPLATE_DESCRIPTION",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "TEMPLATE_SKILL_ID",
+      "name": "TEMPLATE_SKILL_NAME",
+      "description": "TEMPLATE_SKILL_DESCRIPTION",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "input_data": {
+            "type": "string",
+            "description": "The main input data to analyze"
+          }
+        },
+        "required": ["input_data"]
+      }
+    }
+  ]
+}

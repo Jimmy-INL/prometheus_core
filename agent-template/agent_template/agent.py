@@ -1,0 +1,317 @@
+"""
+TEMPLATE_NAME Agent - A2A Agent Template
+
+This is a template for creating A2A-enabled agents. Replace TEMPLATE_NAME with your agent's name.
+"""
+
+import os
+import sys
+import json
+import logging
+from typing import Dict, Any
+from datetime import datetime
+
+from anthropic import Anthropic
+from a2a_sdk import AgentExecutor
+
+# Prometheus API is available - uncomment if needed
+# import prometheus_api
+
+# Add shared directory to path
+sys.path.insert(0, "/app")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class TEMPLATE_CLASSExecutor(AgentExecutor):
+    """
+    Executor for TEMPLATE_NAME Agent.
+
+    This agent handles [DESCRIBE YOUR AGENT'S CAPABILITIES HERE].
+    """
+
+    def __init__(self):
+        """Initialize the agent executor."""
+        super().__init__()
+
+        # Initialize Claude client
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+
+        self.client = Anthropic(api_key=api_key)
+        self.model_name = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+
+        logger.info(f"Initialized TEMPLATE_NAME Agent with model {self.model_name}")
+
+    def execute(self, context: Dict[str, Any], event_queue) -> Dict[str, Any]:
+        """
+        Execute the agent task.
+
+        Args:
+            context: A2A context containing the message and parameters
+            event_queue: Queue for sending status updates
+
+        Returns:
+            Dict containing the analysis results
+        """
+        try:
+            logger.info("Starting TEMPLATE_NAME Agent execution")
+
+            # Extract parameters from the message
+            params = self._extract_params(context)
+
+            # Send "working" status
+            event_queue.put({
+                "type": "status",
+                "status": "working",
+                "message": "Processing request..."
+            })
+
+            # Perform the main analysis
+            result = self.process_analysis(params)
+
+            # Send completion status
+            event_queue.put({
+                "type": "status",
+                "status": "completed",
+                "message": "Analysis complete"
+            })
+
+            # Send result as artifact
+            event_queue.put({
+                "type": "artifact",
+                "data": json.dumps(result, indent=2)
+            })
+
+            logger.info("TEMPLATE_NAME Agent execution completed successfully")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error during execution: {str(e)}", exc_info=True)
+            event_queue.put({
+                "type": "status",
+                "status": "failed",
+                "message": f"Error: {str(e)}"
+            })
+            raise
+
+    def _extract_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract parameters from the A2A message context.
+
+        Args:
+            context: A2A context
+
+        Returns:
+            Dict of extracted parameters
+        """
+        message = context.get("message", {})
+        parts = message.get("parts", [])
+
+        if not parts:
+            raise ValueError("No message parts found")
+
+        # Extract text from first part
+        text = parts[0].get("text", "{}")
+
+        try:
+            params = json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse message as JSON: {text}")
+            raise ValueError(f"Invalid JSON in message: {str(e)}")
+
+        logger.info(f"Extracted parameters: {params}")
+        return params
+
+    def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process the analysis request using Claude.
+
+        This is the main method you should customize for your agent's specific logic.
+
+        Args:
+            params: Parameters extracted from the A2A message
+
+        Returns:
+            Dict containing the analysis results
+        """
+        # Extract required parameters
+        # Customize these based on your agent's needs
+        input_data = params.get("input_data")
+        if not input_data:
+            raise ValueError("input_data parameter is required")
+
+        # Build the prompt for Claude
+        # Customize this for your agent's specific domain
+        prompt = self._build_prompt(input_data, params)
+
+        # Call Claude API
+        logger.info("Calling Claude API for analysis")
+        response = self.client.messages.create(
+            model=self.model_name,
+            max_tokens=4096,
+            temperature=0.7,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        # Extract and parse the response
+        result_text = response.content[0].text
+
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError:
+            # If Claude didn't return valid JSON, wrap the response
+            result = {
+                "analysis": result_text,
+                "raw_response": True
+            }
+
+        # Add metadata
+        result.update({
+            "agent": "TEMPLATE_NAME",
+            "timestamp": datetime.utcnow().isoformat(),
+            "model": self.model_name
+        })
+
+        return result
+
+    def _build_prompt(self, input_data: str, params: Dict[str, Any]) -> str:
+        """
+        Build the prompt for Claude.
+
+        Customize this method for your agent's specific domain.
+
+        Args:
+            input_data: The main input data
+            params: Additional parameters
+
+        Returns:
+            Formatted prompt string
+        """
+        # This is a basic template - customize for your domain
+        prompt = f"""You are TEMPLATE_NAME, a specialized AI agent.
+
+Your task is to analyze the following input and provide a detailed response.
+
+Input Data: {input_data}
+
+Additional Context:
+{json.dumps(params, indent=2)}
+
+Please provide your analysis in the following JSON format:
+{{
+    "summary": "Brief summary of your analysis",
+    "findings": ["Finding 1", "Finding 2", ...],
+    "recommendations": ["Recommendation 1", "Recommendation 2", ...],
+    "confidence": 0.95,
+    "details": {{
+        // Add domain-specific details here
+    }}
+}}
+
+Ensure your response is valid JSON."""
+
+        return prompt
+
+
+def create_agent_card() -> Dict[str, Any]:
+    """
+    Create the agent card describing this agent's capabilities.
+
+    Returns:
+        Dict representing the agent card
+    """
+    return {
+        "name": "TEMPLATE_NAME Agent",
+        "description": "TEMPLATE_DESCRIPTION",
+        "url": f"http://localhost:{os.getenv('AGENT_PORT', '8000')}",
+        "version": "1.0.0",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "skills": [
+            {
+                "id": "TEMPLATE_SKILL_ID",
+                "name": "TEMPLATE_SKILL_NAME",
+                "description": "TEMPLATE_SKILL_DESCRIPTION",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "input_data": {
+                            "type": "string",
+                            "description": "The main input data to analyze"
+                        }
+                    },
+                    "required": ["input_data"]
+                }
+            }
+        ]
+    }
+
+
+def register_with_registry(agent_card: Dict[str, Any]) -> None:
+    """
+    Register this agent with the registry service.
+
+    Args:
+        agent_card: The agent card to register
+    """
+    import httpx
+
+    registry_url = os.getenv("REGISTRY_URL", "http://registry:8000")
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                f"{registry_url}/agents/register",
+                json=agent_card
+            )
+            response.raise_for_status()
+            logger.info(f"Successfully registered with registry at {registry_url}")
+    except Exception as e:
+        logger.error(f"Failed to register with registry: {str(e)}")
+        # Don't fail startup if registry is unavailable
+        logger.warning("Continuing without registry registration")
+
+
+def main():
+    """Main entry point for the agent."""
+    from a2a_sdk.http_server import start_http_server
+
+    logger.info("Starting TEMPLATE_NAME Agent")
+
+    # Create agent card
+    agent_card = create_agent_card()
+
+    # Create executor
+    executor = TEMPLATE_CLASSExecutor()
+
+    # Register with registry
+    register_with_registry(agent_card)
+
+    # Start HTTP server
+    port = int(os.getenv("AGENT_PORT", "8000"))
+    logger.info(f"Starting HTTP server on port {port}")
+
+    start_http_server(
+        executor=executor,
+        agent_card=agent_card,
+        port=port,
+        host="0.0.0.0"
+    )
+
+
+if __name__ == "__main__":
+    main()

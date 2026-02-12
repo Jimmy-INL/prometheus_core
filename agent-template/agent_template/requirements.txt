@@ -1,0 +1,17 @@
+# A2A SDK - Agent-to-Agent protocol implementation
+a2a-sdk[http-server]>=0.3.0
+
+# Claude API client
+anthropic>=0.18.0
+
+# Data validation and serialization
+pydantic>=2.5.3
+
+# HTTP client
+httpx>=0.26.0
+
+# ASGI server
+uvicorn[standard]>=0.27.0
+
+# Prometheus API
+git+https://github.inl.gov/genesis/prometheus_api.git
