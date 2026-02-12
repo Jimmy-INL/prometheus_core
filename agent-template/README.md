@@ -108,7 +108,8 @@ Next steps:
 
 Or use Docker:
   1. docker build -t weather-analysis ./weather-analysis
-  2. docker run -p 8000:8000 weather-analysis
+  2. docker run -p 8000:8000 --env-file ./weather-analysis/.env weather-analysis
+     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 weather-analysis)
 
 For more information, see the README.md in your agent directory.
 ```
@@ -129,8 +130,18 @@ python agent.py
 
 ```bash
 docker build -t your-agent-slug ./your-agent-name
-docker run -p 8000:8000 your-agent-slug
+
+# Option A: Use .env file
+docker run -p 8000:8000 --env-file ./your-agent-name/.env your-agent-slug
+
+# Option B: Pass environment variables explicitly
+docker run -p 8000:8000 \
+  -e AGENT_PORT=8000 \
+  -e REGISTRY_URL=http://registry:8000 \
+  your-agent-slug
 ```
+
+Note: The `.env` file is NOT copied into Docker images. Use `--env-file` or `-e` flags to pass configuration.
 
 ## Template Structure
 

@@ -72,11 +72,21 @@ The agent will start on `http://localhost:8000` by default.
    ```
 
 2. **Run the container:**
+
+   **Option A: Use .env file**
+   ```bash
+   docker run -p 8000:8000 --env-file .env TEMPLATE_SLUG-agent
+   ```
+
+   **Option B: Pass environment variables explicitly**
    ```bash
    docker run -p 8000:8000 \
+     -e AGENT_PORT=8000 \
      -e REGISTRY_URL=http://registry:8000 \
      TEMPLATE_SLUG-agent
    ```
+
+   Note: The `.env` file is NOT copied into the Docker image. You must either use `--env-file` to load it at runtime or pass variables with `-e` flags.
 
 ### Docker Compose Integration
 
