@@ -32,7 +32,7 @@ python setup_agent.py
 ```
 
 The script will guide you through the process:
-1. Agent name (e.g., "Weather Analysis")
+1. Agent name (e.g., "Plant Analysis")
 2. Description
 3. Slug (for directories/Docker)
 4. Class name
@@ -50,41 +50,41 @@ $ python setup_agent.py
 This script will help you create a new agent from the template.
 Please provide the following information:
 
-Agent name (e.g., 'Weather Analysis', 'Data Validator'): Weather Analysis
+Agent name (e.g., 'Plant Analysis', 'Data Validator'): Plant Analysis
 
-Agent description (brief summary of what it does) [A specialized agent for weather analysis]: Analyzes weather patterns and provides forecasts
+Agent description (brief summary of what it does) [A specialized agent for balance of plant analysis]: Analyzes balance of plant systems for nuclear facilities
 
-Agent slug (used for directories and Docker) [weather-analysis]:
+Agent slug (used for directories and Docker) [plant-analysis]:
 
-Agent class name (PascalCase) [WeatherAnalysis]:
+Agent class name (PascalCase) [PlantAnalysis]:
 
 ----------------------------------------------------------------------
   Primary Skill Configuration
 ----------------------------------------------------------------------
 
-Primary skill ID (snake_case) [weather_analysis_analysis]: analyze_weather
+Primary skill ID (snake_case) [plant_analysis_analysis]: analyze_plant
 
-Primary skill name [Weather Analysis Analysis]: Analyze Weather Pattern
+Primary skill name [Plant Analysis Analysis]: Analyze Balance of Plant
 
-Primary skill description [Performs analysis using weather analysis]: Analyzes weather data and generates forecasts
+Primary skill description [Performs balance of plant system analysis]: Analyzes balance of plant systems including turbines, condensers, and cooling systems
 
-Output directory [./weather-analysis]:
+Output directory [./plant-analysis]:
 
 ======================================================================
   Configuration Summary
 ======================================================================
 
-Agent Name:        Weather Analysis
-Description:       Analyzes weather patterns and provides forecasts
-Slug:              weather-analysis
-Class Name:        WeatherAnalysis
-Primary Skill ID:  analyze_weather
-Primary Skill:     Analyze Weather Pattern
-Output Directory:  ./weather-analysis
+Agent Name:        Plant Analysis
+Description:       Analyzes balance of plant systems for nuclear facilities
+Slug:              plant-analysis
+Class Name:        PlantAnalysis
+Primary Skill ID:  analyze_plant
+Primary Skill:     Analyze Balance of Plant
+Output Directory:  ./plant-analysis
 
 Proceed with these settings? (yes/no) [yes]: yes
 
-Creating agent in './weather-analysis'...
+Creating agent in './plant-analysis'...
 
   ✓ agent.py
   ✓ Dockerfile
@@ -97,19 +97,19 @@ Creating agent in './weather-analysis'...
   Agent Created Successfully!
 ======================================================================
 
-Your new agent has been created in: ./weather-analysis
+Your new agent has been created in: ./plant-analysis
 
 Next steps:
-  1. cd ./weather-analysis
+  1. cd ./plant-analysis
   2. cp .env.example .env
   3. Edit .env if needed
   4. Install dependencies: pip install -r requirements.txt
   5. Run the agent: python agent.py
 
 Or use Docker:
-  1. docker build -t weather-analysis ./weather-analysis
-  2. docker run -p 8000:8000 --env-file ./weather-analysis/.env weather-analysis
-     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 weather-analysis)
+  1. docker build -t plant-analysis ./plant-analysis
+  2. docker run -p 8000:8000 --env-file ./plant-analysis/.env plant-analysis
+     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 plant-analysis)
 
 For more information, see the README.md in your agent directory.
 ```

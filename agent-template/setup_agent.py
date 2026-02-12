@@ -9,7 +9,7 @@ Usage:
     python setup_agent.py <agent_name> [output_directory]
 
 Example:
-    python setup_agent.py "Weather Analysis" ./weather-agent
+    python setup_agent.py "Plant Analysis" ./plant-agent
     python setup_agent.py "Data Validator"
 """
 
@@ -64,7 +64,7 @@ def collect_agent_info() -> Dict[str, str]:
 
     # Get agent name
     while True:
-        agent_name = get_user_input("Agent name (e.g., 'Weather Analysis', 'Data Validator')")
+        agent_name = get_user_input("Agent name (e.g., 'Plant Analysis', 'Data Validator')")
         if agent_name:
             break
         print("Error: Agent name is required.\n")
