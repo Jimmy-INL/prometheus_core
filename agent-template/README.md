@@ -1,6 +1,6 @@
 # Prometheus Agent Template
 
-A comprehensive template for creating A2A (Agent-to-Agent) enabled AI agents using Claude and the A2A SDK.
+A comprehensive template for creating A2A (Agent-to-Agent) enabled agents using the A2A SDK and prometheus_api.
 
 ## Overview
 
@@ -9,7 +9,8 @@ This repository provides a production-ready template for building specialized AI
 ## Features
 
 - **A2A Protocol Support**: Full implementation of the Agent-to-Agent communication standard
-- **Claude Integration**: Uses Anthropic's Claude for intelligent processing
+- **Prometheus API**: Pre-integrated with INL's prometheus_api package
+- **Progress Updates**: Built-in support for long-running tasks with incremental progress reporting
 - **Registry Integration**: Automatic registration with agent registry for service discovery
 - **Docker Ready**: Complete containerization with health checks and enterprise features
 - **Enterprise Support**: Proxy and custom CA certificate support for corporate environments
@@ -21,7 +22,6 @@ This repository provides a production-ready template for building specialized AI
 
 - Python 3.11+
 - Docker (optional, for containerized deployment)
-- Anthropic API key
 
 ### Creating a New Agent
 
@@ -102,13 +102,13 @@ Your new agent has been created in: ./weather-analysis
 Next steps:
   1. cd ./weather-analysis
   2. cp .env.example .env
-  3. Edit .env and add your ANTHROPIC_API_KEY
+  3. Edit .env if needed
   4. Install dependencies: pip install -r requirements.txt
   5. Run the agent: python agent.py
 
 Or use Docker:
   1. docker build -t weather-analysis ./weather-analysis
-  2. docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key weather-analysis
+  2. docker run -p 8000:8000 weather-analysis
 
 For more information, see the README.md in your agent directory.
 ```
@@ -120,7 +120,7 @@ For more information, see the README.md in your agent directory.
 ```bash
 cd ./your-agent-name
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Edit .env if needed
 pip install -r requirements.txt
 python agent.py
 ```
@@ -129,7 +129,7 @@ python agent.py
 
 ```bash
 docker build -t your-agent-slug ./your-agent-name
-docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key your-agent-slug
+docker run -p 8000:8000 your-agent-slug
 ```
 
 ## Template Structure
@@ -153,34 +153,37 @@ After creating your agent, you'll want to customize it for your specific use cas
 Edit the `process_analysis()` method in `agent.py`:
 
 ```python
-def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
+def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
     # Extract your custom parameters
     my_param = params.get("my_param")
 
-    # Your custom logic here
-    result = self._do_something_with(my_param)
+    # Use prometheus_api or your custom logic
+    result = prometheus_api.some_function(my_param)
 
     return result
 ```
 
-### 2. Update the Prompt
+### 2. Long-Running Tasks with Progress Updates
 
-Modify the `_build_prompt()` method to create domain-specific prompts for Claude:
+For long-running tasks, use the `event_queue` to send progress updates:
 
 ```python
-def _build_prompt(self, input_data: str, params: Dict[str, Any]) -> str:
-    prompt = f"""You are an expert in [YOUR DOMAIN].
+def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    steps = ["Step 1", "Step 2", "Step 3"]
 
-Analyze the following data:
-{input_data}
+    for i, step in enumerate(steps):
+        # Send progress update
+        progress = (i + 1) / len(steps) * 100
+        event_queue.put({
+            "type": "status",
+            "status": "working",
+            "message": f"{step}... ({progress:.0f}% complete)"
+        })
 
-Provide your analysis in JSON format:
-{{
-    "field1": "value1",
-    "field2": ["item1", "item2"]
-}}
-"""
-    return prompt
+        # Do the work
+        perform_step(step)
+
+    return final_result
 ```
 
 ### 3. Define Additional Skills
@@ -240,8 +243,8 @@ The template implements a standard A2A agent architecture:
          │
          ▼
 ┌─────────────────┐
-│  Claude API     │
-│  (Anthropic)    │
+│ Prometheus API  │
+│ (Your Logic)    │
 └─────────────────┘
 ```
 
@@ -250,7 +253,8 @@ The template implements a standard A2A agent architecture:
 1. **AgentExecutor**: Handles A2A protocol communication and message routing
 2. **Agent Card**: Describes the agent's capabilities and skills
 3. **Registry Integration**: Automatic registration for service discovery
-4. **Claude Integration**: Intelligent processing using Claude API
+4. **Prometheus API**: Pre-integrated for data processing and analysis
+5. **Progress Updates**: Event queue for real-time status and progress reporting
 
 ## A2A Protocol
 
@@ -311,8 +315,6 @@ services:
     environment:
       - AGENT_PORT=8000
       - REGISTRY_URL=http://registry:8000
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
     ports:
@@ -337,8 +339,6 @@ networks:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `ANTHROPIC_API_KEY` | Anthropic API key | - | Yes |
-| `MODEL_NAME` | Claude model | `claude-sonnet-4-20250514` | No |
 | `AGENT_PORT` | Port to run on | `8000` | No |
 | `REGISTRY_URL` | Registry service URL | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy | - | No |
@@ -396,7 +396,7 @@ curl -X POST http://localhost:8000/message \
 
 ```bash
 docker build -t test-agent .
-docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key test-agent
+docker run -p 8000:8000 test-agent
 curl http://localhost:8000/health
 ```
 
@@ -414,12 +414,6 @@ Study these for real-world implementation patterns.
 ## Troubleshooting
 
 ### Common Issues
-
-**ANTHROPIC_API_KEY not set**
-```
-ValueError: ANTHROPIC_API_KEY environment variable is required
-```
-Solution: Set the environment variable or add it to `.env`
 
 **Registry connection fails**
 ```

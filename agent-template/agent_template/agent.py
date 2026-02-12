@@ -61,8 +61,8 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
                 "message": "Processing request..."
             })
 
-            # Perform the main analysis
-            result = self.process_analysis(params)
+            # Perform the main analysis (pass event_queue for progress updates)
+            result = self.process_analysis(params, event_queue)
 
             # Send completion status
             event_queue.put({
@@ -117,7 +117,7 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
         logger.info(f"Extracted parameters: {params}")
         return params
 
-    def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
         """
         Process the analysis request.
 
@@ -125,6 +125,7 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
 
         Args:
             params: Parameters extracted from the A2A message
+            event_queue: Queue for sending progress updates
 
         Returns:
             Dict containing the analysis results
@@ -150,6 +151,53 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
 
         # You can access other parameters from params
         # optional_param = params.get("optional_param", "default_value")
+        # ============================================================
+
+        # ============================================================
+        # LONG-RUNNING TASK EXAMPLE WITH PROGRESS UPDATES
+        # ============================================================
+        # Uncomment this section for an example of a long-running task
+        # with incremental progress updates
+        #
+        # import time
+        #
+        # steps = [
+        #     "Loading data",
+        #     "Preprocessing",
+        #     "Running analysis",
+        #     "Generating results",
+        #     "Finalizing"
+        # ]
+        #
+        # results = {}
+        # for i, step in enumerate(steps):
+        #     # Send progress update
+        #     progress = (i + 1) / len(steps) * 100
+        #     event_queue.put({
+        #         "type": "status",
+        #         "status": "working",
+        #         "message": f"{step}... ({progress:.0f}% complete)"
+        #     })
+        #
+        #     # Simulate work (replace with actual processing)
+        #     time.sleep(1)
+        #     results[step] = f"Completed {step}"
+        #
+        #     # Optional: Send intermediate results as artifacts
+        #     if i == 2:  # After "Running analysis"
+        #         event_queue.put({
+        #             "type": "artifact",
+        #             "data": json.dumps({
+        #                 "intermediate_result": "Analysis complete",
+        #                 "progress": f"{progress:.0f}%"
+        #             }, indent=2)
+        #         })
+        #
+        # result = {
+        #     "status": "success",
+        #     "steps_completed": results,
+        #     "total_steps": len(steps)
+        # }
         # ============================================================
 
         # Add metadata

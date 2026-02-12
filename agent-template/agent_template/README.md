@@ -1,14 +1,16 @@
 # TEMPLATE_NAME Agent
 
-A2A-enabled agent template for building specialized AI agents.
+A2A-enabled agent template for building specialized agents.
 
 ## Overview
 
-This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communicate with other agents in a multi-agent system. It uses Claude (Anthropic's AI) for intelligent processing and can be easily customized for your specific use case.
+This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communicate with other agents in a multi-agent system. It includes prometheus_api integration and can be easily customized for your specific use case.
 
 ## Features
 
 - **A2A Protocol**: Full implementation of Agent-to-Agent communication standard
+- **Prometheus API**: Pre-integrated with INL's prometheus_api package
+- **Progress Updates**: Built-in support for long-running tasks with incremental progress reporting
 - **Registry Integration**: Automatic registration with agent registry for discovery
 - **Docker Support**: Complete containerization with health checks
 - **Proxy & SSL Support**: Enterprise-ready with proxy and custom CA certificate support
@@ -29,7 +31,8 @@ This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communic
          │
          ▼
 ┌─────────────────┐
-│  Claude API     │
+│ Prometheus API  │
+│ (Your Logic)    │
 └─────────────────┘
 ```
 
@@ -51,7 +54,7 @@ This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communic
 2. **Configure environment:**
    ```bash
    cp .env.example .env
-   # Edit .env and add your ANTHROPIC_API_KEY
+   # Edit .env if needed
    ```
 
 3. **Run the agent:**
@@ -71,7 +74,6 @@ The agent will start on `http://localhost:8000` by default.
 2. **Run the container:**
    ```bash
    docker run -p 8000:8000 \
-     -e ANTHROPIC_API_KEY=your_api_key \
      -e REGISTRY_URL=http://registry:8000 \
      TEMPLATE_SLUG-agent
    ```
@@ -94,8 +96,6 @@ services:
     environment:
       - AGENT_PORT=8000
       - REGISTRY_URL=http://registry:8000
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
     ports:
@@ -161,29 +161,57 @@ Update the `inputSchema` in `create_agent_card()` to match:
 
 ### 3. Customize the Analysis Logic
 
-The `_build_prompt()` method constructs the prompt sent to Claude. Customize it for your domain:
+The `process_analysis()` method contains your agent's core logic:
 
 ```python
-def _build_prompt(self, input_data: str, params: Dict[str, Any]) -> str:
-    prompt = f"""You are an expert in [YOUR DOMAIN].
+def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    # Extract your parameters
+    input_data = params.get("input_data")
 
-Analyze the following [YOUR DATA TYPE]:
-{input_data}
+    # Use prometheus_api or your custom logic
+    result = prometheus_api.some_function(input_data)
 
-Context:
-{json.dumps(params, indent=2)}
+    # Add metadata
+    result.update({
+        "agent": "TEMPLATE_NAME",
+        "timestamp": datetime.utcnow().isoformat()
+    })
 
-Provide your analysis in JSON format with the following structure:
-{{
-    "field1": "value1",
-    "field2": ["item1", "item2"],
-    ...
-}}
-"""
-    return prompt
+    return result
 ```
 
-### 4. Define Skills
+### 4. Long-Running Tasks with Progress Updates
+
+For long-running tasks, use the `event_queue` to send progress updates:
+
+```python
+def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    steps = ["Loading data", "Processing", "Finalizing"]
+
+    for i, step in enumerate(steps):
+        # Send progress update
+        progress = (i + 1) / len(steps) * 100
+        event_queue.put({
+            "type": "status",
+            "status": "working",
+            "message": f"{step}... ({progress:.0f}% complete)"
+        })
+
+        # Do the work
+        perform_step(step)
+
+        # Optional: Send intermediate results
+        event_queue.put({
+            "type": "artifact",
+            "data": json.dumps({"step": step, "result": "..."})
+        })
+
+    return final_result
+```
+
+The template includes a commented example in `agent.py` that you can uncomment and modify.
+
+### 6. Define Skills
 
 Skills represent the capabilities your agent exposes. Edit `create_agent_card()`:
 
@@ -204,7 +232,7 @@ Skills represent the capabilities your agent exposes. Edit `create_agent_card()`
 ]
 ```
 
-### 5. Add Custom Dependencies
+### 7. Add Custom Dependencies
 
 The template includes `prometheus_api` pre-installed:
 
@@ -293,7 +321,7 @@ curl -X POST http://localhost:8000/message \
 ```bash
 # Build and run
 docker build -t TEMPLATE_SLUG-agent .
-docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key TEMPLATE_SLUG-agent
+docker run -p 8000:8000 TEMPLATE_SLUG-agent
 
 # Test
 curl http://localhost:8000/health
@@ -303,8 +331,6 @@ curl http://localhost:8000/health
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude | - | Yes |
-| `MODEL_NAME` | Claude model to use | `claude-sonnet-4-20250514` | No |
 | `AGENT_PORT` | Port to run the agent on | `8000` | No |
 | `REGISTRY_URL` | URL of the agent registry | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy URL | - | No |
@@ -313,12 +339,6 @@ curl http://localhost:8000/health
 | `SSL_CERT_FILE` | Path to SSL certificate bundle | `/etc/ssl/certs/ca-bundle.pem` | No |
 
 ## Troubleshooting
-
-### Agent won't start
-
-**Issue**: `ValueError: ANTHROPIC_API_KEY environment variable is required`
-
-**Solution**: Ensure you've set the `ANTHROPIC_API_KEY` environment variable or added it to your `.env` file.
 
 ### Registry registration fails
 
