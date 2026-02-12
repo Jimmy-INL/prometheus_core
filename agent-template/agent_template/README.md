@@ -88,10 +88,43 @@ The agent will start on `http://localhost:8000` by default.
 
    Note: The `.env` file is NOT copied into the Docker image. You must either use `--env-file` to load it at runtime or pass variables with `-e` flags.
 
+**Docker Port Mapping - Important Design Decision:**
+
+There are two approaches to port configuration:
+
+**Approach A: Matching Internal/External Ports (Recommended)**
+Each agent uses a unique port that's the same inside and outside the container:
+```bash
+# Each agent listens on its own port (internal = external)
+docker run -p 8000:8000 -e AGENT_PORT=8000 client-agent
+docker run -p 8001:8001 -e AGENT_PORT=8001 plant-agent
+docker run -p 8002:8002 -e AGENT_PORT=8002 data-agent
+```
+
+**Benefits:**
+- Consistent port numbers across containerized and non-containerized deployments
+- `AGENT_PORT` means the same thing everywhere
+- Agent card URL accurately reflects how to reach the agent
+- Simpler mental model
+
+**Approach B: Fixed Internal Port with Docker Mapping**
+All agents listen on 8000 internally, Docker maps to different external ports:
+```bash
+# All agents listen internally on 8000
+docker run -p 8000:8000 -e AGENT_PORT=8000 client-agent
+docker run -p 8001:8000 -e AGENT_PORT=8000 plant-agent  # ⚠️ Agent card shows :8000
+docker run -p 8002:8000 -e AGENT_PORT=8000 data-agent   # ⚠️ Agent card shows :8000
+```
+
+**Trade-off:** Agent card advertises `:8000` but external clients use `:8001`, `:8002`, etc.
+
+**Recommendation:** Use Approach A for consistency across deployment modes.
+
 ### Docker Compose Integration
 
 Add this service to your `docker-compose.yml`:
 
+**Recommended: Matching Internal/External Ports**
 ```yaml
 services:
   TEMPLATE_SLUG-agent:
@@ -104,19 +137,20 @@ services:
         - HTTPS_PROXY=${HTTPS_PROXY}
         - NO_PROXY=${NO_PROXY}
     environment:
-      - AGENT_PORT=8000
+      - AGENT_PORT=8002  # Port the agent listens on (internal = external)
+      - AGENT_HOST=TEMPLATE_SLUG-agent  # Service name for inter-agent communication
       - REGISTRY_URL=http://registry:8000
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
     ports:
-      - "8000:8000"
+      - "8002:8002"  # Same port internally and externally
     depends_on:
       registry:
         condition: service_healthy
     networks:
       - agent-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=5.0)"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:${AGENT_PORT:-8002}/health', timeout=5.0)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -126,22 +160,140 @@ networks:
     driver: bridge
 ```
 
+**Why Matching Ports?**
+- Consistent across containerized and non-containerized deployments
+- Agent card advertises `http://TEMPLATE_SLUG-agent:8002`, which accurately reflects how to reach it
+- Simpler configuration - `AGENT_PORT` means the same thing everywhere
+
+**Multi-Agent Example:**
+```yaml
+services:
+  client-agent:
+    environment:
+      - AGENT_PORT=8000
+      - AGENT_HOST=client-agent
+    ports:
+      - "8000:8000"
+
+  plant-agent:
+    environment:
+      - AGENT_PORT=8001
+      - AGENT_HOST=plant-agent
+    ports:
+      - "8001:8001"
+
+  data-agent:
+    environment:
+      - AGENT_PORT=8002
+      - AGENT_HOST=data-agent
+    ports:
+      - "8002:8002"
+```
+
+Each agent's card advertises the correct port, and inter-agent communication works seamlessly.
+
+## Containerized vs Non-Containerized Deployment
+
+**The Conundrum:**
+
+This template supports both containerized (Docker) and non-containerized (local) deployments, which creates a configuration challenge around port management.
+
+### Non-Containerized (Local Development)
+
+Running directly with Python:
+```bash
+AGENT_PORT=8000 python agent.py
+```
+
+- Agent listens on: `localhost:8000`
+- Agent card advertises: `http://localhost:8000`
+- Other agents connect to: `http://localhost:8000`
+
+**Simple and straightforward** - the port you set is the port used everywhere.
+
+### Containerized (Docker)
+
+Running in a container introduces Docker's port mapping:
+```bash
+docker run -p <external>:<internal> agent
+```
+
+This creates two port numbers:
+- **Internal port**: What the agent process listens on inside the container
+- **External port**: What's exposed on the host machine
+
+### The Design Decision
+
+**Option 1: Matching Ports (Recommended)**
+```yaml
+ports: "8002:8002"
+environment:
+  - AGENT_PORT=8002
+```
+- Agent listens internally on 8002
+- Exposed externally on 8002
+- Agent card advertises: `http://service-name:8002`
+- ✅ Consistent across deployment modes
+- ✅ Agent card URL is accurate
+- ⚠️ Each agent needs a unique port
+
+**Option 2: Fixed Internal Port**
+```yaml
+ports: "8002:8000"
+environment:
+  - AGENT_PORT=8000
+```
+- Agent listens internally on 8000 (all agents the same)
+- Exposed externally on 8002 (different per agent)
+- Agent card advertises: `http://service-name:8000`
+- ✅ Dockerfile can hardcode port 8000
+- ⚠️ External clients use 8002, but agent card says 8000
+- ⚠️ Inconsistent with non-containerized mode
+
+### Why We Recommend Option 1
+
+**Consistency** is more valuable than having a standard internal port. The agent card URL should accurately reflect how to reach the agent, and `AGENT_PORT` should mean the same thing whether running locally or in Docker.
+
+**Implementation:**
+- Set `AGENT_PORT` to a unique value for each agent (8000, 8001, 8002, etc.)
+- Use matching Docker port mapping: `-p 8001:8001`
+- The agent will listen on and advertise the same port
+- Works identically in local and Docker deployments
+
 ## Customization Guide
 
 ### 1. Update Agent Metadata
 
-Edit the following in `agent.py`:
+The agent card is loaded from `agent_card.json` (single source of truth). Edit this file to customize:
 
-- **TEMPLATE_NAME**: Your agent's display name
-- **TEMPLATE_CLASS**: Your agent's class name (PascalCase)
-- **TEMPLATE_DESCRIPTION**: Brief description of what your agent does
+- **name**: Your agent's display name
+- **description**: Brief description of what your agent does
+- **version**: Agent version number
+- **skills**: List of capabilities your agent provides
+
+Example `agent_card.json`:
+```json
+{
+  "name": "My Custom Agent",
+  "description": "Performs custom analysis tasks",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [...]
+}
+```
+
+Note: The `url` field is automatically overridden at runtime based on `AGENT_PORT` and `AGENT_HOST` environment variables.
 
 ### 2. Define Input Schema
 
 In `process_analysis()` method, customize the parameters your agent expects:
 
 ```python
-def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
+def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
     # Extract your custom parameters
     my_param = params.get("my_param")
     another_param = params.get("another_param")
@@ -150,7 +302,7 @@ def process_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
     ...
 ```
 
-Update the `inputSchema` in `create_agent_card()` to match:
+Update the `inputSchema` in `agent_card.json` to match:
 
 ```python
 "inputSchema": {
@@ -223,24 +375,37 @@ The template includes a commented example in `agent.py` that you can uncomment a
 
 ### 6. Define Skills
 
-Skills represent the capabilities your agent exposes. Edit `create_agent_card()`:
+Skills represent the capabilities your agent exposes. Edit the `skills` array in `agent_card.json`:
 
-```python
-"skills": [
+```json
+{
+  "skills": [
     {
-        "id": "my_analysis_skill",
-        "name": "My Analysis Skill",
-        "description": "Performs analysis of X using Y methodology",
-        "inputSchema": { ... }
+      "id": "my_analysis_skill",
+      "name": "My Analysis Skill",
+      "description": "Performs analysis of X using Y methodology",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "param1": {
+            "type": "string",
+            "description": "Description of param1"
+          }
+        },
+        "required": ["param1"]
+      }
     },
     {
-        "id": "another_skill",
-        "name": "Another Skill",
-        "description": "Does something else",
-        "inputSchema": { ... }
+      "id": "another_skill",
+      "name": "Another Skill",
+      "description": "Does something else",
+      "inputSchema": { }
     }
-]
+  ]
+}
 ```
+
+The agent loads this configuration at startup and advertises these skills to the registry.
 
 ### 7. Add Custom Dependencies
 
@@ -341,12 +506,24 @@ curl http://localhost:8000/health
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `AGENT_PORT` | Port to run the agent on | `8000` | No |
+| `AGENT_PORT` | Port the agent listens on (use unique values per agent: 8000, 8001, etc.) | `8000` | Yes |
+| `AGENT_HOST` | Hostname for agent card URL (use Docker service name for containerized deployments) | `localhost` | Yes |
 | `REGISTRY_URL` | URL of the agent registry | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy URL | - | No |
 | `HTTPS_PROXY` | HTTPS proxy URL | - | No |
 | `NO_PROXY` | Comma-separated list of hosts to bypass proxy | - | No |
 | `SSL_CERT_FILE` | Path to SSL certificate bundle | `/etc/ssl/certs/ca-bundle.pem` | No |
+
+**Port Configuration:**
+- **Local deployment**: `AGENT_PORT=8000`, agent listens on `localhost:8000`
+- **Docker deployment**: `AGENT_PORT=8001` with `-p 8001:8001` (matching ports recommended)
+- **Multi-agent systems**: Use unique ports per agent (8000, 8001, 8002, etc.)
+
+**Hostname Configuration:**
+- **Local deployment**: `AGENT_HOST=localhost`
+- **Docker deployment**: `AGENT_HOST=service-name` (e.g., `plant-agent`)
+
+The agent card advertises `http://{AGENT_HOST}:{AGENT_PORT}`, which other agents use for communication.
 
 ## Troubleshooting
 
@@ -386,10 +563,12 @@ TEMPLATE_SLUG-agent/
 ├── agent.py              # Main agent implementation
 ├── Dockerfile            # Docker container configuration
 ├── requirements.txt      # Python dependencies
-├── agent_card.json       # Agent metadata and capabilities
+├── agent_card.json       # Agent metadata and capabilities (loaded at runtime)
 ├── .env.example          # Example environment configuration
 └── README.md            # This file
 ```
+
+**Agent Card Loading:** The agent loads `agent_card.json` at startup via `create_agent_card()` in `agent.py`. The URL field is automatically updated based on `AGENT_PORT` and `AGENT_HOST` environment variables to reflect the actual runtime configuration. This makes `agent_card.json` the single source of truth for agent metadata, capabilities, and skills.
 
 ## A2A Protocol Reference
 

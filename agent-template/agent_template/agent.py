@@ -211,38 +211,38 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
 
 def create_agent_card() -> Dict[str, Any]:
     """
-    Create the agent card describing this agent's capabilities.
+    Load the agent card from agent_card.json and update URL from environment.
+
+    The agent card is loaded from the JSON file to serve as a single source of truth
+    for agent metadata, capabilities, and skills. The URL is then updated based on
+    environment variables to match the actual runtime configuration.
 
     Returns:
-        Dict representing the agent card
+        Dict representing the agent card with runtime URL
     """
-    return {
-        "name": "TEMPLATE_NAME Agent",
-        "description": "TEMPLATE_DESCRIPTION",
-        "url": f"http://localhost:{os.getenv('AGENT_PORT', '8000')}",
-        "version": "1.0.0",
-        "capabilities": {
-            "streaming": False,
-            "pushNotifications": False
-        },
-        "skills": [
-            {
-                "id": "TEMPLATE_SKILL_ID",
-                "name": "TEMPLATE_SKILL_NAME",
-                "description": "TEMPLATE_SKILL_DESCRIPTION",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "input_data": {
-                            "type": "string",
-                            "description": "The main input data to analyze"
-                        }
-                    },
-                    "required": ["input_data"]
-                }
-            }
-        ]
-    }
+    # Load agent card from JSON file
+    agent_card_path = os.path.join(os.path.dirname(__file__), "agent_card.json")
+
+    try:
+        with open(agent_card_path, 'r') as f:
+            agent_card = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"agent_card.json not found at {agent_card_path}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in agent_card.json: {e}")
+        raise
+
+    # Override URL with environment configuration
+    # This ensures the agent advertises the correct URL regardless of deployment
+    port = os.getenv('AGENT_PORT', '8000')
+    host = os.getenv('AGENT_HOST', 'localhost')
+    agent_card['url'] = f"http://{host}:{port}"
+
+    logger.info(f"Loaded agent card: {agent_card['name']} v{agent_card['version']}")
+    logger.info(f"Agent URL: {agent_card['url']}")
+
+    return agent_card
 
 
 def register_with_registry(agent_card: Dict[str, Any]) -> None:

@@ -159,7 +159,39 @@ agent_template/
 
 After creating your agent, you'll want to customize it for your specific use case:
 
-### 1. Customize the Analysis Logic
+### 1. Update Agent Metadata (agent_card.json)
+
+The agent card is loaded from `agent_card.json` at runtime. This file serves as the single source of truth for:
+- Agent name and description
+- Version number
+- Capabilities (streaming, push notifications)
+- Skills (available operations with input/output schemas)
+
+Edit `agent_card.json`:
+```json
+{
+  "name": "My Custom Agent",
+  "description": "Performs custom analysis",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "id": "my_skill",
+      "name": "My Skill",
+      "description": "Does something useful",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "my_param": {"type": "string"}
+        }
+      }
+    }
+  ]
+}
+```
+
+**Note:** The `url` field is automatically updated at runtime based on `AGENT_PORT` and `AGENT_HOST` environment variables.
+
+### 2. Customize the Analysis Logic
 
 Edit the `process_analysis()` method in `agent.py`:
 
@@ -174,7 +206,7 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
     return result
 ```
 
-### 2. Long-Running Tasks with Progress Updates
+### 3. Long-Running Tasks with Progress Updates
 
 For long-running tasks, use the `event_queue` to send progress updates:
 
@@ -197,28 +229,40 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
     return final_result
 ```
 
-### 3. Define Additional Skills
+### 4. Define Additional Skills
 
-Update the `create_agent_card()` method to define multiple skills:
+Add multiple skills to the `skills` array in `agent_card.json`:
 
-```python
-"skills": [
+```json
+{
+  "skills": [
     {
-        "id": "skill_1",
-        "name": "First Skill",
-        "description": "Does X",
-        "inputSchema": { ... }
+      "id": "skill_1",
+      "name": "First Skill",
+      "description": "Does X",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "input": {"type": "string"}
+        }
+      }
     },
     {
-        "id": "skill_2",
-        "name": "Second Skill",
-        "description": "Does Y",
-        "inputSchema": { ... }
+      "id": "skill_2",
+      "name": "Second Skill",
+      "description": "Does Y",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {"type": "number"}
+        }
+      }
     }
-]
+  ]
+}
 ```
 
-### 4. Add Custom Dependencies
+### 5. Add Custom Dependencies
 
 The template includes `prometheus_api` pre-installed from INL's GitHub Enterprise:
 
@@ -324,19 +368,20 @@ services:
         - HTTPS_PROXY=${HTTPS_PROXY}
         - NO_PROXY=${NO_PROXY}
     environment:
-      - AGENT_PORT=8000
+      - AGENT_PORT=8001  # Port the agent listens on (internal = external)
+      - AGENT_HOST=your-agent  # Service name for inter-agent communication
       - REGISTRY_URL=http://registry:8000
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
     ports:
-      - "8002:8000"
+      - "8001:8001"  # Same port internally and externally (recommended)
     depends_on:
       registry:
         condition: service_healthy
     networks:
       - agent-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=5.0)"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:${AGENT_PORT:-8001}/health', timeout=5.0)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -346,15 +391,87 @@ networks:
     driver: bridge
 ```
 
+### Port Configuration: Containerized vs Non-Containerized
+
+**The Conundrum:**
+
+This template supports both containerized (Docker) and non-containerized (local) deployments. The key decision is whether to use matching or different internal/external ports.
+
+**Recommended Approach: Matching Ports**
+
+Use the same port number inside and outside the container:
+```yaml
+environment:
+  - AGENT_PORT=8001
+ports:
+  - "8001:8001"  # Same port internally and externally
+```
+
+**Benefits:**
+- ✅ Consistent across containerized and non-containerized deployments
+- ✅ Agent card URL accurately reflects how to reach the agent
+- ✅ `AGENT_PORT` means the same thing everywhere
+- ✅ Simpler mental model
+
+**Alternative Approach: Fixed Internal Port**
+
+All agents use port 8000 internally, Docker maps to different external ports:
+```yaml
+environment:
+  - AGENT_PORT=8000
+ports:
+  - "8001:8000"  # Different external (8001) and internal (8000)
+```
+
+**Trade-offs:**
+- ⚠️ Agent card advertises `:8000` but external access uses `:8001`
+- ⚠️ Inconsistent with non-containerized mode
+- ✅ All containers use same internal port
+
+**Multi-Agent Example (Matching Ports):**
+```yaml
+services:
+  client-agent:
+    environment:
+      - AGENT_PORT=8000
+      - AGENT_HOST=client-agent
+    ports:
+      - "8000:8000"
+
+  plant-agent:
+    environment:
+      - AGENT_PORT=8001
+      - AGENT_HOST=plant-agent
+    ports:
+      - "8001:8001"
+
+  data-agent:
+    environment:
+      - AGENT_PORT=8002
+      - AGENT_HOST=data-agent
+    ports:
+      - "8002:8002"
+```
+
+Each agent advertises its actual reachable URL through its agent card.
+
 ## Environment Variables
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `AGENT_PORT` | Port to run on | `8000` | No |
+| `AGENT_PORT` | Port the agent listens on (use unique values per agent: 8000, 8001, etc.) | `8000` | Yes |
+| `AGENT_HOST` | Hostname for agent card URL (use Docker service name for containerized) | `localhost` | Yes |
 | `REGISTRY_URL` | Registry service URL | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy | - | No |
 | `HTTPS_PROXY` | HTTPS proxy | - | No |
 | `NO_PROXY` | Proxy bypass list | - | No |
+
+**Configuration Guidelines:**
+- **Local deployment**: `AGENT_PORT=8000`, `AGENT_HOST=localhost`
+- **Docker deployment**: `AGENT_PORT=8001`, `AGENT_HOST=your-agent` with `-p 8001:8001`
+- **Multi-agent**: Assign unique ports (8000, 8001, 8002, etc.) with matching Docker mappings
+
+The agent card advertises `http://{AGENT_HOST}:{AGENT_PORT}` for inter-agent communication.
 
 ## Enterprise Features
 

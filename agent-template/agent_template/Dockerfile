@@ -40,12 +40,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy agent code
 COPY agent.py .
 
-# Expose port (default: 8000)
+# Note: Port is configured via AGENT_PORT environment variable (default: 8000)
+# For multi-agent deployments, use unique ports per agent (8000, 8001, 8002, etc.)
+# with matching internal/external Docker port mappings (-p 8001:8001)
 EXPOSE 8000
 
-# Health check
+# Health check - uses AGENT_PORT if set, otherwise defaults to 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=5.0)" || exit 1
+    CMD python -c "import os, httpx; port = os.getenv('AGENT_PORT', '8000'); httpx.get(f'http://localhost:{port}/health', timeout=5.0)" || exit 1
 
 # Run the agent
 CMD ["python", "agent.py"]
