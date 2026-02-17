@@ -502,12 +502,83 @@ docker run -p 8000:8000 TEMPLATE_SLUG-agent
 curl http://localhost:8000/health
 ```
 
+## Security: Shared Secret Authentication
+
+### Overview
+
+All agents in a deployment share a secret token to prevent unauthorized access. This ensures users cannot access agents belonging to other users in multi-tenant environments.
+
+### Configuration
+
+1. **Generate a strong secret:**
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+2. **Set AGENT_SECRET for all agents:**
+   ```bash
+   # In .env file or environment
+   AGENT_SECRET=xK8mP2vR9jQ4nL7wT5bN3hD6fS1gA0cY8zE
+   ```
+
+3. **Use the same secret across all agents in your deployment**
+
+### How It Works
+
+- All incoming HTTP requests must include: `Authorization: Bearer <secret>`
+- Requests without valid Bearer token receive `401 Unauthorized`
+- Agents automatically add the Bearer token to outgoing requests (e.g., registry registration)
+- Health check endpoint (`/health`) and agent card (`/.well-known/agent.json`) are exempt from authentication
+
+### Docker Compose Example
+
+```yaml
+services:
+  client-agent:
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}  # Shared across all agents
+      - AGENT_PORT=8000
+
+  plant-agent:
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}  # Same secret
+      - AGENT_PORT=8001
+```
+
+### Best Practices
+
+- **Use a unique secret per deployment** - don't share secrets across user environments
+- **Keep secrets in environment variables** - never commit to version control
+- **Rotate secrets periodically** - update all agents simultaneously
+- **Use strong secrets** - minimum 32 characters, cryptographically random
+- **Disable authentication only for local development** - set `AGENT_SECRET_REQUIRED=false`
+
+### Security Notes
+
+- Bearer tokens are sent in HTTP headers (not encrypted by default)
+- Consider using HTTPS/TLS in production (or nginx proxy with TLS)
+- This prevents cross-user access but not man-in-the-middle attacks without TLS
+- For stronger security, deploy agents on isolated networks or use TLS
+
+### Development Mode (No Authentication)
+
+For local development, you can disable authentication:
+
+```bash
+# In .env file
+AGENT_SECRET_REQUIRED=false
+```
+
+This allows requests without Bearer tokens. **Never use this in production.**
+
 ## Environment Variables
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `AGENT_PORT` | Port the agent listens on (use unique values per agent: 8000, 8001, etc.) | `8000` | Yes |
 | `AGENT_HOST` | Hostname for agent card URL (use Docker service name for containerized deployments) | `localhost` | Yes |
+| `AGENT_SECRET` | Shared secret for Bearer token authentication (generate with secrets.token_urlsafe(32)) | - | Yes (production) |
+| `AGENT_SECRET_REQUIRED` | Whether to enforce authentication (set to 'false' only for local dev) | `true` | No |
 | `REGISTRY_URL` | URL of the agent registry | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy URL | - | No |
 | `HTTPS_PROXY` | HTTPS proxy URL | - | No |

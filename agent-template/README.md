@@ -9,6 +9,7 @@ This repository provides a production-ready template for building specialized AI
 ## Features
 
 - **A2A Protocol Support**: Full implementation of the Agent-to-Agent communication standard
+- **Shared Secret Authentication**: Built-in Bearer token authentication for multi-tenant security
 - **Prometheus API**: Pre-integrated with INL's prometheus_api package
 - **Progress Updates**: Built-in support for long-running tasks with incremental progress reporting
 - **Registry Integration**: Automatic registration with agent registry for service discovery
@@ -455,12 +456,75 @@ services:
 
 Each agent advertises its actual reachable URL through its agent card.
 
+## Security: Shared Secret Authentication
+
+### Overview
+
+The template includes built-in support for shared secret authentication using Bearer tokens. All agents in a deployment share the same secret, preventing unauthorized cross-user access in multi-tenant environments.
+
+### Quick Setup
+
+1. **Generate a strong secret:**
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+2. **Set the same secret for all agents:**
+   ```bash
+   # In your .env file or docker-compose.yml
+   AGENT_SECRET=your-generated-secret-here
+   ```
+
+3. **All agents will automatically:**
+   - Verify Bearer tokens on incoming requests
+   - Include Bearer tokens in outgoing requests (registry registration, inter-agent calls)
+   - Reject unauthorized requests with 401 Unauthorized
+
+### How It Works
+
+- **Incoming requests** must include: `Authorization: Bearer <secret>`
+- **Outgoing requests** automatically include the Bearer token header
+- **Health checks** (`/health`) and **agent cards** (`/.well-known/agent.json`) are exempt
+- **Development mode**: Set `AGENT_SECRET_REQUIRED=false` to disable authentication locally
+
+### Docker Compose Example
+
+```yaml
+services:
+  client-agent:
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}  # Shared across all agents
+      - AGENT_PORT=8000
+    ports:
+      - "8000:8000"
+
+  plant-agent:
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET}  # Same secret
+      - AGENT_PORT=8001
+    ports:
+      - "8001:8001"
+```
+
+### Security Best Practices
+
+- Use unique secrets per deployment (per user/environment)
+- Never commit secrets to version control
+- Use strong, cryptographically random secrets (32+ characters)
+- Rotate secrets periodically
+- Consider TLS/HTTPS in production for encryption in transit
+- Only disable authentication for local development
+
+For complete documentation, see the Security section in your agent's README after creation.
+
 ## Environment Variables
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `AGENT_PORT` | Port the agent listens on (use unique values per agent: 8000, 8001, etc.) | `8000` | Yes |
 | `AGENT_HOST` | Hostname for agent card URL (use Docker service name for containerized) | `localhost` | Yes |
+| `AGENT_SECRET` | Shared secret for Bearer token authentication (generate with secrets.token_urlsafe(32)) | - | Yes (production) |
+| `AGENT_SECRET_REQUIRED` | Whether to enforce authentication (set to 'false' only for local dev) | `true` | No |
 | `REGISTRY_URL` | Registry service URL | `http://registry:8000` | No |
 | `HTTP_PROXY` | HTTP proxy | - | No |
 | `HTTPS_PROXY` | HTTPS proxy | - | No |

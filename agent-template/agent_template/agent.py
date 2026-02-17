@@ -11,7 +11,13 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from a2a_sdk import AgentExecutor
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+import uvicorn
 import prometheus_api
 
 # Add shared directory to path
@@ -23,6 +29,78 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class BearerTokenMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to verify Bearer token authentication for A2A requests.
+
+    Validates that all incoming requests contain a valid Bearer token
+    in the Authorization header matching AGENT_SECRET environment variable.
+    """
+
+    def __init__(self, app, secret: str = None, required: bool = True):
+        super().__init__(app)
+        self.secret = secret or os.getenv("AGENT_SECRET")
+        self.required = required
+
+        if self.required and not self.secret:
+            logger.error("AGENT_SECRET is required but not configured")
+            raise ValueError("AGENT_SECRET environment variable must be set")
+
+        if not self.secret:
+            logger.warning("AGENT_SECRET not set - authentication is disabled")
+
+    async def dispatch(self, request, call_next):
+        # Skip authentication if not required
+        if not self.required or not self.secret:
+            return await call_next(request)
+
+        # Skip authentication for health check and agent card endpoints
+        if request.url.path in ["/health", "/.well-known/agent.json"]:
+            return await call_next(request)
+
+        # Extract Authorization header
+        auth_header = request.headers.get('authorization', '')
+
+        # Validate header exists and format is correct
+        if not auth_header:
+            logger.warning(f"Request to {request.url.path} missing Authorization header")
+            return self._unauthorized_response("Missing Authorization header")
+
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            logger.warning(f"Request to {request.url.path} has invalid Authorization format")
+            return self._unauthorized_response("Invalid Authorization format (expected: Bearer <token>)")
+
+        token = parts[1]
+
+        # Verify token matches secret
+        if token != self.secret:
+            logger.warning(f"Request to {request.url.path} has invalid token")
+            return self._unauthorized_response("Invalid token")
+
+        # Token is valid - attach to request state for potential downstream use
+        request.state.authenticated = True
+        request.state.token = token
+
+        # Proceed with request
+        return await call_next(request)
+
+    def _unauthorized_response(self, message: str) -> JSONResponse:
+        """Return 401 Unauthorized with JSON-RPC 2.0 error format"""
+        return JSONResponse(
+            status_code=401,
+            content={
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32600,
+                    'message': 'Invalid Request - Authentication Failed',
+                    'data': {'reason': message}
+                },
+                'id': None
+            }
+        )
 
 
 class TEMPLATE_CLASSExecutor(AgentExecutor):
@@ -255,9 +333,14 @@ def register_with_registry(agent_card: Dict[str, Any]) -> None:
     import httpx
 
     registry_url = os.getenv("REGISTRY_URL", "http://registry:8000")
+    agent_secret = os.getenv("AGENT_SECRET")
+
+    headers = {}
+    if agent_secret:
+        headers["Authorization"] = f"Bearer {agent_secret}"
 
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, headers=headers) as client:
             response = client.post(
                 f"{registry_url}/agents/register",
                 json=agent_card
@@ -272,8 +355,6 @@ def register_with_registry(agent_card: Dict[str, Any]) -> None:
 
 def main():
     """Main entry point for the agent."""
-    from a2a_sdk.http_server import start_http_server
-
     logger.info("Starting TEMPLATE_NAME Agent")
 
     # Create agent card
@@ -282,6 +363,34 @@ def main():
     # Create executor
     executor = TEMPLATE_CLASSExecutor()
 
+    # Create request handler
+    request_handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=InMemoryTaskStore()
+    )
+
+    # Create A2A application builder
+    builder = A2AStarletteApplication(
+        agent_card=agent_card,
+        http_handler=request_handler
+    )
+
+    # Build the Starlette app
+    app = builder.build()
+
+    # Add Bearer token authentication middleware
+    agent_secret = os.getenv("AGENT_SECRET")
+    agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
+
+    if agent_secret or agent_secret_required:
+        app.add_middleware(BearerTokenMiddleware, secret=agent_secret, required=agent_secret_required)
+        if agent_secret:
+            logger.info("Bearer token authentication enabled")
+        else:
+            logger.warning("AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled")
+    else:
+        logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
+
     # Register with registry
     register_with_registry(agent_card)
 
@@ -289,12 +398,7 @@ def main():
     port = int(os.getenv("AGENT_PORT", "8000"))
     logger.info(f"Starting HTTP server on port {port}")
 
-    start_http_server(
-        executor=executor,
-        agent_card=agent_card,
-        port=port,
-        host="0.0.0.0"
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
