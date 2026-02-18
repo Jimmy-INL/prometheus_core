@@ -361,9 +361,11 @@ class TestRelationships:
 
     def test_create_relationship(self, client, test_items):
         """Test creating a relationship between items."""
+        # Use items 0 and 1 for this test
         item1 = test_items[0]
         item2 = test_items[1]
 
+        rel_id = None
         try:
             rel = client.relationships.create(RelationshipCreate(
                 from_item_id=item1.id,
@@ -374,38 +376,60 @@ class TestRelationships:
                     "_test_run_id": TEST_RUN_ID
                 }
             ))
+            rel_id = rel.id
 
             assert rel.id is not None
             assert rel.from_item_id == item1.id
             assert rel.to_item_id == item2.id
 
-            # Cleanup
-            client.relationships.delete(rel.id)
         except Exception as e:
             pytest.skip(f"Relationships not available or configured: {e}")
+        finally:
+            # Always attempt cleanup
+            if rel_id:
+                try:
+                    client.relationships.delete(rel_id)
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup relationship {rel_id}: {cleanup_error}")
 
     def test_get_item_relationships(self, client, test_items):
         """Test retrieving relationships for an item."""
-        item1 = test_items[0]
-        item2 = test_items[1]
+        # Use items 2 and 3 for this test (different from test_create_relationship)
+        # This avoids constraint violations from DeepLynx's unique edge constraint
+        item1 = test_items[2]
+        item2 = test_items[3]
 
+        rel_id = None
         try:
             # Create a relationship
             rel = client.relationships.create(RelationshipCreate(
                 from_item_id=item1.id,
                 to_item_id=item2.id,
-                relationship_type="test_link"
+                relationship_type="test_link",
+                properties={
+                    "_test_suite_marker": TEST_MARKER,
+                    "_test_run_id": TEST_RUN_ID
+                }
             ))
+            rel_id = rel.id
 
             # Get relationships for item1
             rels = client.relationships.get_item_relationships(item1.id)
 
             assert len(rels) > 0
+            # Verify our relationship is in the list
+            rel_ids = [r.id for r in rels]
+            assert rel.id in rel_ids
 
-            # Cleanup
-            client.relationships.delete(rel.id)
         except Exception as e:
             pytest.skip(f"Relationships not available: {e}")
+        finally:
+            # Always attempt cleanup
+            if rel_id:
+                try:
+                    client.relationships.delete(rel_id)
+                except Exception as cleanup_error:
+                    print(f"Warning: Failed to cleanup relationship {rel_id}: {cleanup_error}")
 
 
 class TestCleanup:
