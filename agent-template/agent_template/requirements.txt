@@ -10,5 +10,5 @@ httpx>=0.26.0
 # ASGI server
 uvicorn[standard]>=0.27.0
 
-# Prometheus API
-git+https://github.inl.gov/genesis/prometheus_api.git
+# Prometheus API (with agent extras for Bearer token middleware)
+git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]

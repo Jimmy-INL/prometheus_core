@@ -4,12 +4,12 @@ A2A-enabled agent template for building specialized agents.
 
 ## Overview
 
-This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communicate with other agents in a multi-agent system. It includes prometheus_api integration and can be easily customized for your specific use case.
+This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communicate with other agents in a multi-agent system. It includes INL's storage client and agent utilities, and can be easily customized for your specific use case.
 
 ## Features
 
 - **A2A Protocol**: Full implementation of Agent-to-Agent communication standard
-- **Prometheus API**: Pre-integrated with INL's prometheus_api package
+- **Storage Client & Agent Utils**: Pre-integrated with INL's storage_client and agent packages
 - **Progress Updates**: Built-in support for long-running tasks with incremental progress reporting
 - **Registry Integration**: Automatic registration with agent registry for discovery
 - **Docker Support**: Complete containerization with health checks
@@ -330,8 +330,8 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
     # Extract your parameters
     input_data = params.get("input_data")
 
-    # Use prometheus_api or your custom logic
-    result = prometheus_api.some_function(input_data)
+    # Use storage_client or your custom logic
+    result = StorageClient().items.get(input_data)
 
     # Add metadata
     result.update({
@@ -409,11 +409,12 @@ The agent loads this configuration at startup and advertises these skills to the
 
 ### 7. Add Custom Dependencies
 
-The template includes `prometheus_api` pre-installed:
+The template includes `prometheus_api` with storage client and agent utilities pre-installed:
 
 ```python
 # Already available in the template
-import prometheus_api
+from prometheus_api.storage_client import StorageClient
+from prometheus_api.agent.middleware import BearerTokenMiddleware
 ```
 
 If your agent needs additional Python packages, add them to `requirements.txt`:

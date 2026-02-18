@@ -1,6 +1,6 @@
 # Prometheus Agent Template
 
-A comprehensive template for creating A2A (Agent-to-Agent) enabled agents using the A2A SDK and prometheus_api.
+A comprehensive template for creating A2A (Agent-to-Agent) enabled agents using the A2A SDK with INL's storage client and agent utilities.
 
 ## Overview
 
@@ -10,7 +10,7 @@ This repository provides a production-ready template for building specialized AI
 
 - **A2A Protocol Support**: Full implementation of the Agent-to-Agent communication standard
 - **Shared Secret Authentication**: Built-in Bearer token authentication for multi-tenant security
-- **Prometheus API**: Pre-integrated with INL's prometheus_api package
+- **Storage Client & Agent Utils**: Pre-integrated with INL's storage_client and agent packages
 - **Progress Updates**: Built-in support for long-running tasks with incremental progress reporting
 - **Registry Integration**: Automatic registration with agent registry for service discovery
 - **Docker Ready**: Complete containerization with health checks and enterprise features
@@ -201,8 +201,8 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
     # Extract your custom parameters
     my_param = params.get("my_param")
 
-    # Use prometheus_api or your custom logic
-    result = prometheus_api.some_function(my_param)
+    # Use storage_client or your custom logic
+    result = StorageClient().items.get(my_param)
 
     return result
 ```
@@ -265,11 +265,12 @@ Add multiple skills to the `skills` array in `agent_card.json`:
 
 ### 5. Add Custom Dependencies
 
-The template includes `prometheus_api` pre-installed from INL's GitHub Enterprise:
+The template includes `prometheus_api` with storage client and agent utilities pre-installed from INL's GitHub Enterprise:
 
 ```python
 # Already available in the template
-import prometheus_api
+from prometheus_api.storage_client import StorageClient
+from prometheus_api.agent.middleware import BearerTokenMiddleware
 ```
 
 Add any additional Python packages to `requirements.txt`:
@@ -299,7 +300,7 @@ The template implements a standard A2A agent architecture:
          │
          ▼
 ┌─────────────────┐
-│ Prometheus API  │
+│ Storage Client  │
 │ (Your Logic)    │
 └─────────────────┘
 ```
@@ -309,7 +310,7 @@ The template implements a standard A2A agent architecture:
 1. **AgentExecutor**: Handles A2A protocol communication and message routing
 2. **Agent Card**: Describes the agent's capabilities and skills
 3. **Registry Integration**: Automatic registration for service discovery
-4. **Prometheus API**: Pre-integrated for data processing and analysis
+4. **Storage Client & Agent Utils**: Pre-integrated for data processing and agent utilities
 5. **Progress Updates**: Event queue for real-time status and progress reporting
 
 ## A2A Protocol

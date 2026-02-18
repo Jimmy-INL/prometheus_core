@@ -15,10 +15,9 @@ from a2a.server.agent_execution import AgentExecutor
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from prometheus_api.agent.middleware import BearerTokenMiddleware
+from prometheus_api.storage_client import StorageClient  # Example - use as needed
 import uvicorn
-import prometheus_api
 
 # Add shared directory to path
 sys.path.insert(0, "/app")
@@ -29,78 +28,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-class BearerTokenMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to verify Bearer token authentication for A2A requests.
-
-    Validates that all incoming requests contain a valid Bearer token
-    in the Authorization header matching AGENT_SECRET environment variable.
-    """
-
-    def __init__(self, app, secret: str = None, required: bool = True):
-        super().__init__(app)
-        self.secret = secret or os.getenv("AGENT_SECRET")
-        self.required = required
-
-        if self.required and not self.secret:
-            logger.error("AGENT_SECRET is required but not configured")
-            raise ValueError("AGENT_SECRET environment variable must be set")
-
-        if not self.secret:
-            logger.warning("AGENT_SECRET not set - authentication is disabled")
-
-    async def dispatch(self, request, call_next):
-        # Skip authentication if not required
-        if not self.required or not self.secret:
-            return await call_next(request)
-
-        # Skip authentication for health check and agent card endpoints
-        if request.url.path in ["/health", "/.well-known/agent.json"]:
-            return await call_next(request)
-
-        # Extract Authorization header
-        auth_header = request.headers.get('authorization', '')
-
-        # Validate header exists and format is correct
-        if not auth_header:
-            logger.warning(f"Request to {request.url.path} missing Authorization header")
-            return self._unauthorized_response("Missing Authorization header")
-
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != 'bearer':
-            logger.warning(f"Request to {request.url.path} has invalid Authorization format")
-            return self._unauthorized_response("Invalid Authorization format (expected: Bearer <token>)")
-
-        token = parts[1]
-
-        # Verify token matches secret
-        if token != self.secret:
-            logger.warning(f"Request to {request.url.path} has invalid token")
-            return self._unauthorized_response("Invalid token")
-
-        # Token is valid - attach to request state for potential downstream use
-        request.state.authenticated = True
-        request.state.token = token
-
-        # Proceed with request
-        return await call_next(request)
-
-    def _unauthorized_response(self, message: str) -> JSONResponse:
-        """Return 401 Unauthorized with JSON-RPC 2.0 error format"""
-        return JSONResponse(
-            status_code=401,
-            content={
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32600,
-                    'message': 'Invalid Request - Authentication Failed',
-                    'data': {'reason': message}
-                },
-                'id': None
-            }
-        )
 
 
 class TEMPLATE_CLASSExecutor(AgentExecutor):
@@ -217,8 +144,8 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
         # ============================================================
         # CUSTOMIZE THIS SECTION FOR YOUR AGENT'S LOGIC
         # ============================================================
-        # Example: Use prometheus_api to process the data
-        # result = prometheus_api.some_function(input_data)
+        # Example: Use storage_client to process the data
+        # result = StorageClient().items.get(input_data)
 
         # For now, return a placeholder result
         result = {
