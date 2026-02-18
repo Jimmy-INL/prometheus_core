@@ -33,18 +33,25 @@ class SearchResource(BaseResource):
             ```
         """
         params = {
-            "query": query,
-            "page": page,
-            "limit": page_size,
+            "userQuery": query,
+            "projectIds": [self._client.config.project_id],
         }
 
         response = self._client._request(
             "GET",
-            f"/organizations/{self._client.config.organization_id}/query",
+            f"/organizations/{self._client.config.organization_id}/query/records",
             params=params
         )
 
-        return self._parse_search_results(response.json(), page, page_size)
+        data = response.json()
+
+        # API returns list directly
+        if isinstance(data, list):
+            items = data
+        else:
+            items = data.get("records", [])
+
+        return self._parse_search_results(items, page, page_size)
 
     def advanced_query(
         self,
@@ -153,26 +160,40 @@ class SearchResource(BaseResource):
         )
 
         data = response.json()
-        return [self._parse_item(item_data) for item_data in data.get("records", [])]
+
+        # API may return list directly or wrapped in dict
+        if isinstance(data, list):
+            items = data
+        else:
+            items = data.get("records", [])
+
+        return [self._parse_item(item_data) for item_data in items]
 
     def _parse_search_results(
         self,
-        data: Dict[str, Any],
+        data: Any,
         page: int,
         page_size: int
     ) -> Page[Item]:
         """Parse search results into a Page object.
 
         Args:
-            data: Raw API response data
+            data: Raw API response data (list or dict)
             page: Current page number
             page_size: Page size
 
         Returns:
             Paginated results
         """
-        items = [self._parse_item(item_data) for item_data in data.get("records", [])]
-        total_count = data.get("total", len(items))
+        # Handle both list and dict responses
+        if isinstance(data, list):
+            item_list = data
+            total_count = len(data)
+        else:
+            item_list = data.get("records", [])
+            total_count = data.get("total", len(item_list))
+
+        items = [self._parse_item(item_data) for item_data in item_list]
 
         page_info = PageInfo(
             page_number=page,
@@ -198,6 +219,7 @@ class SearchResource(BaseResource):
         """
         from ..models.item import Tag
         from datetime import datetime
+        import json as json_lib
 
         # Parse timestamp
         timestamp_str = data.get("lastUpdatedAt")
@@ -209,16 +231,37 @@ class SearchResource(BaseResource):
         else:
             timestamp = datetime.now()
 
+        # Parse properties (API returns as JSON string)
+        properties = data.get("properties", {})
+        if isinstance(properties, str):
+            try:
+                properties = json_lib.loads(properties)
+            except:
+                properties = {}
+
+        # Parse tags (API returns as JSON string)
+        tags_data = data.get("tags")
+        tags = []
+        if tags_data:
+            if isinstance(tags_data, str):
+                try:
+                    tags_list = json_lib.loads(tags_data)
+                    tags = [Tag(id=t.get("id"), name=t.get("name", "")) for t in tags_list]
+                except:
+                    tags = []
+            elif isinstance(tags_data, list):
+                tags = [Tag(id=t.get("id"), name=t.get("name", "")) for t in tags_data]
+
         return Item(
             id=data["id"],
             name=data.get("name", ""),
             description=data.get("description"),
-            properties=data.get("properties", {}),
+            properties=properties,
             class_id=data.get("classId"),
-            original_id=data.get("originalId") or data.get("originalDataId"),
+            original_id=data.get("originalId"),
             created_at=timestamp,
             updated_at=timestamp,
-            tags=[Tag(id=t.get("id"), name=t["name"]) for t in data.get("tags", [])],
+            tags=tags,
             metatype_id=data.get("classId"),
             metatype_name=data.get("className"),
             data_source_id=data.get("dataSourceId"),

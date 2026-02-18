@@ -338,7 +338,9 @@ class TestSearch:
             assert results.items is not None
             assert results.page_info is not None
         except Exception as e:
-            pytest.skip(f"Search not available or configured: {e}")
+            # Search endpoints return 404 on this DeepLynx instance
+            # This is expected if search functionality is not enabled/configured
+            pytest.skip(f"Search endpoint not available on this DeepLynx instance: {e}")
 
     def test_search_recent(self, client, test_items):
         """Test getting recent items."""
