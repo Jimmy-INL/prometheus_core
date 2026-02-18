@@ -123,7 +123,7 @@ The `test_cleanup_orphaned_items` test finds and deletes test items from previou
 ```bash
 # Check for remaining test items
 python << 'EOF'
-from storage_client import ConnectionConfig, StorageClient
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
 config = ConnectionConfig.from_env()
 with StorageClient(config) as client:
     recent = client.search.recent(limit=50)
@@ -229,7 +229,7 @@ def test_my_feature(client, test_items):
 ```python
 def test_my_model():
     """Test model creation."""
-    from storage_client import ItemCreate
+    from prometheus_api.storage_client import ItemCreate
 
     item = ItemCreate(
         name="Test",

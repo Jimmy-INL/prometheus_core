@@ -6,7 +6,7 @@ the real .env file in the project root.
 
 import pytest
 from pathlib import Path
-from storage_client import ConnectionConfig
+from prometheus_api.storage_client import ConnectionConfig
 
 
 def test_from_env_with_explicit_file(tmp_path):

@@ -8,7 +8,7 @@ import pytest
 import time
 from pathlib import Path
 from datetime import datetime
-from storage_client import (
+from prometheus_api.storage_client import (
     ConnectionConfig,
     StorageClient,
     ItemCreate,

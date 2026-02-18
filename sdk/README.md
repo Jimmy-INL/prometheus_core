@@ -34,7 +34,7 @@ pip install -e .
 ### Synchronous Usage
 
 ```python
-from storage_client import StorageClient, ConnectionConfig, ItemCreate
+from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate
 from pathlib import Path
 
 # Configure connection
@@ -82,7 +82,7 @@ with StorageClient(config) as client:
 
 ```python
 import asyncio
-from storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
+from prometheus_api.storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
 
 async def main():
     config = ConnectionConfig(
@@ -132,7 +132,7 @@ Your `.env` file must contain:
 
 3. **Load configuration from environment**:
 ```python
-from storage_client import ConnectionConfig, StorageClient
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
 
 # Automatically loads from .env file
 config = ConnectionConfig.from_env()
@@ -160,7 +160,7 @@ with StorageClient(config) as client:
 The `ConnectionConfig` class supports multiple configuration options:
 
 ```python
-from storage_client import ConnectionConfig
+from prometheus_api.storage_client import ConnectionConfig
 
 # Using API key authentication
 config = ConnectionConfig(
@@ -319,7 +319,7 @@ results = client.timeseries.query(
 The library provides custom exceptions for different error scenarios:
 
 ```python
-from storage_client.exceptions import (
+from prometheus_api.storage_client.exceptions import (
     StorageClientError,      # Base exception
     AuthenticationError,     # Authentication failures
     ItemNotFoundError,       # Item not found (404)

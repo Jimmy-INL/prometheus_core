@@ -27,7 +27,7 @@ cp .env.example .env
 ## Basic Usage (30 seconds)
 
 ```python
-from storage_client import StorageClient, ConnectionConfig, ItemCreate
+from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate
 
 # 1. Configure connection (from .env file)
 config = ConnectionConfig.from_env()
@@ -105,7 +105,7 @@ client.files.delete(123)
 ### Relationships
 
 ```python
-from storage_client import RelationshipCreate
+from prometheus_api.storage_client import RelationshipCreate
 
 # Create relationship
 rel = client.relationships.create(RelationshipCreate(
@@ -152,7 +152,7 @@ recent = client.search.recent(limit=50)
 ## Async Usage
 
 ```python
-from storage_client import AsyncStorageClient
+from prometheus_api.storage_client import AsyncStorageClient
 import asyncio
 
 async def main():
@@ -209,7 +209,7 @@ config = ConnectionConfig(
 ## Error Handling
 
 ```python
-from storage_client.exceptions import (
+from prometheus_api.storage_client.exceptions import (
     ItemNotFoundError,
     AuthenticationError,
     ValidationError,

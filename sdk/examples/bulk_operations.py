@@ -1,6 +1,6 @@
 """Bulk operations example for the storage client library."""
 
-from storage_client import (
+from prometheus_api.storage_client import (
     StorageClient,
     ConnectionConfig,
     ItemCreate,

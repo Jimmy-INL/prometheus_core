@@ -1,6 +1,6 @@
 """Example of using environment variables for configuration."""
 
-from storage_client import ConnectionConfig, StorageClient, ItemCreate
+from prometheus_api.storage_client import ConnectionConfig, StorageClient, ItemCreate
 from pathlib import Path
 
 

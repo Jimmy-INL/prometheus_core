@@ -25,7 +25,7 @@ Add your credentials to the `.env` file:
 
 4. **Use in your code:**
 ```python
-from storage_client import ConnectionConfig, StorageClient
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
 
 # Automatically loads from .env
 config = ConnectionConfig.from_env()
@@ -74,7 +74,7 @@ DEEPLYNX_VERIFY_SSL=true     # SSL certificate verification
 ### 1. Load from Default .env File
 
 ```python
-from storage_client import ConnectionConfig
+from prometheus_api.storage_client import ConnectionConfig
 
 # Loads from .env in current directory
 config = ConnectionConfig.from_env()

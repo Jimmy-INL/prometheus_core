@@ -254,7 +254,7 @@ Backend (DeepLynx) → Generic (Storage Client):
 
 ### Synchronous
 ```python
-from storage_client import StorageClient, ConnectionConfig, ItemCreate
+from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate
 
 config = ConnectionConfig(
     organization_id=123,
@@ -274,7 +274,7 @@ with StorageClient(config) as client:
 
 ### Asynchronous
 ```python
-from storage_client import AsyncStorageClient, ConnectionConfig
+from prometheus_api.storage_client import AsyncStorageClient, ConnectionConfig
 
 async with AsyncStorageClient(config) as client:
     items = await client.items.bulk_create([...])

@@ -100,7 +100,7 @@ pip-sync requirements.txt
 After installation, verify it works:
 
 ```python
-python -c "import storage_client; print(f'Version: {storage_client.__version__}')"
+python -c "import prometheus_api.storage_client; print(f'Version: {storage_client.__version__}')"
 ```
 
 Or run the verification script (if cloned):
@@ -207,7 +207,7 @@ DEEPLYNX_PROJECT_ID=32
 
 2. **Use the library:**
 ```python
-from storage_client import ConnectionConfig, StorageClient, ItemCreate
+from prometheus_api.storage_client import ConnectionConfig, StorageClient, ItemCreate
 
 config = ConnectionConfig.from_env()
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """List available data sources for the project."""
 
-from storage_client import ConnectionConfig
+from prometheus_api.storage_client import ConnectionConfig
 import httpx
 import json
 

@@ -10,7 +10,7 @@ def test_imports():
 
     try:
         # Core imports
-        from storage_client import (
+        from prometheus_api.storage_client import (
             StorageClient,
             AsyncStorageClient,
             ConnectionConfig,
@@ -18,7 +18,7 @@ def test_imports():
         print("✓ Core clients imported successfully")
 
         # Model imports
-        from storage_client import (
+        from prometheus_api.storage_client import (
             Item,
             ItemCreate,
             ItemUpdate,
@@ -33,7 +33,7 @@ def test_imports():
         print("✓ Data models imported successfully")
 
         # Exception imports
-        from storage_client import (
+        from prometheus_api.storage_client import (
             StorageClientError,
             AuthenticationError,
             ItemNotFoundError,
@@ -54,7 +54,7 @@ def test_configuration():
     print("\nTesting configuration...")
 
     try:
-        from storage_client import ConnectionConfig
+        from prometheus_api.storage_client import ConnectionConfig
 
         # Test API key auth
         config1 = ConnectionConfig(
@@ -97,8 +97,8 @@ def test_models():
     print("\nTesting models...")
 
     try:
-        from storage_client import ItemCreate, ItemUpdate, RelationshipCreate
-        from storage_client.models.pagination import PageInfo
+        from prometheus_api.storage_client import ItemCreate, ItemUpdate, RelationshipCreate
+        from prometheus_api.storage_client.models.pagination import PageInfo
 
         # Test ItemCreate
         item = ItemCreate(
@@ -150,7 +150,7 @@ def test_exceptions():
     print("\nTesting exceptions...")
 
     try:
-        from storage_client.exceptions import (
+        from prometheus_api.storage_client.exceptions import (
             ItemNotFoundError,
             ValidationError,
             APIError

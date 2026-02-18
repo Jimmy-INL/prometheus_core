@@ -126,7 +126,7 @@ vim .env  # Add credentials
 
 **Usage:**
 ```python
-from storage_client import ConnectionConfig
+from prometheus_api.storage_client import ConnectionConfig
 
 config = ConnectionConfig.from_env()  # That's it!
 ```
@@ -157,7 +157,7 @@ config = ConnectionConfig.from_env()  # That's it!
 ## Quick Start
 
 ```python
-from storage_client import (
+from prometheus_api.storage_client import (
     ConnectionConfig,
     StorageClient,
     ItemCreate
@@ -182,7 +182,7 @@ with StorageClient(config) as client:
     print(f"Name: {retrieved.name}")
 
     # Update it
-    from storage_client import ItemUpdate
+    from prometheus_api.storage_client import ItemUpdate
     updated = client.items.update(
         item.id,
         ItemUpdate(properties={"key": "new_value"})
@@ -315,7 +315,7 @@ pip install -r requirements.txt
 python test_connection.py
 
 # 4. Use in your code
-from storage_client import ConnectionConfig, StorageClient
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
 config = ConnectionConfig.from_env()
 with StorageClient(config) as client:
     items = client.items.list()

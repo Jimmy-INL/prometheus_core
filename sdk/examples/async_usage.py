@@ -1,7 +1,7 @@
 """Asynchronous usage example for the storage client library."""
 
 import asyncio
-from storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
+from prometheus_api.storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
 
 
 async def main():

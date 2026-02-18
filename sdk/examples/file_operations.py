@@ -1,6 +1,6 @@
 """File upload/download example for the storage client library."""
 
-from storage_client import StorageClient, ConnectionConfig, ItemCreate, RelationshipCreate
+from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate, RelationshipCreate
 from pathlib import Path
 import tempfile
 import shutil

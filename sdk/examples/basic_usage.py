@@ -1,6 +1,6 @@
 """Basic usage example for the storage client library."""
 
-from storage_client import StorageClient, ConnectionConfig, ItemCreate, ItemUpdate
+from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate, ItemUpdate
 
 def main():
     # Configure connection from .env file
@@ -66,7 +66,7 @@ def main():
         ))
 
         # Create relationship
-        from storage_client import RelationshipCreate
+        from prometheus_api.storage_client import RelationshipCreate
         rel = client.relationships.create(RelationshipCreate(
             from_item_id=item.id,
             to_item_id=item2.id,

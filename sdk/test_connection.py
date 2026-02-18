@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Test script to verify connection and basic operations."""
 
-from storage_client import ConnectionConfig, StorageClient, ItemCreate
+from prometheus_api.storage_client import ConnectionConfig, StorageClient, ItemCreate
 from pathlib import Path
 
 def main():

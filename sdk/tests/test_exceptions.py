@@ -1,7 +1,7 @@
 """Tests for custom exceptions."""
 
 import pytest
-from storage_client.exceptions import (
+from prometheus_api.storage_client.exceptions import (
     StorageClientError,
     AuthenticationError,
     ItemNotFoundError,
