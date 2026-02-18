@@ -6,11 +6,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="storage-client",
+    name="prometheus-api",
     version="0.1.0",
     author="INL Genesis",
     author_email="daniel.schwen@inl.gov",
-    description="A generic storage client library abstracting backend implementation details",
+    description="Storage client and agent utilities for building A2A multi-agent systems",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.inl.gov/genesis/prometheus_api",
@@ -34,6 +34,9 @@ setup(
         "python-dotenv>=1.0.0",
     ],
     extras_require={
+        "agent": [
+            "starlette>=0.27.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
