@@ -208,8 +208,17 @@ def create_agent(replacements: Dict[str, str]) -> None:
 
     # Process all files in template
     for file_path in template_dir.rglob('*'):
-        if file_path.is_file() and not file_path.name.startswith('.'):
-            process_file(file_path, replacements, output_dir)
+        # Skip directories, hidden files, and Python cache files
+        if not file_path.is_file():
+            continue
+        if file_path.name.startswith('.'):
+            continue
+        if '__pycache__' in file_path.parts:
+            continue
+        if file_path.suffix in ['.pyc', '.pyo', '.pyd', '.so', '.dll']:
+            continue
+
+        process_file(file_path, replacements, output_dir)
 
     print()
     print("="*70)
