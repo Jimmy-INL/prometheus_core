@@ -15,8 +15,8 @@ class FileMetadata(BaseModel):
     file_type: Optional[str] = Field(None, description="MIME type of the file")
     size: Optional[int] = Field(None, description="File size in bytes")
     uri: Optional[str] = Field(None, description="File URI/location")
-    created_at: datetime = Field(..., description="Upload timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
+    created_at: Optional[datetime] = Field(None, description="Upload timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
     model_config = {
         "from_attributes": True

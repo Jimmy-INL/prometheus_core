@@ -13,7 +13,7 @@ class AsyncRelationshipsResource(AsyncBaseResource):
         payload = {
             "origin_id": relationship.from_item_id,
             "destination_id": relationship.to_item_id,
-            "relationship_type": relationship.relationship_type,
+            "name": relationship.relationship_type,  # API expects 'name' field
             "properties": relationship.properties,
         }
 
@@ -28,7 +28,13 @@ class AsyncRelationshipsResource(AsyncBaseResource):
             params=params
         )
 
-        return self._parse_relationship(response.json())
+        data = response.json()
+
+        # Some DeepLynx endpoints wrap response in 'value' field
+        if isinstance(data, dict) and "value" in data:
+            data = data["value"]
+
+        return self._parse_relationship(data)
 
     async def get(self, relationship_id: int) -> Relationship:
         """Get a relationship by ID asynchronously."""
@@ -37,7 +43,13 @@ class AsyncRelationshipsResource(AsyncBaseResource):
             f"{self._base_path}/edges/{relationship_id}"
         )
 
-        return self._parse_relationship(response.json())
+        data = response.json()
+
+        # Some DeepLynx endpoints wrap response in 'value' field
+        if isinstance(data, dict) and "value" in data:
+            data = data["value"]
+
+        return self._parse_relationship(data)
 
     async def delete(self, relationship_id: int) -> None:
         """Delete a relationship asynchronously."""
@@ -52,7 +64,7 @@ class AsyncRelationshipsResource(AsyncBaseResource):
             {
                 "origin_id": rel.from_item_id,
                 "destination_id": rel.to_item_id,
-                "relationship_type": rel.relationship_type,
+                "name": rel.relationship_type,  # API expects 'name' field
                 "properties": rel.properties,
             }
             for rel in relationships
@@ -70,7 +82,14 @@ class AsyncRelationshipsResource(AsyncBaseResource):
         )
 
         data = response.json()
-        return [self._parse_relationship(rel_data) for rel_data in data.get("edges", [])]
+
+        # API may return edges directly as a list or wrapped in a dict
+        if isinstance(data, list):
+            edges = data
+        else:
+            edges = data.get("edges", [])
+
+        return [self._parse_relationship(rel_data) for rel_data in edges]
 
     async def get_item_relationships(
         self,
@@ -78,9 +97,24 @@ class AsyncRelationshipsResource(AsyncBaseResource):
         direction: Optional[str] = None
     ) -> List[Relationship]:
         """Get all relationships for an item asynchronously."""
-        params = {}
-        if direction:
-            params["direction"] = direction
+        # If direction not specified, get both outgoing and incoming
+        if direction is None:
+            outgoing = await self.get_item_relationships(item_id, "outgoing")
+            incoming = await self.get_item_relationships(item_id, "incoming")
+            return outgoing + incoming
+
+        params = {
+            "page": 1,
+            "pageSize": 100,  # Maximum allowed by DeepLynx API
+        }
+
+        # Map direction to isOrigin boolean
+        # outgoing: this item is the origin (isOrigin=true)
+        # incoming: this item is the destination (isOrigin=false)
+        if direction == "outgoing":
+            params["isOrigin"] = "true"
+        elif direction == "incoming":
+            params["isOrigin"] = "false"
 
         response = await self._client._request(
             "GET",
@@ -89,7 +123,42 @@ class AsyncRelationshipsResource(AsyncBaseResource):
         )
 
         data = response.json()
-        return [self._parse_relationship(rel_data) for rel_data in data.get("edges", [])]
+
+        # API may return edges directly as a list or wrapped in a dict
+        if isinstance(data, list):
+            edges = data
+        else:
+            edges = data.get("edges", [])
+
+        # Parse relationships, handling different response formats
+        relationships = []
+        for rel_data in edges:
+            # Check if this is the simplified format (from list endpoint)
+            if "relatedRecordId" in rel_data:
+                # Simplified format: reconstruct full relationship
+                if direction == "outgoing":
+                    from_id = item_id
+                    to_id = rel_data.get("relatedRecordId")
+                else:  # incoming
+                    from_id = rel_data.get("relatedRecordId")
+                    to_id = item_id
+
+                relationships.append(Relationship(
+                    id=rel_data.get("id", 0),
+                    from_item_id=from_id,
+                    to_item_id=to_id,
+                    relationship_type=rel_data.get("name", ""),
+                    properties=rel_data.get("properties", {}),
+                    created_at=rel_data.get("createdAt"),
+                    updated_at=rel_data.get("lastUpdatedAt"),
+                    relationship_pair_id=rel_data.get("relationshipId"),
+                    data_source_id=rel_data.get("dataSourceId"),
+                ))
+            else:
+                # Full format: use standard parser
+                relationships.append(self._parse_relationship(rel_data))
+
+        return relationships
 
     async def get_item_graph(
         self,
@@ -106,15 +175,39 @@ class AsyncRelationshipsResource(AsyncBaseResource):
         return response.json()
 
     def _parse_relationship(self, data: Dict[str, Any]) -> Relationship:
-        """Parse API response data into a Relationship model."""
+        """Parse API response data into a Relationship model.
+
+        Note:
+            created_at and updated_at are optional as some DeepLynx
+            deployments may not return these fields.
+
+        Raises:
+            ValueError: If required fields are missing from API response
+        """
+        # DeepLynx API returns camelCase field names per API docs
+        from_item_id = data.get("originId")
+        to_item_id = data.get("destinationId")
+
+        # Validate required fields
+        if from_item_id is None or to_item_id is None:
+            import json
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to parse relationship - missing node IDs. Response data: {json.dumps(data, indent=2)}")
+            raise ValueError(
+                f"API response missing required node ID fields. "
+                f"Response keys: {list(data.keys())}. "
+                f"Expected 'originId' and 'destinationId'."
+            )
+
         return Relationship(
             id=data["id"],
-            from_item_id=data.get("origin_id"),
-            to_item_id=data.get("destination_id"),
-            relationship_type=data.get("relationship_type", ""),
+            from_item_id=from_item_id,
+            to_item_id=to_item_id,
+            relationship_type=data.get("name", ""),
             properties=data.get("properties", {}),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
-            relationship_pair_id=data.get("relationship_pair_id"),
-            data_source_id=data.get("data_source_id"),
+            created_at=data.get("createdAt"),
+            updated_at=data.get("lastUpdatedAt"),
+            relationship_pair_id=data.get("relationshipId"),
+            data_source_id=data.get("dataSourceId"),
         )

@@ -192,20 +192,34 @@ class SearchResource(BaseResource):
 
         Returns:
             Parsed Item object
+
+        Note:
+            DeepLynx API returns camelCase field names.
         """
         from ..models.item import Tag
+        from datetime import datetime
+
+        # Parse timestamp
+        timestamp_str = data.get("lastUpdatedAt")
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except:
+                timestamp = datetime.now()
+        else:
+            timestamp = datetime.now()
 
         return Item(
             id=data["id"],
             name=data.get("name", ""),
             description=data.get("description"),
             properties=data.get("properties", {}),
-            class_id=data.get("metatype_id"),
-            original_id=data.get("original_data_id"),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
+            class_id=data.get("classId"),
+            original_id=data.get("originalId") or data.get("originalDataId"),
+            created_at=timestamp,
+            updated_at=timestamp,
             tags=[Tag(id=t.get("id"), name=t["name"]) for t in data.get("tags", [])],
-            metatype_id=data.get("metatype_id"),
-            metatype_name=data.get("metatype_name"),
-            data_source_id=data.get("data_source_id"),
+            metatype_id=data.get("classId"),
+            metatype_name=data.get("className"),
+            data_source_id=data.get("dataSourceId"),
         )

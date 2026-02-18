@@ -29,9 +29,10 @@ class RelationshipCreate(RelationshipBase):
 class Relationship(RelationshipBase):
     """Full relationship model including system fields."""
 
-    id: int = Field(..., description="Relationship ID")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
+    id: int = Field(default=0, description="Relationship ID")
+    relationship_type: str = Field(default="", description="Type of relationship")
+    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
     # System fields (from DeepLynx)
     relationship_pair_id: Optional[int] = Field(None, description="Internal relationship pair ID")

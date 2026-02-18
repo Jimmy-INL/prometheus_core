@@ -153,14 +153,17 @@ class FilesResource(BaseResource):
 
         Returns:
             Parsed FileMetadata object
+
+        Note:
+            DeepLynx API returns camelCase field names.
         """
         return FileMetadata(
             id=data["id"],
-            name=data.get("file_name", ""),
+            name=data.get("fileName", ""),
             description=data.get("description"),
-            file_type=data.get("file_type"),
-            size=data.get("file_size"),
-            uri=data.get("adapter_file_path"),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
+            file_type=data.get("fileType"),
+            size=data.get("fileSize"),
+            uri=data.get("adapterFilePath"),
+            created_at=data.get("createdAt"),
+            updated_at=data.get("lastUpdatedAt") or data.get("updatedAt"),
         )

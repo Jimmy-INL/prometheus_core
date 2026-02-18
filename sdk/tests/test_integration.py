@@ -417,9 +417,13 @@ class TestRelationships:
             rels = client.relationships.get_item_relationships(item1.id)
 
             assert len(rels) > 0
-            # Verify our relationship is in the list
-            rel_ids = [r.id for r in rels]
-            assert rel.id in rel_ids
+            # Verify our relationship is in the list (by node IDs, not relationship ID)
+            # Note: Simplified format doesn't return relationship IDs, so compare by endpoints
+            found = any(
+                r.from_item_id == item1.id and r.to_item_id == item2.id
+                for r in rels
+            )
+            assert found, f"Created relationship {item1.id}→{item2.id} not found in results"
 
         except Exception as e:
             pytest.skip(f"Relationships not available: {e}")
