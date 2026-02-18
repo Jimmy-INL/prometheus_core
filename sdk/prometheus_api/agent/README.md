@@ -6,7 +6,42 @@ Utilities for building A2A (Agent-to-Agent) multi-agent systems.
 
 This module provides reusable components for building agents that communicate using the Agent-to-Agent (A2A) protocol.
 
+**Quick Start:**
+```python
+from prometheus_api.agent import PrometheusAgent
+
+class MyAgent(PrometheusAgent):
+    def process_analysis(self, params, event_queue):
+        # Your logic here
+        return {"status": "success"}
+
+if __name__ == "__main__":
+    agent = MyAgent(agent_name="My Agent")
+    agent.run()
+```
+
+That's all you need! The base class handles authentication, registry, and server setup.
+
 ## Components
+
+### PrometheusAgent (Base Class)
+
+**NEW!** Base class that handles all agent boilerplate.
+
+**Features:**
+- Automatic agent card loading from JSON
+- Built-in Bearer token authentication
+- Registry registration with auth
+- HTTP server setup with A2A protocol
+- Parameter extraction and error handling
+- Status update management
+
+**Usage:**
+1. Inherit from `PrometheusAgent`
+2. Override `process_analysis()` method
+3. Call `run()`
+
+**See:** [BASE_CLASS.md](./BASE_CLASS.md) for complete documentation and examples.
 
 ### BearerTokenMiddleware
 
