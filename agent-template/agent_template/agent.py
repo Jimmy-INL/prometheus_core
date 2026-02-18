@@ -4,20 +4,13 @@ TEMPLATE_NAME Agent - A2A Agent Template
 This is a template for creating A2A-enabled agents. Replace TEMPLATE_NAME with your agent's name.
 """
 
-import os
 import sys
-import json
 import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from a2a.server.agent_execution import AgentExecutor
-from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryTaskStore
-from prometheus_api.agent.middleware import BearerTokenMiddleware
+from prometheus_api.agent import PrometheusAgent
 from prometheus_api.storage_client import StorageClient  # Example - use as needed
-import uvicorn
 
 # Add shared directory to path
 sys.path.insert(0, "/app")
@@ -30,97 +23,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class TEMPLATE_CLASSExecutor(AgentExecutor):
+class TEMPLATE_CLASSAgent(PrometheusAgent):
     """
-    Executor for TEMPLATE_NAME Agent.
+    TEMPLATE_NAME Agent.
 
     This agent handles [DESCRIBE YOUR AGENT'S CAPABILITIES HERE].
     """
-
-    def __init__(self):
-        """Initialize the agent executor."""
-        super().__init__()
-        logger.info("Initialized TEMPLATE_NAME Agent")
-
-    def execute(self, context: Dict[str, Any], event_queue) -> Dict[str, Any]:
-        """
-        Execute the agent task.
-
-        Args:
-            context: A2A context containing the message and parameters
-            event_queue: Queue for sending status updates
-
-        Returns:
-            Dict containing the analysis results
-        """
-        try:
-            logger.info("Starting TEMPLATE_NAME Agent execution")
-
-            # Extract parameters from the message
-            params = self._extract_params(context)
-
-            # Send "working" status
-            event_queue.put({
-                "type": "status",
-                "status": "working",
-                "message": "Processing request..."
-            })
-
-            # Perform the main analysis (pass event_queue for progress updates)
-            result = self.process_analysis(params, event_queue)
-
-            # Send completion status
-            event_queue.put({
-                "type": "status",
-                "status": "completed",
-                "message": "Analysis complete"
-            })
-
-            # Send result as artifact
-            event_queue.put({
-                "type": "artifact",
-                "data": json.dumps(result, indent=2)
-            })
-
-            logger.info("TEMPLATE_NAME Agent execution completed successfully")
-            return result
-
-        except Exception as e:
-            logger.error(f"Error during execution: {str(e)}", exc_info=True)
-            event_queue.put({
-                "type": "status",
-                "status": "failed",
-                "message": f"Error: {str(e)}"
-            })
-            raise
-
-    def _extract_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Extract parameters from the A2A message context.
-
-        Args:
-            context: A2A context
-
-        Returns:
-            Dict of extracted parameters
-        """
-        message = context.get("message", {})
-        parts = message.get("parts", [])
-
-        if not parts:
-            raise ValueError("No message parts found")
-
-        # Extract text from first part
-        text = parts[0].get("text", "{}")
-
-        try:
-            params = json.loads(text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse message as JSON: {text}")
-            raise ValueError(f"Invalid JSON in message: {str(e)}")
-
-        logger.info(f"Extracted parameters: {params}")
-        return params
 
     def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
         """
@@ -214,119 +122,7 @@ class TEMPLATE_CLASSExecutor(AgentExecutor):
         return result
 
 
-def create_agent_card() -> Dict[str, Any]:
-    """
-    Load the agent card from agent_card.json and update URL from environment.
-
-    The agent card is loaded from the JSON file to serve as a single source of truth
-    for agent metadata, capabilities, and skills. The URL is then updated based on
-    environment variables to match the actual runtime configuration.
-
-    Returns:
-        Dict representing the agent card with runtime URL
-    """
-    # Load agent card from JSON file
-    agent_card_path = os.path.join(os.path.dirname(__file__), "agent_card.json")
-
-    try:
-        with open(agent_card_path, 'r') as f:
-            agent_card = json.load(f)
-    except FileNotFoundError:
-        logger.error(f"agent_card.json not found at {agent_card_path}")
-        raise
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in agent_card.json: {e}")
-        raise
-
-    # Override URL with environment configuration
-    # This ensures the agent advertises the correct URL regardless of deployment
-    port = os.getenv('AGENT_PORT', '8000')
-    host = os.getenv('AGENT_HOST', 'localhost')
-    agent_card['url'] = f"http://{host}:{port}"
-
-    logger.info(f"Loaded agent card: {agent_card['name']} v{agent_card['version']}")
-    logger.info(f"Agent URL: {agent_card['url']}")
-
-    return agent_card
-
-
-def register_with_registry(agent_card: Dict[str, Any]) -> None:
-    """
-    Register this agent with the registry service.
-
-    Args:
-        agent_card: The agent card to register
-    """
-    import httpx
-
-    registry_url = os.getenv("REGISTRY_URL", "http://registry:8000")
-    agent_secret = os.getenv("AGENT_SECRET")
-
-    headers = {}
-    if agent_secret:
-        headers["Authorization"] = f"Bearer {agent_secret}"
-
-    try:
-        with httpx.Client(timeout=10.0, headers=headers) as client:
-            response = client.post(
-                f"{registry_url}/agents/register",
-                json=agent_card
-            )
-            response.raise_for_status()
-            logger.info(f"Successfully registered with registry at {registry_url}")
-    except Exception as e:
-        logger.error(f"Failed to register with registry: {str(e)}")
-        # Don't fail startup if registry is unavailable
-        logger.warning("Continuing without registry registration")
-
-
-def main():
-    """Main entry point for the agent."""
-    logger.info("Starting TEMPLATE_NAME Agent")
-
-    # Create agent card
-    agent_card = create_agent_card()
-
-    # Create executor
-    executor = TEMPLATE_CLASSExecutor()
-
-    # Create request handler
-    request_handler = DefaultRequestHandler(
-        agent_executor=executor,
-        task_store=InMemoryTaskStore()
-    )
-
-    # Create A2A application builder
-    builder = A2AStarletteApplication(
-        agent_card=agent_card,
-        http_handler=request_handler
-    )
-
-    # Build the Starlette app
-    app = builder.build()
-
-    # Add Bearer token authentication middleware
-    agent_secret = os.getenv("AGENT_SECRET")
-    agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
-
-    if agent_secret or agent_secret_required:
-        app.add_middleware(BearerTokenMiddleware, secret=agent_secret, required=agent_secret_required)
-        if agent_secret:
-            logger.info("Bearer token authentication enabled")
-        else:
-            logger.warning("AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled")
-    else:
-        logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
-
-    # Register with registry
-    register_with_registry(agent_card)
-
-    # Start HTTP server
-    port = int(os.getenv("AGENT_PORT", "8000"))
-    logger.info(f"Starting HTTP server on port {port}")
-
-    uvicorn.run(app, host="0.0.0.0", port=port)
-
-
 if __name__ == "__main__":
-    main()
+    # Create and run the agent
+    agent = TEMPLATE_CLASSAgent(agent_name="TEMPLATE_NAME Agent")
+    agent.run()
