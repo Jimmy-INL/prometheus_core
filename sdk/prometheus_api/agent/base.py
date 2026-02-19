@@ -9,15 +9,29 @@ import os
 import sys
 import json
 import logging
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
 from a2a.server.agent_execution import AgentExecutor
+from a2a.server.agent_execution.context import RequestContext
 from a2a.server.apps import A2AStarletteApplication
+from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+from a2a.types import (
+    AgentCard,
+    AgentCapabilities,
+    AgentSkill,
+    Artifact,
+    Part,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
 from .middleware import BearerTokenMiddleware
 import uvicorn
 import httpx
@@ -44,7 +58,9 @@ class PrometheusAgentExecutor(AgentExecutor):
         self.agent_name = agent_name
         logger.info(f"Initialized {agent_name}")
 
-    def execute(self, context: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    async def execute(
+        self, context: RequestContext, event_queue: EventQueue
+    ) -> None:
         """
         Execute the agent task.
 
@@ -56,11 +72,8 @@ class PrometheusAgentExecutor(AgentExecutor):
         5. Handle errors
 
         Args:
-            context: A2A context containing the message and parameters
+            context: A2A request context containing the message and parameters
             event_queue: Queue for sending status updates
-
-        Returns:
-            Dict containing the analysis results
         """
         try:
             logger.info(f"Starting {self.agent_name} execution")
@@ -69,46 +82,61 @@ class PrometheusAgentExecutor(AgentExecutor):
             params = self._extract_params(context)
 
             # Send "working" status
-            event_queue.put({
-                "type": "status",
-                "status": "working",
-                "message": "Processing request..."
-            })
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    final=False,
+                    status=TaskStatus(state=TaskState.working),
+                )
+            )
 
             # Perform the main analysis (implemented by subclass)
-            result = self.process_analysis(params, event_queue)
+            result = await self.process_analysis(params, context, event_queue)
 
             # Send completion status
-            event_queue.put({
-                "type": "status",
-                "status": "completed",
-                "message": "Analysis complete"
-            })
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    final=True,
+                    status=TaskStatus(state=TaskState.completed),
+                )
+            )
 
             # Send result as artifact
-            event_queue.put({
-                "type": "artifact",
-                "data": json.dumps(result, indent=2)
-            })
+            await event_queue.enqueue_event(
+                TaskArtifactUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    artifact=Artifact(
+                        artifactId=str(uuid.uuid4()),
+                        name="result",
+                        parts=[TextPart(text=json.dumps(result, indent=2))],
+                    ),
+                )
+            )
 
             logger.info(f"{self.agent_name} execution completed successfully")
-            return result
 
         except Exception as e:
             logger.error(f"Error during execution: {str(e)}", exc_info=True)
-            event_queue.put({
-                "type": "status",
-                "status": "failed",
-                "message": f"Error: {str(e)}"
-            })
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    final=True,
+                    status=TaskStatus(state=TaskState.failed),
+                )
+            )
             raise
 
-    def _extract_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
         """
         Extract parameters from the A2A message context.
 
         Args:
-            context: A2A context
+            context: A2A request context
 
         Returns:
             Dict of extracted parameters
@@ -116,25 +144,29 @@ class PrometheusAgentExecutor(AgentExecutor):
         Raises:
             ValueError: If message format is invalid
         """
-        message = context.get("message", {})
-        parts = message.get("parts", [])
+        # Get user input text from the context
+        text = context.get_user_input()
 
-        if not parts:
-            raise ValueError("No message parts found")
-
-        # Extract text from first part
-        text = parts[0].get("text", "{}")
+        if not text:
+            # Return empty params if no text
+            return {}
 
         try:
             params = json.loads(text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse message as JSON: {text}")
-            raise ValueError(f"Invalid JSON in message: {str(e)}")
+        except json.JSONDecodeError:
+            # If not valid JSON, treat the text as a plain message
+            logger.debug(f"Message is not JSON, treating as plain text: {text}")
+            params = {"message": text}
 
         logger.info(f"Extracted parameters: {params}")
         return params
 
-    def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    async def process_analysis(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
         """
         Process the analysis request.
 
@@ -142,6 +174,7 @@ class PrometheusAgentExecutor(AgentExecutor):
 
         Args:
             params: Parameters extracted from the A2A message
+            context: A2A request context
             event_queue: Queue for sending progress updates
 
         Returns:
@@ -149,15 +182,18 @@ class PrometheusAgentExecutor(AgentExecutor):
 
         Example:
             ```python
-            def process_analysis(self, params, event_queue):
+            async def process_analysis(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
                 # Send progress update
-                event_queue.put({
-                    "type": "status",
-                    "status": "working",
-                    "message": "Processing data..."
-                })
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        taskId=context.task_id,
+                        contextId=context.context_id,
+                        final=False,
+                        status=TaskStatus(state=TaskState.working),
+                    )
+                )
 
                 # Do your work
                 result = do_something(input_data)
@@ -173,20 +209,25 @@ class PrometheusAgentExecutor(AgentExecutor):
             "This is where your agent's core logic should go."
         )
 
-    def cancel(self, context: Dict[str, Any], event_queue) -> None:
+    async def cancel(
+        self, context: RequestContext, event_queue: EventQueue
+    ) -> None:
         """
         Handle task cancellation.
 
         Args:
-            context: A2A context
+            context: A2A request context
             event_queue: Queue for sending status updates
         """
         logger.info(f"Cancellation requested for {self.agent_name}")
-        event_queue.put({
-            "type": "status",
-            "status": "canceled",
-            "message": "Task canceled"
-        })
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=True,
+                status=TaskStatus(state=TaskState.canceled),
+            )
+        )
 
 
 class PrometheusAgent:
@@ -363,13 +404,23 @@ class PrometheusAgent:
         agent_instance = self
 
         class CustomExecutor(PrometheusAgentExecutor):
-            def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+            async def process_analysis(
+                self,
+                params: Dict[str, Any],
+                context: RequestContext,
+                event_queue: EventQueue,
+            ) -> Dict[str, Any]:
                 """Delegate to the agent instance's process_analysis method."""
-                return agent_instance.process_analysis(params, event_queue)
+                return await agent_instance.process_analysis(params, context, event_queue)
 
         return CustomExecutor(agent_name=self.agent_name)
 
-    def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    async def process_analysis(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
         """
         Process the analysis request.
 
@@ -377,6 +428,7 @@ class PrometheusAgent:
 
         Args:
             params: Parameters extracted from the A2A message
+            context: A2A request context
             event_queue: Queue for sending progress updates
 
         Returns:
@@ -384,15 +436,18 @@ class PrometheusAgent:
 
         Example:
             ```python
-            def process_analysis(self, params, event_queue):
+            async def process_analysis(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
                 # Send progress update
-                event_queue.put({
-                    "type": "status",
-                    "status": "working",
-                    "message": "Processing..."
-                })
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        taskId=context.task_id,
+                        contextId=context.context_id,
+                        final=False,
+                        status=TaskStatus(state=TaskState.working),
+                    )
+                )
 
                 # Your logic here
                 result = do_work(input_data)
