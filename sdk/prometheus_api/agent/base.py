@@ -17,6 +17,7 @@ from a2a.server.agent_execution import AgentExecutor
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 from .middleware import BearerTokenMiddleware
 import uvicorn
 import httpx
@@ -237,12 +238,12 @@ class PrometheusAgent:
         self.agent_card = None
         self.executor = None
 
-    def load_agent_card(self) -> Dict[str, Any]:
+    def load_agent_card(self) -> AgentCard:
         """
         Load the agent card from JSON file and update URL from environment.
 
         Returns:
-            Dict representing the agent card with runtime URL
+            AgentCard object with runtime URL
 
         Raises:
             FileNotFoundError: If agent_card.json doesn't exist
@@ -260,7 +261,7 @@ class PrometheusAgent:
 
         try:
             with open(agent_card_path, 'r') as f:
-                agent_card = json.load(f)
+                agent_card_dict = json.load(f)
         except FileNotFoundError:
             logger.error(f"agent_card.json not found at {agent_card_path}")
             raise
@@ -271,19 +272,49 @@ class PrometheusAgent:
         # Override URL with environment configuration
         port = os.getenv('AGENT_PORT', '8000')
         host = os.getenv('AGENT_HOST', 'localhost')
-        agent_card['url'] = f"http://{host}:{port}"
+        agent_card_dict['url'] = f"http://{host}:{port}"
 
-        logger.info(f"Loaded agent card: {agent_card['name']} v{agent_card['version']}")
-        logger.info(f"Agent URL: {agent_card['url']}")
+        # Convert capabilities dict to AgentCapabilities object
+        capabilities_dict = agent_card_dict.get('capabilities', {})
+        capabilities = AgentCapabilities(
+            streaming=capabilities_dict.get('streaming', False),
+            pushNotifications=capabilities_dict.get('pushNotifications', False),
+        )
+
+        # Convert skills list to AgentSkill objects
+        skills = [
+            AgentSkill(
+                id=skill['id'],
+                name=skill['name'],
+                description=skill.get('description', ''),
+                tags=skill.get('tags', []),
+            )
+            for skill in agent_card_dict.get('skills', [])
+        ]
+
+        # Create the AgentCard object
+        agent_card = AgentCard(
+            name=agent_card_dict['name'],
+            description=agent_card_dict['description'],
+            url=agent_card_dict['url'],
+            version=agent_card_dict.get('version', '1.0.0'),
+            capabilities=capabilities,
+            skills=skills,
+            defaultInputModes=agent_card_dict.get('defaultInputModes', ['text']),
+            defaultOutputModes=agent_card_dict.get('defaultOutputModes', ['text']),
+        )
+
+        logger.info(f"Loaded agent card: {agent_card.name} v{agent_card.version}")
+        logger.info(f"Agent URL: {agent_card.url}")
 
         return agent_card
 
-    def register_with_registry(self, agent_card: Dict[str, Any]) -> None:
+    def register_with_registry(self, agent_card: AgentCard) -> None:
         """
         Register this agent with the registry service.
 
         Args:
-            agent_card: The agent card to register
+            agent_card: The AgentCard to register
         """
         registry_url = os.getenv("REGISTRY_URL")
         if not registry_url:
@@ -296,11 +327,22 @@ class PrometheusAgent:
         if agent_secret:
             headers["Authorization"] = f"Bearer {agent_secret}"
 
+        # Convert AgentCard to registry format (which differs from A2A AgentCard)
+        # Registry expects: agent_id, name, description, url, capabilities (list of strings), version
+        registration_data = {
+            "agent_id": agent_card.name.lower().replace(" ", "-"),
+            "name": agent_card.name,
+            "description": agent_card.description,
+            "url": agent_card.url,
+            "capabilities": [skill.id for skill in agent_card.skills],
+            "version": agent_card.version,
+        }
+
         try:
             with httpx.Client(timeout=10.0, headers=headers) as client:
                 response = client.post(
                     f"{registry_url}/agents/register",
-                    json=agent_card
+                    json=registration_data
                 )
                 response.raise_for_status()
                 logger.info(f"Successfully registered with registry at {registry_url}")
