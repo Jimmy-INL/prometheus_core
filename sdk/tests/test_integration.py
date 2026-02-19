@@ -438,6 +438,96 @@ class TestRelationships:
                     print(f"Warning: Failed to cleanup relationship {rel_id}: {cleanup_error}")
 
 
+class TestFileUpload:
+    """Test file upload functionality."""
+
+    def test_upload_small_binary_file(self, client, tmp_path):
+        """Test uploading a small binary file."""
+        # Create a small binary file with random data
+        test_file = tmp_path / "test_binary.bin"
+        binary_content = bytes([0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD, 0x89, 0x50, 0x4E, 0x47])
+        test_file.write_bytes(binary_content)
+
+        file_id = None
+        try:
+            # Upload the file
+            file_meta = client.files.upload(
+                test_file,
+                name="test_binary.bin",
+                description="Test binary file for integration tests"
+            )
+            file_id = file_meta.id
+
+            # Verify metadata
+            assert file_meta.id is not None
+            assert file_meta.name == "test_binary.bin"
+
+        finally:
+            # Cleanup
+            if file_id:
+                try:
+                    client.files.delete(file_id)
+                except Exception as e:
+                    print(f"Warning: Failed to delete test file {file_id}: {e}")
+
+    def test_upload_and_download_binary_file(self, client, tmp_path):
+        """Test uploading and downloading a binary file, verifying content integrity."""
+        # Create a binary file with known content
+        test_file = tmp_path / "upload_test.bin"
+        binary_content = bytes(range(256))  # All possible byte values
+        test_file.write_bytes(binary_content)
+
+        file_id = None
+        try:
+            # Upload
+            file_meta = client.files.upload(test_file)
+            file_id = file_meta.id
+
+            assert file_meta.id is not None
+
+            # Download to a different location
+            download_path = tmp_path / "downloaded.bin"
+            client.files.download(file_id, download_path)
+
+            # Verify content matches
+            downloaded_content = download_path.read_bytes()
+            assert downloaded_content == binary_content, "Downloaded content does not match original"
+
+        finally:
+            if file_id:
+                try:
+                    client.files.delete(file_id)
+                except Exception as e:
+                    print(f"Warning: Failed to delete test file {file_id}: {e}")
+
+    def test_get_file_metadata(self, client, tmp_path):
+        """Test retrieving file metadata after upload."""
+        test_file = tmp_path / "metadata_test.bin"
+        test_file.write_bytes(b"test content for metadata")
+
+        file_id = None
+        try:
+            # Upload
+            file_meta = client.files.upload(
+                test_file,
+                description="Metadata test file"
+            )
+            file_id = file_meta.id
+
+            # Retrieve metadata
+            retrieved_meta = client.files.get(file_id)
+
+            assert retrieved_meta.id == file_id
+            assert retrieved_meta.name == "metadata_test.bin"
+
+        finally:
+            if file_id:
+                try:
+                    client.files.delete(file_id)
+                except Exception as e:
+                    print(f"Warning: Failed to delete test file {file_id}: {e}")
+
+
 class TestCleanup:
     """Test cleanup functionality."""
 

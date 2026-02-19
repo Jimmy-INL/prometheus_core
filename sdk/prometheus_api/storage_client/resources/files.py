@@ -99,9 +99,10 @@ class FilesResource(BaseResource):
         Raises:
             ItemNotFoundError: If file doesn't exist
         """
+        # Files are retrieved via records endpoint (they're records with file attachments)
         response = self._client._request(
             "GET",
-            f"{self._base_path}/files/{file_id}"
+            f"{self._base_path}/records/{file_id}"
         )
 
         return self._parse_file_metadata(response.json())
@@ -110,7 +111,7 @@ class FilesResource(BaseResource):
         """Download a file to local storage.
 
         Args:
-            file_id: File identifier
+            file_id: File identifier (record ID from upload)
             output_path: Where to save the downloaded file
 
         Raises:
@@ -121,9 +122,10 @@ class FilesResource(BaseResource):
             client.files.download(123, Path("downloaded.csv"))
             ```
         """
+        # Download using the files endpoint with record ID
         response = self._client._request(
             "GET",
-            f"{self._base_path}/files/{file_id}/download"
+            f"{self._base_path}/files/{file_id}"
         )
 
         # Write file content
@@ -155,15 +157,15 @@ class FilesResource(BaseResource):
             Parsed FileMetadata object
 
         Note:
-            DeepLynx API returns camelCase field names.
+            DeepLynx API returns field names like 'name', 'fileType', 'uri'.
         """
         return FileMetadata(
             id=data["id"],
-            name=data.get("fileName", ""),
+            name=data.get("name", ""),
             description=data.get("description"),
             file_type=data.get("fileType"),
             size=data.get("fileSize"),
-            uri=data.get("adapterFilePath"),
+            uri=data.get("uri"),
             created_at=data.get("createdAt"),
             updated_at=data.get("lastUpdatedAt") or data.get("updatedAt"),
         )

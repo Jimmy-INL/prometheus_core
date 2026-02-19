@@ -52,18 +52,20 @@ class AsyncFilesResource(AsyncBaseResource):
 
     async def get(self, file_id: int) -> FileMetadata:
         """Get file metadata by ID asynchronously."""
+        # Files are retrieved via records endpoint (they're records with file attachments)
         response = await self._client._request(
             "GET",
-            f"{self._base_path}/files/{file_id}"
+            f"{self._base_path}/records/{file_id}"
         )
 
         return self._parse_file_metadata(response.json())
 
     async def download(self, file_id: int, output_path: Path) -> None:
         """Download a file to local storage asynchronously."""
+        # Download using the files endpoint with record ID
         response = await self._client._request(
             "GET",
-            f"{self._base_path}/files/{file_id}/download"
+            f"{self._base_path}/files/{file_id}"
         )
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,11 +83,11 @@ class AsyncFilesResource(AsyncBaseResource):
         """Parse API response data into FileMetadata model."""
         return FileMetadata(
             id=data["id"],
-            name=data.get("file_name", ""),
+            name=data.get("name", ""),
             description=data.get("description"),
-            file_type=data.get("file_type"),
-            size=data.get("file_size"),
-            uri=data.get("adapter_file_path"),
-            created_at=data["created_at"],
-            updated_at=data["updated_at"],
+            file_type=data.get("fileType"),
+            size=data.get("fileSize"),
+            uri=data.get("uri"),
+            created_at=data.get("createdAt"),
+            updated_at=data.get("lastUpdatedAt") or data.get("updatedAt"),
         )
