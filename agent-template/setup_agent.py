@@ -211,7 +211,7 @@ def create_agent(replacements: Dict[str, str]) -> None:
         # Skip directories, hidden files, and Python cache files
         if not file_path.is_file():
             continue
-        if file_path.name.startswith('.'):
+        if file_path.name != ".env.example" and file_path.name.startswith('.'):
             continue
         if '__pycache__' in file_path.parts:
             continue
