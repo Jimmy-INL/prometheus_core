@@ -172,6 +172,21 @@ class PrometheusAgentExecutor(AgentExecutor):
             "This is where your agent's core logic should go."
         )
 
+    def cancel(self, context: Dict[str, Any], event_queue) -> None:
+        """
+        Handle task cancellation.
+
+        Args:
+            context: A2A context
+            event_queue: Queue for sending status updates
+        """
+        logger.info(f"Cancellation requested for {self.agent_name}")
+        event_queue.put({
+            "type": "status",
+            "status": "canceled",
+            "message": "Task canceled"
+        })
+
 
 class PrometheusAgent:
     """
