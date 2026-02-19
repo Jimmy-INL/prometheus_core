@@ -1,428 +1,152 @@
-# Storage Client Library
+# Prometheus API
 
-A full-featured Python client library that provides a clean, generic interface for storage operations. The library abstracts backend implementation details and offers both synchronous and asynchronous APIs.
+A Python toolkit for building data-driven applications with storage operations and A2A-enabled agents.
 
-## Features
+## Components
 
-- **Generic Terminology**: Uses intuitive terms like `Item`, `Relationship`, `Metadata` instead of backend-specific terminology
-- **Dual API Support**: Both synchronous and asynchronous clients using httpx
-- **Type Safety**: Fully typed with Pydantic models for validation and IDE support
-- **Full Feature Set**:
-  - CRUD operations for items
-  - File upload/download (including chunked uploads for large files)
-  - Relationship management
-  - Search and query capabilities
-  - Timeseries data support
-  - Bulk operations
-  - Automatic pagination
-  - Tag management
+| Component | Description | Documentation |
+|-----------|-------------|---------------|
+| **StorageClient** | Full-featured client for storage operations with sync/async APIs | [Guide](docs/storage-client/GUIDE.md) \| [Quick Start](docs/storage-client/QUICK_START.md) |
+| **PrometheusAgent** | Base class for building A2A-enabled agents with minimal boilerplate | [Guide](docs/agent/GUIDE.md) \| [Quick Start](docs/agent/QUICK_START.md) |
 
 ## Installation
 
 ```bash
-pip install -r requirements.txt
-```
-
-Or install in development mode:
-
-```bash
+# Basic installation (StorageClient only)
 pip install -e .
+
+# With agent support
+pip install -e ".[agent]"
+
+# Or from git
+pip install "git+https://github.inl.gov/genesis/prometheus_api.git"
+pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
 ```
 
-## Quick Start
-
-### Synchronous Usage
+## Quick Start - StorageClient
 
 ```python
 from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate
-from pathlib import Path
 
-# Configure connection
-config = ConnectionConfig(
-    organization_id=123,
-    project_id=456,
-    api_key="your-api-key",
-    api_secret="your-api-secret"
-)
-
-# Use the client
-with StorageClient(config) as client:
-    # Create an item
-    item = client.items.create(ItemCreate(
-        name="Experiment Results",
-        properties={
-            "experiment_id": "EXP-001",
-            "status": "completed",
-            "temperature": 298.15
-        },
-        tags=["important", "2024"]
-    ))
-    print(f"Created item: {item.id}")
-
-    # Upload a file
-    file_meta = client.files.upload(
-        Path("data.csv"),
-        description="Experimental data"
-    )
-
-    # Create a relationship
-    client.relationships.create(RelationshipCreate(
-        from_item_id=item.id,
-        to_item_id=file_meta.id,
-        relationship_type="has_attachment"
-    ))
-
-    # Search by tags
-    results = client.search.by_tags(["important"])
-    for result in results.items:
-        print(f"Found: {result.name}")
-```
-
-### Asynchronous Usage
-
-```python
-import asyncio
-from prometheus_api.storage_client import AsyncStorageClient, ConnectionConfig, ItemCreate
-
-async def main():
-    config = ConnectionConfig(
-        organization_id=123,
-        project_id=456,
-        api_key="your-api-key",
-        api_secret="your-api-secret"
-    )
-
-    async with AsyncStorageClient(config) as client:
-        # Create items
-        item = await client.items.create(ItemCreate(
-            name="Async Item",
-            properties={"key": "value"}
-        ))
-
-        # List items with pagination
-        page = await client.items.list(page=1, page_size=50)
-        for item in page.items:
-            print(f"Item: {item.name}")
-
-        # Iterate over all items automatically
-        async for item in client.items.iter_all(page_size=100):
-            print(f"Processing: {item.name}")
-
-asyncio.run(main())
-```
-
-## Configuration
-
-### Using Environment Variables (Recommended)
-
-The easiest way to configure the client is using environment variables:
-
-1. **Create a `.env` file** (copy from `.env.example`):
-```bash
-cp .env.example .env
-```
-
-2. **Edit `.env` with your credentials**:
-
-Your `.env` file must contain:
-- `DEEPLYNX_KEY` - Your API key
-- `DEEPLYNX_SECRET` - Your API secret
-- `DEEPLYNX_ORG_ID` - Your organization ID
-- `DEEPLYNX_PROJECT_ID` - Your project ID
-
-3. **Load configuration from environment**:
-```python
-from prometheus_api.storage_client import ConnectionConfig, StorageClient
-
-# Automatically loads from .env file
+# Configure from environment variables
 config = ConnectionConfig.from_env()
 
 with StorageClient(config) as client:
-    # Use the client
-    items = client.items.list()
+    # Create an item
+    item = client.items.create(ItemCreate(
+        name="My Item",
+        properties={"key": "value"},
+        tags=["example"]
+    ))
+
+    # Upload a file
+    file_meta = client.files.upload(Path("data.csv"))
+
+    # Search
+    results = client.search.by_tags(["example"])
 ```
 
-**Benefits:**
-- Keeps credentials out of code
-- `.env` file is gitignored automatically
-- Easy to switch between environments
+**[Full StorageClient Guide](docs/storage-client/GUIDE.md)** | **[Quick Reference](docs/storage-client/QUICK_START.md)**
 
-**Supported Environment Variables:**
-- `DEEPLYNX_KEY` - API key (required with DEEPLYNX_SECRET)
-- `DEEPLYNX_SECRET` - API secret (required with DEEPLYNX_KEY)
-- `DEEPLYNX_JWT_TOKEN` - JWT token (alternative to key/secret)
-- `DEEPLYNX_ORG_ID` - Organization ID (required)
-- `DEEPLYNX_PROJECT_ID` - Project ID (required)
-- `DEEPLYNX_BASE_URL` - Custom base URL (optional)
-
-### Manual Configuration
-
-The `ConnectionConfig` class supports multiple configuration options:
+## Quick Start - PrometheusAgent
 
 ```python
-from prometheus_api.storage_client import ConnectionConfig
+from prometheus_api.agent import PrometheusAgent
 
-# Using API key authentication
-config = ConnectionConfig(
-    organization_id=123,
-    project_id=456,
-    api_key="your-api-key",
-    api_secret="your-api-secret",
-    base_url="https://api.example.com",  # Optional, has default
-    timeout=30.0,  # Request timeout in seconds
-    max_retries=3,  # Number of retry attempts
-    verify_ssl=True  # SSL certificate verification
-)
+class MyAgent(PrometheusAgent):
+    def process_analysis(self, params, event_queue):
+        input_data = params.get("input_data")
+        # Your logic here
+        return {"status": "success", "data": input_data}
 
-# Using JWT token authentication
-config = ConnectionConfig(
-    organization_id=123,
-    project_id=456,
-    jwt_token="your-jwt-token"
-)
+if __name__ == "__main__":
+    agent = MyAgent(agent_name="My Agent")
+    agent.run()
 ```
 
-## API Reference
+**[Full PrometheusAgent Guide](docs/agent/GUIDE.md)** | **[Quick Reference](docs/agent/QUICK_START.md)**
 
-### Items Operations
+## Environment Variables
 
-```python
-# Create a single item
-item = client.items.create(ItemCreate(name="Test", properties={"key": "value"}))
+### StorageClient
 
-# Get an item by ID
-item = client.items.get(item_id=123)
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DEEPLYNX_KEY` | API key | Yes* |
+| `DEEPLYNX_SECRET` | API secret | Yes* |
+| `DEEPLYNX_ORG_ID` | Organization ID | Yes |
+| `DEEPLYNX_PROJECT_ID` | Project ID | Yes |
+| `DEEPLYNX_BASE_URL` | Custom API URL | No |
 
-# Update an item
-updated = client.items.update(item_id=123, update=ItemUpdate(name="New Name"))
+*Or use `DEEPLYNX_JWT_TOKEN` instead
 
-# Delete an item
-client.items.delete(item_id=123)
+### PrometheusAgent
 
-# List items with pagination
-page = client.items.list(page=1, page_size=100)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGENT_PORT` | Port to listen on | `8000` |
+| `AGENT_HOST` | Hostname for agent card URL | `localhost` |
+| `AGENT_SECRET` | Shared secret for auth | - |
+| `REGISTRY_URL` | Registry service URL | - |
 
-# Iterate over all items (automatic pagination)
-for item in client.items.iter_all():
-    print(item.name)
+**[Full Environment Setup Guide](docs/ENV_SETUP.md)**
 
-# Bulk create items
-items = client.items.bulk_create([
-    ItemCreate(name="Item 1"),
-    ItemCreate(name="Item 2")
-])
+## Documentation
 
-# Manage tags
-item = client.items.add_tags(item_id=123, tags=["important", "reviewed"])
-item = client.items.remove_tags(item_id=123, tags=["old-tag"])
-```
+| Document | Description |
+|----------|-------------|
+| [StorageClient Guide](docs/storage-client/GUIDE.md) | Complete StorageClient API reference |
+| [StorageClient Quick Start](docs/storage-client/QUICK_START.md) | Condensed reference and examples |
+| [PrometheusAgent Guide](docs/agent/GUIDE.md) | Complete PrometheusAgent documentation |
+| [PrometheusAgent Quick Start](docs/agent/QUICK_START.md) | Minimal agent setup guide |
+| [Environment Setup](docs/ENV_SETUP.md) | Environment variables for both components |
+| [Testing Guide](docs/TESTING.md) | Running and writing tests |
 
-### File Operations
+## Features
 
-```python
-from pathlib import Path
+### StorageClient
+- CRUD operations for items
+- File upload/download (including chunked uploads)
+- Relationship management
+- Search and query capabilities
+- Timeseries data support
+- Bulk operations
+- Automatic pagination
+- Sync and async APIs
+- Type safety with Pydantic
 
-# Upload a file
-file_meta = client.files.upload(
-    Path("data.csv"),
-    description="Experiment data"
-)
+### PrometheusAgent
+- Automatic agent card loading
+- Built-in Bearer token authentication
+- Registry registration
+- HTTP server setup with A2A protocol
+- Parameter extraction and error handling
+- Status update management
+- 95% reduction in boilerplate code
 
-# Upload a large file in chunks
-file_meta = client.files.upload_chunked(
-    Path("large_file.zip"),
-    chunk_size=10 * 1024 * 1024  # 10MB chunks
-)
+## Examples
 
-# Get file metadata
-file_meta = client.files.get(file_id=123)
-
-# Download a file
-client.files.download(file_id=123, output_path=Path("downloaded.csv"))
-
-# Delete a file
-client.files.delete(file_id=123)
-```
-
-### Relationship Operations
-
-```python
-# Create a relationship
-rel = client.relationships.create(RelationshipCreate(
-    from_item_id=1,
-    to_item_id=2,
-    relationship_type="depends_on",
-    properties={"strength": "high"}
-))
-
-# Get a relationship
-rel = client.relationships.get(relationship_id=123)
-
-# Delete a relationship
-client.relationships.delete(relationship_id=123)
-
-# Bulk create relationships
-rels = client.relationships.bulk_create([
-    RelationshipCreate(from_item_id=1, to_item_id=2, relationship_type="links"),
-    RelationshipCreate(from_item_id=2, to_item_id=3, relationship_type="links")
-])
-
-# Get all relationships for an item
-all_rels = client.relationships.get_item_relationships(item_id=123)
-outgoing = client.relationships.get_item_relationships(item_id=123, direction="outgoing")
-
-# Get relationship graph
-graph = client.relationships.get_item_graph(item_id=123, depth=2)
-```
-
-### Search Operations
-
-```python
-# Simple text search
-results = client.search.query("experiment data", page_size=50)
-
-# Advanced search with filters
-results = client.search.advanced_query({
-    "properties.status": "active",
-    "properties.priority": {"$gt": 5}
-})
-
-# Search by tags
-results = client.search.by_tags(["important", "urgent"])
-results = client.search.by_tags(["tag1", "tag2"], match_all=True)
-
-# Get recent items
-recent = client.search.recent(limit=50)
-```
-
-### Timeseries Operations
-
-```python
-from pathlib import Path
-
-# Upload timeseries data
-result = client.timeseries.upload(
-    Path("sensor_data.csv"),
-    data_source_id=456
-)
-
-# Query timeseries data
-results = client.timeseries.query(
-    data_source_id=456,
-    sql_query="SELECT * FROM data WHERE timestamp > '2024-01-01'",
-    file_type="json"
-)
-```
-
-## Error Handling
-
-The library provides custom exceptions for different error scenarios:
-
-```python
-from prometheus_api.storage_client.exceptions import (
-    StorageClientError,      # Base exception
-    AuthenticationError,     # Authentication failures
-    ItemNotFoundError,       # Item not found (404)
-    ValidationError,         # Validation errors (4xx)
-    APIError                 # Other API errors (5xx)
-)
-
-try:
-    item = client.items.get(item_id=999)
-except ItemNotFoundError as e:
-    print(f"Item {e.item_id} not found")
-except AuthenticationError:
-    print("Authentication failed")
-except APIError as e:
-    print(f"API error {e.status_code}: {e.message}")
-```
-
-## Advanced Usage
-
-### Pagination
-
-```python
-# Manual pagination
-page = client.items.list(page=1, page_size=50)
-print(f"Page {page.page_info.page_number} of {page.page_info.total_pages}")
-print(f"Total items: {page.page_info.total_count}")
-
-if page.page_info.has_next:
-    next_page = client.items.list(page=2, page_size=50)
-
-# Automatic pagination
-for item in client.items.iter_all(page_size=100):
-    # Process each item across all pages
-    process(item)
-```
-
-### Filtering
-
-```python
-# Filter items in list operation
-results = client.items.list(
-    page=1,
-    page_size=100,
-    filters={
-        "properties.status": "active",
-        "created_at": {"$gt": "2024-01-01"}
-    }
-)
-```
-
-### Bulk Operations
-
-```python
-# Create multiple items efficiently
-items = client.items.bulk_create([
-    ItemCreate(name=f"Item {i}", properties={"index": i})
-    for i in range(100)
-])
-
-# Create multiple relationships
-relationships = client.relationships.bulk_create([
-    RelationshipCreate(
-        from_item_id=items[i].id,
-        to_item_id=items[i+1].id,
-        relationship_type="next"
-    )
-    for i in range(len(items) - 1)
-])
-```
+See the `examples/` directory for working code:
+- `basic_usage.py` - StorageClient CRUD operations
+- `async_usage.py` - Async/await patterns
+- `file_operations.py` - File upload/download
+- `bulk_operations.py` - Bulk operations
 
 ## Development
 
-### Running Tests
-
 ```bash
+# Install dev dependencies
 pip install -e ".[dev]"
+
+# Run tests
 pytest tests/
-```
 
-### Code Quality
-
-```bash
 # Format code
-black storage_client/
+black .
 
 # Lint
-ruff check storage_client/
-
-# Type checking
-mypy storage_client/
+ruff check .
 ```
-
-## Architecture
-
-The library is organized into several key components:
-
-- **Client Layer** (`client.py`, `async_client.py`): Main entry points with context manager support
-- **Resource Layer** (`resources/`, `async_resources/`): Organized API operations by domain
-- **Models Layer** (`models/`): Pydantic data models for type safety and validation
-- **Auth Layer** (`auth.py`): Automatic JWT token management and refresh
-- **Utilities** (`utils/`): Helper functions for pagination, streaming, etc.
-
-All backend-specific terminology and identifiers are hidden from the public API, providing a clean, generic interface.
 
 ## License
 
@@ -430,4 +154,4 @@ MIT License
 
 ## Support
 
-For issues and questions, please contact your system administrator or refer to the internal documentation.
+For issues and questions, please contact your system administrator or open an issue in the repository.

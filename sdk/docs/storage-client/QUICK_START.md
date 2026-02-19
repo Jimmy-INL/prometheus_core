@@ -1,4 +1,4 @@
-# Storage Client Library - Quick Start Guide
+# Storage Client - Quick Start Guide
 
 ## Installation
 
@@ -245,66 +245,6 @@ config = ConnectionConfig(
 )
 ```
 
-## Examples
-
-Full working examples available in `examples/`:
-
-1. `basic_usage.py` - Complete CRUD operations
-2. `async_usage.py` - Async/await patterns
-3. `file_operations.py` - File upload/download
-4. `bulk_operations.py` - Bulk operations
-
-Run them:
-```bash
-python examples/basic_usage.py
-python examples/async_usage.py
-```
-
-## Verification
-
-Test your installation:
-```bash
-python verify_installation.py
-```
-
-Should output:
-```
-✓ All verification tests passed!
-The storage client library is installed correctly.
-```
-
-## Key Concepts
-
-1. **Items** = Data records with properties and tags
-2. **Relationships** = Connections between items
-3. **Files** = Uploaded files linked to items
-4. **Properties** = Custom key-value metadata on items
-5. **Tags** = Labels for organizing and searching items
-
-## Next Steps
-
-1. Read the full [README.md](README.md) for detailed documentation
-2. Check [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for architecture details
-3. Run the examples in `examples/`
-4. Start building your application!
-
-## Quick Tips
-
-- Use context managers (`with` / `async with`) for automatic cleanup
-- Use `iter_all()` for automatic pagination
-- Use bulk operations for creating many items at once
-- All fields are type-checked with Pydantic
-- IDs are integers, not strings
-- Properties can be any JSON-serializable dict
-- Tags are strings
-
-## Getting Help
-
-- Check the README.md for full API reference
-- Look at examples/ for working code
-- Read inline docstrings for method documentation
-- Check IMPLEMENTATION_SUMMARY.md for architecture
-
 ## Common Patterns
 
 ### Create item with file
@@ -337,4 +277,27 @@ for item in results.items:
     print(f"{item.name}: {item.properties}")
 ```
 
-That's it! You're ready to use the storage client library.
+## Key Concepts
+
+1. **Items** = Data records with properties and tags
+2. **Relationships** = Connections between items
+3. **Files** = Uploaded files linked to items
+4. **Properties** = Custom key-value metadata on items
+5. **Tags** = Labels for organizing and searching items
+
+## Quick Tips
+
+- Use context managers (`with` / `async with`) for automatic cleanup
+- Use `iter_all()` for automatic pagination
+- Use bulk operations for creating many items at once
+- All fields are type-checked with Pydantic
+- IDs are integers, not strings
+- Properties can be any JSON-serializable dict
+- Tags are strings
+
+## Next Steps
+
+1. Read the full [Guide](GUIDE.md) for detailed documentation
+2. Check [ENV_SETUP.md](../ENV_SETUP.md) for environment configuration
+3. Run the examples in `examples/`
+4. Start building your application!
