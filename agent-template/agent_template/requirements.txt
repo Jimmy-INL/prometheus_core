@@ -11,4 +11,5 @@ httpx>=0.26.0
 uvicorn[standard]>=0.27.0
 
 # Prometheus API (with agent extras for Bearer token middleware)
-git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]
+prometheus-api[agent] @ git+ssh://git@github.inl.gov/genesis/prometheus_api.git
+

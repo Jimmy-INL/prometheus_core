@@ -1,10 +1,8 @@
 # Prometheus Agent Template
 
-A comprehensive template for creating A2A (Agent-to-Agent) enabled agents using the A2A SDK with INL's storage client and agent utilities.
-
 ## Overview
 
-This repository provides a production-ready template for building specialized AI agents that can communicate with each other using the Agent-to-Agent (A2A) protocol. The template is based on the architecture used in the `nuclear-a2a-demo` project and includes everything you need to get started.
+This repository provides a production-ready template for building specialized AI agents that can communicate with each other using the Agent-to-Agent (A2A) protocol using the A2A SDK with INL's storage client and agent utilities. 
 
 ## Features
 
@@ -25,6 +23,11 @@ This repository provides a production-ready template for building specialized AI
 - Docker (optional, for containerized deployment)
 
 ### Creating a New Agent
+
+Clone this repository
+```bash
+git clone git@github.inl.gov:genesis/prometheus_agent_template.git
+```
 
 Use the interactive setup script to create a new agent:
 
@@ -103,9 +106,13 @@ Your new agent has been created in: ./plant-analysis
 Next steps:
   1. cd ./plant-analysis
   2. cp .env.example .env
-  3. Edit .env if needed
-  4. Install dependencies: pip install -r requirements.txt
-  5. Run the agent: python agent.py
+  3. Generate an AGENT_SECRET
+    ```bash
+    python -c "import secrets; print(secrets.token_urlsafe(32))"
+    ```
+  4. Update AGENT_SECRET in .env
+  5. Install dependencies: pip install -r requirements.txt
+  6. Run the agent: python agent.py
 
 Or use Docker:
   1. docker build -t plant-analysis ./plant-analysis
@@ -320,21 +327,24 @@ The template implements the full A2A protocol specification:
 ### Message Format
 
 **Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "message/send",
-  "id": "request-123",
-  "params": {
-    "message": {
-      "messageId": "msg-456",
-      "role": "user",
-      "parts": [
-        {"text": "{\"input_data\": \"your data\"}"}
-      ]
+```bash
+curl -X POST http://0.0.0.0:8000 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer test" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "message/send",
+    "id": "request-123",
+    "params": {
+      "message": {
+        "messageId": "msg-456",
+        "role": "user",
+        "parts": [
+          {"text": "{\"input_data\": \"your data\"}"}
+        ]
+      }
     }
-  }
-}
+  }'
 ```
 
 **Response:**
@@ -593,40 +603,9 @@ docker run -p 8000:8000 test-agent
 curl http://localhost:8000/health
 ```
 
-## Example Agents
-
-The `nuclear-a2a-demo` directory contains example agents:
-- **data-agent**: Material property data retrieval
-- **corrosion-agent**: Corrosion analysis
-- **radiation-agent**: Radiation damage assessment
-- **thermal-agent**: Thermal analysis
-- **client-agent**: LangGraph orchestrator
-
-Study these for real-world implementation patterns.
-
-## Troubleshooting
-
-### Common Issues
-
-**Registry connection fails**
-```
-Failed to register with registry
-```
-Solution: Ensure the registry service is running. The agent will continue without registration.
-
-**SSL/TLS errors**
-```
-SSLError: certificate verify failed
-```
-Solution: Add your corporate CA certificate to the `certs` directory and rebuild.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## License
-
-[Add your license here]
 
 ## References
 
@@ -637,6 +616,27 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 ## Support
 
 For issues or questions:
-1. Check the agent-specific README in your created agent directory
-2. Review the nuclear-a2a-demo example agents
-3. Open an issue in this repository
+1. Reach out on Teams
+
+## Testing with a2a-inspector
+
+1. Install a2a-inspector
+    ```bash
+    git clone https://github.com/a2aproject/a2a-inspector.git
+    cd a2a-inspector
+    uv sync
+
+    # Navigate to the frontend directory
+    cd frontend
+
+    # Install npm packages
+    npm install
+
+    # Go back to the root directory
+    cd ..
+    ```
+
+2. Open your web browser to (http://127.0.0.1:5001).
+3. In the URL box, enter the URL of your A2A agent. By default it is: (http://0.0.0.0:8000/).
+4. Select Auth Type: Bearer Token and enter the secret when you configured your agent.
+5. Click connect. Under the "Agent Card" section you should see: "Agent card is valid"
