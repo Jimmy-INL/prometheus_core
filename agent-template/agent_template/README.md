@@ -54,8 +54,14 @@ This agent implements the Agent-to-Agent (A2A) protocol, allowing it to communic
 2. **Configure environment:**
    ```bash
    cp .env.example .env
-   # Edit .env if needed
    ```
+
+   Generate a new secret
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   Update `AGENT_SECRET` in .env with this new secret
 
 3. **Run the agent:**
    ```bash
