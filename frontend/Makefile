@@ -41,6 +41,8 @@ endif
 ##@ Checks
 ##@
 
+run: ##@ Start the backend API
+	chainlit run -h main.py
 
 .PHONY: lint format typecheck check fix test
 

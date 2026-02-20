@@ -1,8 +1,14 @@
 import argparse
+import os
 from typing import Any
 from pydantic_settings import BaseSettings
 import yaml
 from pathlib import Path
+
+CONFIG_PATH = os.environ.get(
+    "PROMETHEUS_CONFIG_PATH",
+    str(Path(__file__).parent.parent / "config.yml"),
+)
 
 
 def read_config(config_file_path: str):
@@ -17,18 +23,17 @@ def read_config(config_file_path: str):
 
 
 class Settings(BaseSettings):
-    data: dict[str, Any] = read_config("/Users/biggbs/projects/c500-prometheus-platform/config.yml")
-    local_users: list[dict[str, str]] = [{"username": "admin", "password": "admin", "role": "admin"}]
+    data: dict[str, Any] = read_config(CONFIG_PATH)
+    local_users: list[dict[str, str]] = data.get("local-users", [])
     workflow_suggestions: list[str] = data["workflow-suggestions"]
     chat_suggestion_title: str = data["chat-suggestion-title"]
     chat_intro: str = data["chat-intro"]
     ifc_data_dir: Path = Path(__file__).parent.parent / "public" / "ifc-data"
     exodus_data_dir: Path = Path(__file__).parent.parent / "public" / "exodus-data"
-    platform_url: str = "http://127.0.0.1:8001"
-    debug: bool = True
-    auto_approve_steps: bool = True
-    # auto_approve_steps: bool = False
-    agent_names: list[str] = ["MOOSE", "Alchemy", "AutoDONE", "FTL"]
+    platform_url: str = data.get("platform-url", "http://127.0.0.1:8001")
+    debug: bool = data.get("debug", True)
+    auto_approve_steps: bool = data.get("auto-approve-steps", True)
+    agent_names: list[str] = data.get("agent-names", [])
 
 
 settings = Settings()

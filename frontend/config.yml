@@ -1,0 +1,23 @@
+chat-intro: "Welcome to the Prometheus Platform."
+chat-suggestion-title: "What would you like to do today?"
+workflow-suggestions:
+  - "I want to design a reactor primary coolant system."
+  - "Run FTL Safety Analysis"
+  # - "Run MOOSE"
+  # - "Run Alchemy"
+  # - "Render a CAD file"
+  # - "Run AUTODONE"
+
+local-users:
+  - username: "admin"
+    password: "admin"
+    role: "admin"
+
+platform-url: "http://127.0.0.1:8001"
+debug: true
+auto-approve-steps: true
+agent-names:
+  - "MOOSE"
+  - "Alchemy"
+  - "AutoDONE"
+  - "FTL"

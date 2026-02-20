@@ -1,11 +1,13 @@
-__pycache__/
-.files/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.venv
-public/exodus-data/*/*
-public/ifc-data/*/*
+*/__pycache__/
+*/.mypy_cache/
+*/.pytest_cache/
+*/.ruff_cache/
+*/.venv
+
+frontend/.files/
+frontend/public/exodus-data/*/*
+frontend/public/ifc-data/*/*
+
 *.py[oc]
 build/
 dist/
@@ -13,3 +15,4 @@ wheels/
 *.egg-info
 
 .env
+CLAUDE.md
