@@ -7,7 +7,7 @@ This is a template for creating A2A-enabled agents. Replace TEMPLATE_NAME with y
 import sys
 import logging
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 
 from prometheus_api.agent import (
     PrometheusAgent,
@@ -121,7 +121,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         # Add metadata
         result.update({
             "agent": "TEMPLATE_NAME",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(UTC).isoformat()
         })
 
         return result
