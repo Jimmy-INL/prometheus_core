@@ -18,10 +18,10 @@ You just inherit from `PrometheusAgent`, override `process_analysis()`, and call
 ### Minimal Agent (15 lines)
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         input_data = params.get("input_data")
 
         # Your logic here
@@ -46,13 +46,18 @@ That's it! No need to:
 ### Basic Agent
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 from typing import Dict, Any
 
 class DataProcessor(PrometheusAgent):
     """Agent that processes data."""
 
-    def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    async def process_analysis(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
         """Implement your agent's logic here."""
 
         # Extract parameters
@@ -81,29 +86,33 @@ if __name__ == "__main__":
 ### With Progress Updates
 
 ```python
-class LongRunningAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
-        import time
+from prometheus_api.agent import (
+    PrometheusAgent,
+    RequestContext,
+    EventQueue,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
+import asyncio
 
+class LongRunningAgent(PrometheusAgent):
+    async def process_analysis(self, params, context, event_queue):
         steps = ["Loading", "Processing", "Finalizing"]
 
         for i, step in enumerate(steps):
-            # Send progress update
-            progress = (i + 1) / len(steps) * 100
-            event_queue.put({
-                "type": "status",
-                "status": "working",
-                "message": f"{step}... ({progress:.0f}% complete)"
-            })
+            # Send progress update using A2A event types
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    final=False,
+                    status=TaskStatus(state=TaskState.working),
+                )
+            )
 
             # Do work
-            time.sleep(1)
-
-            # Send intermediate result
-            event_queue.put({
-                "type": "artifact",
-                "data": json.dumps({"step": step, "progress": progress})
-            })
+            await asyncio.sleep(1)
 
         return {"status": "success", "steps_completed": len(steps)}
 ```
@@ -111,7 +120,7 @@ class LongRunningAgent(PrometheusAgent):
 ### Using Storage Client
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 from prometheus_api.storage_client import StorageClient, ConnectionConfig
 
 class StorageAgent(PrometheusAgent):
@@ -120,7 +129,7 @@ class StorageAgent(PrometheusAgent):
         # Initialize storage client
         self.storage = StorageClient(ConnectionConfig.from_env())
 
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         item_id = params.get("item_id")
 
         # Fetch from storage
@@ -146,33 +155,37 @@ class StorageAgent(PrometheusAgent):
 - `agent_name` (str) - Name of the agent for logging and metadata
 - `agent_card_path` (str, optional) - Path to agent_card.json (default: "./agent_card.json")
 
-#### `process_analysis(params, event_queue)` [ABSTRACT]
+#### `process_analysis(params, context, event_queue)` [ABSTRACT]
 
 **Must be overridden in subclass.**
 
 **Parameters:**
 - `params` (Dict[str, Any]) - Parameters extracted from A2A message
-- `event_queue` (Queue) - Queue for sending status updates and artifacts
+- `context` (RequestContext) - A2A request context with `task_id` and `context_id`
+- `event_queue` (EventQueue) - Queue for sending status updates and artifacts
 
 **Returns:**
 - Dict[str, Any] - Analysis results
 
 **Status Updates:**
 
-Send via event_queue:
+Send progress updates via event_queue using A2A event types:
 ```python
-# Working status
-event_queue.put({
-    "type": "status",
-    "status": "working",
-    "message": "Processing..."
-})
+from prometheus_api.agent import (
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 
-# Artifact (intermediate result)
-event_queue.put({
-    "type": "artifact",
-    "data": json.dumps({"result": "..."})
-})
+# Working status
+await event_queue.enqueue_event(
+    TaskStatusUpdateEvent(
+        taskId=context.task_id,
+        contextId=context.context_id,
+        final=False,
+        status=TaskStatus(state=TaskState.working),
+    )
+)
 ```
 
 Note: You don't need to send "completed" or "failed" status - the base class handles that automatically.
@@ -320,7 +333,7 @@ class MyAgent(PrometheusAgent):
         self.storage = StorageClient(ConnectionConfig.from_env())
         self.cache = {}
 
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         # Use self.storage, self.cache, etc.
         pass
 ```
@@ -378,80 +391,18 @@ from a2a.server.tasks import InMemoryTaskStore
 from prometheus_api.agent.middleware import BearerTokenMiddleware
 import uvicorn
 
-logging.basicConfig(...)
-logger = logging.getLogger(__name__)
+# ... lots of boilerplate code ...
 
 class MyExecutor(AgentExecutor):
-    def __init__(self):
-        super().__init__()
-        logger.info("Initialized")
-
-    def execute(self, context, event_queue):
-        try:
-            logger.info("Starting execution")
-            params = self._extract_params(context)
-            event_queue.put({"type": "status", "status": "working", ...})
-            result = self.process_analysis(params, event_queue)
-            event_queue.put({"type": "status", "status": "completed", ...})
-            event_queue.put({"type": "artifact", ...})
-            return result
-        except Exception as e:
-            logger.error(...)
-            event_queue.put({"type": "status", "status": "failed", ...})
-            raise
-
-    def _extract_params(self, context):
-        message = context.get("message", {})
-        parts = message.get("parts", [])
-        if not parts:
-            raise ValueError(...)
-        text = parts[0].get("text", "{}")
-        try:
-            params = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(...)
-        return params
-
-    def process_analysis(self, params, event_queue):
-        # Your logic here
-        return {"status": "success"}
-
-def create_agent_card():
-    agent_card_path = os.path.join(os.path.dirname(__file__), "agent_card.json")
-    with open(agent_card_path, 'r') as f:
-        agent_card = json.load(f)
-    port = os.getenv('AGENT_PORT', '8000')
-    host = os.getenv('AGENT_HOST', 'localhost')
-    agent_card['url'] = f"http://{host}:{port}"
-    return agent_card
-
-def register_with_registry(agent_card):
-    import httpx
-    registry_url = os.getenv("REGISTRY_URL", "http://registry:8000")
-    agent_secret = os.getenv("AGENT_SECRET")
-    headers = {}
-    if agent_secret:
-        headers["Authorization"] = f"Bearer {agent_secret}"
-    try:
-        with httpx.Client(timeout=10.0, headers=headers) as client:
-            response = client.post(f"{registry_url}/agents/register", json=agent_card)
-            response.raise_for_status()
-    except Exception as e:
-        logger.error(...)
+    async def execute(self, context, event_queue):
+        # ... manual parameter extraction ...
+        # ... manual status updates ...
+        # ... manual error handling ...
+        pass
 
 def main():
-    agent_card = create_agent_card()
-    executor = MyExecutor()
-    request_handler = DefaultRequestHandler(agent_executor=executor, task_store=InMemoryTaskStore())
-    builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
-    app = builder.build()
-    agent_secret = os.getenv("AGENT_SECRET")
-    agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
-    if agent_secret or agent_secret_required:
-        app.add_middleware(BearerTokenMiddleware, secret=agent_secret, required=agent_secret_required)
-    register_with_registry(agent_card)
-    port = int(os.getenv("AGENT_PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # ... 50+ lines of server setup ...
+    pass
 
 if __name__ == "__main__":
     main()
@@ -463,7 +414,7 @@ if __name__ == "__main__":
 from prometheus_api.agent import PrometheusAgent
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         # Your logic here
         return {"status": "success"}
 
@@ -528,21 +479,27 @@ Test your agent:
 
 ```python
 # test_agent.py
+import pytest
+from unittest.mock import AsyncMock, MagicMock
 from your_agent import MyAgent
+from prometheus_api.agent import RequestContext, EventQueue
 
-def test_agent_logic():
+@pytest.mark.asyncio
+async def test_agent_logic():
     agent = MyAgent(agent_name="Test Agent")
 
-    # Mock event queue
-    events = []
-    class MockQueue:
-        def put(self, event):
-            events.append(event)
+    # Mock context and event queue
+    context = MagicMock(spec=RequestContext)
+    context.task_id = "test-task"
+    context.context_id = "test-context"
+
+    event_queue = AsyncMock(spec=EventQueue)
 
     # Test process_analysis directly
-    result = agent.process_analysis(
+    result = await agent.process_analysis(
         {"input_data": "test"},
-        MockQueue()
+        context,
+        event_queue,
     )
 
     assert result["status"] == "success"
@@ -576,7 +533,7 @@ The base class automatically:
 
 You just need to raise exceptions in your code:
 ```python
-def process_analysis(self, params, event_queue):
+async def process_analysis(self, params, context, event_queue):
     if "required_param" not in params:
         raise ValueError("required_param is required")
 
@@ -610,8 +567,8 @@ if __name__ == "__main__":
 ### After
 ```python
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
-        # Same logic
+    async def process_analysis(self, params, context, event_queue):
+        # Same logic (now async)
         return result
 
 if __name__ == "__main__":
@@ -620,7 +577,7 @@ if __name__ == "__main__":
 ```
 
 **Delete:** All helper functions (`create_agent_card`, `register_with_registry`, `main`)
-**Keep:** Just `process_analysis()` logic
+**Keep:** Just `process_analysis()` logic (make it async)
 **Add:** Single line to create and run agent
 
 ## Next Steps

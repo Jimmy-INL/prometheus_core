@@ -9,10 +9,10 @@ pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheu
 ## Minimal Agent Example
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         input_data = params.get("input_data")
         # Your logic here
         return {"status": "success", "data": input_data}
@@ -37,10 +37,10 @@ if __name__ == "__main__":
 ### agent.py (your implementation)
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         # Your logic
         return {"status": "success"}
 
@@ -92,28 +92,36 @@ REGISTRY_URL=http://registry:8000
 ### Send Progress Updates
 
 ```python
-def process_analysis(self, params, event_queue):
-    # Send progress
-    event_queue.put({
-        "type": "status",
-        "status": "working",
-        "message": "Processing step 1..."
-    })
+from prometheus_api.agent import (
+    PrometheusAgent,
+    RequestContext,
+    EventQueue,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 
-    # Do work...
+class MyAgent(PrometheusAgent):
+    async def process_analysis(self, params, context, event_queue):
+        # Send progress update using A2A event types
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=False,
+                status=TaskStatus(state=TaskState.working),
+            )
+        )
 
-    # Send intermediate result
-    event_queue.put({
-        "type": "artifact",
-        "data": json.dumps({"step": 1, "result": "..."})
-    })
+        # Do work...
 
-    return {"status": "success"}
+        return {"status": "success"}
 ```
 
 ### Use Storage Client
 
 ```python
+from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 from prometheus_api.storage_client import StorageClient, ConnectionConfig
 
 class StorageAgent(PrometheusAgent):
@@ -121,7 +129,7 @@ class StorageAgent(PrometheusAgent):
         super().__init__(*args, **kwargs)
         self.storage = StorageClient(ConnectionConfig.from_env())
 
-    def process_analysis(self, params, event_queue):
+    async def process_analysis(self, params, context, event_queue):
         item = self.storage.items.get(params["item_id"])
         return {"status": "success", "item": item.name}
 ```
@@ -156,17 +164,25 @@ my-agent/
 ## Testing Your Agent
 
 ```python
-def test_agent():
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from your_agent import MyAgent
+from prometheus_api.agent import RequestContext, EventQueue
+
+@pytest.mark.asyncio
+async def test_agent():
     agent = MyAgent(agent_name="Test")
 
-    events = []
-    class MockQueue:
-        def put(self, event):
-            events.append(event)
+    context = MagicMock(spec=RequestContext)
+    context.task_id = "test-task"
+    context.context_id = "test-context"
 
-    result = agent.process_analysis(
+    event_queue = AsyncMock(spec=EventQueue)
+
+    result = await agent.process_analysis(
         {"input_data": "test"},
-        MockQueue()
+        context,
+        event_queue,
     )
 
     assert result["status"] == "success"
