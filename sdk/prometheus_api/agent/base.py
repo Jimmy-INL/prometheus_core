@@ -277,6 +277,7 @@ class PrometheusAgent:
 
         # Will be set during initialization
         self.agent_card = None
+        self.agent_card_dict = None  # Raw dict for registry registration
         self.executor = None
 
     def load_agent_card(self) -> AgentCard:
@@ -314,6 +315,9 @@ class PrometheusAgent:
         port = os.getenv('AGENT_PORT', '8000')
         host = os.getenv('AGENT_HOST', 'localhost')
         agent_card_dict['url'] = f"http://{host}:{port}"
+
+        # Store the raw dict for registry registration
+        self.agent_card_dict = agent_card_dict
 
         # Convert capabilities dict to AgentCapabilities object
         capabilities_dict = agent_card_dict.get('capabilities', {})
@@ -370,6 +374,7 @@ class PrometheusAgent:
 
         # Convert AgentCard to registry format (which differs from A2A AgentCard)
         # Registry expects: agent_id, name, description, url, capabilities (list of strings), version
+        # Also include full agent_card dict for dynamic tool discovery
         registration_data = {
             "agent_id": agent_card.name.lower().replace(" ", "-"),
             "name": agent_card.name,
@@ -377,6 +382,7 @@ class PrometheusAgent:
             "url": agent_card.url,
             "capabilities": [skill.id for skill in agent_card.skills],
             "version": agent_card.version,
+            "agent_card": getattr(self, 'agent_card_dict', None),  # Full agent card for tool discovery
         }
 
         try:
