@@ -299,7 +299,12 @@ Note: The `url` field is automatically overridden at runtime based on `AGENT_POR
 In `process_analysis()` method, customize the parameters your agent expects:
 
 ```python
-def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+async def process_analysis(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
     # Extract your custom parameters
     my_param = params.get("my_param")
     another_param = params.get("another_param")
@@ -332,7 +337,12 @@ Update the `inputSchema` in `agent_card.json` to match:
 The `process_analysis()` method contains your agent's core logic:
 
 ```python
-def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+async def process_analysis(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
     # Extract your parameters
     input_data = params.get("input_data")
 
@@ -353,26 +363,27 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
 For long-running tasks, use the `event_queue` to send progress updates:
 
 ```python
-def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+async def process_analysis(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
     steps = ["Loading data", "Processing", "Finalizing"]
 
     for i, step in enumerate(steps):
-        # Send progress update
-        progress = (i + 1) / len(steps) * 100
-        event_queue.put({
-            "type": "status",
-            "status": "working",
-            "message": f"{step}... ({progress:.0f}% complete)"
-        })
+        # Send progress update using A2A event types
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=False,
+                status=TaskStatus(state=TaskState.working),
+            )
+        )
 
         # Do the work
-        perform_step(step)
-
-        # Optional: Send intermediate results
-        event_queue.put({
-            "type": "artifact",
-            "data": json.dumps({"step": step, "result": "..."})
-        })
+        await perform_step(step)
 
     return final_result
 ```

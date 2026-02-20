@@ -9,7 +9,14 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import (
+    PrometheusAgent,
+    RequestContext,
+    EventQueue,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+)
 from prometheus_api.storage_client import StorageClient  # Example - use as needed
 
 # Add shared directory to path
@@ -30,7 +37,12 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
     This agent handles [DESCRIBE YOUR AGENT'S CAPABILITIES HERE].
     """
 
-    def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+    async def process_analysis(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
         """
         Process the analysis request.
 
@@ -38,6 +50,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
 
         Args:
             params: Parameters extracted from the A2A message
+            context: A2A request context with task_id and context_id
             event_queue: Queue for sending progress updates
 
         Returns:
@@ -72,7 +85,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         # Uncomment this section for an example of a long-running task
         # with incremental progress updates
         #
-        # import time
+        # import asyncio
         #
         # steps = [
         #     "Loading data",
@@ -84,27 +97,19 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         #
         # results = {}
         # for i, step in enumerate(steps):
-        #     # Send progress update
-        #     progress = (i + 1) / len(steps) * 100
-        #     event_queue.put({
-        #         "type": "status",
-        #         "status": "working",
-        #         "message": f"{step}... ({progress:.0f}% complete)"
-        #     })
+        #     # Send progress update using A2A event types
+        #     await event_queue.enqueue_event(
+        #         TaskStatusUpdateEvent(
+        #             taskId=context.task_id,
+        #             contextId=context.context_id,
+        #             final=False,
+        #             status=TaskStatus(state=TaskState.working),
+        #         )
+        #     )
         #
         #     # Simulate work (replace with actual processing)
-        #     time.sleep(1)
+        #     await asyncio.sleep(1)
         #     results[step] = f"Completed {step}"
-        #
-        #     # Optional: Send intermediate results as artifacts
-        #     if i == 2:  # After "Running analysis"
-        #         event_queue.put({
-        #             "type": "artifact",
-        #             "data": json.dumps({
-        #                 "intermediate_result": "Analysis complete",
-        #                 "progress": f"{progress:.0f}%"
-        #             }, indent=2)
-        #         })
         #
         # result = {
         #     "status": "success",

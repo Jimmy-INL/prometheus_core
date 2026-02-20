@@ -204,7 +204,12 @@ Edit `agent_card.json`:
 Edit the `process_analysis()` method in `agent.py`:
 
 ```python
-def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+async def process_analysis(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
     # Extract your custom parameters
     my_param = params.get("my_param")
 
@@ -219,20 +224,27 @@ def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any
 For long-running tasks, use the `event_queue` to send progress updates:
 
 ```python
-def process_analysis(self, params: Dict[str, Any], event_queue) -> Dict[str, Any]:
+async def process_analysis(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
     steps = ["Step 1", "Step 2", "Step 3"]
 
     for i, step in enumerate(steps):
-        # Send progress update
-        progress = (i + 1) / len(steps) * 100
-        event_queue.put({
-            "type": "status",
-            "status": "working",
-            "message": f"{step}... ({progress:.0f}% complete)"
-        })
+        # Send progress update using A2A event types
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=False,
+                status=TaskStatus(state=TaskState.working),
+            )
+        )
 
         # Do the work
-        perform_step(step)
+        await perform_step(step)
 
     return final_result
 ```
