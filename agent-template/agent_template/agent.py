@@ -4,29 +4,26 @@ TEMPLATE_NAME Agent - A2A Agent Template
 This is a template for creating A2A-enabled agents. Replace TEMPLATE_NAME with your agent's name.
 """
 
-import sys
 import logging
-from typing import Dict, Any
-from datetime import datetime, UTC
+import sys
+from datetime import UTC, datetime
+from typing import Any
 
 from prometheus_api.agent import (
+    EventQueue,
     PrometheusAgent,
     RequestContext,
-    EventQueue,
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
+    TaskState,  # noqa: F401 - used in commented example
+    TaskStatus,  # noqa: F401 - used in commented example
+    TaskStatusUpdateEvent,  # noqa: F401 - used in commented example
 )
-from prometheus_api.storage_client import StorageClient  # Example - use as needed
+from prometheus_api.storage_client import StorageClient  # noqa: F401 - example import
 
 # Add shared directory to path
 sys.path.insert(0, "/app")
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -39,10 +36,10 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
 
     async def process_analysis(
         self,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         context: RequestContext,
         event_queue: EventQueue,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Process the analysis request.
 
@@ -72,7 +69,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         result = {
             "status": "success",
             "input_received": input_data,
-            "message": "Replace this with your agent's processing logic"
+            "message": "Replace this with your agent's processing logic",
         }
 
         # You can access other parameters from params
@@ -119,10 +116,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         # ============================================================
 
         # Add metadata
-        result.update({
-            "agent": "TEMPLATE_NAME",
-            "timestamp": datetime.now(UTC).isoformat()
-        })
+        result.update({"agent": "TEMPLATE_NAME", "timestamp": datetime.now(UTC).isoformat()})
 
         return result
 
