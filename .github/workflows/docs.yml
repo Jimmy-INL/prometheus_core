@@ -5,7 +5,7 @@ on:
       - main 
 env:
   GIT_DEPTH: 0
-  WORKING_DIR: /hpc-common/systems/c500-prometheus/
+  WORKING_DIR: docs
 jobs:
   build:
     runs-on: self-hosted
@@ -16,5 +16,7 @@ jobs:
           fetch-depth: 0   # Equivalent to GIT_DEPTH: 0
       - name: Build zensical
         run: |
-          uv venv && uv sync && zensical build
+          uv venv
+          uv sync
+          uv run zensical build
 
