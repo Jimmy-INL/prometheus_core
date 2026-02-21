@@ -13,6 +13,7 @@ import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+from starlette.responses import JSONResponse
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
@@ -504,6 +505,9 @@ class PrometheusAgent:
 
         # Build the Starlette app
         app = builder.build()
+
+        # add health endpoint
+        app.add_route("/health", lambda request: JSONResponse({"ok": True}), methods=["GET"])
 
         # Add Bearer token authentication middleware
         agent_secret = os.getenv("AGENT_SECRET")
