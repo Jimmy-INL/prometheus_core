@@ -5,7 +5,6 @@ on:
       - main 
 env:
   GIT_DEPTH: 0
-  WORKING_DIR: docs
 jobs:
   build:
     runs-on: self-hosted
@@ -16,6 +15,7 @@ jobs:
           fetch-depth: 0   # Equivalent to GIT_DEPTH: 0
       - name: Build zensical
         run: |
+          cd docs
           uv venv
           uv sync
           uv run zensical build
