@@ -16,3 +16,6 @@ wheels/
 
 .env
 CLAUDE.md
+.cache
+.venv
+docs/site/
