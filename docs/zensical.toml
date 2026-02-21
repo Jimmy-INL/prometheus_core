@@ -170,11 +170,11 @@ custom_checkbox = true
 permalink = true
 toc_depth = 2
 
-[project.plugins.mkdocstrings.handlers.python]
-inventories = ["https://docs.python.org/3/objects.inv"]
-paths = ["../prometheus_api"]
+# [project.plugins.mkdocstrings.handlers.python]
+# inventories = ["https://docs.python.org/3/objects.inv"]
+# paths = ["../prometheus_api"]
 
-[project.plugins.mkdocstrings.handlers.python.options]
-docstring_style = "google"
-inherited_members = true
-show_source = false
+# [project.plugins.mkdocstrings.handlers.python.options]
+# docstring_style = "google"
+# inherited_members = true
+# show_source = false

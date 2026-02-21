@@ -16,7 +16,10 @@ jobs:
       - name: Build zensical
         run: |
           cd docs
+          pwd
           uv venv
           uv sync
+          ls -al
+          source .venv/bin/activate
           uv run zensical build
 
