@@ -47,6 +47,8 @@ In a separate terminal:
 
 ```bash
 cd frontend
+source .venv/bin/activate
+chainlit create-secret | sed '1d' > .env
 make run
 ```
 
