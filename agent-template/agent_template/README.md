@@ -490,23 +490,20 @@ python agent.py
 
 # In another terminal, test with curl
 curl -X POST http://localhost:8000/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "message/send",
-    "id": "test-1",
-    "params": {
-      "message": {
-        "messageId": "msg-1",
-        "role": "user",
-        "parts": [
-          {
-            "text": "{\"input_data\": \"test data\"}"
-          }
-        ]
-      }
-    }
-  }'
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer <your_token>" \
+    -d '{
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "id": "test-1",
+        "params": {
+        "message": {
+            "messageId": "msg-1",
+            "role": "user",
+            "parts": [{"text": "{\"input_data\": \"test\"}"}]
+        }
+        }
+    }'
 ```
 
 ### Testing with Docker
@@ -517,7 +514,7 @@ docker build -t TEMPLATE_SLUG-agent .
 docker run -p 8000:8000 TEMPLATE_SLUG-agent
 
 # Test
-curl http://localhost:8000/health
+curl -H "Authorization: Bearer <your_token>" http://localhost:8000/health
 ```
 
 ## Security: Shared Secret Authentication

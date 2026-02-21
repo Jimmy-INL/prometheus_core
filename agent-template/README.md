@@ -342,7 +342,7 @@ The template implements the full A2A protocol specification:
 ```bash
 curl -X POST http://0.0.0.0:8000 \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test" \
+  -H "Authorization: Bearer <your_token>" \
   -d '{
     "jsonrpc": "2.0",
     "method": "message/send",
@@ -505,7 +505,7 @@ The template includes built-in support for shared secret authentication using Be
 
 ### How It Works
 
-- **Incoming requests** must include: `Authorization: Bearer <secret>`
+- **Incoming requests** must include: `Authorization: Bearer <your_token>`
 - **Outgoing requests** automatically include the Bearer token header
 - **Health checks** (`/health`) and **agent cards** (`/.well-known/agent.json`) are exempt
 - **Development mode**: Set `AGENT_SECRET_REQUIRED=false` to disable authentication locally
@@ -592,19 +592,20 @@ python agent.py
 
 # Test with curl
 curl -X POST http://localhost:8000/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "message/send",
-    "id": "test-1",
-    "params": {
-      "message": {
-        "messageId": "msg-1",
-        "role": "user",
-        "parts": [{"text": "{\"input_data\": \"test\"}"}]
-      }
-    }
-  }'
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer <your_token>" \
+    -d '{
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "id": "test-1",
+        "params": {
+        "message": {
+            "messageId": "msg-1",
+            "role": "user",
+            "parts": [{"text": "{\"input_data\": \"test\"}"}]
+        }
+        }
+    }'
 ```
 
 ### Docker Testing
@@ -612,7 +613,7 @@ curl -X POST http://localhost:8000/message \
 ```bash
 docker build -t test-agent .
 docker run -p 8000:8000 test-agent
-curl http://localhost:8000/health
+curl -H "Authorization: Bearer <your_token>" http://localhost:8000/health
 ```
 
 ## Contributing
@@ -630,25 +631,17 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 For issues or questions:
 1. Reach out on Teams
 
-## Testing with a2a-inspector
+## Testing with a2a-tester
 
-1. Install a2a-inspector
+1. Install a2a-tester
     ```bash
-    git clone https://github.com/a2aproject/a2a-inspector.git
-    cd a2a-inspector
+    git clone https://github.inl.gov/genesis/a2a-tester
+    cd a2a-tester
     uv sync
-
-    # Navigate to the frontend directory
-    cd frontend
-
-    # Install npm packages
-    npm install
-
-    # Go back to the root directory
-    cd ..
+    uv run python app.py
     ```
 
-2. Open your web browser to (http://127.0.0.1:5001).
+2. Open your web browser to (http://127.0.0.1:8501).
 3. In the URL box, enter the URL of your A2A agent. By default it is: (http://0.0.0.0:8000/).
-4. Select Auth Type: Bearer Token and enter the secret when you configured your agent.
-5. Click connect. Under the "Agent Card" section you should see: "Agent card is valid"
+4. Enter your authorization token. This is what was set when you started your agent.
+5. Click "Fetch Agent Card".
