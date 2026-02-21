@@ -118,6 +118,12 @@ def collect_agent_info() -> Dict[str, str]:
         default_output
     )
 
+    # Keep comments in the copied agent.py
+    trim_comments = get_user_input(
+        prompt="\nTrim agent.py comments",
+        default="False"
+    )
+
     # Confirm
     print("\n" + "="*70)
     print("  Configuration Summary")
@@ -129,6 +135,7 @@ def collect_agent_info() -> Dict[str, str]:
     print(f"Primary Skill ID:  {skill_id}")
     print(f"Primary Skill:     {skill_name}")
     print(f"Output Directory:  {output_dir}")
+    print(f"Trim Comments:     {trim_comments}")
     print()
 
     confirm = get_user_input("Proceed with these settings? (yes/no)", "yes")
@@ -144,8 +151,37 @@ def collect_agent_info() -> Dict[str, str]:
         'TEMPLATE_SKILL_ID': skill_id,
         'TEMPLATE_SKILL_NAME': skill_name,
         'TEMPLATE_SKILL_DESCRIPTION': skill_description,
-        'OUTPUT_DIR': output_dir
+        'OUTPUT_DIR': output_dir,
+        'TRIM_COMMENTS': trim_comments
     }
+
+
+def strip_comments(content: str) -> str:
+    """Remove comment lines and inline comments from Python source, then collapse excess blank lines."""
+    lines = content.splitlines()
+    result = []
+    for line in lines:
+        stripped = line.lstrip()
+        # Remove full-line comments (but keep shebangs)
+        if stripped.startswith('#') and not stripped.startswith('#!'):
+            continue
+        # Remove inline comments (naive but sufficient for template code)
+        code_part = line.split(' #')[0].rstrip() if ' #' in line else line
+        result.append(code_part)
+
+    # Collapse runs of 3+ blank lines down to 2
+    collapsed = []
+    blank_count = 0
+    for line in result:
+        if line.strip() == '':
+            blank_count += 1
+            if blank_count <= 2:
+                collapsed.append(line)
+        else:
+            blank_count = 0
+            collapsed.append(line)
+
+    return '\n'.join(collapsed) + '\n'
 
 
 def replace_placeholders(content: str, replacements: Dict[str, str]) -> str:
@@ -220,23 +256,24 @@ def create_agent(replacements: Dict[str, str]) -> None:
 
         process_file(file_path, replacements, output_dir)
 
+    # Strip comments from agent.py if requested
+    if replacements.get('TRIM_COMMENTS').lower() in ['true']:
+        agent_py = output_dir / 'agent.py'
+        if agent_py.exists():
+            with open(agent_py, 'r', encoding='utf-8') as f:
+                content = f.read()
+            with open(agent_py, 'w', encoding='utf-8') as f:
+                f.write(strip_comments(content))
+            print("  ✓ Trimmed comments from agent.py")
+
     print()
-    print("="*70)
-    print("  Agent Created Successfully!")
-    print("="*70)
-    print(f"\nYour new agent has been created in: {output_dir}")
-    print("\nNext steps:")
-    print(f"  1. cd {output_dir}")
-    print("  2. cp .env.example .env")
-    print("  3. Edit .env if needed")
-    print("  4. Install dependencies: pip install -r requirements.txt")
-    print("  5. Run the agent: python agent.py")
-    print("\nOr use Docker:")
-    print(f"  1. docker build -t {replacements['TEMPLATE_SLUG']} {output_dir}")
-    print(f"  2. docker run -p 8000:8000 --env-file {output_dir}/.env {replacements['TEMPLATE_SLUG']}")
-    print(f"     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 {replacements['TEMPLATE_SLUG']})")
-    print("\nFor more information, see the README.md in your agent directory.")
-    print()
+    message_file = Path(__file__).parent / 'success_message.txt'
+    with open(message_file, 'r', encoding='utf-8') as f:
+        message = f.read().format(
+            output_dir=output_dir,
+            slug=replacements['TEMPLATE_SLUG']
+        )
+    print(message)
 
 
 def main():

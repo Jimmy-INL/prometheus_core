@@ -1,0 +1,14 @@
+[project]
+name = "agent-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "a2a-sdk[http-server]>=0.3.0",
+  "pydantic>=2.5.3",
+  "httpx>=0.26.0",
+  "uvicorn[standard]>=0.27.0",
+  "prometheus-api[agent] @ git+ssh://git@github.inl.gov/genesis/prometheus_api.git",
+]
+]
