@@ -9,10 +9,10 @@ Next steps:
   2. cp .env.example .env
   3. Edit .env if needed
   4. Install dependencies: pip install -r requirements.txt
-  5. Run the agent: python agent.py
+  5. Run the agent: AGENT_SECRET_REQUIRED=false python agent.py
 
 Or use uv:
-  1. cd {output_dir} && uv run agent.py
+  1. cd {output_dir} && AGENT_SECRET_REQUIRED=false uv run agent.py
 
 Or use Docker:
   1. docker build -t {slug} {output_dir}
