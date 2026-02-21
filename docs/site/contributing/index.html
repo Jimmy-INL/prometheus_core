@@ -1,0 +1,1302 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Description of page">
+      
+      
+      
+        <link rel="canonical" href="/contributing/">
+      
+      
+        <link rel="prev" href="./..">
+      
+      
+        <link rel="next" href="../prometheus-agent-template/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.23">
+    
+    
+      
+        <title>Contributing - Prometheus Docs</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../assets/stylesheets/modern/main.1e989742.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributing-to-prometheus-docs" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="./.." title="Prometheus Docs" class="md-header__button md-logo" aria-label="Prometheus Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-square-terminal" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Prometheus Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="cyan" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="./.." class="md-tabs__link">
+        
+  
+  Prometheus
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="././" class="md-tabs__link">
+        
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../prometheus-agent-template/" class="md-tabs__link">
+        
+  
+  Agent Template
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../prometheus-api/" class="md-tabs__link">
+        
+  
+  API
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../prometheus-platform/" class="md-tabs__link">
+        
+  
+  Platform
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../API_reference/prometheus_api_agent/" class="md-tabs__link">
+          
+  
+  API reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../agents/alchemy/" class="md-tabs__link">
+          
+  
+  Agents
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="./.." title="Prometheus Docs" class="md-nav__button md-logo" aria-label="Prometheus Docs" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-square-terminal" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>
+
+    </a>
+    Prometheus Docs
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./.." class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-git-pull-request" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-git-pull-request" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Markdown Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prometheus-agent-template/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prometheus-api/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prometheus-platform/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-layout-dashboard" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../API_reference/prometheus_api_agent/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus API - Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../API_reference/prometheus_api_storage/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus API - Storage Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/alchemy/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Alchemy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/autodone/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    AutoDONE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/bim/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    BIM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/documentation/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/ftl/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    FTL Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/requirements/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Style
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Markdown Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+<h1 id="contributing-to-prometheus-docs">Contributing to Prometheus Docs<a class="headerlink" href="#contributing-to-prometheus-docs" title="Permanent link">&para;</a></h1>
+<p>This guide covers how to set up your local environment, write and preview docs, and use the available markdown features.</p>
+<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h2>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Python 3.12+</li>
+<li><a href="https://docs.astral.sh/uv/">uv</a> package manager</li>
+</ul>
+<h3 id="local-development">Local Development<a class="headerlink" href="#local-development" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Install dependencies</span>
+uv<span class="w"> </span>sync
+
+<span class="c1"># Start the local dev server with hot-reload</span>
+uv<span class="w"> </span>run<span class="w"> </span>zensical<span class="w"> </span>serve
+
+<span class="c1"># Build the site for production</span>
+uv<span class="w"> </span>run<span class="w"> </span>zensical<span class="w"> </span>build<span class="w"> </span>--clean
+</code></pre></div>
+<p>The dev server watches for changes in <code>docs/</code> and reloads automatically. The production build outputs static HTML to <code>site/</code>.</p>
+<h3 id="project-structure">Project Structure<a class="headerlink" href="#project-structure" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>docs/           # Markdown source files — all content goes here
+site/           # Generated output (do not edit)
+zensical.toml   # Site configuration (theme, features, palettes)
+</code></pre></div>
+<h3 id="adding-a-new-page">Adding a New Page<a class="headerlink" href="#adding-a-new-page" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create a new <code>.md</code> file in the <code>docs/</code> directory</li>
+<li>Add frontmatter at the top with an icon (optional):
+    <div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">icon</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lucide/file-text</span>
+<span class="nn">---</span>
+</code></pre></div></li>
+<li>Preview locally with <code>uv run zensical serve</code></li>
+</ol>
+<h3 id="deployment">Deployment<a class="headerlink" href="#deployment" title="Permanent link">&para;</a></h3>
+<p>Pushing to <code>main</code> triggers the GitHub Actions workflow which builds and deploys to GitHub Pages automatically. No manual deployment is needed.</p>
+<h2 id="writing-style">Writing Style<a class="headerlink" href="#writing-style" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Use sentence case for headings</li>
+<li>Keep pages focused on a single topic</li>
+<li>Link to the <a href="https://zensical.org/docs/">Zensical docs</a> for feature details rather than duplicating their documentation</li>
+</ul>
+<h2 id="markdown-reference">Markdown Reference<a class="headerlink" href="#markdown-reference" title="Permanent link">&para;</a></h2>
+<h3 id="basic-syntax">Basic Syntax<a class="headerlink" href="#basic-syntax" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code># H1 Header
+## H2 Header
+### H3 Header
+
+**bold text**
+*italic text*
+~~strikethrough~~
+`inline code`
+
+[Link text](https://example.com)
+![Alt text](image.jpg)
+</code></pre></div>
+<h3 id="lists">Lists<a class="headerlink" href="#lists" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>Unordered:
+- Item 1
+- Item 2
+  - Nested item
+
+Ordered:
+1. First item
+2. Second item
+3. Third item
+</code></pre></div>
+<h3 id="tables">Tables<a class="headerlink" href="#tables" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Row 1    | Data     | Data     |
+| Row 2    | Data     | Data     |
+</code></pre></div>
+<h3 id="code-blocks">Code Blocks<a class="headerlink" href="#code-blocks" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>```python
+def greet(name):
+    print(f&quot;Hello, {name}!&quot;)
+```
+</code></pre></div>
+<p>Code blocks support syntax highlighting, line highlighting (<code>hl_lines</code>), titles, and <a href="https://zensical.org/docs/authoring/code-blocks/#code-annotations">code annotations</a>.</p>
+<p>Inline highlighting is also available: <code class="highlight"><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Hello!&quot;</span><span class="p">)</span></code>.</p>
+<h3 id="admonitions">Admonitions<a class="headerlink" href="#admonitions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>!!! note
+    This is a note admonition.
+
+!!! warning
+    This is a warning admonition.
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is a <strong>note</strong> admonition. Use it to provide helpful information.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This is a <strong>warning</strong> admonition. Be careful!</p>
+</div>
+<p>Collapsible blocks use <code>???</code> instead of <code>!!!</code>:</p>
+<div class="highlight"><pre><span></span><code>??? info &quot;Click to expand&quot;
+    Hidden content here.
+</code></pre></div>
+<h3 id="content-tabs">Content Tabs<a class="headerlink" href="#content-tabs" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>=== &quot;Python&quot;
+
+    ` `` python
+    print(&quot;Hello from Python!&quot;)
+    ` ``
+
+=== &quot;Rust&quot;
+
+    ` `` rs
+    println!(&quot;Hello from Rust!&quot;);
+    ` ``
+</code></pre></div>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Python</label><label for="__tabbed_1_2">Rust</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Hello from Python!&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;Hello from Rust!&quot;</span><span class="p">);</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="diagrams">Diagrams<a class="headerlink" href="#diagrams" title="Permanent link">&para;</a></h3>
+<p>Use <a href="https://zensical.org/docs/authoring/diagrams/">Mermaid</a> for diagrams:</p>
+<div class="highlight"><pre><span></span><code>graph LR
+  A[Start] --&gt; B{Error?};
+  B --&gt;|Yes| C[Hmm...];
+  C --&gt; D[Debug];
+  D --&gt; B;
+  B ----&gt;|No| E[Yay!];
+</code></pre></div>
+<h3 id="formatting-extensions">Formatting Extensions<a class="headerlink" href="#formatting-extensions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><mark>highlight</mark> with <code>==text==</code></li>
+<li><ins>underline</ins> with <code>^^text^^</code></li>
+<li><del>strikethrough</del> with <code>~~text~~</code></li>
+<li>H<sub>2</sub>O subscript with <code>~text~</code></li>
+<li>A<sup>T</sup>A superscript with <code>^text^</code></li>
+<li><span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-alt">Alt</kbd><span>+</span><kbd class="key-delete">Del</kbd></span> keyboard keys with <code>++key++</code></li>
+</ul>
+<h3 id="footnotes">Footnotes<a class="headerlink" href="#footnotes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>Here&#39;s a sentence with a footnote.[^1]
+
+[^1]: This is the footnote.
+</code></pre></div>
+<h3 id="task-lists">Task Lists<a class="headerlink" href="#task-lists" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>- [x] Completed task
+- [ ] Incomplete task
+</code></pre></div>
+<h3 id="icons-and-emojis">Icons and Emojis<a class="headerlink" href="#icons-and-emojis" title="Permanent link">&para;</a></h3>
+<p>Use shortcodes like <code>:rocket:</code>, <code>:sparkles:</code>, <code>:tada:</code>. See the <a href="https://zensical.org/docs/authoring/icons-emojis/">full list</a>.</p>
+<h3 id="math-mathjax">Math (MathJax)<a class="headerlink" href="#math-mathjax" title="Permanent link">&para;</a></h3>
+<p>MathJax is not enabled globally. To use math on a page, add this script tag at the bottom:</p>
+<div class="highlight"><pre><span></span><code><span class="p">&lt;</span><span class="nt">script</span> <span class="na">id</span><span class="o">=</span><span class="s">&quot;MathJax-script&quot;</span> <span class="na">async</span>
+  <span class="na">src</span><span class="o">=</span><span class="s">&quot;https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js&quot;</span><span class="p">&gt;&lt;/</span><span class="nt">script</span><span class="p">&gt;</span>
+</code></pre></div>
+<p>Then use <code>$$</code> blocks for display math or <code>\(</code> / <code>\)</code> for inline math.</p>
+
+
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="./.." class="md-footer__link md-footer__link--prev" aria-label="Previous: Prometheus">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Prometheus
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../prometheus-agent-template/" class="md-footer__link md-footer__link--next" aria-label="Next: Agent Template">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Agent Template
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"..","features":["announce.dismiss","content.action.edit","content.action.view","content.code.annotate","content.code.copy","content.code.select","content.footnote.tooltips","content.tabs.link","content.tooltips","navigation.footer","navigation.indexes","navigation.instant","navigation.instant.prefetch","navigation.path","navigation.sections","navigation.tabs","navigation.tabs.sticky","navigation.top","navigation.tracking","search.highlight","toc.follow"],"search":"../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.5fcf0de6.min.js"></script>
+      
+    
+  </body>
+</html>
