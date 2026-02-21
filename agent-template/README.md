@@ -1,7 +1,5 @@
 # Prometheus Agent Template
 
-## Overview
-
 This repository provides a production-ready template for building specialized AI agents that can communicate with each other using the Agent-to-Agent (A2A) protocol using the A2A SDK with INL's storage client and agent utilities. 
 
 ## Features
@@ -19,7 +17,7 @@ This repository provides a production-ready template for building specialized AI
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Docker (optional, for containerized deployment)
 
 ### Creating a New Agent
@@ -481,8 +479,6 @@ Each agent advertises its actual reachable URL through its agent card.
 
 ## Security: Shared Secret Authentication
 
-### Overview
-
 The template includes built-in support for shared secret authentication using Bearer tokens. All agents in a deployment share the same secret, preventing unauthorized cross-user access in multi-tenant environments.
 
 ### Quick Setup
@@ -616,6 +612,21 @@ docker run -p 8000:8000 test-agent
 curl -H "Authorization: Bearer <your_token>" http://localhost:8000/health
 ```
 
+### Testing with Prometheus a2a-tester
+
+1. Install a2a-tester
+    ```bash
+    git clone https://github.inl.gov/genesis/a2a-tester
+    cd a2a-tester
+    uv sync
+    uv run python app.py
+    ```
+
+2. Open your web browser to (http://127.0.0.1:8501).
+3. In the URL box, enter the URL of your A2A agent. By default it is: (http://0.0.0.0:8000/).
+4. Enter your authorization token. This is what was set when you started your agent.
+5. Click "Fetch Agent Card".
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
@@ -630,18 +641,3 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 For issues or questions:
 1. Reach out on Teams
-
-## Testing with a2a-tester
-
-1. Install a2a-tester
-    ```bash
-    git clone https://github.inl.gov/genesis/a2a-tester
-    cd a2a-tester
-    uv sync
-    uv run python app.py
-    ```
-
-2. Open your web browser to (http://127.0.0.1:8501).
-3. In the URL box, enter the URL of your A2A agent. By default it is: (http://0.0.0.0:8000/).
-4. Enter your authorization token. This is what was set when you started your agent.
-5. Click "Fetch Agent Card".

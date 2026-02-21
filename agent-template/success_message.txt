@@ -11,6 +11,9 @@ Next steps:
   4. Install dependencies: pip install -r requirements.txt
   5. Run the agent: python agent.py
 
+Or use uv:
+  1. cd {output_dir} && uv run agent.py
+
 Or use Docker:
   1. docker build -t {slug} {output_dir}
   2. docker run -p 8000:8000 --env-file {output_dir}/.env {slug}
