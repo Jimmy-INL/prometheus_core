@@ -1,0 +1,22 @@
+======================================================================
+  Agent Created Successfully!
+======================================================================
+
+Your new agent has been created in: {output_dir}
+
+Next steps:
+  1. cd {output_dir}
+  2. cp .env.example .env
+  3. Edit .env if needed
+  4. Install dependencies: pip install -r requirements.txt
+  5. Run the agent: AGENT_SECRET_REQUIRED=false python agent.py
+
+Or use uv:
+  1. cd {output_dir} && AGENT_SECRET_REQUIRED=false uv run agent.py
+
+Or use Docker:
+  1. docker build -t {slug} {output_dir}
+  2. docker run -p 8000:8000 --env-file {output_dir}/.env {slug}
+     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 {slug})
+
+For more information, see the README.md in your agent directory.
