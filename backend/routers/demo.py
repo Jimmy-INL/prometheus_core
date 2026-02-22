@@ -153,3 +153,157 @@ async def get_ecar_file():
         media_type="application/pdf",
         filename="ecar.pdf",
     )
+
+
+@router.get("/nuclear-system-design", response_model=DynamicFormProps)
+async def get_nuclear_system_design_form():
+    """Get the Nuclear System Design form configuration"""
+    return DynamicFormProps(
+        title="Design a Nuclear System",
+        description=(
+            "Describe what you want to build in plain English. The agent asks for any missing "
+            "information, shows the proposed topology, runs the sizing pipeline, and saves the "
+            "design. You can also load a saved design from the sidebar."
+        ),
+        submitLabel="Accept Parameters →",
+        cancelLabel="Cancel",
+        timeout=0,
+        fields=[
+            # --- System Identity ---
+            create_select_field(
+                id="system_loop",
+                label="Which system are you designing?",
+                options=[
+                    ("primary_loop", "Primary Loop"),
+                    ("bop_loop", "Balance of Plant Loop"),
+                    ("intermediate_loop", "Intermediate Loop"),
+                ],
+                required=True,
+                help="Select the nuclear system loop you want to size and configure.",
+            ),
+            create_select_field(
+                id="reactor_type",
+                label="Reactor Type",
+                options=[
+                    ("pwr", "PWR – Pressurized Water Reactor"),
+                    ("bwr", "BWR – Boiling Water Reactor"),
+                    ("msr", "MSR – Molten Salt Reactor"),
+                    ("sfr", "SFR – Sodium Fast Reactor"),
+                ],
+                required=True,
+                help="Select the reactor concept this system will be coupled to.",
+            ),
+            create_select_field(
+                id="safety_classification",
+                label="Safety Classification",
+                options=[
+                    ("class_1", "Class 1 – Pressure Boundary"),
+                    ("class_2", "Class 2 – Safety-Related"),
+                    ("class_3", "Class 3 – Safety-Related Support"),
+                    ("non_nuclear", "Non-Nuclear / Balance of Plant"),
+                ],
+                required=True,
+                help="ASME Section III safety classification for the system.",
+            ),
+            create_select_field(
+                id="coolant",
+                label="Coolant",
+                options=[
+                    ("water", "Water"),
+                    ("sodium", "Sodium"),
+                    ("co2", "CO₂"),
+                    ("helium", "Helium"),
+                ],
+                required=True,
+                help="Primary working coolant for the system.",
+            ),
+            # --- Thermal Power ---
+            create_number_field(
+                id="thermal_power_mwth",
+                label="Thermal Power (MWth)",
+                required=True,
+                min_val=1,
+                max_val=5000,
+                step=1,
+                help="Reactor thermal output in megawatts thermal (e.g. 300 for 300 MWth).",
+            ),
+            # --- Primary Side ---
+            create_number_field(
+                id="primary_pressure_mpa",
+                label="Primary Pressure (MPa)",
+                required=True,
+                min_val=1.0,
+                max_val=25.0,
+                step=0.5,
+                help="Operating pressure on the primary (reactor) side.",
+            ),
+            create_number_field(
+                id="primary_hot_leg_c",
+                label="Hot-Leg Temperature (°C)",
+                required=True,
+                min_val=100.0,
+                max_val=600.0,
+                step=5.0,
+                help="Coolant temperature leaving the reactor core.",
+            ),
+            # --- Secondary / Steam Side ---
+            create_number_field(
+                id="secondary_pressure_mpa",
+                label="Steam Pressure (MPa)",
+                required=True,
+                min_val=0.1,
+                max_val=15.0,
+                step=0.1,
+                help="Steam generator / secondary-side operating pressure.",
+            ),
+            create_number_field(
+                id="condenser_pressure_mpa",
+                label="Condenser Pressure (MPa)",
+                required=True,
+                min_val=0.001,
+                max_val=0.1,
+                step=0.001,
+                help="Turbine exhaust / condenser back-pressure (typical: 0.006–0.01 MPa).",
+            ),
+            create_number_field(
+                id="feedwater_temperature_c",
+                label="Feedwater Temperature (°C)",
+                required=True,
+                min_val=20.0,
+                max_val=400.0,
+                step=5.0,
+                help="Temperature of feedwater entering the steam generator.",
+            ),
+            create_number_field(
+                id="steam_outlet_temperature_c",
+                label="Steam Outlet Temperature (°C)",
+                required=True,
+                min_val=100.0,
+                max_val=600.0,
+                step=5.0,
+                help="Temperature of steam leaving the steam generator.",
+            ),
+            # --- Optimization ---
+            create_select_field(
+                id="optimization_objective",
+                label="Optimization Objective",
+                options=[
+                    ("thermal_efficiency", "Maximize Thermal Efficiency"),
+                    ("minimize_cost", "Minimize Capital Cost"),
+                    ("minimize_mass", "Minimize Component Mass"),
+                    ("minimize_volume", "Minimize System Volume"),
+                ],
+                required=False,
+                help="Primary figure of merit used during the automated sizing pipeline.",
+            ),
+            # --- Notes ---
+            create_textarea_field(
+                id="notes",
+                label="Additional Notes",
+                required=False,
+                rows=3,
+                placeholder="Describe any constraints, design intent, or special requirements...",
+                help="Plain-English description of what you want to build. The agent will extract missing details automatically.",
+            ),
+        ],
+    )

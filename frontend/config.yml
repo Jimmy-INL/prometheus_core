@@ -3,6 +3,7 @@ chat-suggestion-title: "What would you like to do today?"
 workflow-suggestions:
   - "I want to design a reactor primary coolant system."
   - "Run FTL Safety Analysis"
+  - "Design a nuclear system"
   # - "Run MOOSE"
   # - "Run Alchemy"
   # - "Render a CAD file"

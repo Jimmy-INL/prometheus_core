@@ -2,10 +2,11 @@
 
 A workflow orchestration platform for engineering design. Users interact through a chat interface that can trigger multi-step workflows (e.g., reactor coolant system design), upload and visualize 3D files (IFC, Exodus), and view generated reports.
 
-The platform is split into two services:
+The platform is split into three services:
 
 - **Backend** -- FastAPI REST API that manages sessions, chat, and workflow execution
 - **Frontend** -- Chainlit chat UI that communicates with the backend and renders custom viewers
+- **Docs** -- Static documentation that is turned into a Github pages site with CI/CD.
 
 ## Prerequisites
 

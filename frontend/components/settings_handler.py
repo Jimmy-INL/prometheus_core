@@ -40,7 +40,7 @@ async def configure_settings():
                     Select(
                         id="debug_feature",
                         label="Test Feature",
-                        values=["None", "Form", "Exodus File", "IFC File", "Mermaid Plot", "Graph"],
+                        values=["None", "Form", "Requirements", "Exodus File", "IFC File", "Mermaid Plot", "Graph"],
                         initial_index=0,
                     )
                 ],
@@ -57,6 +57,13 @@ async def settings_debug_options(ui_settings):
             case "Form":
                 await cl.Message(content="").remove()
                 response = requests.get(f"{app_settings.platform_url}/demo/autodone")
+                form_props = response.json()
+                element = cl.CustomElement(name="DynamicForm", display="inline", props=form_props)
+
+                await cl.Message(content="", elements=[element]).send()
+            case "Requirements":
+                await cl.Message(content="").remove()
+                response = requests.get(f"{app_settings.platform_url}/demo/nuclear-system-design")
                 form_props = response.json()
                 element = cl.CustomElement(name="DynamicForm", display="inline", props=form_props)
 

@@ -42,7 +42,6 @@ endif
 ##@
 
 run: ##@ Start the backend API
-	source .venv/bin/activate
 	fastapi dev --port 8001 main.py
 
 .PHONY: lint format typecheck check fix test
