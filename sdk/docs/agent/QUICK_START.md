@@ -12,7 +12,7 @@ pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheu
 from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         input_data = params.get("input_data")
         # Your logic here
         return {"status": "success", "data": input_data}
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Your logic
         return {"status": "success"}
 
@@ -102,7 +102,7 @@ from prometheus_api.agent import (
 )
 
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Send progress update using A2A event types
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
@@ -129,7 +129,7 @@ class StorageAgent(PrometheusAgent):
         super().__init__(*args, **kwargs)
         self.storage = StorageClient(ConnectionConfig.from_env())
 
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         item = self.storage.items.get(params["item_id"])
         return {"status": "success", "item": item.name}
 ```
@@ -179,7 +179,7 @@ async def test_agent():
 
     event_queue = AsyncMock(spec=EventQueue)
 
-    result = await agent.process_analysis(
+    result = await agent._execute(
         {"input_data": "test"},
         context,
         event_queue,

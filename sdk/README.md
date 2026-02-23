@@ -54,7 +54,7 @@ with StorageClient(config) as client:
 from prometheus_api.agent import PrometheusAgent
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def _execute(self, params, context, event_queue):
         input_data = params.get("input_data")
         # Your logic here
         return {"status": "success", "data": input_data}

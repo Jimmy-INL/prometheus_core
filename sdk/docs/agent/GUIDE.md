@@ -11,7 +11,7 @@
 - Parameter extraction and error handling
 - Status update management
 
-You just inherit from `PrometheusAgent`, override `process_analysis()`, and call `run()`.
+You just inherit from `PrometheusAgent`, override `_execute()`, and call `run()`.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ You just inherit from `PrometheusAgent`, override `process_analysis()`, and call
 from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
 
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         input_data = params.get("input_data")
 
         # Your logic here
@@ -52,7 +52,7 @@ from typing import Dict, Any
 class DataProcessor(PrometheusAgent):
     """Agent that processes data."""
 
-    async def process_analysis(
+    async def _execute(
         self,
         params: Dict[str, Any],
         context: RequestContext,
@@ -97,7 +97,7 @@ from prometheus_api.agent import (
 import asyncio
 
 class LongRunningAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         steps = ["Loading", "Processing", "Finalizing"]
 
         for i, step in enumerate(steps):
@@ -129,7 +129,7 @@ class StorageAgent(PrometheusAgent):
         # Initialize storage client
         self.storage = StorageClient(ConnectionConfig.from_env())
 
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         item_id = params.get("item_id")
 
         # Fetch from storage
@@ -155,7 +155,7 @@ class StorageAgent(PrometheusAgent):
 - `agent_name` (str) - Name of the agent for logging and metadata
 - `agent_card_path` (str, optional) - Path to agent_card.json (default: "./agent_card.json")
 
-#### `process_analysis(params, context, event_queue)` [ABSTRACT]
+#### `_execute(params, context, event_queue)` [ABSTRACT]
 
 **Must be overridden in subclass.**
 
@@ -333,7 +333,7 @@ class MyAgent(PrometheusAgent):
         self.storage = StorageClient(ConnectionConfig.from_env())
         self.cache = {}
 
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Use self.storage, self.cache, etc.
         pass
 ```
@@ -414,7 +414,7 @@ if __name__ == "__main__":
 from prometheus_api.agent import PrometheusAgent
 
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Your logic here
         return {"status": "success"}
 
@@ -445,14 +445,14 @@ if __name__ == "__main__":
 - Consistent parameter extraction
 
 ### 5. Focus on Logic
-- Users focus on `process_analysis()`
+- Users focus on `_execute()`
 - No need to understand A2A internals
 - No need to manage HTTP server details
 
 ## What You Still Control
 
 You have full control over:
-- Agent logic in `process_analysis()`
+- Agent logic in `_execute()`
 - Custom initialization in `__init__()`
 - Agent card JSON file
 - Input schema and validation
@@ -495,8 +495,8 @@ async def test_agent_logic():
 
     event_queue = AsyncMock(spec=EventQueue)
 
-    # Test process_analysis directly
-    result = await agent.process_analysis(
+    # Test _execute directly
+    result = await agent._execute(
         {"input_data": "test"},
         context,
         event_queue,
@@ -526,14 +526,14 @@ logging.basicConfig(
 ## Error Handling
 
 The base class automatically:
-- Catches exceptions in `process_analysis()`
+- Catches exceptions in `_execute()`
 - Logs errors with stack traces
 - Sends "failed" status to client
 - Re-raises exception for proper error propagation
 
 You just need to raise exceptions in your code:
 ```python
-async def process_analysis(self, params, context, event_queue):
+async def _execute(self, params, context, event_queue):
     if "required_param" not in params:
         raise ValueError("required_param is required")
 
@@ -548,10 +548,10 @@ async def process_analysis(self, params, context, event_queue):
 class MyExecutor(AgentExecutor):
     def execute(self, context, event_queue):
         params = self._extract_params(context)
-        result = self.process_analysis(params, event_queue)
+        result = self._execute(params, event_queue)
         return result
 
-    def process_analysis(self, params, event_queue):
+    def _execute(self, params, event_queue):
         # Your logic
         return result
 
@@ -567,7 +567,7 @@ if __name__ == "__main__":
 ### After
 ```python
 class MyAgent(PrometheusAgent):
-    async def process_analysis(self, params, context, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Same logic (now async)
         return result
 
@@ -577,7 +577,7 @@ if __name__ == "__main__":
 ```
 
 **Delete:** All helper functions (`create_agent_card`, `register_with_registry`, `main`)
-**Keep:** Just `process_analysis()` logic (make it async)
+**Keep:** Just `_execute()` logic (make it async)
 **Add:** Single line to create and run agent
 
 ## Next Steps

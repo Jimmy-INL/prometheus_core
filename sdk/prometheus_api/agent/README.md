@@ -8,7 +8,7 @@ Utilities for building A2A (Agent-to-Agent) multi-agent systems.
 from prometheus_api.agent import PrometheusAgent
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    async def _execute(self, params, context, event_queue):
         # Your logic here
         return {"status": "success"}
 

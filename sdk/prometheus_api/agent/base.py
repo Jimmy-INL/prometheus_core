@@ -45,7 +45,7 @@ class PrometheusAgentExecutor(AgentExecutor):
     Base executor for Prometheus agents.
 
     Handles parameter extraction, status updates, and error handling.
-    Subclasses only need to implement process_analysis().
+    Subclasses only need to implement _execute().
     """
 
     def __init__(self, agent_name: str = "Agent"):
@@ -68,7 +68,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         This method handles the standard A2A execution flow:
         1. Extract parameters from message
         2. Send "working" status
-        3. Call process_analysis() (implemented by subclass)
+        3. Call _execute() (implemented by subclass)
         4. Send completion status and artifact
         5. Handle errors
 
@@ -93,7 +93,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             )
 
             # Perform the main analysis (implemented by subclass)
-            result = await self.process_analysis(params, context, event_queue)
+            result = await self._execute(params, context, event_queue)
 
             # Send completion status
             await event_queue.enqueue_event(
@@ -162,7 +162,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         logger.info(f"Extracted parameters: {params}")
         return params
 
-    async def process_analysis(
+    async def _execute(
         self,
         params: Dict[str, Any],
         context: RequestContext,
@@ -183,7 +183,7 @@ class PrometheusAgentExecutor(AgentExecutor):
 
         Example:
             ```python
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
                 # Send progress update
@@ -206,7 +206,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             ```
         """
         raise NotImplementedError(
-            "Subclasses must implement process_analysis() method. "
+            "Subclasses must implement _execute() method. "
             "This is where your agent's core logic should go."
         )
 
@@ -243,7 +243,7 @@ class PrometheusAgent:
 
     To create an agent:
     1. Inherit from PrometheusAgent
-    2. Override process_analysis() method
+    2. Override _execute() method
     3. Call run()
 
     Example:
@@ -251,7 +251,7 @@ class PrometheusAgent:
         from prometheus_api.agent import PrometheusAgent
 
         class MyAgent(PrometheusAgent):
-            def process_analysis(self, params, event_queue):
+            async def _execute(self, params, context, event_queue):
                 # Your logic here
                 return {"status": "success"}
 
@@ -407,22 +407,22 @@ class PrometheusAgent:
         Returns:
             Agent executor instance
         """
-        # Create a custom executor class that wraps process_analysis
+        # Create a custom executor class that wraps _execute
         agent_instance = self
 
         class CustomExecutor(PrometheusAgentExecutor):
-            async def process_analysis(
+            async def _execute(
                 self,
                 params: Dict[str, Any],
                 context: RequestContext,
                 event_queue: EventQueue,
             ) -> Dict[str, Any]:
-                """Delegate to the agent instance's process_analysis method."""
-                return await agent_instance.process_analysis(params, context, event_queue)
+                """Delegate to the agent instance's _execute method."""
+                return await agent_instance._execute(params, context, event_queue)
 
         return CustomExecutor(agent_name=self.agent_name)
 
-    async def process_analysis(
+    async def _execute(
         self,
         params: Dict[str, Any],
         context: RequestContext,
@@ -443,7 +443,7 @@ class PrometheusAgent:
 
         Example:
             ```python
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
                 # Send progress update
@@ -463,7 +463,7 @@ class PrometheusAgent:
             ```
         """
         raise NotImplementedError(
-            "You must override process_analysis() in your agent subclass. "
+            "You must override _execute() in your agent subclass. "
             "This is where your agent's core logic should be implemented."
         )
 

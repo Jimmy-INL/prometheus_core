@@ -76,7 +76,7 @@ class TestPrometheusAgentExecutor:
 
         # Create a concrete implementation for testing
         class TestExecutor(PrometheusAgentExecutor):
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 return {"status": "success", "data": params.get("input")}
 
         test_executor = TestExecutor(agent_name="TestAgent")
@@ -113,7 +113,7 @@ class TestPrometheusAgentExecutor:
         """Test that execute sends failed status on error."""
 
         class FailingExecutor(PrometheusAgentExecutor):
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 raise ValueError("Test error")
 
         test_executor = FailingExecutor(agent_name="TestAgent")
@@ -145,10 +145,10 @@ class TestPrometheusAgentExecutor:
         assert event.final is True
 
     @pytest.mark.asyncio
-    async def test_process_analysis_not_implemented(self, executor, mock_context, mock_event_queue):
+    async def test__execute_not_implemented(self, executor, mock_context, mock_event_queue):
         """Test that base executor raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
-            await executor.process_analysis({}, mock_context, mock_event_queue)
+            await executor._execute({}, mock_context, mock_event_queue)
 
 
 class TestPrometheusAgent:
@@ -173,21 +173,21 @@ class TestPrometheusAgent:
         assert agent.agent_card_path == "/custom/path/card.json"
 
     @pytest.mark.asyncio
-    async def test_agent_process_analysis_not_implemented(self):
-        """Test that base agent raises NotImplementedError for process_analysis."""
+    async def test_agent__execute_not_implemented(self):
+        """Test that base agent raises NotImplementedError for _execute."""
         agent = PrometheusAgent(agent_name="MyAgent")
 
         mock_context = MagicMock(spec=RequestContext)
         mock_queue = AsyncMock(spec=EventQueue)
 
         with pytest.raises(NotImplementedError):
-            await agent.process_analysis({}, mock_context, mock_queue)
+            await agent._execute({}, mock_context, mock_queue)
 
     def test_create_executor_returns_custom_executor(self):
         """Test that create_executor returns a working executor."""
 
         class TestAgent(PrometheusAgent):
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 return {"result": "test"}
 
         agent = TestAgent(agent_name="TestAgent")
@@ -237,7 +237,7 @@ class TestAgentIntegration:
         """Test complete execution flow with a concrete agent."""
 
         class EchoAgent(PrometheusAgent):
-            async def process_analysis(self, params, context, event_queue):
+            async def _execute(self, params, context, event_queue):
                 # Echo the input back
                 return {
                     "echo": params.get("message", "no message"),

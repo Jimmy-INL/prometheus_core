@@ -74,7 +74,7 @@ REGISTRY_URL=http://registry:8000
 from prometheus_api.agent import PrometheusAgent
 
 class MyAgent(PrometheusAgent):
-    def process_analysis(self, params, event_queue):
+    def _execute(self, params, event_queue):
         return {"status": "success"}
 
 if __name__ == "__main__":
@@ -182,7 +182,7 @@ class StorageAgent(PrometheusAgent):
         # StorageClient reads DEEPLYNX_* vars
         self.storage = StorageClient(ConnectionConfig.from_env())
 
-    def process_analysis(self, params, event_queue):
+    def _execute(self, params, event_queue):
         item = self.storage.items.get(params["item_id"])
         return {"status": "success", "item": item.name}
 
