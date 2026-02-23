@@ -95,17 +95,8 @@ class PrometheusAgentExecutor(AgentExecutor):
             # Perform the main analysis (implemented by subclass)
             result = await self._execute(params, context, event_queue)
 
-            # Send completion status
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
-                    final=True,
-                    status=TaskStatus(state=TaskState.completed),
-                )
-            )
-
-            # Send result as artifact
+            # Send result as artifact BEFORE marking task complete
+            # (Otherwise the response may be returned before artifact is included)
             await event_queue.enqueue_event(
                 TaskArtifactUpdateEvent(
                     taskId=context.task_id,
@@ -115,6 +106,16 @@ class PrometheusAgentExecutor(AgentExecutor):
                         name="result",
                         parts=[TextPart(text=json.dumps(result, indent=2))],
                     ),
+                )
+            )
+
+            # Send completion status (must come after artifact)
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    taskId=context.task_id,
+                    contextId=context.context_id,
+                    final=True,
+                    status=TaskStatus(state=TaskState.completed),
                 )
             )
 
