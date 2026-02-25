@@ -172,6 +172,7 @@ The agent card is loaded from `agent_card.json` at runtime. This file serves as 
 - Version number
 - Capabilities (streaming, push notifications)
 - Skills (available operations with input/output schemas)
+- Skill-level orchestration metadata (`requires_approval`, `provides`, `derivation_rules`)
 
 Edit `agent_card.json`:
 ```json
@@ -184,6 +185,9 @@ Edit `agent_card.json`:
       "id": "my_skill",
       "name": "My Skill",
       "description": "Does something useful",
+      "requires_approval": false,
+      "provides": [],
+      "derivation_rules": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -197,12 +201,75 @@ Edit `agent_card.json`:
 
 **Note:** The `url` field is automatically updated at runtime based on `AGENT_PORT` and `AGENT_HOST` environment variables.
 
+### Metadata-Driven Parameter Resolution (Recommended)
+
+Use skill metadata to let orchestrators infer missing inputs without hardcoded client logic:
+
+- `requires_approval`: Whether the skill requires explicit user approval before execution
+- `provides`: Context maps this skill can publish from its output
+- `derivation_rules`: Rules to derive required input fields from context maps
+
+Example pattern (provider + consumer):
+
+```json
+{
+  "skills": [
+    {
+      "id": "get_asset_data",
+      "name": "Get Asset Data",
+      "description": "Retrieves structured asset operating data",
+      "requires_approval": false,
+      "provides": [
+        {
+          "type": "context_map",
+          "context_key": "asset_operating_limits",
+          "item_key_path": "asset.id",
+          "item_value_path": "asset.max_limit"
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "asset_id": {"type": "string"}
+        },
+        "required": ["asset_id"]
+      }
+    },
+    {
+      "id": "analyze_asset",
+      "name": "Analyze Asset",
+      "description": "Runs analysis at operating limit conditions",
+      "requires_approval": true,
+      "derivation_rules": [
+        {
+          "target_param": "context.limit_value",
+          "when": {"phrases_any": ["operating limit", "maximum limit"]},
+          "derive": {
+            "type": "from_context_map",
+            "context_key": "asset_operating_limits",
+            "lookup_key_param": "asset_id"
+          }
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "asset_id": {"type": "string"},
+          "context": {"type": "object"}
+        },
+        "required": ["asset_id", "context"]
+      }
+    }
+  ]
+}
+```
+
 ### 2. Customize the Analysis Logic
 
-Edit the `process_analysis()` method in `agent.py`:
+Edit the `_execute()` method in `agent.py`:
 
 ```python
-async def process_analysis(
+async def _execute(
     self,
     params: Dict[str, Any],
     context: RequestContext,
@@ -222,7 +289,7 @@ async def process_analysis(
 For long-running tasks, use the `event_queue` to send progress updates:
 
 ```python
-async def process_analysis(
+async def _execute(
     self,
     params: Dict[str, Any],
     context: RequestContext,

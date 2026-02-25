@@ -12,6 +12,11 @@
       "id": "TEMPLATE_SKILL_ID",
       "name": "TEMPLATE_SKILL_NAME",
       "description": "TEMPLATE_SKILL_DESCRIPTION",
+      "usage_notes": "When to use this skill",
+      "requires_approval": false,
+      "expected_duration_seconds": 30,
+      "provides": [],
+      "derivation_rules": [],
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -276,6 +276,7 @@ The agent card is loaded from `agent_card.json` (single source of truth). Edit t
 - **description**: Brief description of what your agent does
 - **version**: Agent version number
 - **skills**: List of capabilities your agent provides
+- **skill metadata**: `requires_approval`, `provides`, `derivation_rules` for orchestration behavior
 
 Example `agent_card.json`:
 ```json
@@ -294,12 +295,22 @@ Example `agent_card.json`:
 
 Note: The `url` field is automatically overridden at runtime based on `AGENT_PORT` and `AGENT_HOST` environment variables.
 
+### Metadata-Driven Skill Behavior (Recommended)
+
+The template supports data-defined orchestration metadata in each skill:
+
+- `requires_approval` (boolean): require user approval before execution
+- `provides` (array): context maps this skill can publish from output fields
+- `derivation_rules` (array): derive missing required parameters from context maps
+
+This keeps multi-agent behavior extensible without client-specific hardcoding.
+
 ### 2. Define Input Schema
 
-In `process_analysis()` method, customize the parameters your agent expects:
+In `_execute()` method, customize the parameters your agent expects:
 
 ```python
-async def process_analysis(
+async def _execute(
     self,
     params: Dict[str, Any],
     context: RequestContext,
@@ -334,10 +345,10 @@ Update the `inputSchema` in `agent_card.json` to match:
 
 ### 3. Customize the Analysis Logic
 
-The `process_analysis()` method contains your agent's core logic:
+The `_execute()` method contains your agent's core logic:
 
 ```python
-async def process_analysis(
+async def _execute(
     self,
     params: Dict[str, Any],
     context: RequestContext,
@@ -363,7 +374,7 @@ async def process_analysis(
 For long-running tasks, use the `event_queue` to send progress updates:
 
 ```python
-async def process_analysis(
+async def _execute(
     self,
     params: Dict[str, Any],
     context: RequestContext,
@@ -401,6 +412,9 @@ Skills represent the capabilities your agent exposes. Edit the `skills` array in
       "id": "my_analysis_skill",
       "name": "My Analysis Skill",
       "description": "Performs analysis of X using Y methodology",
+      "requires_approval": true,
+      "provides": [],
+      "derivation_rules": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -423,6 +437,61 @@ Skills represent the capabilities your agent exposes. Edit the `skills` array in
 ```
 
 The agent loads this configuration at startup and advertises these skills to the registry.
+
+Example provider + derivation rule:
+
+```json
+{
+  "skills": [
+    {
+      "id": "get_asset_data",
+      "name": "Get Asset Data",
+      "description": "Retrieves structured asset data",
+      "requires_approval": false,
+      "provides": [
+        {
+          "type": "context_map",
+          "context_key": "asset_limits",
+          "item_key_path": "asset.id",
+          "item_value_path": "asset.limit"
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "asset_id": {"type": "string"}
+        },
+        "required": ["asset_id"]
+      }
+    },
+    {
+      "id": "analyze_asset",
+      "name": "Analyze Asset",
+      "description": "Analyzes the asset at operating limits",
+      "requires_approval": true,
+      "derivation_rules": [
+        {
+          "target_param": "context.limit_value",
+          "when": {"phrases_any": ["operating limit", "maximum limit"]},
+          "derive": {
+            "type": "from_context_map",
+            "context_key": "asset_limits",
+            "lookup_key_param": "asset_id"
+          }
+        }
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "asset_id": {"type": "string"},
+          "context": {"type": "object"}
+        },
+        "required": ["asset_id", "context"]
+      }
+    }
+  ]
+}
+```
 
 ### 7. Add Custom Dependencies
 

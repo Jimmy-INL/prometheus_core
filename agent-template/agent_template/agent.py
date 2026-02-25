@@ -34,7 +34,7 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
     This agent handles [DESCRIBE YOUR AGENT'S CAPABILITIES HERE].
     """
 
-    async def process_analysis(
+    async def _execute(
         self,
         params: dict[str, Any],
         context: RequestContext,
