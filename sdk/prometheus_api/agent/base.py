@@ -531,7 +531,7 @@ class PrometheusAgent:
             port = int(os.getenv("AGENT_PORT", "8000"))
 
         # Configure tracing if tracing is enabled
-        tracing = True
+        tracing = my_env = os.getenv("ENABLE_TRACING", 'False').lower() in ('true', '1', 'yes')
         if tracing:
             logger.info("Starting tracing...")
             from prometheus_api.agent.mlflow_tracing import MLFlowTracingMiddleware
