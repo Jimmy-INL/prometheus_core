@@ -8,6 +8,7 @@ dependencies = [
     "fastapi[standard]>=0.128.0",
     "uvicorn>=0.40.0",
     "aiosqlite>=0.20.0",
+    "httpx>=0.28.0",
 ]
 
 [dependency-groups]

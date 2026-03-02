@@ -4,15 +4,23 @@ Demo workflow: Reactor Primary Coolant System Design.
 Defines the workflow steps with canned agent responses and an async generator
 that executes them sequentially, yielding NDJSON events for streaming to the
 frontend. Each step is recorded in the DB via the existing StateRepository.
+
+Steps can either use a canned response (for demo/testing) or make a real A2A
+call to an agent endpoint. Set ``a2a_endpoint`` on a step to enable live mode;
+the canned ``response`` is used as a fallback if the A2A call fails.
 """
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
 from state.base import StateRepository
+from orchestrator.a2a_client import send_task, A2AError
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -25,52 +33,57 @@ class WorkflowStepDef:
     agent: str
     prompt: str
     delay: float  # seconds to simulate processing
-    response: str
+    response: str  # canned response (also used as fallback when A2A fails)
     artifact_url: Optional[str] = None
+    a2a_endpoint: Optional[str] = None  # e.g. "http://localhost:8300" — set to enable live A2A
+    a2a_timeout: float = 60.0  # per-step A2A timeout in seconds
+    a2a_headers: Optional[dict[str, str]] = None  # extra headers (e.g. auth)
 
 
 DEMO_WORKFLOW_STEPS: list[WorkflowStepDef] = [
-    WorkflowStepDef(
-        name="planning",
-        agent="Orchestrator",
-        prompt="Create plan for: design a reactor primary coolant system",
-        delay=1.5,
-        response=(
-            "Plan created:\n"
-            "1. Generate requirements for a primary coolant system\n"
-            "2. Extract functions and system architecture from requirements\n"
-            "3. Generate 3D model from system architecture"
-        ),
-    ),
+    # WorkflowStepDef(
+    #     name="planning",
+    #     agent="Orchestrator",
+    #     prompt="Create plan for: design a reactor primary coolant system",
+    #     delay=1.5,
+    #     response=(
+    #         "Plan created:\n"
+    #         "1. Generate requirements for a primary coolant system\n"
+    #         "2. Extract functions and system architecture from requirements\n"
+    #         "3. Generate 3D model from system architecture"
+    #     ),
+    # ),
     WorkflowStepDef(
         name="requirements",
         agent="Requirements Agent",
-        prompt="Generate requirements for a primary coolant system",
+        # prompt="Design a rankine cycle based power generation system with water-based coolant",
+        prompt={"text": "{\"action\": \"design\", \"query\": \"Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW.\"}"},
         delay=2.0,
         response=(
-            "The primary coolant system shall transfer 300 MWth of heat from "
-            "the reactor core to the heat rejection system. The system shall "
-            "operate at 2,250 psia with an inlet temperature of 550\u00b0F and "
-            "outlet temperature of 620\u00b0F. The system shall maintain a "
-            "minimum flow rate of 140,000 GPM during normal operations."
+            "fallback..."
         ),
+        a2a_endpoint="https://api.hpc.inl.gov/llm2/a2a/9a826c6d-5d27-4721-9917-4b5473c934b6",
+        a2a_headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer sk-bim-agent-key"
+        }
     ),
-    WorkflowStepDef(
-        name="architecture",
-        agent="Systems Architecture Agent",
-        prompt="Extract functions and system architecture from this requirement",
-        delay=2.5,
-        response=(
-            "System Architecture Extracted:\n"
-            "- System A: Primary Heat Transport Loop\n"
-            "  - A1: Reactor Coolant Pump (4x, 35,000 GPM each)\n"
-            "  - A2: Hot Leg Piping (42-inch diameter, Inconel 690)\n"
-            "  - A3: Cold Leg Piping (42-inch diameter, Inconel 690)\n"
-            "- System B: Steam Generation\n"
-            "  - B1: Steam Generator (4x, vertical U-tube)\n"
-            "  - B2: Pressurizer (2,250 psia, electric heater + spray)"
-        ),
-    ),
+    # WorkflowStepDef(
+    #     name="architecture",
+    #     agent="Systems Architecture Agent",
+    #     prompt="Extract functions and system architecture from this requirement",
+    #     delay=2.5,
+    #     response=(
+    #         "System Architecture Extracted:\n"
+    #         "- System A: Primary Heat Transport Loop\n"
+    #         "  - A1: Reactor Coolant Pump (4x, 35,000 GPM each)\n"
+    #         "  - A2: Hot Leg Piping (42-inch diameter, Inconel 690)\n"
+    #         "  - A3: Cold Leg Piping (42-inch diameter, Inconel 690)\n"
+    #         "- System B: Steam Generation\n"
+    #         "  - B1: Steam Generator (4x, vertical U-tube)\n"
+    #         "  - B2: Pressurizer (2,250 psia, electric heater + spray)"
+    #     ),
+    # ),
     WorkflowStepDef(
         name="3d_model",
         agent="Alchemy Agent",
@@ -119,6 +132,32 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _execute_step(step_def: WorkflowStepDef) -> str:
+    """Run a single step — live A2A call if configured, otherwise canned response."""
+    if step_def.a2a_endpoint:
+        try:
+            log.info("A2A call to %s for step '%s'", step_def.a2a_endpoint, step_def.name)
+            response = await send_task(
+                endpoint=step_def.a2a_endpoint,
+                message=step_def.prompt,
+                timeout=step_def.a2a_timeout,
+                headers=step_def.a2a_headers,
+            )
+            log.info("A2A response received for step '%s'", step_def.name)
+            return response
+        except (A2AError, Exception) as exc:
+            log.warning(
+                "A2A call failed for step '%s': %s — falling back to canned response",
+                step_def.name,
+                exc,
+            )
+            return step_def.response
+    else:
+        # Canned mode: simulate processing time
+        await asyncio.sleep(step_def.delay)
+        return step_def.response
+
+
 async def run_demo_workflow(
     session_id: str,
     workflow_id: str,
@@ -162,11 +201,11 @@ async def run_demo_workflow(
             timestamp=_now(),
         )
 
-        # Simulate agent processing time
-        await asyncio.sleep(step_def.delay)
+        # Execute the step: live A2A call or canned response
+        response_text = await _execute_step(step_def)
 
         # Record completion in DB
-        output_data = {"response": step_def.response}
+        output_data = {"response": response_text}
         if step_def.artifact_url:
             output_data["artifact_url"] = step_def.artifact_url
 
@@ -182,7 +221,7 @@ async def run_demo_workflow(
             step_index=i,
             step_name=step_def.name,
             agent=step_def.agent,
-            response=step_def.response,
+            response=response_text,
             artifact_url=step_def.artifact_url,
             total_steps=len(steps),
             timestamp=_now(),

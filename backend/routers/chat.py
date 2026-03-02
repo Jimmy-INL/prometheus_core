@@ -53,7 +53,7 @@ async def chat(request_body: ChatMessageRequest, request: Request):
 
     # Build response
     options = [
-        "Design a rankine cycle based power generation system with water-based coolant",
+        "Design a Rankine cycle based power generation system for a Sodium Fast Reactor.",
         "Run FTL Safety Analysis"
     ]
     if request_body.message in options:

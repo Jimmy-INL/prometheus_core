@@ -114,7 +114,7 @@ async def message_handler(message: cl.Message):
 async def _run_demo_workflow(trigger_message: str, session_id: str = ""):
     """Stream the demo workflow from the backend and display each step."""
     await cl.Message(
-        content="Starting workflow: **Design a rankine cycle based power generation system with water-based coolant**",
+        content="Starting workflow: **Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW**",
     ).send()
 
     current_step = None

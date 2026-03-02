@@ -1,7 +1,7 @@
 chat-intro: "Welcome to the Prometheus Platform."
 chat-suggestion-title: "What would you like to do today?"
 workflow-suggestions:
-  - "Design a rankine cycle based power generation system with water-based coolant"
+  - "Design a Rankine cycle based power generation system for a Sodium Fast Reactor."
   - "Run FTL Safety Analysis"
   - "Design a nuclear system"
   # - "Run MOOSE"
