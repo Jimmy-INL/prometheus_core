@@ -34,19 +34,27 @@ After confirmation, it creates a new directory with all files ready to go.
 
 ### Run the generated agent
 
-```bash
-cd <output-directory>
-cp .env.example .env          # edit with your settings
-pip install -r requirements.txt
-python agent.py
-```
+=== "pip"
 
-Or with Docker:
+    ```bash
+    cd <output-directory>
+    cp .env.example .env          # edit with your settings
+    pip install -r requirements.txt
+    python agent.py
+    ```
 
-```bash
-docker build -t my-agent .
-docker run -p 8000:8000 --env-file .env my-agent
-```
+=== "uv"
+
+    ```bash
+    cd ../<output-directory> && AGENT_SECRET_REQUIRED=false uv run agent.py
+    ```
+
+=== "Docker
+
+    ```bash
+    docker build -t my-agent .
+    docker run -p 8000:8000 --env-file .env my-agent
+    ```
 
 ## Generated files
 

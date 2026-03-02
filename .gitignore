@@ -20,3 +20,4 @@ CLAUDE.md
 .venv
 docs/site/
 */*.db
+backend/data/*

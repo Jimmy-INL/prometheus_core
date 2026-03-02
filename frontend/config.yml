@@ -1,7 +1,7 @@
 chat-intro: "Welcome to the Prometheus Platform."
 chat-suggestion-title: "What would you like to do today?"
 workflow-suggestions:
-  - "I want to design a reactor primary coolant system."
+  - "Design a rankine cycle based power generation system with water-based coolant"
   - "Run FTL Safety Analysis"
   - "Design a nuclear system"
   # - "Run MOOSE"
@@ -19,6 +19,6 @@ debug: true
 auto-approve-steps: true
 agent-names:
   - "MOOSE"
-  - "Alchemy"
+  - "Alchemy/BIM"
   - "AutoDONE"
   - "FTL"

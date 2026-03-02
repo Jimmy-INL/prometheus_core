@@ -79,14 +79,14 @@ DEMO_WORKFLOW_STEPS: list[WorkflowStepDef] = [
         response="3D model generated: plant.ifc containing 2 systems, 5 components, 847 building elements",
         artifact_url="/demo/ifc",
     ),
-    WorkflowStepDef(
-        name="create_ecar",
-        agent="ECAR Agent",
-        prompt="Take the information from this workflow and turn it into an engineering, caculation, and analysis report (ECAR)",
-        delay=3.0,
-        response="Here is your ECAR.",
-        artifact_url="/demo/ecar",
-    ),
+    # WorkflowStepDef(
+    #     name="create_ecar",
+    #     agent="ECAR Agent",
+    #     prompt="Take the information from this workflow and turn it into an engineering, caculation, and analysis report (ECAR)",
+    #     delay=3.0,
+    #     response="Here is your ECAR.",
+    #     artifact_url="/demo/ecar",
+    # ),
 ]
 
 
