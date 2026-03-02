@@ -530,5 +530,12 @@ class PrometheusAgent:
         if port is None:
             port = int(os.getenv("AGENT_PORT", "8000"))
 
+        # Configure tracing if tracing is enabled
+        tracing = True
+        if tracing:
+            logger.info("Starting tracing...")
+            from prometheus_api.agent.mlflow_tracing import MLFlowTracingMiddleware
+            tracer = MLFlowTracingMiddleware(app)
+
         logger.info(f"Starting HTTP server on {host}:{port}")
         uvicorn.run(app, host=host, port=port)
