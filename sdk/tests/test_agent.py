@@ -97,16 +97,16 @@ class TestPrometheusAgentExecutor:
         assert first_event.task_id == "test-task-123"
         assert first_event.context_id == "test-context-456"
 
-        # Check second call is completed status
+        # Check second call is artifact
         second_event = calls[1][0][0]
-        assert isinstance(second_event, TaskStatusUpdateEvent)
-        assert second_event.status.state == TaskState.completed
-        assert second_event.final is True
+        assert isinstance(second_event, TaskArtifactUpdateEvent)
+        assert second_event.task_id == "test-task-123"
 
-        # Check third call is artifact
+        # Check third call is completed status
         third_event = calls[2][0][0]
-        assert isinstance(third_event, TaskArtifactUpdateEvent)
-        assert third_event.task_id == "test-task-123"
+        assert isinstance(third_event, TaskStatusUpdateEvent)
+        assert third_event.status.state == TaskState.completed
+        assert third_event.final is True
 
     @pytest.mark.asyncio
     async def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
@@ -129,6 +129,82 @@ class TestPrometheusAgentExecutor:
         last_event = calls[-1][0][0]
         assert isinstance(last_event, TaskStatusUpdateEvent)
         assert last_event.status.state == TaskState.failed
+
+    @pytest.mark.asyncio
+    async def test_execute_skips_auto_finalization_when_agent_finalizes(
+        self, mock_context, mock_event_queue
+    ):
+        """If _execute emits final status, executor should not emit extra terminal events."""
+
+        class FinalizingExecutor(PrometheusAgentExecutor):
+            async def _execute(self, params, context, event_queue):
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        taskId=context.task_id,
+                        contextId=context.context_id,
+                        final=True,
+                        status=TaskStatus(state=TaskState.completed),
+                    )
+                )
+                return {"status": "handled-by-agent"}
+
+        test_executor = FinalizingExecutor(agent_name="TestAgent")
+        await test_executor.execute(mock_context, mock_event_queue)
+
+        calls = mock_event_queue.enqueue_event.call_args_list
+        assert len(calls) == 2
+
+        first_event = calls[0][0][0]
+        assert isinstance(first_event, TaskStatusUpdateEvent)
+        assert first_event.status.state == TaskState.working
+        assert first_event.final is False
+
+        second_event = calls[1][0][0]
+        assert isinstance(second_event, TaskStatusUpdateEvent)
+        assert second_event.status.state == TaskState.completed
+        assert second_event.final is True
+
+    @pytest.mark.asyncio
+    async def test_execute_skips_auto_artifact_when_agent_streams_artifact(
+        self, mock_context, mock_event_queue
+    ):
+        """If _execute emits artifacts, executor should avoid adding duplicate result artifact."""
+
+        class ArtifactStreamingExecutor(PrometheusAgentExecutor):
+            async def _execute(self, params, context, event_queue):
+                await event_queue.enqueue_event(
+                    TaskArtifactUpdateEvent(
+                        taskId=context.task_id,
+                        contextId=context.context_id,
+                        artifact=Artifact(
+                            artifactId="streamed-artifact",
+                            name="progress",
+                            parts=[TextPart(text='{"partial": true}')],
+                        ),
+                    )
+                )
+                return {"status": "done"}
+
+        test_executor = ArtifactStreamingExecutor(agent_name="TestAgent")
+        await test_executor.execute(mock_context, mock_event_queue)
+
+        calls = mock_event_queue.enqueue_event.call_args_list
+        artifact_events = [
+            call[0][0]
+            for call in calls
+            if isinstance(call[0][0], TaskArtifactUpdateEvent)
+        ]
+        completed_events = [
+            call[0][0]
+            for call in calls
+            if isinstance(call[0][0], TaskStatusUpdateEvent)
+            and call[0][0].status.state == TaskState.completed
+            and call[0][0].final is True
+        ]
+
+        assert len(artifact_events) == 1
+        assert artifact_events[0].artifact.artifact_id == "streamed-artifact"
+        assert len(completed_events) == 1
 
     @pytest.mark.asyncio
     async def test_cancel_sends_canceled_status(self, executor, mock_context, mock_event_queue):

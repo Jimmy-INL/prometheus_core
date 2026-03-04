@@ -120,6 +120,7 @@ if __name__ == "__main__":
 - Built-in Bearer token authentication
 - Registry registration
 - HTTP server setup with A2A protocol
+- Optional `message/stream` support (`agent_card.capabilities.streaming=true`)
 - Parameter extraction and error handling
 - Status update management
 - 95% reduction in boilerplate code

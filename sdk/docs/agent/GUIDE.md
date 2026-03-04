@@ -169,26 +169,85 @@ class StorageAgent(PrometheusAgent):
 
 **Status Updates:**
 
-Send progress updates via event_queue using A2A event types:
+You can send progress updates manually:
 ```python
-from prometheus_api.agent import (
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
-)
-
-# Working status
-await event_queue.enqueue_event(
-    TaskStatusUpdateEvent(
-        taskId=context.task_id,
-        contextId=context.context_id,
-        final=False,
-        status=TaskStatus(state=TaskState.working),
-    )
+await self.send_status_update(
+    context=context,
+    event_queue=event_queue,
+    message="Working on request",
 )
 ```
 
-Note: You don't need to send "completed" or "failed" status - the base class handles that automatically.
+You can also stream partial artifacts:
+```python
+artifact_id = await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress",
+    text='{"phase":"loading"}',
+    last_chunk=False,
+)
+
+await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress",
+    artifact_id=artifact_id,
+    append=True,
+    text='{"phase":"analyzing"}',
+    last_chunk=True,
+)
+```
+
+By default, you do not need to send terminal statuses:
+- If your agent does **not** emit a final status, the base class sends final artifact + `completed` (or `failed` on exceptions).
+- If your agent emits a final status (`final=True`) itself, the base class skips automatic terminal events to avoid duplicates.
+
+#### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
+
+Helper for emitting task status events from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `state` (TaskState, optional) - Status state (default: `TaskState.working`)
+- `final` (bool, optional) - Whether this is a terminal status (default: `False`)
+- `message` (str, optional) - Human-readable status text
+- `metadata` (dict, optional) - Additional status metadata
+
+#### `send_json_artifact(context, event_queue, payload, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Helper for emitting JSON artifacts from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `payload` (Any) - JSON-serializable payload
+- `name` (str, optional) - Artifact name
+- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
+- `append` (bool, optional) - Append parts to existing artifact
+- `last_chunk` (bool, optional) - Mark last chunk in stream
+- `metadata` (dict, optional) - Artifact metadata
+
+**Returns:**
+- `str` - `artifact_id` used for the event
+
+#### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Helper for emitting text artifacts from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `text` (str) - Text content
+- `name` (str, optional) - Artifact name
+- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
+- `append` (bool, optional) - Append parts to existing artifact
+- `last_chunk` (bool, optional) - Mark last chunk in stream
+- `metadata` (dict, optional) - Artifact metadata
+
+**Returns:**
+- `str` - `artifact_id` used for the event
 
 #### `run(host, port)`
 
@@ -204,6 +263,56 @@ agent.run()                    # Use env vars
 agent.run(port=8001)          # Override port
 agent.run(host="localhost")   # Local only
 ```
+
+#### Streaming Capability
+
+To make an agent streaming-capable, set this in `agent_card.json`:
+
+```json
+{
+  "capabilities": {
+    "streaming": true
+  }
+}
+```
+
+That is the only required change to enable `message/stream`.
+
+Notes:
+- `_execute` signature stays the same: `async def _execute(self, params, context, event_queue)`.
+- Returning a normal final dict still works for both `message/send` and `message/stream`.
+- For useful live progress, emit intermediate status/artifact events from `_execute`.
+
+#### `/api/chat` Compatibility Endpoint
+
+When using `PrometheusAgent.run()`, the base class also exposes:
+- `POST /api/chat`
+
+This is a convenience adapter for frontend/debug scenarios and does not replace A2A.
+Internally it routes through the same agent executor path.
+
+Accepted request body shapes:
+- `{"message": "plain text"}`
+- `{"message": {...}}`
+- `{"params": {...}}`
+
+Optional fields:
+- `task_id`
+- `context_id`
+- `conversation_id` (used as fallback for `context_id`)
+- `include_events` (boolean)
+
+Response shape:
+- `ok` (boolean)
+- `task_id`
+- `context_id`
+- `state` (final task state, when available)
+- `result` (parsed final artifact payload)
+- `events` (included only when `include_events=true`)
+
+Notes:
+- Auth middleware applies to `/api/chat` the same way as other endpoints.
+- `/.well-known/agent.json` and `/health` remain the only auth-exempt routes by default.
 
 #### `load_agent_card()` [Advanced]
 
@@ -225,6 +334,18 @@ Create the executor instance. Override if you need custom executor behavior.
 
 **Returns:**
 - PrometheusAgentExecutor - Executor instance
+
+### PrometheusAgentExecutor (Advanced / Custom Executors)
+
+If you subclass `PrometheusAgentExecutor` directly, additional protected helpers are available:
+- `_emit_status(...)`
+- `_emit_json_artifact(...)`
+- `_emit_text_artifact(...)`
+
+These are executor-level internals. For normal `PrometheusAgent` subclasses, prefer:
+- `send_status_update(...)`
+- `send_json_artifact(...)`
+- `send_text_artifact(...)`
 
 ## Environment Variables
 
@@ -311,9 +432,9 @@ my-agent/
 
 6. **Status Management**
    - Sends "working" status automatically
-   - Sends "completed" status on success
-   - Sends "failed" status on error
-   - Sends result as artifact
+   - Sends final artifact and "completed" status when agent does not self-finalize
+   - Sends "failed" status on error when agent does not self-finalize
+   - Avoids duplicate terminal events when agent emits final status itself
 
 7. **Error Handling**
    - Catches and logs exceptions
