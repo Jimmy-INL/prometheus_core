@@ -104,8 +104,8 @@ Minimum requirement set this in `agent_card.json`:
 That is enough to accept `message/stream` requests.
 
 Optional (recommended) for useful streaming:
-- Emit intermediate status updates with `send_status_update(...)`
-- Emit partial artifacts with `send_text_artifact(...)` or `send_json_artifact(...)`
+- Emit intermediate status updates with `self.send_status_update(...)`
+- Emit partial artifacts with `self.send_text_artifact(...)` or `self.send_json_artifact(...)`
 - If your agent emits a terminal status (`final=True`) itself, the base executor will skip automatic terminal events to avoid duplicates
 
 ## Common Patterns
