@@ -26,6 +26,7 @@ from a2a.types import (
     AgentCapabilities,
     AgentSkill,
     Artifact,
+    Message,
     Part,
     TaskArtifactUpdateEvent,
     TaskState,
@@ -38,6 +39,27 @@ import uvicorn
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+class _TrackedEventQueue:
+    """Event queue wrapper that tracks finalization-related events."""
+
+    def __init__(self, event_queue: EventQueue):
+        self._event_queue = event_queue
+        self.seen_artifact = False
+        self.seen_final_status = False
+
+    async def enqueue_event(self, event: Any) -> None:
+        """Forward event to wrapped queue while tracking task-finalization signals."""
+        if isinstance(event, TaskArtifactUpdateEvent):
+            self.seen_artifact = True
+        elif isinstance(event, TaskStatusUpdateEvent) and event.final:
+            self.seen_final_status = True
+
+        await self._event_queue.enqueue_event(event)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._event_queue, name)
 
 
 class PrometheusAgentExecutor(AgentExecutor):
@@ -76,62 +98,144 @@ class PrometheusAgentExecutor(AgentExecutor):
             context: A2A request context containing the message and parameters
             event_queue: Queue for sending status updates
         """
+        tracked_queue: Optional[_TrackedEventQueue] = None
         try:
             logger.info(f"Starting {self.agent_name} execution")
 
             # Extract parameters from the message
             params = self._extract_params(context)
+            tracked_queue = _TrackedEventQueue(event_queue)
 
             # Send "working" status
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
-                    final=False,
-                    status=TaskStatus(state=TaskState.working),
-                )
+            await self._emit_status(
+                context=context,
+                event_queue=tracked_queue,
+                state=TaskState.working,
+                final=False,
             )
 
             # Perform the main analysis (implemented by subclass)
-            result = await self._execute(params, context, event_queue)
+            result = await self._execute(params, context, tracked_queue)
 
-            # Send result as artifact BEFORE marking task complete
-            # (Otherwise the response may be returned before artifact is included)
-            await event_queue.enqueue_event(
-                TaskArtifactUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
-                    artifact=Artifact(
-                        artifactId=str(uuid.uuid4()),
+            # Agent can fully control finalization for advanced/streaming use cases.
+            # If it already emitted a final status, skip automatic completion events.
+            if not tracked_queue.seen_final_status:
+                # Send result artifact if the agent didn't already stream artifacts.
+                if not tracked_queue.seen_artifact:
+                    await self._emit_json_artifact(
+                        context=context,
+                        event_queue=tracked_queue,
+                        payload=result,
                         name="result",
-                        parts=[TextPart(text=json.dumps(result, indent=2))],
-                    ),
-                )
-            )
+                    )
 
-            # Send completion status (must come after artifact)
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
+                # Send completion status (must come after artifact).
+                await self._emit_status(
+                    context=context,
+                    event_queue=tracked_queue,
+                    state=TaskState.completed,
                     final=True,
-                    status=TaskStatus(state=TaskState.completed),
                 )
-            )
+            else:
+                logger.debug(
+                    "%s emitted final status in _execute(); skipping automatic finalization",
+                    self.agent_name,
+                )
 
             logger.info(f"{self.agent_name} execution completed successfully")
 
         except Exception as e:
             logger.error(f"Error during execution: {str(e)}", exc_info=True)
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
+            # Avoid sending contradictory terminal states if the agent already finalized.
+            if not tracked_queue or not tracked_queue.seen_final_status:
+                await self._emit_status(
+                    context=context,
+                    event_queue=tracked_queue or event_queue,
+                    state=TaskState.failed,
                     final=True,
-                    status=TaskStatus(state=TaskState.failed),
                 )
-            )
             raise
+
+    async def _emit_status(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        state: TaskState,
+        final: bool,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit a task status update event with optional human-readable message."""
+        status_message = None
+        if message:
+            status_message = Message(
+                messageId=str(uuid.uuid4()),
+                role="agent",
+                parts=[Part(root=TextPart(text=message))],
+                contextId=context.context_id,
+                taskId=context.task_id,
+            )
+
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=final,
+                status=TaskStatus(state=state, message=status_message),
+                metadata=metadata,
+            )
+        )
+
+    async def _emit_json_artifact(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        payload: Any,
+        name: str = "result",
+        artifact_id: Optional[str] = None,
+        append: bool = False,
+        last_chunk: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit an artifact update with JSON payload content."""
+        serialized = json.dumps(payload, indent=2, default=str)
+        await self._emit_text_artifact(
+            context=context,
+            event_queue=event_queue,
+            text=serialized,
+            name=name,
+            artifact_id=artifact_id,
+            append=append,
+            last_chunk=last_chunk,
+            metadata=metadata,
+        )
+
+    async def _emit_text_artifact(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        text: str,
+        name: str = "result",
+        artifact_id: Optional[str] = None,
+        append: bool = False,
+        last_chunk: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit an artifact update with text content."""
+        await event_queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                artifact=Artifact(
+                    artifactId=artifact_id or str(uuid.uuid4()),
+                    name=name,
+                    parts=[Part(root=TextPart(text=text))],
+                ),
+                append=append,
+                lastChunk=last_chunk,
+                metadata=metadata,
+            )
+        )
 
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
         """
@@ -467,6 +571,105 @@ class PrometheusAgent:
             "You must override _execute() in your agent subclass. "
             "This is where your agent's core logic should be implemented."
         )
+
+    async def send_status_update(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        state: TaskState = TaskState.working,
+        final: bool = False,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Send a task status event.
+
+        This helper is optional and does not change `_execute` signature.
+        """
+        status_message = None
+        if message:
+            status_message = Message(
+                messageId=str(uuid.uuid4()),
+                role="agent",
+                parts=[Part(root=TextPart(text=message))],
+                contextId=context.context_id,
+                taskId=context.task_id,
+            )
+
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=final,
+                status=TaskStatus(state=state, message=status_message),
+                metadata=metadata,
+            )
+        )
+
+    async def send_json_artifact(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        payload: Any,
+        name: str = "result",
+        artifact_id: Optional[str] = None,
+        append: bool = False,
+        last_chunk: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Send a JSON artifact event.
+
+        Returns:
+            The artifact_id used for this event (useful for chunked appends).
+        """
+        artifact_id = artifact_id or str(uuid.uuid4())
+        text = json.dumps(payload, indent=2, default=str)
+        await self.send_text_artifact(
+            context=context,
+            event_queue=event_queue,
+            text=text,
+            name=name,
+            artifact_id=artifact_id,
+            append=append,
+            last_chunk=last_chunk,
+            metadata=metadata,
+        )
+        return artifact_id
+
+    async def send_text_artifact(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        text: str,
+        name: str = "result",
+        artifact_id: Optional[str] = None,
+        append: bool = False,
+        last_chunk: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Send a text artifact event.
+
+        Returns:
+            The artifact_id used for this event (useful for chunked appends).
+        """
+        artifact_id = artifact_id or str(uuid.uuid4())
+        await event_queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                artifact=Artifact(
+                    artifactId=artifact_id,
+                    name=name,
+                    parts=[Part(root=TextPart(text=text))],
+                ),
+                append=append,
+                lastChunk=last_chunk,
+                metadata=metadata,
+            )
+        )
+        return artifact_id
 
     def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
         """

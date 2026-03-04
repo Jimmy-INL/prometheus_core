@@ -87,6 +87,27 @@ AGENT_SECRET=your-secret-here
 REGISTRY_URL=http://registry:8000
 ```
 
+## Enable Streaming
+
+`PrometheusAgent` supports streaming without changing `_execute(params, context, event_queue)`.
+
+Minimum requirement:
+
+```json
+{
+  "capabilities": {
+    "streaming": true
+  }
+}
+```
+
+That is enough to accept `message/stream` requests.
+
+Optional (recommended) for useful streaming:
+- Emit intermediate status updates with `send_status_update(...)`
+- Emit partial artifacts with `send_text_artifact(...)` or `send_json_artifact(...)`
+- If your agent emits a terminal status (`final=True`) itself, the base executor will skip automatic terminal events to avoid duplicates
+
 ## Common Patterns
 
 ### Send Progress Updates
@@ -96,21 +117,14 @@ from prometheus_api.agent import (
     PrometheusAgent,
     RequestContext,
     EventQueue,
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
 )
 
 class MyAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
-        # Send progress update using A2A event types
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working),
-            )
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message="Working on request",
         )
 
         # Do work...
@@ -210,6 +224,12 @@ curl -X POST http://localhost:8000/message \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer my-secret" \
   -d '{"jsonrpc":"2.0","method":"message/send","id":"1","params":{...}}'
+
+# Stream events with SSE (requires capabilities.streaming=true)
+curl -N -X POST http://localhost:8000/message \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret" \
+  -d '{"jsonrpc":"2.0","method":"message/stream","id":"2","params":{...}}'
 ```
 
 ## Next Steps

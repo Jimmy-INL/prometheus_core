@@ -169,26 +169,39 @@ class StorageAgent(PrometheusAgent):
 
 **Status Updates:**
 
-Send progress updates via event_queue using A2A event types:
+You can send progress updates manually:
 ```python
-from prometheus_api.agent import (
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
-)
-
-# Working status
-await event_queue.enqueue_event(
-    TaskStatusUpdateEvent(
-        taskId=context.task_id,
-        contextId=context.context_id,
-        final=False,
-        status=TaskStatus(state=TaskState.working),
-    )
+await self.send_status_update(
+    context=context,
+    event_queue=event_queue,
+    message="Working on request",
 )
 ```
 
-Note: You don't need to send "completed" or "failed" status - the base class handles that automatically.
+You can also stream partial artifacts:
+```python
+artifact_id = await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress",
+    text='{"phase":"loading"}',
+    last_chunk=False,
+)
+
+await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress",
+    artifact_id=artifact_id,
+    append=True,
+    text='{"phase":"analyzing"}',
+    last_chunk=True,
+)
+```
+
+By default, you do not need to send terminal statuses:
+- If your agent does **not** emit a final status, the base class sends final artifact + `completed` (or `failed` on exceptions).
+- If your agent emits a final status (`final=True`) itself, the base class skips automatic terminal events to avoid duplicates.
 
 #### `run(host, port)`
 
@@ -204,6 +217,25 @@ agent.run()                    # Use env vars
 agent.run(port=8001)          # Override port
 agent.run(host="localhost")   # Local only
 ```
+
+#### Streaming Capability
+
+To make an agent streaming-capable, set this in `agent_card.json`:
+
+```json
+{
+  "capabilities": {
+    "streaming": true
+  }
+}
+```
+
+That is the only required change to enable `message/stream`.
+
+Notes:
+- `_execute` signature stays the same: `async def _execute(self, params, context, event_queue)`.
+- Returning a normal final dict still works for both `message/send` and `message/stream`.
+- For useful live progress, emit intermediate status/artifact events from `_execute`.
 
 #### `load_agent_card()` [Advanced]
 
@@ -311,9 +343,9 @@ my-agent/
 
 6. **Status Management**
    - Sends "working" status automatically
-   - Sends "completed" status on success
-   - Sends "failed" status on error
-   - Sends result as artifact
+   - Sends final artifact and "completed" status when agent does not self-finalize
+   - Sends "failed" status on error when agent does not self-finalize
+   - Avoids duplicate terminal events when agent emits final status itself
 
 7. **Error Handling**
    - Catches and logs exceptions

@@ -19,6 +19,8 @@ if __name__ == "__main__":
 
 That's all you need! The base class handles authentication, registry, and server setup.
 
+To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}` in `agent_card.json`.
+
 ## Documentation
 
 For complete documentation, see:
