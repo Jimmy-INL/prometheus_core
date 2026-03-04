@@ -1,4 +1,5 @@
 UNAME := $(shell uname)
+PYTHON := .venv/bin/python3
 
 ##@
 ##@ Help
@@ -38,11 +39,18 @@ else
 endif
 
 ##@
-##@ Checks
+##@ Commands
 ##@
 
-run: ##@ Start the backend API
+run: ##@ Start the frontend
+	$(PYTHON) -m chainlit run main.py -h --port 6100 --host c500-prometheus.hpc.inl.gov
+
+run-dev: ##@ Start the frontend in dev
 	chainlit run -h main.py
+
+##@
+##@ Checks
+##@
 
 .PHONY: lint format typecheck check fix test
 
@@ -64,3 +72,16 @@ fix: ##@ Auto-fix ruff lint issues and format
 
 check: ##@ Run all checks (lint + format + typecheck)
 check: lint format typecheck
+
+##@
+##@ Development
+##@
+
+.PHONY: install
+install: ##@ Install project dependencies
+	uv sync
+
+.PHONY: install-dev
+install-dev: ##@ Install project and development dependencies
+	uv sync --all-extras
+

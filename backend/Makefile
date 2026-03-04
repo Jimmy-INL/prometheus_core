@@ -1,4 +1,5 @@
 UNAME := $(shell uname)
+PYTHON := .venv/bin/python3
 
 ##@
 ##@ Help
@@ -42,7 +43,7 @@ endif
 ##@
 
 run: ##@ Start the backend API
-	fastapi dev --port 8001 main.py
+	$(PYTHON) -m fastapi dev --port 8001 main.py
 
 .PHONY: lint format typecheck check fix test
 
@@ -64,3 +65,16 @@ fix: ##@ Auto-fix ruff lint issues and format
 
 check: ##@ Run all checks (lint + format + typecheck)
 check: lint format typecheck
+
+##@
+##@ Development
+##@
+
+.PHONY: install
+install: ##@ Install project dependencies
+	uv sync
+
+.PHONY: install-dev
+install-dev: ##@ Install project and development dependencies
+	uv sync --all-extras
+
