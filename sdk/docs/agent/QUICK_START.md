@@ -91,7 +91,7 @@ REGISTRY_URL=http://registry:8000
 
 `PrometheusAgent` supports streaming without changing `_execute(params, context, event_queue)`.
 
-Minimum requirement:
+Minimum requirement set this in `agent_card.json`:
 
 ```json
 {
