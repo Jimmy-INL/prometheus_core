@@ -713,6 +713,156 @@ class PrometheusAgent:
         # add health endpoint
         app.add_route("/health", lambda request: JSONResponse({"ok": True}), methods=["GET"])
 
+        async def api_chat(request):
+            """
+            Compatibility/debug chat endpoint.
+
+            Accepts either:
+            - {"message": "<text>"} or {"message": {...}}
+            - {"params": {...}}
+
+            Optional fields:
+            - task_id, context_id, conversation_id
+            - include_events (bool): include raw event payloads in response
+            """
+
+            class LocalRequestContext:
+                def __init__(self, request_params: Dict[str, Any], task_id: str, context_id: str):
+                    self.task_id = task_id
+                    self.context_id = context_id
+                    self._request_params = request_params
+
+                def get_user_input(self) -> str:
+                    return json.dumps(self._request_params)
+
+            class CollectingEventQueue:
+                def __init__(self):
+                    self.events = []
+
+                async def enqueue_event(self, event: Any) -> None:
+                    self.events.append(event)
+
+            def extract_artifact_payload(events: list[Any]) -> Any:
+                for event in reversed(events):
+                    if not isinstance(event, TaskArtifactUpdateEvent):
+                        continue
+
+                    for part in event.artifact.parts:
+                        text_value = None
+                        if hasattr(part, "text"):
+                            text_value = part.text
+                        elif hasattr(part, "root") and hasattr(part.root, "text"):
+                            text_value = part.root.text
+
+                        if text_value is None:
+                            continue
+
+                        try:
+                            return json.loads(text_value)
+                        except Exception:
+                            return text_value
+                return None
+
+            def serialize_events(events: list[Any]) -> list[Dict[str, Any]]:
+                serialized = []
+                for event in events:
+                    if hasattr(event, "model_dump"):
+                        serialized.append(
+                            event.model_dump(
+                                mode="json",
+                                by_alias=True,
+                                exclude_none=True,
+                            )
+                        )
+                    else:
+                        serialized.append({"type": type(event).__name__, "value": str(event)})
+                return serialized
+
+            try:
+                body = await request.json()
+            except Exception:
+                return JSONResponse(
+                    {"ok": False, "error": "Invalid JSON body"},
+                    status_code=400,
+                )
+
+            if not isinstance(body, dict):
+                return JSONResponse(
+                    {"ok": False, "error": "JSON body must be an object"},
+                    status_code=400,
+                )
+
+            params: Dict[str, Any]
+            if isinstance(body.get("params"), dict):
+                params = body["params"]
+            elif "message" in body:
+                message_value = body.get("message")
+                if isinstance(message_value, dict):
+                    params = message_value
+                elif isinstance(message_value, str):
+                    try:
+                        parsed = json.loads(message_value)
+                        params = parsed if isinstance(parsed, dict) else {"message": message_value}
+                    except Exception:
+                        params = {"message": message_value}
+                else:
+                    return JSONResponse(
+                        {"ok": False, "error": "message must be a string or object"},
+                        status_code=400,
+                    )
+            else:
+                # Last-resort compatibility: treat entire body as params except control keys.
+                params = {
+                    k: v
+                    for k, v in body.items()
+                    if k not in {"task_id", "context_id", "conversation_id", "include_events"}
+                }
+
+            task_id = str(body.get("task_id") or uuid.uuid4())
+            context_id = str(
+                body.get("context_id")
+                or body.get("conversation_id")
+                or uuid.uuid4()
+            )
+            include_events = bool(body.get("include_events", False))
+
+            local_context = LocalRequestContext(params, task_id=task_id, context_id=context_id)
+            local_queue = CollectingEventQueue()
+
+            try:
+                await self.executor.execute(local_context, local_queue)
+            except Exception as e:
+                error_response = {
+                    "ok": False,
+                    "task_id": task_id,
+                    "context_id": context_id,
+                    "error": str(e),
+                }
+                if include_events:
+                    error_response["events"] = serialize_events(local_queue.events)
+                return JSONResponse(error_response, status_code=500)
+
+            result_payload = extract_artifact_payload(local_queue.events)
+            final_state = None
+            for event in reversed(local_queue.events):
+                if isinstance(event, TaskStatusUpdateEvent):
+                    final_state = event.status.state.value
+                    break
+
+            response_payload = {
+                "ok": True,
+                "task_id": task_id,
+                "context_id": context_id,
+                "state": final_state,
+                "result": result_payload,
+            }
+            if include_events:
+                response_payload["events"] = serialize_events(local_queue.events)
+
+            return JSONResponse(response_payload)
+
+        app.add_route("/api/chat", api_chat, methods=["POST"])
+
         # Add Bearer token authentication middleware
         agent_secret = os.getenv("AGENT_SECRET")
         agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]

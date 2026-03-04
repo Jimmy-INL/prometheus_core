@@ -230,6 +230,12 @@ curl -N -X POST http://localhost:8000/message \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer my-secret" \
   -d '{"jsonrpc":"2.0","method":"message/stream","id":"2","params":{...}}'
+
+# Compatibility frontend endpoint (wrapper around executor path)
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret" \
+  -d '{"message":"{\"material_id\":\"SS316\"}","include_events":true}'
 ```
 
 ## Next Steps

@@ -283,6 +283,37 @@ Notes:
 - Returning a normal final dict still works for both `message/send` and `message/stream`.
 - For useful live progress, emit intermediate status/artifact events from `_execute`.
 
+#### `/api/chat` Compatibility Endpoint
+
+When using `PrometheusAgent.run()`, the base class also exposes:
+- `POST /api/chat`
+
+This is a convenience adapter for frontend/debug scenarios and does not replace A2A.
+Internally it routes through the same agent executor path.
+
+Accepted request body shapes:
+- `{"message": "plain text"}`
+- `{"message": {...}}`
+- `{"params": {...}}`
+
+Optional fields:
+- `task_id`
+- `context_id`
+- `conversation_id` (used as fallback for `context_id`)
+- `include_events` (boolean)
+
+Response shape:
+- `ok` (boolean)
+- `task_id`
+- `context_id`
+- `state` (final task state, when available)
+- `result` (parsed final artifact payload)
+- `events` (included only when `include_events=true`)
+
+Notes:
+- Auth middleware applies to `/api/chat` the same way as other endpoints.
+- `/.well-known/agent.json` and `/health` remain the only auth-exempt routes by default.
+
 #### `load_agent_card()` [Advanced]
 
 Load agent card from JSON file. Called automatically by `run()`.
