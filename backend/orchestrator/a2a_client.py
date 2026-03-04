@@ -23,7 +23,7 @@ class A2AError(Exception):
 
 async def send_task(
     endpoint: str,
-    message: str,
+    message: str | None = None,
     *,
     task_id: str | None = None,
     timeout: float = 60.0,
@@ -33,7 +33,7 @@ async def send_task(
 
     Args:
         endpoint: The agent's A2A endpoint URL (e.g. "http://localhost:8300").
-        message: The text prompt to send to the agent.
+        message: The text prompt to send. If None, sends empty parts list.
         task_id: Optional task ID. A UUID is generated if not provided.
         timeout: Request timeout in seconds.
         headers: Optional extra HTTP headers (e.g. for auth).
@@ -50,6 +50,7 @@ async def send_task(
     request_id = uuid.uuid4().hex
 
     message_id = uuid.uuid4().hex
+    parts = [{"kind": "text", "text": message}] if message else []
 
     payload = {
         "jsonrpc": "2.0",
@@ -58,7 +59,7 @@ async def send_task(
             "message": {
                 "messageId": message_id,
                 "role": "user",
-                "parts": [message],
+                "parts": parts,
             },
         },
         "id": request_id,

@@ -21,3 +21,4 @@ CLAUDE.md
 docs/site/
 */*.db
 backend/data/*
+.DS_Store

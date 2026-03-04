@@ -57,7 +57,7 @@ DEMO_WORKFLOW_STEPS: list[WorkflowStepDef] = [
         name="requirements",
         agent="Requirements Agent",
         # prompt="Design a rankine cycle based power generation system with water-based coolant",
-        prompt={"text": "{\"action\": \"design\", \"query\": \"Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW.\"}"},
+        prompt="",
         delay=2.0,
         response=(
             "fallback..."
@@ -86,11 +86,16 @@ DEMO_WORKFLOW_STEPS: list[WorkflowStepDef] = [
     # ),
     WorkflowStepDef(
         name="3d_model",
-        agent="Alchemy Agent",
+        agent="Alchemy/BIM Agent",
         prompt="Generate a 3D Model for an architecture containing 2 systems and 5 components",
         delay=3.0,
-        response="3D model generated: plant.ifc containing 2 systems, 5 components, 847 building elements",
+        response="fallback..",
         artifact_url="/demo/ifc",
+        a2a_endpoint="https://api.hpc.inl.gov/llm2/a2a/015cf994-9cbc-4116-bba1-a75e72f67dcc",
+        a2a_headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer sk-bim-agent-key"
+        }
     ),
     # WorkflowStepDef(
     #     name="create_ecar",
