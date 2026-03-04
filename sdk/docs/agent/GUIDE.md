@@ -203,6 +203,52 @@ By default, you do not need to send terminal statuses:
 - If your agent does **not** emit a final status, the base class sends final artifact + `completed` (or `failed` on exceptions).
 - If your agent emits a final status (`final=True`) itself, the base class skips automatic terminal events to avoid duplicates.
 
+#### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
+
+Helper for emitting task status events from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `state` (TaskState, optional) - Status state (default: `TaskState.working`)
+- `final` (bool, optional) - Whether this is a terminal status (default: `False`)
+- `message` (str, optional) - Human-readable status text
+- `metadata` (dict, optional) - Additional status metadata
+
+#### `send_json_artifact(context, event_queue, payload, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Helper for emitting JSON artifacts from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `payload` (Any) - JSON-serializable payload
+- `name` (str, optional) - Artifact name
+- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
+- `append` (bool, optional) - Append parts to existing artifact
+- `last_chunk` (bool, optional) - Mark last chunk in stream
+- `metadata` (dict, optional) - Artifact metadata
+
+**Returns:**
+- `str` - `artifact_id` used for the event
+
+#### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Helper for emitting text artifacts from your agent class.
+
+**Parameters:**
+- `context` (RequestContext) - Current request context
+- `event_queue` (EventQueue) - Queue used to publish events
+- `text` (str) - Text content
+- `name` (str, optional) - Artifact name
+- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
+- `append` (bool, optional) - Append parts to existing artifact
+- `last_chunk` (bool, optional) - Mark last chunk in stream
+- `metadata` (dict, optional) - Artifact metadata
+
+**Returns:**
+- `str` - `artifact_id` used for the event
+
 #### `run(host, port)`
 
 Start the agent server.
@@ -257,6 +303,18 @@ Create the executor instance. Override if you need custom executor behavior.
 
 **Returns:**
 - PrometheusAgentExecutor - Executor instance
+
+### PrometheusAgentExecutor (Advanced / Custom Executors)
+
+If you subclass `PrometheusAgentExecutor` directly, additional protected helpers are available:
+- `_emit_status(...)`
+- `_emit_json_artifact(...)`
+- `_emit_text_artifact(...)`
+
+These are executor-level internals. For normal `PrometheusAgent` subclasses, prefer:
+- `send_status_update(...)`
+- `send_json_artifact(...)`
+- `send_text_artifact(...)`
 
 ## Environment Variables
 
