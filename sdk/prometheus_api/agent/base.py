@@ -671,6 +671,14 @@ class PrometheusAgent:
         )
         return artifact_id
 
+    def configure_app(self, app) -> None:
+        """
+        Optional hook to register additional routes/event handlers on the Starlette app.
+
+        Override in subclasses that need custom HTTP endpoints beyond A2A + /health + /api/chat.
+        """
+        return
+
     def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
         """
         Start the agent HTTP server.
@@ -711,7 +719,17 @@ class PrometheusAgent:
         app = builder.build()
 
         # add health endpoint
-        app.add_route("/health", lambda request: JSONResponse({"ok": True}), methods=["GET"])
+        app.add_route(
+            "/health",
+            lambda request: JSONResponse(
+                {
+                    "ok": True,
+                    "status": "healthy",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            ),
+            methods=["GET"],
+        )
 
         async def api_chat(request):
             """
@@ -862,6 +880,9 @@ class PrometheusAgent:
             return JSONResponse(response_payload)
 
         app.add_route("/api/chat", api_chat, methods=["POST"])
+
+        # Optional subclass hook for custom routes/endpoints.
+        self.configure_app(app)
 
         # Add Bearer token authentication middleware
         agent_secret = os.getenv("AGENT_SECRET")
