@@ -10,7 +10,7 @@ import sys
 import json
 import logging
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 from starlette.responses import JSONResponse
@@ -35,6 +35,7 @@ from a2a.types import (
     TextPart,
 )
 from .middleware import BearerTokenMiddleware
+from .artifacts import ArtifactReference, ArtifactRegistry
 import uvicorn
 import httpx
 
@@ -385,6 +386,101 @@ class PrometheusAgent:
         self.agent_card = None
         self.agent_card_dict = None  # Raw dict for registry registration
         self.executor = None
+        self.artifact_registry = ArtifactRegistry()
+
+    @staticmethod
+    def _context_conversation_id(context: RequestContext) -> str:
+        """Return the effective conversation scope key for registry operations."""
+        return str(getattr(context, "context_id", "") or "")
+
+    @staticmethod
+    def _payload_to_artifact_reference(
+        payload: Any,
+        *,
+        fallback_name: str,
+        conversation_id: str,
+        producer_agent_id: str,
+    ) -> Optional[ArtifactReference]:
+        """Best-effort extraction of artifact metadata from JSON artifact payloads.
+
+        This lets existing producer agents keep using `send_json_artifact(...)` while
+        automatically registering artifact references whenever payloads include URI data.
+        """
+        candidate: Optional[Dict[str, Any]] = None
+        if isinstance(payload, dict):
+            if isinstance(payload.get("artifact"), dict):
+                candidate = dict(payload.get("artifact") or {})
+            elif isinstance(payload.get("artifact_reference"), dict):
+                candidate = dict(payload.get("artifact_reference") or {})
+            elif isinstance(payload.get("uri"), str):
+                candidate = dict(payload)
+
+        if not isinstance(candidate, dict):
+            return None
+        uri = str(candidate.get("uri") or "").strip()
+        if not uri:
+            return None
+
+        name = str(candidate.get("name") or fallback_name or "").strip() or "artifact"
+        description = str(candidate.get("description") or "").strip()
+        artifact_id = str(
+            candidate.get("artifact_id")
+            or candidate.get("id")
+            or candidate.get("artifactId")
+            or uuid.uuid4()
+        )
+
+        return ArtifactReference(
+            artifact_id=artifact_id,
+            conversation_id=conversation_id,
+            name=name,
+            description=description,
+            uri=uri,
+            mime_type=candidate.get("mime_type") or candidate.get("mimeType"),
+            size_bytes=candidate.get("size_bytes") or candidate.get("sizeBytes"),
+            producer_agent_id=candidate.get("producer_agent_id") or producer_agent_id,
+            tags=[str(tag) for tag in (candidate.get("tags") or []) if tag is not None],
+            metadata=dict(candidate.get("metadata") or {}),
+        )
+
+    def register_artifact_reference(
+        self,
+        context: RequestContext,
+        reference: ArtifactReference,
+    ) -> ArtifactReference:
+        """Persist an artifact reference under the current conversation scope.
+
+        Used by producer helpers and auto-registration in `send_json_artifact`.
+        """
+        if not reference.conversation_id:
+            reference.conversation_id = self._context_conversation_id(context)
+        if not reference.producer_agent_id:
+            reference.producer_agent_id = self.agent_name.lower().replace(" ", "-")
+        return self.artifact_registry.register(reference)
+
+    def list_artifact_references(
+        self,
+        conversation_id: str,
+        limit: Optional[int] = None,
+    ) -> List[ArtifactReference]:
+        """List known references for one conversation (newest-first)."""
+        return self.artifact_registry.list(conversation_id, limit=limit)
+
+    def resolve_artifact_reference(
+        self,
+        conversation_id: str,
+        artifact_id: str,
+    ) -> Optional[ArtifactReference]:
+        """Resolve one artifact reference by canonical ID."""
+        return self.artifact_registry.resolve_by_id(conversation_id, artifact_id)
+
+    def resolve_artifact_by_name(
+        self,
+        conversation_id: str,
+        name_or_alias: str,
+    ) -> Optional[ArtifactReference]:
+        """Resolve one artifact reference by user-facing name/alias."""
+        return self.artifact_registry.resolve_by_name(conversation_id, name_or_alias)
 
     def load_agent_card(self) -> AgentCard:
         """
@@ -620,9 +716,36 @@ class PrometheusAgent:
         """
         Send a JSON artifact event.
 
+        Behavior:
+        - Emits the event exactly as before (backward compatible).
+        - Additionally auto-registers artifact metadata when `payload` contains
+          URI-based reference fields (direct payload or nested `artifact` objects).
+        - Registration stores only metadata, not raw artifact bytes.
+
         Returns:
             The artifact_id used for this event (useful for chunked appends).
         """
+        # If payload resembles an artifact reference, register it conversation-wide
+        # and inject the canonical artifact_id into the payload.
+        parsed_ref = self._payload_to_artifact_reference(
+            payload,
+            fallback_name=name,
+            conversation_id=self._context_conversation_id(context),
+            producer_agent_id=self.agent_name.lower().replace(" ", "-"),
+        )
+        if parsed_ref is not None:
+            registered = self.register_artifact_reference(context, parsed_ref)
+            if isinstance(payload, dict):
+                if isinstance(payload.get("artifact"), dict):
+                    payload["artifact"]["artifact_id"] = registered.artifact_id
+                    payload["artifact"]["conversation_id"] = registered.conversation_id
+                elif isinstance(payload.get("artifact_reference"), dict):
+                    payload["artifact_reference"]["artifact_id"] = registered.artifact_id
+                    payload["artifact_reference"]["conversation_id"] = registered.conversation_id
+                else:
+                    payload["artifact_id"] = registered.artifact_id
+                    payload["conversation_id"] = registered.conversation_id
+
         artifact_id = artifact_id or str(uuid.uuid4())
         text = json.dumps(payload, indent=2, default=str)
         await self.send_text_artifact(
@@ -636,6 +759,49 @@ class PrometheusAgent:
             metadata=metadata,
         )
         return artifact_id
+
+    async def send_artifact_reference(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        name: str,
+        description: str,
+        uri: str,
+        mime_type: Optional[str] = None,
+        size_bytes: Optional[int] = None,
+        artifact_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ArtifactReference:
+        """Register and emit a metadata-only artifact reference event.
+
+        Intended for producer agents that create filesystem/DeepLynx artifacts.
+        Downstream agents should consume the resulting `artifact_id` in tool inputs
+        instead of passing raw file content through prompts.
+        """
+        reference = ArtifactReference(
+            artifact_id=artifact_id or str(uuid.uuid4()),
+            conversation_id=self._context_conversation_id(context),
+            name=name,
+            description=description,
+            uri=uri,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            producer_agent_id=self.agent_name.lower().replace(" ", "-"),
+            tags=list(tags or []),
+            metadata=dict(metadata or {}),
+        )
+        registered = self.register_artifact_reference(context, reference)
+        payload = {"artifact": registered.to_dict()}
+        await self.send_json_artifact(
+            context=context,
+            event_queue=event_queue,
+            payload=payload,
+            name="artifact_reference",
+            metadata={"kind": "artifact_reference", **dict(metadata or {})},
+        )
+        return registered
 
     async def send_text_artifact(
         self,
@@ -742,6 +908,7 @@ class PrometheusAgent:
             Optional fields:
             - task_id, context_id, conversation_id
             - include_events (bool): include raw event payloads in response
+            - include_artifacts (bool, default true): include conversation artifact catalog
             """
 
             class LocalRequestContext:
@@ -833,7 +1000,7 @@ class PrometheusAgent:
                 params = {
                     k: v
                     for k, v in body.items()
-                    if k not in {"task_id", "context_id", "conversation_id", "include_events"}
+                    if k not in {"task_id", "context_id", "conversation_id", "include_events", "include_artifacts"}
                 }
 
             task_id = str(body.get("task_id") or uuid.uuid4())
@@ -843,6 +1010,7 @@ class PrometheusAgent:
                 or uuid.uuid4()
             )
             include_events = bool(body.get("include_events", False))
+            include_artifacts = bool(body.get("include_artifacts", True))
 
             local_context = LocalRequestContext(params, task_id=task_id, context_id=context_id)
             local_queue = CollectingEventQueue()
@@ -876,10 +1044,35 @@ class PrometheusAgent:
             }
             if include_events:
                 response_payload["events"] = serialize_events(local_queue.events)
+            if include_artifacts:
+                artifact_refs = [
+                    ref.to_dict() for ref in self.list_artifact_references(context_id)
+                ]
+                response_payload["artifacts"] = artifact_refs
+                response_payload["artifact_lookup"] = {
+                    ref.get("name"): ref.get("artifact_id")
+                    for ref in artifact_refs
+                    if isinstance(ref.get("name"), str) and ref.get("name")
+                }
 
             return JSONResponse(response_payload)
 
         app.add_route("/api/chat", api_chat, methods=["POST"])
+
+        async def api_list_artifacts(request):
+            """List metadata references available to a conversation/session."""
+            conversation_id = str(request.path_params.get("conversation_id") or "")
+            refs = [ref.to_dict() for ref in self.list_artifact_references(conversation_id)]
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "conversation_id": conversation_id,
+                    "count": len(refs),
+                    "artifacts": refs,
+                }
+            )
+
+        app.add_route("/api/artifacts/{conversation_id}", api_list_artifacts, methods=["GET"])
 
         # Optional subclass hook for custom routes/endpoints.
         self.configure_app(app)

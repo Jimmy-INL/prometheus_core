@@ -2,6 +2,7 @@
 
 from .middleware import BearerTokenMiddleware
 from .base import PrometheusAgent, PrometheusAgentExecutor
+from .artifacts import ArtifactReference, ArtifactRegistry
 
 # Re-export commonly used A2A types for convenience
 from a2a.server.agent_execution.context import RequestContext
@@ -19,6 +20,8 @@ __all__ = [
     "BearerTokenMiddleware",
     "PrometheusAgent",
     "PrometheusAgentExecutor",
+    "ArtifactReference",
+    "ArtifactRegistry",
     # A2A types
     "RequestContext",
     "EventQueue",
