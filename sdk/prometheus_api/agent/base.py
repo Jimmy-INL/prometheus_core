@@ -837,6 +837,28 @@ class PrometheusAgent:
         )
         return artifact_id
 
+    async def send_conversation_message(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        message: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Emit a durable conversation-visible message payload.
+
+        Use this for user-facing messages that should appear in chat history.
+        This is distinct from transient status updates intended for progress UI.
+        """
+        payload = {"message": str(message)}
+        meta = {"kind": "conversation_message", **dict(metadata or {})}
+        return await self.send_json_artifact(
+            context=context,
+            event_queue=event_queue,
+            payload=payload,
+            name="conversation_message",
+            metadata=meta,
+        )
+
     def configure_app(self, app) -> None:
         """
         Optional hook to register additional routes/event handlers on the Starlette app.
