@@ -100,110 +100,155 @@ async def message_handler(message: cl.Message):
     else:
         payload = {"message": message.content, "user_id": "user_123", "context": {}, "files": []}
 
-        response = requests.post(f"{settings.platform_url}/api/chat", json=payload)
-        data = response.json()
+        try:
+            response = requests.post(f"{settings.platform_url}/api/chat", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except requests.exceptions.ConnectionError:
+            await cl.Message(content="Unable to connect to the backend. Please ensure the backend server is running.").send()
+            return
+        except requests.exceptions.JSONDecodeError:
+            await cl.Message(content=f"Backend returned an invalid response (HTTP {response.status_code}). Check backend logs for details.").send()
+            return
+        except requests.exceptions.HTTPError:
+            await cl.Message(content=f"Backend error (HTTP {response.status_code}). Check backend logs for details.").send()
+            return
 
         if data.get("type") == "workflow":
             await _run_demo_workflow(message.content, data.get("session_id"))
+        elif data.get("type") == "fmea_workflow":
+            await _run_demo_workflow(message.content, data.get("session_id"), workflow_path="/api/demo/workflow/fmea")
         else:
             await cl.Message(
-                content=f"Received: {data['response']}",
+                content=f"{data['response']}",
             ).send()
 
 
-async def _run_demo_workflow(trigger_message: str, session_id: str = ""):
+async def _stream_workflow_events(client, plan_msg, pending_artifacts, workflow_path="/api/demo/workflow/run", **request_json):
+    """Stream a single workflow run request and render events.
+
+    Returns (plan_msg, workflow_id, session_id) so callers can chain
+    follow-up requests with the same identifiers.
+    """
+    current_step = None
+    workflow_id = None
+    session_id = None
+
+    async with client.stream(
+        "POST",
+        f"{settings.platform_url}{workflow_path}",
+        json=request_json,
+    ) as stream:
+        workflow_id = stream.headers.get("x-workflow-id", "")
+        session_id = stream.headers.get("x-session-id", "")
+
+        async for line in stream.aiter_lines():
+            if not line.strip():
+                continue
+
+            event = json.loads(line)
+            event_type = event.get("event_type")
+
+            if event_type == "workflow_start":
+                if plan_msg is None:
+                    total = event.get("total_steps", 0)
+                    plan_msg = cl.Message(
+                        content=f"Creating workflow plan...",
+                    )
+                    await plan_msg.send()
+            elif event_type == "step_start":
+                agent = event.get("agent", "Agent")
+                prompt = event.get("prompt", "")
+                idx = event.get("step_index", 0)
+                total = event.get("total_steps", 0)
+
+                current_step = cl.Step(
+                    #name=f"Step {idx + 1}/{total}: {agent}",
+                    name=f"{agent}",
+                    type="tool",
+                    parent_id=plan_msg.id,
+                    show_input=True,
+                )
+                current_step.input = prompt
+                await current_step.send()
+
+            elif event_type == "step_complete":
+                resp_text = event.get("response", "")
+                artifact_url = event.get("artifact_url")
+
+                if current_step:
+                    current_step.output = resp_text
+                    await current_step.update()
+                    current_step = None
+
+                if artifact_url:
+                    pending_artifacts.append(artifact_url)
+
+            elif event_type == "workflow_complete":
+                await cl.Message(
+                    content="Workflow completed successfully!",
+                ).send()
+
+    return plan_msg, workflow_id, session_id, current_step
+
+
+async def _run_demo_workflow(trigger_message: str, session_id: str = "", workflow_path: str = "/api/demo/workflow/run"):
     """Stream the demo workflow from the backend and display each step."""
     await cl.Message(
-        content="Starting workflow: **Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW**",
+        content=f"Starting workflow: **{trigger_message}",
     ).send()
 
-    current_step = None
     pending_artifacts = []
+    plan_msg = None
 
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream(
-                "POST",
-                f"{settings.platform_url}/api/demo/workflow/run",
-                json={
-                    "message": trigger_message,
-                    "user_id": "user_123",
-                    "session_id": session_id,
-                },
-            ) as stream:
-                async for line in stream.aiter_lines():
-                    if not line.strip():
-                        continue
+            # Phase 1: run only the planning step
+            plan_msg, workflow_id, session_id, current_step = await _stream_workflow_events(
+                client, plan_msg, pending_artifacts,
+                workflow_path=workflow_path,
+                message=trigger_message,
+                user_id="user_123",
+                session_id=session_id,
+                end_step=1,
+            )
 
-                    event = json.loads(line)
-                    event_type = event.get("event_type")
+            # Approval gate after planning step
+            if not settings.auto_approve_steps:
+                ask_msg = cl.AskActionMessage(
+                    content="Planning complete. Proceed with this plan?",
+                    actions=[
+                        cl.Action(name="approve", payload={"value": "approve"}, label="Continue"),
+                        cl.Action(name="reject", payload={"value": "reject"}, label="Stop Workflow"),
+                    ],
+                )
+                res = await ask_msg.send()
 
-                    if event_type == "workflow_start":
-                        total = event.get("total_steps", 0)
-                        plan_msg = cl.Message(
-                            content=f"Workflow plan ready \u2014 executing **{total} steps**...",
-                        )
-                        await plan_msg.send()
+                if not res or res.get("name") == "reject":
+                    await cl.Message(content="Workflow stopped by user.").send()
+                    return
 
-                    elif event_type == "step_start":
-                        agent = event.get("agent", "Agent")
-                        prompt = event.get("prompt", "")
-                        idx = event.get("step_index", 0)
-                        total = event.get("total_steps", 0)
+                await ask_msg.remove()
 
-                        current_step = cl.Step(
-                            name=f"Step {idx + 1}/{total}: {agent}",
-                            type="tool",
-                            parent_id=plan_msg.id,
-                            show_input=True,
-                        )
-                        current_step.input = prompt
-                        await current_step.send()
-
-                    elif event_type == "step_complete":
-                        resp_text = event.get("response", "")
-                        artifact_url = event.get("artifact_url")
-                        idx = event.get("step_index", 0)
-                        total = event.get("total_steps", 0)
-
-                        if current_step:
-                            current_step.output = resp_text
-                            await current_step.update()
-                            current_step = None
-
-                        if artifact_url:
-                            pending_artifacts.append(artifact_url)
-
-                        # Ask for approval before proceeding to the next step
-                        if idx < total - 1 and not settings.auto_approve_steps:
-                            res = await cl.AskActionMessage(
-                                content=f"**Step {idx + 1}/{total}** complete. Proceed to next step?",
-                                actions=[
-                                    cl.Action(name="approve", payload={"value": "approve"}, label="Continue"),
-                                    cl.Action(name="reject", payload={"value": "reject"}, label="Stop Workflow"),
-                                ],
-                            ).send()
-
-                            if not res or res.get("name") == "reject":
-                                await cl.Message(content="Workflow stopped by user.").send()
-                                return
-
-                    elif event_type == "workflow_complete":
-                        await cl.Message(
-                            content="Workflow completed successfully!",
-                        ).send()
+            # Phase 2: run remaining steps
+            plan_msg, _, _, current_step = await _stream_workflow_events(
+                client, plan_msg, pending_artifacts,
+                workflow_path=workflow_path,
+                message=trigger_message,
+                user_id="user_123",
+                session_id=session_id,
+                workflow_id=workflow_id,
+                start_step=1,
+            )
 
         # Display artifacts at the very end, after all steps
         for artifact_url in pending_artifacts:
             if artifact_url.endswith("/ifc"):
-                await _display_ifc_artifact(artifact_url)
+                await _display_ifc_artifact(artifact_url, plan_msg)
             elif artifact_url.endswith("/ecar"):
                 await _display_pdf_artifact(artifact_url)
 
     except Exception as e:
-        if current_step:
-            current_step.output = f"Error: {e}"
-            await current_step.update()
         await cl.Message(content=f"Workflow failed: {e}").send()
 
 
@@ -231,27 +276,51 @@ async def _display_pdf_artifact(artifact_url: str):
     ).send()
 
 
-async def _display_ifc_artifact(artifact_url: str):
-    """Fetch an IFC file from the backend and display it with IFCViewer."""
+async def _display_ifc_artifact(artifact_url: str, plan_msg: cl.Message | None = None):
+    """Fetch an IFC file via DeepLynx and display it with IFCViewer."""
     await cl.Message(content="Rendering 3D model...").send()
 
     async with httpx.AsyncClient(timeout=120) as client:
+        # Trigger upload to DeepLynx
+        upload_step = cl.Step(
+            name="DeepLynx Upload",
+            type="tool",
+            parent_id=plan_msg.id if plan_msg else None,
+            show_input=True,
+        )
+        upload_step.input = "Uploading IFC file to DeepLynx"
+        await upload_step.send()
+
         resp = await client.get(f"{settings.platform_url}{artifact_url}")
         resp.raise_for_status()
+        upload_result = resp.json()
 
-    filename = "plant.ifc"
-    cd = resp.headers.get("content-disposition", "")
-    if "filename=" in cd:
-        filename = cd.split("filename=")[-1].strip().strip('"')
+        upload_step.output = json.dumps(upload_result, indent=2)
+        await upload_step.update()
 
-    tmp_dir = Path(tempfile.mkdtemp())
-    tmp_path = tmp_dir / filename
-    tmp_path.write_bytes(resp.content)
+        # Download the file from DeepLynx
+        download_step = cl.Step(
+            name="DeepLynx Download",
+            type="tool",
+            parent_id=plan_msg.id if plan_msg else None,
+            show_input=True,
+        )
+        download_step.input = "Downloading IFC file from DeepLynx"
+        await download_step.send()
 
-    dataset = await process_ifc_upload(tmp_path)
+        resp = await client.get(f"{settings.platform_url}/demo/ifc-download")
+        resp.raise_for_status()
+        download_result = resp.json()
+
+        download_step.output = json.dumps(download_result, indent=2)
+        await download_step.update()
+
+    file_path = Path(download_result["file_path"])
+
+    dataset = await process_ifc_upload(file_path)
     viewer = dataset.to_chainlit_element()
 
     await cl.Message(
-        content=f"**3D Model Generated: {filename}**\n- File size: {format_file_size(dataset.file_size)}",
+        content=f"**3D Model Generated: {file_path.name}**\n- File size: {format_file_size(dataset.file_size)}",
         elements=[viewer],
     ).send()
