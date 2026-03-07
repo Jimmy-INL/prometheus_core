@@ -1,7 +1,7 @@
 chat-intro: "Welcome to the Prometheus Platform."
 chat-suggestion-title: "What would you like to do today?"
 workflow-suggestions:
-  - "Design a Rankine cycle based power generation system for a Sodium Fast Reactor."
+  - "Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW"
   - "Run FTL Safety Analysis"
   - "Design a nuclear system"
   # - "Run MOOSE"
@@ -11,12 +11,15 @@ workflow-suggestions:
 
 local-users:
   - username: "admin"
-    password: "admin"
+    password: "lkjasdfih20chqsdijlkadscoasdijf0293hcskdlj"
     role: "admin"
+  - username: "prometheus"
+    password: "prometheus"
+    role: "user"
 
 platform-url: "http://127.0.0.1:8001"
 debug: true
-auto-approve-steps: true
+auto-approve-steps: false
 agent-names:
   - "MOOSE"
   - "Alchemy/BIM"

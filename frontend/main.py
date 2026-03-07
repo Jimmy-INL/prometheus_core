@@ -1,4 +1,5 @@
 import chainlit as cl
+from typing import Optional
 
 from utils.settings import settings
 from components.message_handler import message_handler
@@ -13,14 +14,14 @@ def auth_callback(username: str, password: str):
     return None
 
 
-# @cl.oauth_callback
-# def oauth_callback(
-#     provider_id: str,
-#     token: str,
-#     raw_user_data: Dict[str, str],
-#     default_user: cl.User,
-# ) -> Optional[cl.User]:
-#     return default_user
+#@cl.oauth_callback
+#def oauth_callback(
+#    provider_id: str,
+#    token: str,
+#    raw_user_data: dict[str, str],
+#    default_user: cl.User,
+#) -> Optional[cl.User]:
+#    return default_user
 
 
 @cl.on_message
