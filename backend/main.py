@@ -1,26 +1,13 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 
-from routers import agents, approvals, chat, info, sessions, workflows, demo, demo_workflow
-from state import SQLiteStateRepository
+from routers import agents, chat, demo_workflow, demo, info, workflows
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    repo = SQLiteStateRepository(db_path="data/prometheus.db")
-    await repo.initialize()
-    app.state.repo = repo
-    yield
-    await repo.close()
-
-
-app = FastAPI(title="Workflow Orchestration API", lifespan=lifespan)
+app = FastAPI(title="Workflow Orchestration API")
 # app.include_router(agents.router)
 # app.include_router(approvals.router)
 app.include_router(chat.router)
 # app.include_router(info.router)
-app.include_router(sessions.router)
 app.include_router(demo.router)
 app.include_router(demo_workflow.router)
 # app.include_router(workflows.router)

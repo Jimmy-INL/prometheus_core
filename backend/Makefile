@@ -43,25 +43,25 @@ endif
 ##@
 
 run: ##@ Start the backend API
-	$(PYTHON) -m fastapi dev --port 8001 main.py
+	$(PYTHON) -m fastapi run --port 8001 main.py
 
 .PHONY: lint format typecheck check fix test
 
 lint: ##@ Run ruff linter (report only)
-	uv run ruff check .
+	uv run --group dev ruff check .
 
 format: ##@ Run ruff formatter (report only)
-	uv run ruff format --check .
+	uv run --group dev ruff format --check .
 
 typecheck: ##@ Run mypy type checker
-	uv run mypy main.py components/ utils/
+	uv run --group dev mypy main.py components/ utils/
 
 test: ##@ Run unit tests
-	uv run pytest
+	uv run --group dev pytest
 
 fix: ##@ Auto-fix ruff lint issues and format
-	uv run ruff check --fix .
-	uv run ruff format .
+	uv run --group dev ruff check --fix .
+	uv run --group dev ruff format .
 
 check: ##@ Run all checks (lint + format + typecheck)
 check: lint format typecheck

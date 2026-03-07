@@ -1,74 +1,22 @@
+from unittest.mock import patch, MagicMock
+
 import pytest
 
 
-@pytest.mark.asyncio
-async def test_chat_creates_session(client):
-    """First message with no session_id should create a new session."""
-    resp = await client.post("/api/chat", json={
-        "message": "hello",
-        "user_id": "user_1",
-    })
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["type"] == "chat"
-    assert data["session_id"] is not None
-    assert "hello" in data["response"]
+WORKFLOW_PROMPT = (
+    "Design a Rankine cycle based power generation system for a Sodium Fast Reactor."
+    " Core power rating is 390 MW, turbine output is 170.9 MW"
+)
 
 
-@pytest.mark.asyncio
-async def test_chat_reuses_session(client):
-    """Passing an existing session_id should reuse that session."""
-    # Create session
-    resp1 = await client.post("/api/chat", json={
-        "message": "first",
-        "user_id": "user_1",
-    })
-    session_id = resp1.json()["session_id"]
-
-    # Reuse session
-    resp2 = await client.post("/api/chat", json={
-        "message": "second",
-        "user_id": "user_1",
-        "session_id": session_id,
-    })
-    assert resp2.status_code == 200
-    assert resp2.json()["session_id"] == session_id
-
-
-@pytest.mark.asyncio
-async def test_chat_invalid_session_returns_404(client):
-    """Passing a nonexistent session_id should return 404."""
-    resp = await client.post("/api/chat", json={
-        "message": "hello",
-        "user_id": "user_1",
-        "session_id": "nonexistent-id",
-    })
-    assert resp.status_code == 404
-    assert resp.json()["detail"] == "Session not found"
-
-
-@pytest.mark.asyncio
-async def test_chat_stores_messages(client):
-    """Chat should persist both user and assistant messages."""
-    resp = await client.post("/api/chat", json={
-        "message": "hello",
-        "user_id": "user_1",
-    })
-    session_id = resp.json()["session_id"]
-
-    msgs_resp = await client.get(f"/api/sessions/{session_id}/messages")
-    messages = msgs_resp.json()
-    assert len(messages) == 2
-    assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "hello"
-    assert messages[1]["role"] == "assistant"
+# -- Workflow trigger tests --
 
 
 @pytest.mark.asyncio
 async def test_chat_workflow_trigger(client):
-    """Sending a workflow-suggestion message should return a workflow response."""
+    """Sending a recognised workflow prompt should return a workflow response."""
     resp = await client.post("/api/chat", json={
-        "message": "Run MOOSE",
+        "message": WORKFLOW_PROMPT,
         "user_id": "user_1",
     })
     assert resp.status_code == 200
@@ -77,81 +25,105 @@ async def test_chat_workflow_trigger(client):
     assert data["workflow_id"] is not None
     assert data["workflow_type"] == "research_and_report"
     assert data["status"] == "queued"
-    assert data["session_id"] is not None
+    assert data["session_id"] == "tmp"
 
 
 @pytest.mark.asyncio
-async def test_chat_workflow_creates_step(client):
-    """A workflow trigger should also create a workflow step record."""
+async def test_chat_ftl_workflow_trigger(client):
+    """The FTL safety analysis prompt should also trigger a workflow."""
     resp = await client.post("/api/chat", json={
-        "message": "Run MOOSE",
+        "message": "Run FTL Safety Analysis",
         "user_id": "user_1",
     })
-    session_id = resp.json()["session_id"]
-
-    steps_resp = await client.get(f"/api/sessions/{session_id}/workflow-steps")
-    steps = steps_resp.json()
-    assert len(steps) == 1
-    assert steps[0]["step_name"] == "workflow_triggered"
-    assert steps[0]["step_type"] == "research_and_report"
-    assert steps[0]["status"] == "pending"
-    assert steps[0]["input_data"] == {"message": "Run MOOSE"}
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "workflow"
+    assert data["status"] == "queued"
 
 
 @pytest.mark.asyncio
-async def test_chat_stores_metadata(client):
-    """Context and files should be stored as message metadata."""
+async def test_chat_fmea_trigger(client):
+    """Sending 'fmea' should trigger the FMEA workflow."""
+    resp = await client.post("/api/chat", json={
+        "message": "fmea",
+        "user_id": "user_1",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "fmea_workflow"
+    assert data["workflow_id"] == "wf_fmea"
+    assert data["status"] == "queued"
+
+
+# -- LLM chat tests (mocked) --
+
+
+@pytest.mark.asyncio
+async def test_chat_llm_response(client):
+    """Non-workflow messages should be forwarded to the LLM and return a chat response."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = "Hello! I'm Prometheus."
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+
+    with patch("routers.chat.OpenAI") as mock_openai_cls:
+        mock_openai_cls.return_value.chat.completions.create.return_value = mock_completion
+        resp = await client.post("/api/chat", json={
+            "message": "hello",
+            "user_id": "user_1",
+        })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "chat"
+    assert data["response"] == "Hello! I'm Prometheus."
+    assert data["session_id"] == "tmp"
+
+
+@pytest.mark.asyncio
+async def test_chat_llm_failure_returns_fallback(client):
+    """When the LLM call fails, the endpoint should return a graceful fallback message."""
+    with patch("routers.chat.OpenAI") as mock_openai_cls:
+        mock_openai_cls.return_value.chat.completions.create.side_effect = Exception("connection error")
+        resp = await client.post("/api/chat", json={
+            "message": "hello",
+            "user_id": "user_1",
+        })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "chat"
+    assert "unable to process" in data["response"].lower()
+
+
+# -- Request validation --
+
+
+@pytest.mark.asyncio
+async def test_chat_missing_message_returns_422(client):
+    """Omitting the required 'message' field should return a validation error."""
+    resp = await client.post("/api/chat", json={
+        "user_id": "user_1",
+    })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_missing_user_id_returns_422(client):
+    """Omitting the required 'user_id' field should return a validation error."""
     resp = await client.post("/api/chat", json={
         "message": "hello",
-        "user_id": "user_1",
-        "context": {"key": "value"},
-        "files": ["file1.txt"],
     })
-    session_id = resp.json()["session_id"]
-
-    msgs_resp = await client.get(f"/api/sessions/{session_id}/messages")
-    user_msg = msgs_resp.json()[0]
-    assert user_msg["metadata"]["context"] == {"key": "value"}
-    assert user_msg["metadata"]["files"] == ["file1.txt"]
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_chat_no_metadata_when_empty(client):
-    """When context and files are empty, metadata should be null."""
+async def test_chat_workflow_response_has_polling_url(client):
+    """Workflow responses should include a polling URL."""
     resp = await client.post("/api/chat", json={
-        "message": "hello",
+        "message": WORKFLOW_PROMPT,
         "user_id": "user_1",
     })
-    session_id = resp.json()["session_id"]
-
-    msgs_resp = await client.get(f"/api/sessions/{session_id}/messages")
-    user_msg = msgs_resp.json()[0]
-    assert user_msg["metadata"] is None
-
-
-@pytest.mark.asyncio
-async def test_chat_multiple_messages_accumulate(client):
-    """Multiple messages in a session should all be stored in order."""
-    resp1 = await client.post("/api/chat", json={
-        "message": "first",
-        "user_id": "user_1",
-    })
-    session_id = resp1.json()["session_id"]
-
-    await client.post("/api/chat", json={
-        "message": "second",
-        "user_id": "user_1",
-        "session_id": session_id,
-    })
-    await client.post("/api/chat", json={
-        "message": "third",
-        "user_id": "user_1",
-        "session_id": session_id,
-    })
-
-    msgs_resp = await client.get(f"/api/sessions/{session_id}/messages")
-    messages = msgs_resp.json()
-    # 3 user messages + 3 assistant messages = 6
-    assert len(messages) == 6
-    user_contents = [m["content"] for m in messages if m["role"] == "user"]
-    assert user_contents == ["first", "second", "third"]
+    data = resp.json()
+    assert data["polling_url"] is not None
+    assert "workflows" in data["polling_url"]

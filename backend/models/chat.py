@@ -2,9 +2,12 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
-# ============================================================================
-# Pydantic Models
-# ============================================================================
+
+class ResponseType(str, Enum):
+    CHAT = "chat"
+    WORKFLOW = "workflow"
+    FMEA_WORKFLOW = "fmea_workflow"
+
 
 class ChatMessageRequest(BaseModel):
     message: str
@@ -12,10 +15,6 @@ class ChatMessageRequest(BaseModel):
     session_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = {}
     files: Optional[List[str]] = []
-
-class ResponseType(str, Enum):
-    CHAT = "chat"
-    WORKFLOW = "workflow"
 
 
 class ChatResponse(BaseModel):

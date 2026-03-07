@@ -1,22 +1,20 @@
 from fastapi import APIRouter, Request, HTTPException
 from models.chat import ChatMessageRequest, ChatResponse, ResponseType
-from state.base import StateRepository
+
+from openai import OpenAI
+openai_api_key = "sk-api-key"
+OPENAI_BASE_URL="https://api.i2-core.american-science-cloud.org/v1"
+model = "gpt-oss-120b"
+
+options = [
+    "Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW",
+    "Run FTL Safety Analysis",
+]
 
 router = APIRouter(
     prefix="/api",
     tags=["chat"]
 )
-
-
-def _get_repo(request: Request) -> StateRepository:
-    """Pull the StateRepository instance from app.state.
-
-    The repo is initialized during the FastAPI lifespan (see main.py)
-    and stored on app.state.repo. This helper provides typed access
-    so route handlers work against the abstract interface, not the
-    concrete SQLite implementation.
-    """
-    return request.app.state.repo
 
 
 # ============================================================================
@@ -27,40 +25,12 @@ async def chat(request_body: ChatMessageRequest, request: Request):
     """
     Main chat endpoint - routes to direct response or workflow trigger
     """
-    repo = _get_repo(request)
 
-    # Resolve or create session
-    if request_body.session_id:
-        session = await repo.get_session(request_body.session_id)
-        if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-    else:
-        session = await repo.create_session(request_body.user_id)
-
-    # Store the user's message
-    user_metadata = {}
-    if request_body.context:
-        user_metadata["context"] = request_body.context
-    if request_body.files:
-        user_metadata["files"] = request_body.files
-
-    await repo.add_message(
-        session_id=session.id,
-        role="user",
-        content=request_body.message,
-        metadata=user_metadata or None,
-    )
-
-    # Build response
-    options = [
-        "Design a Rankine cycle based power generation system for a Sodium Fast Reactor.",
-        "Run FTL Safety Analysis"
-    ]
     if request_body.message in options:
         # Workflow Triggered response
         response = ChatResponse(
             type="workflow",
-            session_id=session.id,
+            session_id="tmp",
             workflow_id="wf_a7b3c9d2-4e5f-6a1b-8c9d-0e1f2a3b4c5d",
             workflow_type="research_and_report",
             status="queued",
@@ -68,31 +38,42 @@ async def chat(request_body: ChatMessageRequest, request: Request):
             estimated_duration="8-12 minutes",
             polling_url="/api/workflows/wf_a7b3c9d2-4e5f-6a1b-8c9d-0e1f2a3b4c5d/status"
         )
+    elif request_body.message in ['fmea']:
+        # Workflow Triggered response
+        response = ChatResponse(
+            type=ResponseType.FMEA_WORKFLOW,
+            session_id="tmp",
+            workflow_id="wf_fmea",
+            workflow_type="research_and_report",
+            status="queued",
+            response=f"You trigger a workflow! Workflow: {request_body.message}",
+            estimated_duration="8-12 minutes",
+            polling_url="/api/workflows/wf_fmea"
+        )
     else:
-        # Simple chat response
+        try:
+            client = OpenAI(
+                api_key=openai_api_key,
+                base_url=OPENAI_BASE_URL
+            )
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"You are prometheus, a nuclear reactor system assistant. Your job is the help the user with their requests. You are friendly and professional. You can make small talk but keep it on the topic of designing nuclear reactor systems. Be short and concise with your responses. REQUEST: {request_body.message}"
+                    }
+                ]
+            )
+            llm_response = completion.choices[0].message.content
+        except Exception:
+            llm_response = "I'm sorry, I'm unable to process your request right now. Please try again later."
+        
         response = ChatResponse(
             type=ResponseType.CHAT,
-            session_id=session.id,
-            response=f"This is a basic chat response! From the request we got: {request_body.message}",
+            session_id="tmp",
+            response=llm_response,
             stream=False
-        )
-
-    # Store the assistant's response
-    await repo.add_message(
-        session_id=session.id,
-        role="assistant",
-        content=response.response or "",
-        response_type=response.type.value,
-    )
-
-    # If workflow, record the initial step
-    if response.type == ResponseType.WORKFLOW and response.workflow_id:
-        await repo.add_workflow_step(
-            session_id=session.id,
-            workflow_id=response.workflow_id,
-            step_name="workflow_triggered",
-            step_type=response.workflow_type or "unknown",
-            input_data={"message": request_body.message},
         )
 
     return response

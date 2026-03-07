@@ -2,11 +2,8 @@ from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
-
-router = APIRouter(
-    prefix="/demo",
-    tags=["Demo"]
-)
+from state.deeplynx import upload_file_to_deeplynx, download_file_from_deeplynx
+from fastapi import HTTPException
 
 from models.dynamic_form import (
     DynamicFormProps,
@@ -17,6 +14,14 @@ from models.dynamic_form import (
     create_textarea_field,
     create_checkbox_field
 )
+
+router = APIRouter(
+    prefix="/demo",
+    tags=["Demo"]
+)
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
 
 @router.get("/autodone", response_model=DynamicFormProps)
 async def get_registration_form():
@@ -128,15 +133,34 @@ async def get_registration_form():
         ]
     )
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+@router.get("/ifc-download")
+def download_from_deeplynx(record_id: int = 3518):
+    try:
+        result = download_file_from_deeplynx(record_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/ifc")
 async def get_ifc_file():
+    file_path = DATA_DIR / "sample.ifc"
+    try:
+        result = upload_file_to_deeplynx(file_path=file_path)
+        return {
+            "status": "success",
+            "deeplynx_response": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
     return FileResponse(
         DATA_DIR / "sample.ifc",
         media_type="application/x-ifc",
         filename="sample.ifc",
     )
+
 
 @router.get("/exodus")
 async def get_exodus_file():
@@ -145,6 +169,7 @@ async def get_exodus_file():
         media_type="application/octet-stream",
         filename="sample.e",
     )
+
 
 @router.get("/ecar")
 async def get_ecar_file():

@@ -94,6 +94,8 @@ async def send_task(
             data=err.get("data"),
         )
 
+    import time
+    time.sleep(3)
     return _extract_text(body)
 
 
