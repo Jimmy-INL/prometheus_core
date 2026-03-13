@@ -150,6 +150,23 @@ client.files.download(file_id=123, output_path=Path("downloaded.csv"))
 client.files.delete(file_id=123)
 ```
 
+### fsspec Filesystem Hooks (`put` / `get`)
+
+```python
+from fsspec import filesystem
+from prometheus_api.storage_client import ConnectionConfig
+
+# Create a deeplynx:// filesystem (defaults to ConnectionConfig.from_env() if config omitted)
+config = ConnectionConfig.from_env()
+fs = filesystem("deeplynx", config=config)
+
+# Publish local data to DeepLynx object namespace
+fs.put("build/output/model.bin", "deeplynx://handoff/entity-b/model.bin")
+
+# Stage published data to another local target
+fs.get("deeplynx://handoff/entity-b/model.bin", "staging/entity-b/model.bin")
+```
+
 ### Relationship Operations
 
 ```python

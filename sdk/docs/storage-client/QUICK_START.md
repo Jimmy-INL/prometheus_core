@@ -102,6 +102,23 @@ file_meta = client.files.upload_chunked(Path("large.zip"), chunk_size=10*1024*10
 client.files.delete(123)
 ```
 
+### Filesystem Hooks (`put` / `get`)
+
+```python
+from fsspec import filesystem
+from prometheus_api.storage_client import ConnectionConfig
+
+# Build a deeplynx:// filesystem from config (or use filesystem("deeplynx") with env defaults)
+config = ConnectionConfig.from_env()
+fs = filesystem("deeplynx", config=config)
+
+# Publish local data into DeepLynx object storage namespace
+fs.put("local/staging/input.csv", "deeplynx://exchange/entity-a/input.csv")
+
+# Stage data back to local workspace for downstream processing
+fs.get("deeplynx://exchange/entity-a/input.csv", "local/staging/entity-a-input.csv")
+```
+
 ### Relationships
 
 ```python

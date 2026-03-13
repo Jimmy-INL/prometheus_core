@@ -46,6 +46,15 @@ with StorageClient(config) as client:
     results = client.search.by_tags(["example"])
 ```
 
+```python
+from fsspec import filesystem
+
+# Publish/stage data through deeplynx:// hooks
+fs = filesystem("deeplynx", config=config)
+fs.put("local/inbox/payload.bin", "deeplynx://exchange/entity-a/payload.bin")
+fs.get("deeplynx://exchange/entity-a/payload.bin", "local/outbox/payload.bin")
+```
+
 **[Full StorageClient Guide](docs/storage-client/GUIDE.md)** | **[Quick Reference](docs/storage-client/QUICK_START.md)**
 
 ## Quick Start - PrometheusAgent
@@ -131,6 +140,7 @@ See the `examples/` directory for working code:
 - `basic_usage.py` - StorageClient CRUD operations
 - `async_usage.py` - Async/await patterns
 - `file_operations.py` - File upload/download
+- `filesystem_staging.py` - fsspec `put`/`get` publish and stage flow
 - `bulk_operations.py` - Bulk operations
 
 ## Development
