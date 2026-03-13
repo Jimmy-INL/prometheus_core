@@ -1,0 +1,140 @@
+{
+  "name": "Thermal Analysis Agent",
+  "description": "Specialist agent for thermal analysis of nuclear reactor materials. Evaluates thermal fatigue, creep behavior, thermal conductivity degradation, and temperature distribution effects on material performance.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_thermal",
+      "name": "Analyze Thermal Effects",
+      "description": "Comprehensive thermal analysis including thermal fatigue cycles, creep evaluation, and thermal stress assessment",
+      "usage_notes": "Use for materials experiencing temperature cycling or sustained high temperatures",
+      "requires_approval": true,
+      "expected_duration_seconds": 5,
+      "derivation_rules": [
+        {
+          "target_param": "context.temperature_c",
+          "when": {
+            "phrases_any": [
+              "operating limit",
+              "at its limit",
+              "at the limit",
+              "max operating temperature",
+              "maximum operating temperature"
+            ]
+          },
+          "derive": {
+            "type": "from_context_map",
+            "context_key": "material_operating_limits_c",
+            "lookup_key_param": "material_id",
+            "key_normalizer": "upper_no_space_hyphen",
+            "value_type": "number"
+          }
+        },
+        {
+          "target_param": "context.pressure_mpa",
+          "when": {
+            "phrases_any": [
+              "operating limit",
+              "at its limit",
+              "at the limit",
+              "max operating temperature",
+              "maximum operating temperature"
+            ]
+          },
+          "derive": {
+            "type": "from_context_map",
+            "context_key": "material_operating_pressure_mpa",
+            "lookup_key_param": "material_id",
+            "key_normalizer": "upper_no_space_hyphen",
+            "value_type": "number"
+          }
+        }
+      ],
+      "output_format": "JSON with thermal damage assessment, fatigue life, creep rates, and safety factors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to analyze"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating context for thermal analysis",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "description": "Operating temperature in Celsius"
+              },
+              "pressure_mpa": {
+                "type": "number",
+                "description": "Operating pressure in MPa"
+              },
+              "operating_hours": {
+                "type": "integer",
+                "description": "Accumulated operating hours"
+              },
+              "thermal_cycles": {
+                "type": "integer",
+                "description": "Accumulated thermal cycles"
+              }
+            },
+            "required": ["temperature_c", "pressure_mpa"]
+          }
+        },
+        "required": ["material_id", "context"]
+      }
+    },
+    {
+      "id": "calculate_thermal_fatigue",
+      "name": "Calculate Thermal Fatigue",
+      "description": "Evaluate thermal cycling damage, calculate fatigue life consumption, and predict remaining cycles to failure",
+      "usage_notes": "Use for components undergoing frequent temperature changes (startup/shutdown cycles)",
+      "requires_approval": true,
+      "expected_duration_seconds": 4,
+      "output_format": "JSON with cycle count, damage fraction, remaining life, and inspection recommendations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Temperature range, cycle count, hold times"
+          }
+        },
+        "required": ["material_id"]
+      }
+    },
+    {
+      "id": "assess_creep",
+      "name": "Assess Creep",
+      "description": "Analyze high-temperature creep behavior, strain accumulation rates, and time-to-rupture predictions",
+      "usage_notes": "Critical for high-temperature components like steam generator tubing and piping",
+      "requires_approval": true,
+      "expected_duration_seconds": 4,
+      "output_format": "JSON with creep rate, accumulated strain, rupture life estimate, and compliance status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating temperature, stress level, service duration"
+          }
+        },
+        "required": ["material_id"]
+      }
+    }
+  ]
+}

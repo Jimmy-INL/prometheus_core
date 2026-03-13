@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "requirements-agent"
+version = "1.0.0"
+description = "Nuclear system design and requirements A2A agent for the Prometheus platform."
+requires-python = ">=3.11"
+# Runtime dependencies live in requirements.txt (pip install -r requirements.txt)
+# This file primarily registers the CLI entry point and optional extras.
+dependencies = [
+    "a2a-sdk[http-server]>=0.3.0",
+    "httpx>=0.26.0",
+    "iapws>=1.5 ; platform_system != 'Windows'",
+    "networkx>=3.0",
+    "numpy>=1.24",
+    "orjson>=3.9",
+    "prometheus-api[agent]",
+    "pydantic-settings>=2.2",
+    "pydantic>=2.5.3",
+    "pyyaml>=6.0",
+    "scipy>=1.10",
+    "tenacity>=8.0",
+    "uvicorn[standard]>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "fastapi>=0.110",    # required by test_chat_endpoint.py (TestClient against nucsys_agent.server)
+    "httpx>=0.26.0",
+    "ruff>=0.3",
+]
+diagram = [
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+# Installs the interactive CLI: design, requirements, diagram, audit
+nucsys-agent = "nucsys_agent.cli:main"
+
+[tool.setuptools]
+packages = {find = {where = ["."], include = ["nucsys_agent*"]}}
+include-package-data = true
+
+[tool.setuptools.package-data]
+nucsys_agent = [
+    "data/*.yaml",
+    "data/cards/*.yaml",
+    "data/component_requirements/*.json",
+    "data/component_schema/*.json",
+    "schemas/*.json",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.uv.sources]
+prometheus-api = { git = "ssh://git@github.inl.gov/genesis/prometheus_api.git" }

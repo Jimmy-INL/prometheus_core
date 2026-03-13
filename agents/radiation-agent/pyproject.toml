@@ -1,0 +1,9 @@
+[project]
+name = "radiation-agent"
+version = "0.1.0"
+description = "Radiation damage specialist agent"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.18.0",
+    "httpx>=0.26.0",
+]

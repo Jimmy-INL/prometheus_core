@@ -1,0 +1,9 @@
+frontend/.venv
+frontend/__pycache__
+frontend/.chainlit
+frontend/.files
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.git
+.env

@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     chat_intro: str = data["chat-intro"]
     ifc_data_dir: Path = Path(__file__).parent.parent / "public" / "ifc-data"
     exodus_data_dir: Path = Path(__file__).parent.parent / "public" / "exodus-data"
-    platform_url: str = data.get("platform-url", "http://127.0.0.1:8001")
+    agent_url: str = os.environ.get("CLIENT_AGENT_URL", data.get("agent-url", "http://localhost:8001"))
+    agent_secret: str = os.environ.get("AGENT_SECRET", data.get("agent-secret", ""))
+    redis_url: str = os.environ.get("REDIS_URL", data.get("redis-url", "redis://localhost:6379"))
     debug: bool = data.get("debug", True)
     auto_approve_steps: bool = data.get("auto-approve-steps", False)
     agent_names: list[str] = data.get("agent-names", [])

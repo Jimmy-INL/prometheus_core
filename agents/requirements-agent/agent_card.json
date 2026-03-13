@@ -1,0 +1,185 @@
+{
+  "name": "Plant Requirements Agent",
+  "description": "Nuclear system design, component requirements generation, and model audit agent. Supports loop design with thermodynamic/hydraulic sizing, requirements filtering from a ~1500-requirement baseline across 6 component types, and engineering model auditability.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "design",
+      "name": "Design Nuclear Loop",
+      "description": "One-shot nuclear system loop design from a natural language query. Performs deterministic thermodynamic and hydraulic sizing and returns an Alchemy-format topology graph with sized component properties.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["design"],
+            "description": "Must be 'design'"
+          },
+          "query": {
+            "type": "string",
+            "description": "Natural language design request, e.g. '300 MWth PWR primary loop' or '500 MWth sodium-cooled fast reactor'"
+          }
+        },
+        "required": ["action", "query"]
+      }
+    },
+    {
+      "id": "design_chat",
+      "name": "Conversational Loop Design",
+      "description": "Stateless multi-turn loop design conversation. The client sends the full message history on every call so the agent can reconstruct state. Returns agent_reply and the completed Alchemy design when is_done is true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["design_chat"],
+            "description": "Must be 'design_chat'"
+          },
+          "initial_query": {
+            "type": "string",
+            "description": "The initial design query that started the conversation"
+          },
+          "history": {
+            "type": "array",
+            "description": "Full message history as [{role, content}] objects. Omit or leave empty for the first turn.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "agent"] },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["action", "initial_query"]
+      }
+    },
+    {
+      "id": "requirements",
+      "name": "Component Requirements (One-Shot)",
+      "description": "One-shot component requirements filtering. Provide a component type and its full profile (classification + sizing parameters) to receive all applicable requirements from the baseline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["requirements"],
+            "description": "Must be 'requirements'"
+          },
+          "component_type": {
+            "type": "string",
+            "description": "Component type: pump, valve, condenser, steam_generator, pressurizer, or turbine"
+          },
+          "profile": {
+            "type": "object",
+            "description": "Component profile dictionary with classification fields (code_class, safety_category, seismic_category, environment_profile) and sizing parameters"
+          }
+        },
+        "required": ["action", "component_type", "profile"]
+      }
+    },
+    {
+      "id": "requirements_chat",
+      "name": "Conversational Requirements",
+      "description": "Stateless multi-turn requirements conversation. The agent asks clarifying questions to collect the component profile, then returns the filtered requirements instance when all required information has been gathered.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["requirements_chat"],
+            "description": "Must be 'requirements_chat'"
+          },
+          "initial_query": {
+            "type": "string",
+            "description": "Initial requirements query, e.g. 'requirements for a PWR feedwater pump'"
+          },
+          "history": {
+            "type": "array",
+            "description": "Full message history as [{role, content}] objects. Omit or leave empty for the first turn.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "agent"] },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["action", "initial_query"]
+      }
+    },
+    {
+      "id": "requirements_from_design",
+      "name": "Requirements from Design Node",
+      "description": "Generate requirements for a component that was produced by a loop design. Numeric parameters (flow rate, head, rated power, thermal duty, operating pressures) are pre-filled from the sized node properties; only classification fields are asked interactively.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["requirements_from_design"],
+            "description": "Must be 'requirements_from_design'"
+          },
+          "node_name": {
+            "type": "string",
+            "description": "Name of the design node from alchemy_db, e.g. 'Primary Sink', 'SG', 'Turbine', 'FWP'"
+          },
+          "node_props": {
+            "type": "object",
+            "description": "Properties dictionary of the specific node (from alchemy_db parts[*].properties)"
+          },
+          "all_node_props": {
+            "type": "object",
+            "description": "Optional: properties for all nodes, used for cross-node sizing context. Set to null if not available.",
+            "nullable": true
+          },
+          "history": {
+            "type": "array",
+            "description": "Full message history as [{role, content}] objects. Omit or leave empty for the first turn.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "agent"] },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["action", "node_name", "node_props"]
+      }
+    },
+    {
+      "id": "audit",
+      "name": "Audit Engineering Models",
+      "description": "Ask free-text questions about the engineering models, thermodynamic correlations, fluid property sources, hydraulic assumptions, and references used in the agent. Use question='list' to see all available topics, or provide a topic_id to retrieve a specific topic directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["audit"],
+            "description": "Must be 'audit'"
+          },
+          "question": {
+            "type": "string",
+            "description": "Free-text question, e.g. 'How is energy conservation done?' or 'list' to see all available topics"
+          },
+          "topic_id": {
+            "type": "string",
+            "description": "Optional: retrieve a specific topic by its ID (IDs are returned in matched_topics from previous audit calls)"
+          }
+        },
+        "required": ["action"]
+      }
+    }
+  ]
+}

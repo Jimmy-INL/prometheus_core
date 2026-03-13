@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prometheus-api"
+version = "0.1.0"
+description = "Storage client and agent utilities for building A2A multi-agent systems"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    {name = "INL Genesis", email = "daniel.schwen@inl.gov"}
+]
+keywords = ["storage", "deeplynx", "api", "client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "python-dateutil>=2.8.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+agent = [
+    "starlette>=0.27.0",
+    "uvicorn[standard]>=0.27.0",
+    "httpx>=0.26.0",
+    "a2a-sdk[http-server]>=0.3.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.inl.gov/genesis/prometheus_api"
+Repository = "https://github.inl.gov/genesis/prometheus_api"
+Documentation = "https://github.inl.gov/genesis/prometheus_api/blob/main/README.md"
+
+[tool.setuptools]
+packages = [
+    "prometheus_api",
+    "prometheus_api.storage_client",
+    "prometheus_api.storage_client.models",
+    "prometheus_api.storage_client.resources",
+    "prometheus_api.storage_client.async_resources",
+    "prometheus_api.storage_client.utils",
+    "prometheus_api.agent",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-v --tb=short"
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests requiring .env file and database connection",
+    "slow: Slow running tests",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false

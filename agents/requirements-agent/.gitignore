@@ -1,0 +1,6 @@
+*.pyc
+
+# Secrets (do not commit)
+.env
+.env.*
+!.env.example

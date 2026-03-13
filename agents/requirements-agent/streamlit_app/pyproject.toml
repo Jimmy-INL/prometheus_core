@@ -1,0 +1,8 @@
+[project]
+name = "requirements-agent-streamlit-app"
+version = "0.1.0"
+description = "Streamlit debug UI for the requirements agent"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.35",
+]

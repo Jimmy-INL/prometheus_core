@@ -1,0 +1,44 @@
+{
+  "name": "Synthesis Agent",
+  "description": "Specialist agent used to compile a cohesive final report from multiple specialist-agent outputs (data, radiation, corrosion, thermal, and related analyses).",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "synthesize_material_analysis",
+      "name": "Synthesize Material Analysis",
+      "description": "Compile specialist analysis outputs into one cohesive engineering report with integrated findings, risk posture, and actionable recommendations.",
+      "usage_notes": "Use this skill when multiple specialist agents have produced results and a single coherent final report is required.",
+      "requires_approval": false,
+      "expected_duration_seconds": 5,
+      "output_format": "JSON with executive_summary, key_findings, risk_assessment, recommended_actions, go_no_go, confidence",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "Material identifier being analyzed."
+          },
+          "tool_results": {
+            "type": "object",
+            "description": "Collected specialist results keyed by analysis domain.",
+            "x_input_source": "runtime"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating context assumptions for synthesis."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional original user query for framing."
+          }
+        },
+        "required": ["material_id", "tool_results"]
+      }
+    }
+  ]
+}
