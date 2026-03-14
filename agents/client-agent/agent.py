@@ -3648,15 +3648,25 @@ class OrchestratorAgent(PrometheusAgent):
                 except Exception:
                     pass
         response_payload = response.model_dump(exclude_none=True)
+        new_artifact_ids: set = set()
         try:
             ingested = self._ingest_response_artifacts(conversation_id, response_payload)
             if ingested:
                 print(f"[DEBUG] Ingested {ingested} artifact reference(s) for {conversation_id}")
+                for a in (response_payload.get("artifacts") or []):
+                    aid = a.get("artifact_id") or a.get("id")
+                    if aid:
+                        new_artifact_ids.add(aid)
         except Exception as exc:
             print(f"[WARN] Failed to ingest artifacts from response payload: {exc}")
         try:
-            response_payload["artifacts"] = [
+            all_refs = [
                 ref.to_dict() for ref in self.list_artifact_references(conversation_id, limit=50)
+            ]
+            response_payload["artifacts"] = all_refs
+            response_payload["new_artifacts"] = [
+                r for r in all_refs
+                if (r.get("artifact_id") or r.get("id")) in new_artifact_ids
             ]
         except Exception as exc:
             print(f"[WARN] Failed to attach artifacts to response: {exc}")

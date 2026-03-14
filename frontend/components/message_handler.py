@@ -249,7 +249,8 @@ async def _handle_final_response(response: ConversationResponse):
 
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
-        artifact_elements, artifact_text = await render_artifacts(response.artifacts)
+    if response.new_artifacts:
+        artifact_elements, artifact_text = await render_artifacts(response.new_artifacts)
         elements.extend(artifact_elements)
         if artifact_text:
             text += "\n\n---\n" + artifact_text

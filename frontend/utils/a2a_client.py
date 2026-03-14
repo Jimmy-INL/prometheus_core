@@ -23,7 +23,8 @@ class ConversationResponse:
     tool_results: Optional[Dict] = None
     response_text: Optional[str] = None
     recommended_materials: Optional[List[str]] = None
-    artifacts: Optional[List[Dict[str, Any]]] = None
+    artifacts: Optional[List[Dict[str, Any]]] = None  # full conversation catalog
+    new_artifacts: Optional[List[Dict[str, Any]]] = None  # only produced this turn
     message_metadata: Optional[Dict[str, Any]] = None
 
 
@@ -243,5 +244,6 @@ class A2AClient:
             response_text=data.get("response_text"),
             recommended_materials=data.get("recommended_materials"),
             artifacts=data.get("artifacts"),
+            new_artifacts=data.get("new_artifacts"),
             message_metadata=data.get("message_metadata"),
         )

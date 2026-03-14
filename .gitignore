@@ -22,3 +22,4 @@ docs/site/
 */*.db
 backend/data/*
 .DS_Store
+shared/artifact-debug/*/
