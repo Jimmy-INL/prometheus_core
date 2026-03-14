@@ -2,6 +2,10 @@ import uuid
 
 import chainlit as cl
 
+# Import plugins early so JSX components are copied to public/elements/
+# before Chainlit starts serving custom elements.
+import plugins as _visualization_plugins  # noqa: F401
+
 from utils.settings import settings
 from utils.memory_client import MemoryClient
 from components.message_handler import message_handler
