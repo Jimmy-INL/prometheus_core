@@ -558,46 +558,50 @@ class PrometheusAgent:
 
     def register_with_registry(self, agent_card: AgentCard) -> None:
         """
-        Register this agent with the registry service.
+        Register this agent with LiteLLM's A2A gateway.
 
-        Args:
-            agent_card: The AgentCard to register
+        Posts to POST /v1/agents so LiteLLM can route incoming A2A calls to
+        this agent and expose the full agent card (skills + inputSchema) to
+        the client-agent for dynamic tool discovery.
         """
-        registry_url = os.getenv("REGISTRY_URL")
-        if not registry_url:
-            logger.info("REGISTRY_URL not set - skipping registry registration")
+        litellm_url = os.getenv("LITELLM_URL")
+        if not litellm_url:
+            logger.info("LITELLM_URL not set - skipping agent registration")
             return
 
-        agent_secret = os.getenv("AGENT_SECRET")
-
+        master_key = os.getenv("LITELLM_MASTER_KEY", "")
         headers = {}
-        if agent_secret:
-            headers["Authorization"] = f"Bearer {agent_secret}"
+        if master_key:
+            headers["Authorization"] = f"Bearer {master_key}"
 
-        # Convert AgentCard to registry format (which differs from A2A AgentCard)
-        # Registry expects: agent_id, name, description, url, capabilities (list of strings), version
-        # Also include full agent_card dict for dynamic tool discovery
-        registration_data = {
-            "agent_id": agent_card.name.lower().replace(" ", "-"),
-            "name": agent_card.name,
-            "description": agent_card.description,
-            "url": agent_card.url,
-            "capabilities": [skill.id for skill in agent_card.skills],
-            "version": agent_card.version,
-            "agent_card": getattr(self, 'agent_card_dict', None),  # Full agent card for tool discovery
-        }
+        # agent_name becomes the routing key: /a2a/{agent_name}/message/send
+        agent_name = agent_card.name.lower().replace(" ", "-")
+
+        # Use the raw agent_card dict so non-standard fields (inputSchema,
+        # usage_notes, derivation_rules, etc.) are preserved in LiteLLM.
+        agent_card_params = getattr(self, 'agent_card_dict', None) or agent_card.model_dump()
 
         try:
-            with httpx.Client(timeout=10.0, headers=headers) as client:
+            with httpx.Client(timeout=15.0, headers=headers) as client:
+                # Delete any existing registration so re-registrations always
+                # pick up the latest agent card (LiteLLM returns 400 on duplicates).
+                existing = client.get(f"{litellm_url}/v1/agents")
+                if existing.status_code == 200:
+                    for entry in existing.json() if isinstance(existing.json(), list) else []:
+                        if entry.get("agent_name") == agent_name:
+                            client.delete(f"{litellm_url}/v1/agents/{entry['agent_id']}")
+                            logger.debug(f"Removed stale registration for '{agent_name}'")
+                            break
+
                 response = client.post(
-                    f"{registry_url}/agents/register",
-                    json=registration_data
+                    f"{litellm_url}/v1/agents",
+                    json={"agent_name": agent_name, "agent_card_params": agent_card_params},
                 )
                 response.raise_for_status()
-                logger.info(f"Successfully registered with registry at {registry_url}")
+                logger.info(f"Registered '{agent_name}' with LiteLLM at {litellm_url}")
         except Exception as e:
-            logger.error(f"Failed to register with registry: {str(e)}")
-            logger.warning("Continuing without registry registration")
+            logger.error(f"Failed to register with LiteLLM: {e}")
+            logger.warning("Continuing without registration")
 
     def create_executor(self) -> PrometheusAgentExecutor:
         """
