@@ -259,7 +259,7 @@ class ArtifactDebugAgent(PrometheusAgent):
         width = self._normalize_dimension(params.get("width", 512), 512)
         height = self._normalize_dimension(params.get("height", 512), 512)
         background = str(params.get("background") or "#f8fafc")
-        text_color = str(params.get("text_color") or "#0f172a")
+        text_color = str(params.get("color") or params.get("text_color") or "#0f172a")
 
         requested_name = str(params.get("name") or "").strip()
         if requested_name:

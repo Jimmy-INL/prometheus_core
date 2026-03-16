@@ -43,9 +43,9 @@
             "type": "string",
             "description": "Optional background color (CSS color value)."
           },
-          "text_color": {
+          "color": {
             "type": "string",
-            "description": "Optional text color (CSS color value)."
+            "description": "Optional text color (CSS color or hex value, e.g. 'blue', '#1e40af')."
           }
         },
         "required": ["word"]
