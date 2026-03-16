@@ -496,20 +496,23 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
     for agent in agents:
         try:
             agent_id = agent["agent_id"]
-            agent_url = agent["url"]
+            direct_url = agent["url"]   # downstream URL, used only for self-check
 
             # Never expose this orchestrator's own skills as dynamic tools.
-            # Otherwise the router can recursively invoke itself via A2A.
-            if is_self_agent(agent_id, agent_url):
-                print(f"Skipping self agent in tool discovery: {agent_id} ({agent_url})")
+            if is_self_agent(agent_id, direct_url):
+                print(f"Skipping self agent in tool discovery: {agent_id} ({direct_url})")
                 continue
 
-            # Get full agent card with skill details
-            agent_card = await get_agent_card(agent_id)
+            # Route all calls through LiteLLM rather than directly to the agent.
+            litellm_url = f"{LITELLM_URL}/a2a/{agent_id}"
+
+            # Agent card is already in the discover_agents() payload; use it
+            # directly to avoid an extra HTTP roundtrip.
+            agent_card = agent.get("agent_card_params") or await get_agent_card(agent_id)
 
             # Create one tool per skill
             for skill in agent_card.get("skills", []):
-                tool = await create_tool_from_skill(agent_url, skill)
+                tool = await create_tool_from_skill(litellm_url, skill)
                 tools.append(tool)
                 print(f"Discovered tool: {skill['id']} from {agent_id}")
         except Exception as e:
