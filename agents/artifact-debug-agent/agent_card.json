@@ -39,9 +39,9 @@
             "type": "integer",
             "description": "Optional image height in pixels (default: 512)."
           },
-          "background": {
+          "background_color": {
             "type": "string",
-            "description": "Optional background color (CSS color value)."
+            "description": "Optional background color (CSS color or hex value, e.g. 'white', '#f8fafc')."
           },
           "color": {
             "type": "string",
@@ -54,8 +54,8 @@
     {
       "id": "convert_svg_to_png",
       "name": "Convert SVG To PNG",
-      "description": "Convert an existing SVG artifact reference into a PNG artifact reference.",
-      "usage_notes": "Pass the source conversation artifact_id produced by a previous skill call.",
+      "description": "Convert an existing SVG artifact into a PNG artifact. Only use this when the user explicitly requests a PNG or raster image conversion of an existing SVG — do NOT chain this automatically after create_svg_artifact.",
+      "usage_notes": "Requires artifact_id of an existing SVG artifact in the current conversation. Only invoke when the user explicitly asks to convert to PNG.",
       "requires_approval": false,
       "expected_duration_seconds": 4,
       "output_format": "JSON with status, source artifact metadata, and converted PNG artifact metadata",

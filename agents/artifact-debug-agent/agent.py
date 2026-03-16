@@ -258,7 +258,7 @@ class ArtifactDebugAgent(PrometheusAgent):
 
         width = self._normalize_dimension(params.get("width", 512), 512)
         height = self._normalize_dimension(params.get("height", 512), 512)
-        background = str(params.get("background") or "#f8fafc")
+        background = str(params.get("background") or params.get("background_color") or "#f8fafc")
         text_color = str(params.get("color") or params.get("text_color") or "#0f172a")
 
         requested_name = str(params.get("name") or "").strip()
@@ -340,6 +340,19 @@ class ArtifactDebugAgent(PrometheusAgent):
     ) -> Dict[str, Any]:
         """Convert an existing SVG artifact reference into a new PNG artifact reference."""
         artifact_id = str(params.get("artifact_id") or "").strip()
+        if not artifact_id:
+            # Sequential workflow passes upstream skill results — try to extract from there
+            upstream = params.get("upstream_results") or {}
+            for skill_result in upstream.values():
+                if isinstance(skill_result, dict):
+                    candidate = (
+                        skill_result.get("artifact_id")
+                        or (skill_result.get("artifact") or {}).get("artifact_id")
+                        or ""
+                    )
+                    if candidate:
+                        artifact_id = str(candidate)
+                        break
         if not artifact_id:
             return {
                 "status": "error",
