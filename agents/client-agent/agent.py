@@ -3648,15 +3648,18 @@ class OrchestratorAgent(PrometheusAgent):
                 except Exception:
                     pass
         response_payload = response.model_dump(exclude_none=True)
-        new_artifact_ids: set = set()
+        # Snapshot existing artifact IDs before ingestion so we can diff afterward
+        try:
+            existing_ids = {
+                ref.artifact_id
+                for ref in self.list_artifact_references(conversation_id, limit=50)
+            }
+        except Exception:
+            existing_ids = set()
         try:
             ingested = self._ingest_response_artifacts(conversation_id, response_payload)
             if ingested:
                 print(f"[DEBUG] Ingested {ingested} artifact reference(s) for {conversation_id}")
-                for a in (response_payload.get("artifacts") or []):
-                    aid = a.get("artifact_id") or a.get("id")
-                    if aid:
-                        new_artifact_ids.add(aid)
         except Exception as exc:
             print(f"[WARN] Failed to ingest artifacts from response payload: {exc}")
         try:
@@ -3664,9 +3667,10 @@ class OrchestratorAgent(PrometheusAgent):
                 ref.to_dict() for ref in self.list_artifact_references(conversation_id, limit=50)
             ]
             response_payload["artifacts"] = all_refs
+            # new_artifacts = refs that weren't present before ingestion
             response_payload["new_artifacts"] = [
                 r for r in all_refs
-                if (r.get("artifact_id") or r.get("id")) in new_artifact_ids
+                if (r.get("artifact_id") or r.get("id")) not in existing_ids
             ]
         except Exception as exc:
             print(f"[WARN] Failed to attach artifacts to response: {exc}")
