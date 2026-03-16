@@ -1,0 +1,12 @@
+# LiteLLM Proxy Configuration
+# Used as the A2A agent gateway and optional LLM proxy.
+# Agent registration is done at runtime via POST /v1/agents.
+# No LLM model_list entries are needed unless you also want LiteLLM to
+# proxy Anthropic / other LLM calls.
+
+model_list: []
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "os.environ/DATABASE_URL"
+  store_model_in_db: true

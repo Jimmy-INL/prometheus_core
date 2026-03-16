@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import redis
 
-from tool_discovery import discover_agents, get_agent_card, is_self_agent
+from tool_discovery import LITELLM_URL, discover_agents, get_agent_card, is_self_agent
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +165,20 @@ class CapabilityCache:
 
             for agent in agents:
                 try:
-                    agent_id = agent["agent_id"]
-                    agent_url = agent["url"]
+                    agent_id = agent["agent_id"]       # agent_name (LiteLLM routing key)
                     agent_name = agent.get("name", agent_id)
+                    direct_url = agent.get("url", "")   # downstream agent URL (for self-check)
 
-                    if is_self_agent(agent_id, agent_url):
-                        print(f"Skipping self agent in capability cache: {agent_id} ({agent_url})")
+                    if is_self_agent(agent_id, direct_url):
+                        print(f"Skipping self agent in capability cache: {agent_id} ({direct_url})")
                         continue
 
-                    # Get full agent card with skill details
-                    agent_card = await get_agent_card(agent_id)
+                    # Route all calls through LiteLLM: /a2a/{agent_name}
+                    agent_url = f"{LITELLM_URL}/a2a/{agent_id}"
+
+                    # Agent card is already in discover_agents() response; use it
+                    # directly to avoid an extra HTTP call.
+                    agent_card = agent.get("agent_card_params") or await get_agent_card(agent_id)
 
                     # Extract capabilities from each skill
                     for skill in agent_card.get("skills", []):

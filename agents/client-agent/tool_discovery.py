@@ -14,9 +14,17 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 logger = logging.getLogger(__name__)
 
-REGISTRY_URL = os.getenv("REGISTRY_URL", "http://registry:8000")
+LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
+LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 SELF_AGENT_ID = (os.getenv("AGENT_HOST") or "").strip()
 SELF_AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
+
+
+def _litellm_headers() -> Dict[str, str]:
+    headers = {}
+    if LITELLM_MASTER_KEY:
+        headers["Authorization"] = f"Bearer {LITELLM_MASTER_KEY}"
+    return headers
 
 
 def _normalize_url(url: str) -> str:
@@ -24,13 +32,16 @@ def _normalize_url(url: str) -> str:
 
 
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
-    """Return True when a discovered agent record points to this orchestrator."""
-    normalized_id = (agent_id or "").strip()
-    normalized_url = _normalize_url(agent_url)
+    """Return True when a discovered agent record points to this orchestrator.
 
-    if SELF_AGENT_ID and normalized_id == SELF_AGENT_ID:
+    agent_id here is the agent_name used in LiteLLM registration (e.g. 'client-agent'),
+    which matches AGENT_HOST for the self-check.
+    """
+    if SELF_AGENT_ID and (agent_id or "").strip() == SELF_AGENT_ID:
         return True
 
+    # Fallback: direct URL match for the agent's own address
+    normalized_url = _normalize_url(agent_url)
     self_urls = {
         _normalize_url(f"http://{SELF_AGENT_ID}:{SELF_AGENT_PORT}") if SELF_AGENT_ID else "",
         _normalize_url(f"http://localhost:{SELF_AGENT_PORT}"),
@@ -41,32 +52,57 @@ def is_self_agent(agent_id: str, agent_url: str) -> bool:
 
 
 async def discover_agents() -> List[Dict[str, Any]]:
-    """
-    Query registry for all available agents.
+    """Query LiteLLM for all registered A2A agents.
 
-    Returns:
-        List of agent metadata dictionaries
+    Returns a normalised list where each entry contains:
+      agent_id   – the agent_name used as LiteLLM routing key
+      name       – human-readable name from agent_card_params
+      url        – downstream agent base URL (from agent_card_params.url)
+      agent_name – same as agent_id, kept for clarity
+      agent_card_params – full card dict including skills + inputSchema
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(f"{REGISTRY_URL}/agents")
+    async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
+        response = await client.get(f"{LITELLM_URL}/v1/agents")
         response.raise_for_status()
-        return response.json()["agents"]
+        raw = response.json()
+
+    result = []
+    # LiteLLM returns a list directly or wrapped in a key — handle both
+    entries = raw if isinstance(raw, list) else raw.get("data", raw.get("agents", []))
+    for entry in entries:
+        card = entry.get("agent_card_params") or {}
+        agent_name = entry.get("agent_name", "")
+        result.append({
+            "agent_id": agent_name,
+            "agent_name": agent_name,
+            "name": card.get("name", agent_name),
+            "url": card.get("url", ""),
+            "agent_card_params": card,
+        })
+    return result
 
 
 async def get_agent_card(agent_id: str) -> Dict[str, Any]:
-    """
-    Get full agent card from registry.
+    """Get the full agent card for an agent.
 
-    Args:
-        agent_id: The agent ID to fetch
-
-    Returns:
-        Complete agent card dictionary with skills, inputSchemas, etc.
+    agent_id is the agent_name (LiteLLM routing key). The card is served by
+    LiteLLM at GET /a2a/{agent_name} (A2A well-known card endpoint).
+    Falls back to re-listing agents if that endpoint is unavailable.
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(f"{REGISTRY_URL}/agents/{agent_id}/card")
-        response.raise_for_status()
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
+            response = await client.get(f"{LITELLM_URL}/a2a/{agent_id}")
+            if response.status_code == 200:
+                return response.json()
+    except Exception:
+        pass
+
+    # Fallback: find the card in the full agent list
+    agents = await discover_agents()
+    for agent in agents:
+        if agent["agent_id"] == agent_id:
+            return agent.get("agent_card_params", {})
+    return {}
 
 
 def create_input_schema_from_skill(skill: Dict) -> type[BaseModel]:
@@ -235,11 +271,12 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
         }
     }
 
-    # Build headers with Bearer token authentication
+    # Route through LiteLLM: agent_url is {LITELLM_URL}/a2a/{agent_name}
+    # LiteLLM's A2A endpoint requires the method in the URL path.
+    endpoint = agent_url.rstrip("/") + "/message/send"
     headers = {"Content-Type": "application/json"}
-    agent_secret = os.getenv("AGENT_SECRET")
-    if agent_secret:
-        headers["Authorization"] = f"Bearer {agent_secret}"
+    if LITELLM_MASTER_KEY:
+        headers["Authorization"] = f"Bearer {LITELLM_MASTER_KEY}"
 
     # Use longer timeout for research agents that may take minutes
     timeout_seconds = 900.0  # 15 minutes
@@ -247,7 +284,7 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
 
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         try:
-            response = await client.post(agent_url, json=message, headers=headers)
+            response = await client.post(endpoint, json=message, headers=headers)
             print(f"[A2A] Response status: {response.status_code}")
             response.raise_for_status()
             result = response.json()

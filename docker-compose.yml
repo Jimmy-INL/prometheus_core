@@ -1,33 +1,50 @@
 # Prometheus Platform - Combined Docker Compose
 # Chainlit frontend + LangGraph client-agent + specialist agents
+# LiteLLM acts as the A2A agent gateway (replaces homemade registry)
 
 services:
-  # Registry service for agent discovery
-  registry:
-    build:
-      context: ./registry
-      additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
-      args:
-        - HTTP_PROXY=${HTTP_PROXY}
-        - HTTPS_PROXY=${HTTPS_PROXY}
-        - NO_PROXY=${NO_PROXY}
-    container_name: agent-registry
-    ports:
-      - "8000:8000"
+  # PostgreSQL — persistent store for LiteLLM agent registrations
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: litellm-db
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=${LITELLM_DB_PASSWORD}
+      - POSTGRES_DB=litellm
+    volumes:
+      - litellm-db-data:/var/lib/postgresql/data
     networks:
       - agent-network
-    environment:
-      - REGISTRY_PORT=8000
-      - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
-      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
-      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+    restart: unless-stopped
+
+  # LiteLLM proxy — A2A agent gateway and optional LLM proxy
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    container_name: litellm-proxy
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - DATABASE_URL=postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - agent-network
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   # Redis for shared state (conversations, memory, artifacts)
@@ -73,7 +90,7 @@ services:
     volumes:
       - ./shared:/app/shared
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
       client-agent:
         condition: service_started
@@ -100,7 +117,8 @@ services:
     environment:
       - AGENT_HOST=client-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
@@ -109,7 +127,7 @@ services:
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
       redis:
         condition: service_started
@@ -136,18 +154,19 @@ services:
     environment:
       - AGENT_HOST=corrosion-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -172,18 +191,19 @@ services:
     environment:
       - AGENT_HOST=radiation-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -208,18 +228,19 @@ services:
     environment:
       - AGENT_HOST=thermal-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -244,18 +265,19 @@ services:
     environment:
       - AGENT_HOST=data-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -280,18 +302,19 @@ services:
     environment:
       - AGENT_HOST=form-filler-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -316,18 +339,19 @@ services:
     environment:
       - AGENT_HOST=osti-research-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=true
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
       redis:
         condition: service_started
@@ -359,7 +383,8 @@ services:
       - AGENT_PORT=8000
       - AGENT_PUBLIC_URL=${ARTIFACT_DEBUG_PUBLIC_URL:-http://localhost:8008}
       - SHARED_ARTIFACT_DIR=/app/shared/artifact-debug
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - AGENT_SECRET=${AGENT_SECRET}
       - AGENT_SECRET_REQUIRED=false
       - PYTHONDONTWRITEBYTECODE=1
@@ -367,7 +392,7 @@ services:
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -392,18 +417,19 @@ services:
     environment:
       - AGENT_HOST=synthesis-agent
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - REDIS_URL=${REDIS_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-true}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
       - PYTHONDONTWRITEBYTECODE=1
       - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
       - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
       - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
     depends_on:
-      registry:
+      litellm:
         condition: service_healthy
     volumes:
       - ./shared:/app/shared
@@ -415,6 +441,7 @@ networks:
 
 volumes:
   redis-data:
+  litellm-db-data:
   osti-model-cache:
   huggingface-cache:
   torch-cache:
