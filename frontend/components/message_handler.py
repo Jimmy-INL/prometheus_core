@@ -1,18 +1,13 @@
 import json
-import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import chainlit as cl
-import httpx
 
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
-from utils.memory_client import MemoryClient
 from utils.settings import settings
-
-_memory_client = MemoryClient(settings.redis_url)
 
 
 def _get_a2a_client() -> A2AClient:
@@ -243,10 +238,6 @@ async def _handle_final_response(response: ConversationResponse):
     text = response.report or response.response_text or response.message or ""
     elements = []
 
-    memory_element = _build_memory_element(response)
-    if memory_element:
-        elements.append(memory_element)
-
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
     if response.new_artifacts:
@@ -271,38 +262,6 @@ async def _handle_final_response(response: ConversationResponse):
 
     if text or elements:
         await cl.Message(content=text, elements=elements).send()
-
-
-def _build_memory_element(response: ConversationResponse):
-    tool_results = response.tool_results or {}
-    plan = response.plan or {}
-    num_stored = tool_results.get("num_memories_stored", 0)
-    num_retrieved = plan.get("num_memories_retrieved", 0)
-
-    if not num_retrieved and not num_stored:
-        return None
-
-    factoids = []
-    if num_stored > 0 and _memory_client.available:
-        for mem in _memory_client.get_all_factoids(limit=num_stored)[:num_stored]:
-            factoids.append({
-                "content": mem.get("content", ""),
-                "material_id": mem.get("material_id"),
-                "analysis_type": mem.get("analysis_type"),
-                "factoid_type": mem.get("factoid_type"),
-                "confidence": mem.get("confidence"),
-            })
-
-    return cl.CustomElement(
-        name="MemoryCards",
-        display="inline",
-        props={
-            "factoids": factoids,
-            "numRetrieved": num_retrieved,
-            "numStored": num_stored,
-            "title": "Memory Context",
-        },
-    )
 
 
 async def render_artifacts(

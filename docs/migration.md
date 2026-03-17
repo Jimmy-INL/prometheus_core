@@ -32,7 +32,6 @@ The contents of `multi_agent_testbed/` were moved into `prometheus_platform/`, c
 | Agent registry | `registry/` | Lightweight FastAPI service for agent discovery and capability search |
 | PrometheusAgent SDK | `prometheus_api/` | Base class for building A2A agents with auth, health checks, artifact handling |
 | Specialist agents | `agents/*/` | Corrosion, radiation, thermal, data, synthesis, OSTI, form-filler, requirements agents |
-| Redis memory system | `agents/client-agent/memory_manager.py` | Factoid extraction, storage, and semantic retrieval |
 | Artifact registry | `prometheus_api/agent/artifacts.py` | Conversation-scoped artifact tracking in Redis |
 | Docker Compose stack | `docker-compose.yml` | Full-stack deployment with all services |
 
@@ -41,15 +40,14 @@ The contents of `multi_agent_testbed/` were moved into `prometheus_platform/`, c
 | Component | File | Purpose |
 |-----------|------|---------|
 | A2A client | `frontend/utils/a2a_client.py` | JSON-RPC 2.0 client with status polling during blocking calls |
-| Memory client | `frontend/utils/memory_client.py` | Redis client for browsing and managing factoids from the UI |
+| Conversation state client | `frontend/utils/conversation_state_client.py` | Redis client for browsing recent conversation state from the UI |
 | Conversation tracking | `frontend/components/message_handler.py` | `conversation_id` and artifact catalog persisted in Chainlit session |
 | Follow-up questions | `message_handler.py:_handle_needs_info()` | Renders DynamicForm for structured input collection |
 | Plan approval | `message_handler.py:_handle_plan_ready()` | Shows execution plans with PlanViewer and approve/reject actions |
 | Artifact rendering | `message_handler.py:render_artifacts()` | Routes artifact types to IFC, Exodus, PDF, Mermaid, or data viewers |
 | PlanViewer component | `frontend/public/elements/PlanViewer.jsx` | Rich plan visualization with step status tracking |
-| MemoryCards component | `frontend/public/elements/MemoryCards.jsx` | Factoid display cards for memory browsing |
 | `agent-url` config | `frontend/config.yml` | Points frontend at the client-agent A2A endpoint |
-| `redis-url` config | `frontend/config.yml` | Redis connection for memory browser |
+| `redis-url` config | `frontend/config.yml` | Redis connection for conversation history and status polling |
 
 ### What was preserved unchanged
 
@@ -68,10 +66,6 @@ The old FastAPI backend was a pass-through: it received chat messages from the f
 ### Multi-agent orchestration
 
 The old backend had a single LLM endpoint. The new architecture routes queries to specialist agents based on capability metadata, supports multi-step execution plans with user approval, and chains agent outputs across workflow steps. This required the client-agent's LangGraph workflow, the agent registry for discovery, and the A2A protocol for inter-agent communication.
-
-### Persistent memory
-
-The old backend had no memory across conversations. The new system extracts factoids from completed analyses and stores them in Redis with material and analysis type indexes. Future queries retrieve relevant factoids for context, improving response quality over time.
 
 ### Artifact management
 
@@ -92,7 +86,7 @@ openai_api_key: "..."                   # Direct API key
 ```yaml
 agent-url: "http://localhost:8001"      # Client-agent A2A endpoint
 agent-secret: ""                        # Bearer token (use AGENT_SECRET env var)
-redis-url: "redis://localhost:6379"     # Redis for memory browser
+redis-url: "redis://localhost:6379"     # Redis for conversation state/status
 debug: true
 auto-approve-steps: false
 ```
@@ -105,7 +99,7 @@ Model selection and API keys are now configured on the client-agent and speciali
 |----------|-------|---------|
 | `AGENT_SECRET` | Frontend + all agents | Shared Bearer token for A2A auth |
 | `ANTHROPIC_API_KEY` | Client-agent + specialists | LLM API access |
-| `REDIS_URL` | Client-agent + frontend | Memory, conversation state, and memory browser |
+| `REDIS_URL` | Client-agent + frontend | Conversation state, status polling, and history browser |
 | `REDIS_PASSWORD` | Redis container | Redis auth |
 | `REGISTRY_URL` | All agents | Agent registry endpoint |
 | `MODEL_NAME` | All agents | LLM model selection (default: `claude-sonnet-4-20250514`) |
@@ -150,8 +144,6 @@ The key differences:
 
 - **Status polling instead of streaming**: The client-agent uses blocking mode (`blocking: true`). The A2A client polls `/status/{conversation_id}` every 3 seconds for progress updates, but there is no real-time streaming from specialist agents.
 - **Conversation state has no TTL**: Redis conversation keys persist indefinitely. A 24-48 hour TTL should be added to prevent unbounded memory growth.
-- **Semantic search is O(n)**: The factoid similarity search loads all candidates into Python and computes cosine similarity in a loop. Upgrade to Redis Stack with RediSearch for native vector KNN at scale.
-
 ## Docker Compose changes
 
 The deployment moved from a frontend-only Docker setup to a full multi-agent stack defined in `docker-compose.yml` at the project root:
@@ -168,7 +160,7 @@ The deployment moved from a frontend-only Docker setup to a full multi-agent sta
 | OSTI Research | 8007 | Specialist |
 | Artifact Debug | 8008 | Testing |
 | Synthesis Agent | 8009 | Specialist |
-| Redis | 6379 | State/memory |
+| Redis | 6379 | State/status |
 | Chainlit Frontend | 8500 | UI |
 
 All containers share the `agent-network` bridge. Specialist agents self-register with the registry on startup; the client-agent discovers them dynamically.

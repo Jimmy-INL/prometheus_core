@@ -47,7 +47,7 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # Redis for shared state (conversations, memory, artifacts)
+  # Redis for shared state (conversations, status, artifacts)
   redis:
     image: redis:7-alpine
     container_name: agent-redis

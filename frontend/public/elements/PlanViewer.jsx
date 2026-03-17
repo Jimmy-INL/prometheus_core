@@ -23,7 +23,6 @@ export default function PlanViewer() {
   const estimatedDuration = plan.estimated_duration_seconds;
   const intent = plan.intent || "";
   const skills = plan.skills || [];
-  const memoriesRetrieved = plan.num_memories_retrieved || 0;
   const selectionSource = plan.selection_source;
   const workflowId = plan.workflow_id;
 
@@ -44,11 +43,6 @@ export default function PlanViewer() {
               <Badge variant="secondary" className="text-xs">
                 <Clock className="h-3 w-3 mr-1" />
                 ~{estimatedDuration}s
-              </Badge>
-            )}
-            {memoriesRetrieved > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                {memoriesRetrieved} memories used
               </Badge>
             )}
           </div>

@@ -175,27 +175,6 @@ plan_viewer = cl.CustomElement(
 await cl.Message(content="Execution plan:", elements=[plan_viewer]).send()
 ```
 
-## MemoryCards
-
-Renders factoid memory entries from the Redis-backed memory system.
-
-**File:** `public/elements/MemoryCards.jsx`
-
-**What it does:** Displays stored factoids as cards, showing content, material ID, analysis type, and creation timestamp. Also shows counts of how many factoids were retrieved for context and how many were stored from the current analysis. Used both inline (after agent responses) and in the memory browser.
-
-**Props:**
-
-| Prop | Type | Description |
-|------|------|-------------|
-| `factoids` | array | List of factoid objects with `content`, `material_id`, `analysis_type`, `created_at` |
-| `numRetrieved` | number | Count of factoids retrieved from memory for context during this turn |
-| `numStored` | number | Count of new factoids stored from the current analysis |
-| `title` | string | Section title (e.g., `"Memory Context"`) |
-
-The memory counts come from two places in the client-agent response: `num_memories_stored` from `tool_results` (added after execution) and `num_memories_retrieved` from the `plan` dict (set during planning).
-
-The frontend's `MemoryClient` (`utils/memory_client.py`) connects to the same Redis instance used by the client-agent's `MemoryManager`, providing read/delete access to factoids for display in the UI.
-
 ## Adding a new visualization plugin
 
 1. **Create the JSX component** in `frontend/public/elements/`:

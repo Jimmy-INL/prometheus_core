@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir --default-timeout=100 \
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json
 COPY artifact_handling.py /app/artifact_handling.py
-COPY memory_manager.py /app/memory_manager.py
+COPY conversation_store.py /app/conversation_store.py
 COPY tool_discovery.py /app/tool_discovery.py
 COPY capability_cache.py /app/capability_cache.py
 COPY param_schema.py /app/param_schema.py

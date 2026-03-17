@@ -41,8 +41,7 @@ from param_schema import (
 )
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
 from workflow_library import execute_workflow, get_workflow_registry, match_workflows
-
-from memory_manager import get_memory_manager
+from conversation_store import get_conversation, store_conversation
 
 AGENT_PORT = int(os.getenv("AGENT_PORT", "8000"))
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
@@ -112,12 +111,6 @@ class AgentState(TypedDict):
     analysis_types: Optional[List[str]]
     context: Optional[Dict[str, Any]]
     question: Optional[str]
-
-    # Memory system
-    retrieved_memories: Optional[List[Dict[str, Any]]]
-    extracted_factoids: Optional[List[str]]
-    num_memories_retrieved: Optional[int]
-    num_memories_stored: Optional[int]
 
     # Results
     tool_results: Dict[str, Any]
@@ -226,18 +219,6 @@ def create_tools():
     if _tools_cache is None:
         raise RuntimeError("Tools not initialized. Call initialize_tools() first.")
     return _tools_cache
-
-
-def store_conversation(conv_id: str, state: AgentState):
-    """Store conversation state in Redis (persistent storage)."""
-    memory_manager = get_memory_manager()
-    memory_manager.store_conversation(conv_id, state)
-
-
-def get_conversation(conv_id: str) -> Optional[AgentState]:
-    """Retrieve conversation state from Redis."""
-    memory_manager = get_memory_manager()
-    return memory_manager.get_conversation(conv_id)
 
 
 def extract_json_from_text(text: str):
@@ -2211,215 +2192,6 @@ def show_plan(state: AgentState) -> Dict:
     }
 
 
-async def retrieve_memories(state: AgentState) -> Dict:
-    """Retrieve relevant memories before analysis execution."""
-    material_id = state.get("material_id")
-    analysis_types = state.get("analysis_types", [])
-    user_query = state.get("user_query", "")
-
-    if not material_id:
-        return {
-            "retrieved_memories": [],
-            "num_memories_retrieved": 0
-        }
-
-    memory_manager = get_memory_manager()
-
-    # Get all factoids for this material
-    material_factoids = memory_manager.get_factoids_by_material(material_id)
-
-    if not material_factoids:
-        return {
-            "retrieved_memories": [],
-            "num_memories_retrieved": 0
-        }
-
-    # Use Claude to select most relevant memories via semantic understanding
-    llm = create_llm()
-    store_status_update(state.get("conversation_id"), "Calling LLM to select relevant memories.")
-    selection_prompt = f"""Given these stored factoids about {material_id},
-select the most relevant ones for this analysis request.
-
-USER REQUEST: {user_query}
-ANALYSIS TYPES: {', '.join(analysis_types)}
-MATERIAL: {material_id}
-
-AVAILABLE FACTOIDS:
-{json.dumps([{
-    "id": f["factoid_id"],
-    "content": f["content"],
-    "type": f["analysis_type"],
-    "material": f.get("material_id", "unknown"),
-    "confidence": f.get("confidence", 0.0)
-} for f in material_factoids], indent=2)}
-
-Select the 3-5 most relevant factoids that would provide useful context for this analysis.
-Consider:
-- Relevance to requested analysis types
-- Similarity of operating conditions
-- Recency vs. historical patterns
-- Contradictions or changes in material behavior
-
-Return JSON array of selected factoid IDs:
-["factoid-id-1", "factoid-id-2", ...]
-
-If none are relevant, return empty array []."""
-
-    try:
-        response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=selection_prompt)])
-        selected_ids = extract_json_from_text(response.content)
-
-        if not selected_ids or not isinstance(selected_ids, list):
-            selected_ids = []
-
-        # Retrieve full selected factoids
-        selected_factoids = [f for f in material_factoids if f["factoid_id"] in selected_ids]
-
-        return {
-            "retrieved_memories": selected_factoids,
-            "num_memories_retrieved": len(selected_factoids)
-        }
-    except Exception as e:
-        print(f"Error retrieving memories: {e}")
-        return {
-            "retrieved_memories": [],
-            "num_memories_retrieved": 0
-        }
-
-
-async def extract_memories(state: AgentState) -> Dict:
-    """Extract factoids from completed analysis for future recall."""
-    print(f"[DEBUG] extract_memories called")
-
-    # Only extract after successful analysis
-    if not state.get("final_report") or not state.get("tool_results"):
-        print(f"[DEBUG] No report or tool_results, skipping extraction")
-        print(f"[DEBUG] final_report exists: {bool(state.get('final_report'))}")
-        print(f"[DEBUG] tool_results exists: {bool(state.get('tool_results'))}")
-        return {
-            "extracted_factoids": [],
-            "num_memories_stored": 0
-        }
-
-    material_id = state.get("material_id")
-    analysis_types = state.get("analysis_types", [])
-
-    print(f"[DEBUG] Extracting memories for material: {material_id}, types: {analysis_types}")
-
-    if not material_id:
-        print(f"[DEBUG] No material_id, skipping extraction")
-        return {
-            "extracted_factoids": [],
-            "num_memories_stored": 0
-        }
-
-    llm = create_llm()
-    store_status_update(state.get("conversation_id"), "Calling LLM to extract memory factoids.")
-
-    # Build extraction prompt for Claude
-    prompt = f"""You are a nuclear engineering knowledge curator. Extract key factoids from this analysis
-that would be valuable to remember for future analyses of this or similar materials.
-
-ANALYSIS COMPLETED:
-Material: {material_id}
-Analysis Types: {', '.join(analysis_types)}
-
-TOOL RESULTS:
-{json.dumps(state["tool_results"], indent=2)}
-
-FINAL REPORT:
-{state["final_report"]}
-
-Extract factoids that are:
-- Specific and actionable (not generic knowledge)
-- Related to material behavior, degradation mechanisms, or safety
-- Useful for future analyses
-- Quantitative when possible
-
-Return JSON array of factoids:
-[
-  {{
-    "content": "<concise factoid statement>",
-    "factoid_type": "finding|recommendation|property|incident",
-    "analysis_type": "corrosion|radiation|thermal|general",
-    "confidence": <0.0-1.0>,
-    "tags": ["<relevant>", "<keywords>"],
-    "related_materials": ["<if applicable>"]
-  }},
-  ...
-]
-
-Examples:
-- "SS316 exhibits medium SCC susceptibility at 320°C in chloride environments"
-- "Radiation damage in SS316L shows 0.085 DPA after 125000 hours"
-- "Coating degradation in SS304 affects 8.5% of surface area"
-- "Recommend zinc injection for flow-accelerated corrosion in SS316"
-
-Focus on material-specific findings, not general nuclear engineering knowledge.
-Return 3-8 factoids maximum. Return ONLY the JSON array, no additional text."""
-
-    try:
-        response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
-
-        print(f"[DEBUG] Claude response for extraction: {response.content[:200]}...")
-
-        # Parse factoids
-        factoids_raw = extract_json_from_text(response.content)
-        print(f"[DEBUG] Parsed factoids: {type(factoids_raw)}, count: {len(factoids_raw) if isinstance(factoids_raw, list) else 'N/A'}")
-
-        if not factoids_raw or not isinstance(factoids_raw, list):
-            print(f"[DEBUG] No valid factoids extracted from response")
-            return {
-                "extracted_factoids": [],
-                "num_memories_stored": 0
-            }
-
-        # Enrich and store each factoid
-        memory_manager = get_memory_manager()
-        stored_factoid_ids = []
-
-        for factoid_data in factoids_raw:
-            # Build complete factoid
-            factoid = {
-                "factoid_id": str(uuid.uuid4()),
-                "material_id": material_id,
-                "analysis_type": factoid_data.get("analysis_type", "general"),
-                "factoid_type": factoid_data.get("factoid_type", "finding"),
-                "content": factoid_data["content"],
-                "confidence": factoid_data.get("confidence", 0.8),
-                "extracted_from": {
-                    "conversation_id": state.get("conversation_id", "unknown"),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "source_agent": "synthesis",
-                    "analysis_context": state.get("context", {})
-                },
-                "embedding": [],  # Placeholder - using Claude-based retrieval instead
-                "tags": factoid_data.get("tags", []),
-                "related_materials": factoid_data.get("related_materials", []),
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-
-            # Store in Redis
-            factoid_id = memory_manager.store_factoid(factoid)
-            stored_factoid_ids.append(factoid_id)
-            print(f"[DEBUG] Stored factoid {factoid_id}: {factoid['content'][:50]}...")
-
-        print(f"[DEBUG] Successfully stored {len(stored_factoid_ids)} factoids")
-
-        return {
-            "extracted_factoids": stored_factoid_ids,
-            "num_memories_stored": len(stored_factoid_ids)
-        }
-    except Exception as e:
-        print(f"[DEBUG] ERROR extracting memories: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "extracted_factoids": [],
-            "num_memories_stored": 0
-        }
-
-
 async def execute_current_plan(state: AgentState, *, start_message: str) -> AgentState:
     """Execute the current routing decision through the canonical execution path."""
     conversation_id = state.get("conversation_id", str(uuid.uuid4()))
@@ -2553,7 +2325,6 @@ def _format_plan_for_response(state: AgentState) -> Dict[str, Any]:
         "analysis_types": state.get("analysis_types", []),
         "context": state.get("context", {}),
         "param_metadata": plan.get("param_metadata", {}),
-        "num_memories_retrieved": state.get("num_memories_retrieved", 0),
     }
 
 
@@ -2797,10 +2568,6 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
         "analysis_types": None,
         "context": previous_context,
         "question": None,
-        "retrieved_memories": None,
-        "extracted_factoids": None,
-        "num_memories_retrieved": None,
-        "num_memories_stored": None,
         "tool_results": {},
         "final_report": None,
     }
