@@ -23,3 +23,5 @@ docs/site/
 backend/data/*
 .DS_Store
 shared/artifact-debug/*/
+certs/*
+!certs/.gitkeep
