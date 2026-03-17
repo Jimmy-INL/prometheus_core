@@ -22,8 +22,23 @@ sys.path.insert(0, "/app")
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
+from artifact_handling import (
+    merge_artifact_catalogs,
+    merge_artifacts_into_context,
+    resolve_artifact_inputs,
+    summarize_artifacts_for_context,
+)
 from tool_discovery import get_all_tools_dynamic
 from capability_cache import get_capability_cache
+from param_schema import (
+    extract_required_param_paths,
+    flatten_schema_properties,
+    get_nested_value,
+    has_param_path,
+    is_user_input_schema,
+    normalize_params_for_input_schema,
+    set_nested_value,
+)
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
 from workflow_library import execute_workflow, get_workflow_registry, match_workflows
 
@@ -346,72 +361,6 @@ def enrich_material_params(query: str, extracted_params: Optional[Dict[str, Any]
     return params
 
 
-UUID_PATTERN = re.compile(
-    r"\b[0-9a-fA-F]{8}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{12}\b"
-)
-
-
-def _normalize_artifact_name(name: str) -> str:
-    return re.sub(r"\s+", " ", (name or "").strip().lower())
-
-
-def summarize_artifacts_for_context(
-    artifacts: Optional[List[Dict[str, Any]]],
-    limit: int = 20,
-) -> List[Dict[str, Any]]:
-    """Build compact artifact metadata for routing/planning context.
-
-    Used by `chat()` when ingesting artifact catalogs from the orchestrator/base API.
-    This intentionally keeps references lightweight and excludes raw artifact content.
-    """
-    results: List[Dict[str, Any]] = []
-    for artifact in artifacts or []:
-        if not isinstance(artifact, dict):
-            continue
-        artifact_id = str(
-            artifact.get("artifact_id")
-            or artifact.get("artifactId")
-            or artifact.get("id")
-            or ""
-        ).strip()
-        name = str(artifact.get("name") or "").strip()
-        if not artifact_id or not name:
-            continue
-        results.append(
-            {
-                "artifact_id": artifact_id,
-                "name": name,
-                "description": str(artifact.get("description") or "")[:280],
-                "uri": str(artifact.get("uri") or ""),
-                "mime_type": artifact.get("mime_type") or artifact.get("mimeType"),
-                "size_bytes": artifact.get("size_bytes") or artifact.get("sizeBytes"),
-                "producer_agent_id": artifact.get("producer_agent_id") or artifact.get("producerAgentId"),
-                "created_at": artifact.get("created_at") or artifact.get("createdAt"),
-            }
-        )
-    return results[:limit]
-
-
-def merge_artifacts_into_context(
-    base_context: Optional[Dict[str, Any]],
-    artifacts: Optional[List[Dict[str, Any]]],
-) -> Dict[str, Any]:
-    """Merge latest artifact catalog into conversation context state.
-
-    Called during conversation initialization/continuation so follow-up turns
-    can resolve artifact mentions (by ID or name) across agent invocations.
-    """
-    merged = dict(base_context or {})
-    summary = summarize_artifacts_for_context(artifacts)
-    if summary:
-        merged["artifacts"] = summary
-    return merged
-
-
 def order_skills_for_workflow(routing_decision: Optional[Dict[str, Any]]) -> List[str]:
     """Return selected skills ordered for the requested workflow semantics.
 
@@ -489,132 +438,6 @@ def order_skills_for_workflow(routing_decision: Optional[Dict[str, Any]]) -> Lis
     return [skill_id for _, _, skill_id in scored]
 
 
-def set_nested_value(data: Dict[str, Any], path: str, value: Any) -> None:
-    """Set a dotted-path value inside a dictionary."""
-    parts = path.split(".")
-    current = data
-    for part in parts[:-1]:
-        if part not in current or not isinstance(current[part], dict):
-            current[part] = {}
-        current = current[part]
-    current[parts[-1]] = value
-
-
-def get_nested_value(data: Dict[str, Any], path: str) -> Any:
-    """Get a dotted-path value from a dictionary; returns None if missing."""
-    if path in data:
-        return data[path]
-    current: Any = data
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
-
-
-def has_param_path(params: Dict[str, Any], path: str) -> bool:
-    """Check whether a parameter path exists and has a non-empty value."""
-    if not isinstance(params, dict):
-        return False
-    if path == "material_id":
-        material_ids = params.get("material_ids")
-        if isinstance(material_ids, list) and any(str(v).strip() for v in material_ids):
-            return True
-    value = get_nested_value(params, path)
-    if value is None and path.startswith("context."):
-        # Compatibility: accept flat key for context.foo
-        value = params.get(path.split(".", 1)[1])
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True
-
-
-def _schema_input_source(prop: Dict[str, Any]) -> str:
-    """Normalize schema-level input source annotations."""
-    if not isinstance(prop, dict):
-        return ""
-    raw = (
-        prop.get("x_input_source")
-        or prop.get("x-input-source")
-        or prop.get("input_source")
-        or ""
-    )
-    return str(raw).strip().lower()
-
-
-def _is_user_input_schema(prop: Dict[str, Any]) -> bool:
-    """Return True when a schema property should be requested from end users."""
-    if not isinstance(prop, dict):
-        return True
-    if bool(prop.get("readOnly")):
-        return False
-    source = _schema_input_source(prop)
-    if source in {"runtime", "internal", "derived", "system", "agent"}:
-        return False
-    return True
-
-
-def extract_required_param_paths(
-    schema: Dict[str, Any],
-    prefix: str = "",
-    include_internal: bool = False,
-) -> List[str]:
-    """Extract required dotted parameter paths from a JSON schema.
-
-    By default this returns user-provided requirements only. Internal/runtime
-    requirements can be included with `include_internal=True`.
-    """
-    if not isinstance(schema, dict) or schema.get("type") != "object":
-        return []
-    properties = schema.get("properties", {}) or {}
-    required = schema.get("required", []) or []
-    paths: List[str] = []
-    for field in required:
-        field_path = f"{prefix}{field}"
-        field_schema = properties.get(field, {})
-        if not include_internal and not _is_user_input_schema(field_schema):
-            continue
-        is_object = isinstance(field_schema, dict) and (
-            field_schema.get("type") == "object" or "properties" in field_schema
-        )
-        if is_object:
-            nested_paths = extract_required_param_paths(
-                field_schema,
-                prefix=f"{field_path}.",
-                include_internal=include_internal,
-            )
-            if nested_paths:
-                paths.extend(nested_paths)
-            elif include_internal:
-                paths.append(field_path)
-        else:
-            paths.append(field_path)
-    return paths
-
-
-def flatten_schema_properties(
-    schema: Dict[str, Any],
-    prefix: str = "",
-) -> Dict[str, Dict[str, Any]]:
-    """Flatten JSON-schema properties into dotted-path -> property schema map."""
-    result: Dict[str, Dict[str, Any]] = {}
-    if not isinstance(schema, dict):
-        return result
-    if schema.get("type") != "object":
-        return result
-
-    for name, prop in (schema.get("properties", {}) or {}).items():
-        path = f"{prefix}{name}"
-        if isinstance(prop, dict):
-            result[path] = prop
-            is_object = prop.get("type") == "object" or "properties" in prop
-            if is_object:
-                result.update(flatten_schema_properties(prop, prefix=f"{path}."))
-    return result
-
-
 def _humanize_param_path(path: str) -> str:
     """Convert dotted param path into a readable fallback label."""
     token = str(path or "").split(".")[-1]
@@ -675,44 +498,6 @@ def build_plan_param_metadata(
             metadata[path] = entry
 
     return metadata
-
-
-def normalize_params_for_capability(
-    params: Dict[str, Any],
-    capability: Optional[Any] = None,
-) -> Dict[str, Any]:
-    """Convert flattened/dotted params into a payload aligned with the capability schema."""
-    normalized: Dict[str, Any] = {}
-
-    # Copy non-dotted keys first
-    for key, value in params.items():
-        if "." not in key:
-            normalized[key] = value
-
-    # Expand dotted keys into nested objects
-    for key, value in params.items():
-        if "." not in key or value is None:
-            continue
-        set_nested_value(normalized, key, value)
-
-    # If context schema exists, move matching flat fields into context for compatibility
-    if capability:
-        properties = capability.input_schema.get("properties", {}) if capability.input_schema else {}
-        context_schema = properties.get("context", {})
-        context_props = (context_schema.get("properties", {}) or {}) if isinstance(context_schema, dict) else {}
-        if context_props:
-            ctx = normalized.get("context", {})
-            if not isinstance(ctx, dict):
-                ctx = {}
-            moved = False
-            for key in list(normalized.keys()):
-                if key != "context" and key in context_props:
-                    ctx[key] = normalized.pop(key)
-                    moved = True
-            if moved or ctx:
-                normalized["context"] = ctx
-
-    return normalized
 
 
 def extract_result_text(result_data: Any) -> str:
@@ -837,131 +622,6 @@ def set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
     if "." in path:
         set_nested_value(params, path, value)
     params[path] = value
-
-
-def _resolve_artifact_identifier(
-    value: Any,
-    artifact_by_id: Dict[str, Dict[str, Any]],
-    artifact_by_name: Dict[str, str],
-) -> Optional[str]:
-    """Normalize an artifact input token into canonical artifact_id.
-
-    Accepts either direct ID or human-facing name.
-    """
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    if text in artifact_by_id:
-        return text
-    normalized = _normalize_artifact_name(text)
-    if normalized in artifact_by_name:
-        return artifact_by_name[normalized]
-    return None
-
-
-def _build_artifact_indexes(
-    context: Optional[Dict[str, Any]],
-) -> tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[str, str]]:
-    """Build lookup indexes from `context.artifacts` for fast resolution."""
-    artifacts = []
-    artifact_by_id: Dict[str, Dict[str, Any]] = {}
-    artifact_by_name: Dict[str, str] = {}
-
-    ctx_artifacts = (context or {}).get("artifacts", [])
-    if not isinstance(ctx_artifacts, list):
-        return artifacts, artifact_by_id, artifact_by_name
-
-    for raw in ctx_artifacts:
-        if not isinstance(raw, dict):
-            continue
-        artifact_id = str(raw.get("artifact_id") or "").strip()
-        name = str(raw.get("name") or "").strip()
-        if not artifact_id or not name:
-            continue
-        artifact = {
-            "artifact_id": artifact_id,
-            "name": name,
-            "description": str(raw.get("description") or ""),
-        }
-        artifacts.append(artifact)
-        artifact_by_id[artifact_id] = artifact
-        artifact_by_name[_normalize_artifact_name(name)] = artifact_id
-
-    return artifacts, artifact_by_id, artifact_by_name
-
-
-def apply_artifact_param_resolution(
-    params: Dict[str, Any],
-    required_paths: List[str],
-    query: str,
-    context: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Populate required artifact params from conversation artifact metadata.
-
-    Who uses this:
-    - `resolve_params_via_capability_metadata(...)` before missing-required checks.
-
-    Behavior:
-    - Resolves explicit `artifact_id`/`artifact_ids` values from names to IDs.
-    - Derives IDs from query mentions (UUID or artifact name substrings).
-    - Fills only required artifact fields that are still missing.
-    """
-    if not required_paths:
-        return params
-
-    artifacts, artifact_by_id, artifact_by_name = _build_artifact_indexes(context)
-    if not artifacts:
-        return params
-
-    artifact_candidates = {path for path in required_paths if path.endswith("artifact_id")}
-    artifact_list_candidates = {path for path in required_paths if path.endswith("artifact_ids")}
-    if not artifact_candidates and not artifact_list_candidates:
-        return params
-
-    # First normalize explicit artifact_id / artifact_ids values (names -> IDs)
-    for key in ("artifact_id", "context.artifact_id"):
-        existing = get_nested_value(params, key)
-        resolved = _resolve_artifact_identifier(existing, artifact_by_id, artifact_by_name)
-        if resolved:
-            set_param_path(params, key, resolved)
-
-    for key in ("artifact_ids", "context.artifact_ids"):
-        existing = get_nested_value(params, key)
-        if not isinstance(existing, list):
-            continue
-        resolved_list: List[str] = []
-        for item in existing:
-            resolved = _resolve_artifact_identifier(item, artifact_by_id, artifact_by_name)
-            if resolved and resolved not in resolved_list:
-                resolved_list.append(resolved)
-        if resolved_list:
-            set_param_path(params, key, resolved_list)
-
-    # Next derive from query mentions if still missing.
-    q = query or ""
-    matched_ids: List[str] = []
-    for uuid_match in UUID_PATTERN.findall(q):
-        if uuid_match in artifact_by_id and uuid_match not in matched_ids:
-            matched_ids.append(uuid_match)
-    q_normalized = _normalize_artifact_name(q)
-    if q_normalized:
-        for normalized_name, artifact_id in artifact_by_name.items():
-            if normalized_name and normalized_name in q_normalized and artifact_id not in matched_ids:
-                matched_ids.append(artifact_id)
-
-    if matched_ids:
-        # Fill single artifact requirement.
-        for path in artifact_candidates:
-            if not has_param_path(params, path):
-                set_param_path(params, path, matched_ids[0])
-        # Fill list requirement.
-        for path in artifact_list_candidates:
-            if not has_param_path(params, path):
-                set_param_path(params, path, matched_ids)
-
-    return params
 
 
 def rule_matches_query(query: str, rule: Dict[str, Any]) -> bool:
@@ -1280,28 +940,27 @@ async def resolve_params_via_capability_metadata(
         effective_query = query or ""
 
     # Step 4: Carry forward known context fields into params for required context.* paths
-    required_paths_all: List[str] = []
+    selected_input_schemas: List[Dict[str, Any]] = []
     for skill_id in selected_skills:
         capability = capabilities_by_skill.get(skill_id)
         if not capability:
             continue
+        if isinstance(capability.input_schema, dict):
+            selected_input_schemas.append(capability.input_schema)
         required_paths = extract_required_param_paths(capability.input_schema)
-        required_paths_all.extend(required_paths)
         for path in required_paths:
             if not path.startswith("context.") or has_param_path(params, path):
                 continue
             value = get_nested_value(merged_context, path)
-            if value is None:
-                value = merged_context.get(path.split(".", 1)[1])
             if value is not None:
                 set_param_path(params, path, value)
 
-    # Step 4b: Resolve artifact_id / artifact_ids params from conversation artifact metadata.
-    params = apply_artifact_param_resolution(
+    # Step 4b: Resolve declared artifact-reference params from conversation artifact metadata.
+    params = resolve_artifact_inputs(
         params=params,
-        required_paths=required_paths_all,
         query=effective_query,
         context=merged_context,
+        input_schemas=selected_input_schemas,
     )
 
     # Step 5: Identify pending derivation rules and needed context maps
@@ -1440,7 +1099,8 @@ async def invoke_skill(
     material_ids = params.get("material_ids")
 
     async def invoke_once(single_params: Dict[str, Any]) -> Dict[str, Any]:
-        invoke_params = normalize_params_for_capability(dict(single_params), capability=capability)
+        input_schema = capability.input_schema if capability else None
+        invoke_params = normalize_params_for_input_schema(dict(single_params), input_schema=input_schema)
         invoke_params["conversation_id"] = conversation_id
         missing = [param for param in required_params if not has_param_path(invoke_params, param)]
         if missing:
@@ -2375,7 +2035,7 @@ async def extract_refinement_param_updates(
             is_object = prop.get("type") == "object" or "properties" in prop
             if is_object:
                 continue
-            if _is_user_input_schema(prop):
+            if is_user_input_schema(prop):
                 candidate_paths.append(path)
     else:
         filtered: List[str] = []
@@ -2383,7 +2043,7 @@ async def extract_refinement_param_updates(
             prop = properties.get(path)
             if not prop and "." in path:
                 prop = properties.get(path.split(".", 1)[1], {})
-            if isinstance(prop, dict) and not _is_user_input_schema(prop):
+            if isinstance(prop, dict) and not is_user_input_schema(prop):
                 continue
             filtered.append(path)
         candidate_paths = filtered
@@ -2728,7 +2388,7 @@ Return 3-8 factoids maximum. Return ONLY the JSON array, no additional text."""
                 "content": factoid_data["content"],
                 "confidence": factoid_data.get("confidence", 0.8),
                 "extracted_from": {
-                    "conversation_id": state.get("conversation_history", [{}])[0].get("conversation_id", "unknown"),
+                    "conversation_id": state.get("conversation_id", "unknown"),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "source_agent": "synthesis",
                     "analysis_context": state.get("context", {})
@@ -2760,21 +2420,10 @@ Return 3-8 factoids maximum. Return ONLY the JSON array, no additional text."""
         }
 
 
-async def execute_approved_plan(state: AgentState) -> AgentState:
-    """Execute an approved plan with deterministic skill invocation order.
-
-    Who uses this:
-    - `chat(...)` when request.plan_approved is true.
-    """
+async def execute_current_plan(state: AgentState, *, start_message: str) -> AgentState:
+    """Execute the current routing decision through the canonical execution path."""
     conversation_id = state.get("conversation_id", str(uuid.uuid4()))
-    store_status_update(conversation_id, "Plan approved. Starting execution.")
-
-    memory_update = await retrieve_memories(state)
-    for key, value in memory_update.items():
-        state[key] = value
-    num_retrieved = int(state.get("num_memories_retrieved") or 0)
-    if num_retrieved > 0:
-        store_status_update(conversation_id, f"Loaded {num_retrieved} memory factoid(s) for context.")
+    store_status_update(conversation_id, start_message)
 
     routing_decision = state.get("routing_decision", {}) or {}
     workflow_type = routing_decision.get("workflow_type", "single")
@@ -2869,12 +2518,14 @@ async def execute_approved_plan(state: AgentState) -> AgentState:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]
 
-    extraction_update = await extract_memories(state)
-    for key, value in extraction_update.items():
-        state[key] = value
     store_status_update(conversation_id, "Execution complete.", final=True)
 
     return state
+
+
+async def execute_approved_plan(state: AgentState) -> AgentState:
+    """Execute an approved plan using the same execution path as auto-execution."""
+    return await execute_current_plan(state, start_message="Plan approved. Starting execution.")
 
 
 async def refresh_discovery():
@@ -2947,8 +2598,6 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     "report": final_state.get("final_report", ""),
                     "tool_results": final_state.get("tool_results", {}),
                 }
-                if final_state.get("num_memories_stored"):
-                    response_data["tool_results"]["num_memories_stored"] = final_state.get("num_memories_stored")
                 store_status_update(conv_id, "Execution response ready.", final=True)
                 return ConversationResponse(**response_data)
             except Exception as exc:
@@ -3000,20 +2649,18 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
 
                 if not requires_approval:
                     store_status_update(conv_id, "All required parameters resolved. Executing skills.")
-                    invoke_result = await invoke_agent_generic(state)
-                    for key, value in invoke_result.items():
-                        if value is not None:
-                            state[key] = value
-                    store_conversation(conv_id, state)
+                    final_state = await execute_current_plan(
+                        state,
+                        start_message="All required parameters resolved. Starting execution.",
+                    )
+                    store_conversation(conv_id, final_state)
                     store_status_update(conv_id, "Response ready.", final=True)
-                    latest = _latest_conversation_entry(state)
                     return ConversationResponse(
                         conversation_id=conv_id,
-                        status="answer",
-                        message=latest.get("content", ""),
-                        response_text=latest.get("content", ""),
-                        tool_results=latest.get("tool_results"),
-                        message_metadata=latest.get("message_metadata"),
+                        status="completed",
+                        message=final_state.get("final_report", ""),
+                        report=final_state.get("final_report", ""),
+                        tool_results=final_state.get("tool_results"),
                     )
 
                 plan_result = plan_analysis(state)
@@ -3249,20 +2896,18 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             )
 
         store_status_update(conv_id, "All required parameters resolved. Executing skills.")
-        invoke_result = await invoke_agent_generic(state)
-        for key, value in invoke_result.items():
-            if value is not None:
-                state[key] = value
-        store_conversation(conv_id, state)
+        final_state = await execute_current_plan(
+            state,
+            start_message="All required parameters resolved. Starting execution.",
+        )
+        store_conversation(conv_id, final_state)
         store_status_update(conv_id, "Response ready.", final=True)
-        latest = _latest_conversation_entry(state)
         return ConversationResponse(
             conversation_id=conv_id,
-            status="answer",
-            message=latest.get("content", ""),
-            response_text=latest.get("content", ""),
-            tool_results=latest.get("tool_results"),
-            message_metadata=latest.get("message_metadata"),
+            status="completed",
+            message=final_state.get("final_report", ""),
+            report=final_state.get("final_report", ""),
+            tool_results=final_state.get("tool_results"),
         )
     except Exception as exc:
         store_status_update(conv_id, f"Request failed: {exc}", final=True)
@@ -3620,7 +3265,10 @@ class OrchestratorAgent(PrometheusAgent):
         except Exception as exc:
             print(f"[WARN] Failed to list artifacts for {conversation_id}: {exc}")
         if existing_artifacts:
-            request_payload["artifacts"] = existing_artifacts
+            request_payload["artifacts"] = merge_artifact_catalogs(
+                existing_artifacts,
+                request_payload.get("artifacts") if isinstance(request_payload.get("artifacts"), list) else None,
+            )
 
         request_started_at = datetime.now(timezone.utc)
         status_forwarder_stop = asyncio.Event()

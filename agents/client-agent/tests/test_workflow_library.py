@@ -224,6 +224,37 @@ def test_compile_infers_required_inputs_from_step_skill_requirements() -> None:
     ]
 
 
+def test_registry_prefers_highest_semver_default_version() -> None:
+    workflow_v12 = """
+id: versioned_workflow
+name: Versioned Workflow
+version: "1.2.0"
+description: test
+matching:
+  patterns: ["versioned"]
+execution:
+  mode: sequential
+  on_error: fail_fast
+steps:
+  - id: s1
+    skill_id: analyze_thermal
+"""
+    workflow_v110 = workflow_v12.replace('version: "1.2.0"', 'version: "1.10.0"')
+
+    with TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        (base / "wf-1.2.0.yaml").write_text(workflow_v12, encoding="utf-8")
+        (base / "wf-1.10.0.yaml").write_text(workflow_v110, encoding="utf-8")
+
+        registry = WorkflowRegistry(workflows_dir=str(base), strict=True)
+        registry.refresh([_capability("analyze_thermal")])
+
+        selected = registry.get("versioned_workflow")
+
+    assert selected is not None
+    assert selected.definition.version == "1.10.0"
+
+
 def test_registry_input_form_uses_overrides_then_agent_metadata() -> None:
     workflow_yaml = """
 id: workflow_form_test

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from param_schema import flatten_schema_properties, has_param_path
 from .compiler import WorkflowCompileError, compile_workflow
 from .schema import CompiledWorkflow
 
@@ -20,40 +21,18 @@ else:
     AgentCapability = Any
 
 
-def _flatten_schema_properties(schema: Dict[str, Any], prefix: str = "") -> Dict[str, Dict[str, Any]]:
-    result: Dict[str, Dict[str, Any]] = {}
-    if not isinstance(schema, dict) or schema.get("type") != "object":
-        return result
-    for key, prop in (schema.get("properties", {}) or {}).items():
-        path = f"{prefix}{key}"
-        if isinstance(prop, dict):
-            result[path] = prop
-            is_object = prop.get("type") == "object" or "properties" in prop
-            if is_object:
-                result.update(_flatten_schema_properties(prop, prefix=f"{path}."))
-    return result
-
-
-def _get_param_path(data: Dict[str, Any], path: str) -> Any:
-    if path in data:
-        return data[path]
-    current: Any = data
-    for token in path.split("."):
-        if not isinstance(current, dict) or token not in current:
-            return None
-        current = current[token]
-    return current
-
-
-def _has_param_path(data: Dict[str, Any], path: str) -> bool:
-    value = _get_param_path(data, path)
-    if value is None and path.startswith("context."):
-        value = data.get(path.split(".", 1)[1])
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True
+def _version_key(raw_version: str) -> tuple[int, tuple[Any, ...]]:
+    text = str(raw_version or "").strip()
+    parts = re.split(r"[.-]", text)
+    parsed: List[Any] = []
+    numeric = True
+    for part in parts:
+        if part.isdigit():
+            parsed.append(int(part))
+        else:
+            numeric = False
+            parsed.append(part)
+    return (1 if numeric else 0, tuple(parsed))
 
 
 def _append_unit_to_description(description: str, unit: Optional[str]) -> str:
@@ -111,7 +90,7 @@ class WorkflowRegistry:
 
     def list_all(self) -> List[CompiledWorkflow]:
         values = list(self._snapshot.by_key.values())
-        values.sort(key=lambda item: (item.definition.id, item.definition.version))
+        values.sort(key=lambda item: (item.definition.id, _version_key(item.definition.version)))
         return values
 
     def get(self, workflow_id: str, version: Optional[str] = None) -> Optional[CompiledWorkflow]:
@@ -119,8 +98,7 @@ class WorkflowRegistry:
         if not candidates:
             return None
         if version is None:
-            # Highest lexical version as deterministic fallback.
-            return sorted(candidates, key=lambda wf: wf.definition.version, reverse=True)[0]
+            return sorted(candidates, key=lambda wf: _version_key(wf.definition.version), reverse=True)[0]
         for item in candidates:
             if item.definition.version == version:
                 return item
@@ -171,11 +149,11 @@ class WorkflowRegistry:
             cap = capabilities_by_skill.get(step.skill_id)
             if not cap:
                 continue
-            properties.update(_flatten_schema_properties(cap.input_schema))
+            properties.update(flatten_schema_properties(cap.input_schema))
 
         fields: List[Dict[str, Any]] = []
         for path in workflow.required_input_paths:
-            if _has_param_path(merged, path):
+            if has_param_path(merged, path):
                 continue
 
             override = workflow.definition.ui.input_overrides.get(path)
@@ -267,7 +245,7 @@ class WorkflowRegistry:
             by_id.setdefault(compiled.definition.id, []).append(compiled)
 
         for workflow_id, items in by_id.items():
-            by_id[workflow_id] = sorted(items, key=lambda wf: wf.definition.version, reverse=True)
+            by_id[workflow_id] = sorted(items, key=lambda wf: _version_key(wf.definition.version), reverse=True)
 
         checksum = hashlib.sha256("\n".join(sorted(checksum_parts)).encode("utf-8")).hexdigest()
         next_snapshot = WorkflowSnapshot(

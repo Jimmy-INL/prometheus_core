@@ -18,6 +18,13 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from capability_cache import AgentCapability
+from param_schema import (
+    extract_required_param_paths,
+    flatten_schema_properties,
+    get_nested_value,
+    has_param_path,
+    set_nested_value,
+)
 
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 
@@ -163,105 +170,11 @@ class WorkflowPlanningCandidate:
 
 
 def _set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
-    parts = path.split(".")
-    current = params
-    for part in parts[:-1]:
-        if part not in current or not isinstance(current[part], dict):
-            current[part] = {}
-        current = current[part]
-    current[parts[-1]] = value
+    set_nested_value(params, path, value)
 
 
 def _get_param_path(params: Dict[str, Any], path: str) -> Any:
-    if path in params:
-        return params[path]
-    current: Any = params
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
-
-
-def _has_param_path(params: Dict[str, Any], path: str) -> bool:
-    value = _get_param_path(params, path)
-    if value is None and path.startswith("context."):
-        value = params.get(path.split(".", 1)[1])
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    return True
-
-
-def _schema_input_source(prop: Dict[str, Any]) -> str:
-    if not isinstance(prop, dict):
-        return ""
-    raw = (
-        prop.get("x_input_source")
-        or prop.get("x-input-source")
-        or prop.get("input_source")
-        or ""
-    )
-    return str(raw).strip().lower()
-
-
-def _is_user_input_schema(prop: Dict[str, Any]) -> bool:
-    if not isinstance(prop, dict):
-        return True
-    if bool(prop.get("readOnly")):
-        return False
-    source = _schema_input_source(prop)
-    if source in {"runtime", "internal", "derived", "system", "agent"}:
-        return False
-    return True
-
-
-def _extract_required_param_paths(
-    schema: Dict[str, Any],
-    prefix: str = "",
-    include_internal: bool = False,
-) -> List[str]:
-    if not isinstance(schema, dict) or schema.get("type") != "object":
-        return []
-    properties = schema.get("properties", {}) or {}
-    required = schema.get("required", []) or []
-    paths: List[str] = []
-    for field in required:
-        path = f"{prefix}{field}"
-        field_schema = properties.get(field, {})
-        if not include_internal and not _is_user_input_schema(field_schema):
-            continue
-        is_object = isinstance(field_schema, dict) and (
-            field_schema.get("type") == "object" or "properties" in field_schema
-        )
-        if is_object:
-            nested = _extract_required_param_paths(
-                field_schema,
-                prefix=f"{path}.",
-                include_internal=include_internal,
-            )
-            if nested:
-                paths.extend(nested)
-            elif include_internal:
-                paths.append(path)
-        else:
-            paths.append(path)
-    return paths
-
-
-def _flatten_schema_properties(schema: Dict[str, Any], prefix: str = "") -> Dict[str, Dict[str, Any]]:
-    result: Dict[str, Dict[str, Any]] = {}
-    if not isinstance(schema, dict) or schema.get("type") != "object":
-        return result
-    for name, prop in (schema.get("properties", {}) or {}).items():
-        path = f"{prefix}{name}"
-        if isinstance(prop, dict):
-            result[path] = prop
-            is_object = prop.get("type") == "object" or "properties" in prop
-            if is_object:
-                result.update(_flatten_schema_properties(prop, prefix=f"{path}."))
-    return result
+    return get_nested_value(params, path)
 
 
 def _build_capability_context(capabilities: List[AgentCapability]) -> str:
@@ -279,9 +192,9 @@ def _build_capability_context(capabilities: List[AgentCapability]) -> str:
         if cap.tags:
             lines.append(f"  tags: {', '.join(cap.tags)}")
         if cap.input_schema:
-            required = _extract_required_param_paths(cap.input_schema)
+            required = extract_required_param_paths(cap.input_schema)
             internal_required = sorted(
-                set(_extract_required_param_paths(cap.input_schema, include_internal=True)) - set(required)
+                set(extract_required_param_paths(cap.input_schema, include_internal=True)) - set(required)
             )
             props = cap.input_schema.get("properties", {}) or {}
             if required:
@@ -404,12 +317,10 @@ def _build_planning_tools(
 
     def hydrate_context_assumptions(required_paths: List[str]) -> None:
         for path in required_paths:
-            if not path.startswith("context.") or _has_param_path(draft.extracted_params, path):
+            if not path.startswith("context.") or has_param_path(draft.extracted_params, path):
                 continue
             context_key = path.split(".", 1)[1]
             value = _get_param_path(planning_context, context_key)
-            if value is None:
-                value = planning_context.get(context_key)
             if value is not None:
                 _set_param_path(draft.extracted_params, path, value)
 
@@ -434,24 +345,24 @@ def _build_planning_tools(
             for skill_id in selected:
                 cap = capabilities_by_skill.get(skill_id)
                 if cap:
-                    properties.update(_flatten_schema_properties(cap.input_schema))
+                    properties.update(flatten_schema_properties(cap.input_schema))
         else:
             for skill_id in selected:
                 cap = capabilities_by_skill.get(skill_id)
                 if not cap:
                     continue
-                user_required_paths = _extract_required_param_paths(cap.input_schema)
-                all_required_paths = _extract_required_param_paths(cap.input_schema, include_internal=True)
+                user_required_paths = extract_required_param_paths(cap.input_schema)
+                all_required_paths = extract_required_param_paths(cap.input_schema, include_internal=True)
                 required_paths_set.update(user_required_paths)
                 runtime_required_paths_set.update(set(all_required_paths) - set(user_required_paths))
-                properties.update(_flatten_schema_properties(cap.input_schema))
+                properties.update(flatten_schema_properties(cap.input_schema))
 
         required_paths = sorted(required_paths_set)
         runtime_required_paths = sorted(runtime_required_paths_set)
         hydrate_context_assumptions(required_paths)
-        missing_paths = [path for path in required_paths if not _has_param_path(draft.extracted_params, path)]
+        missing_paths = [path for path in required_paths if not has_param_path(draft.extracted_params, path)]
         unresolved_runtime_paths = [
-            path for path in runtime_required_paths if not _has_param_path(draft.extracted_params, path)
+            path for path in runtime_required_paths if not has_param_path(draft.extracted_params, path)
         ]
 
         details: List[Dict[str, Any]] = []

@@ -68,7 +68,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
       args:
         - HTTP_PROXY=${HTTP_PROXY}
         - HTTPS_PROXY=${HTTPS_PROXY}
@@ -103,7 +103,7 @@ services:
     build:
       context: ./agents/client-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -140,7 +140,7 @@ services:
     build:
       context: ./agents/corrosion-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -177,7 +177,7 @@ services:
     build:
       context: ./agents/radiation-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -214,7 +214,7 @@ services:
     build:
       context: ./agents/thermal-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -251,7 +251,7 @@ services:
     build:
       context: ./agents/data-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -288,7 +288,7 @@ services:
     build:
       context: ./agents/form-filler-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -326,7 +326,7 @@ services:
       context: ./agents/osti-research-agent
       additional_contexts:
         prometheus_api: ./prometheus_api
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
       args:
         - HTTP_PROXY=${HTTP_PROXY}
         - HTTPS_PROXY=${HTTPS_PROXY}
@@ -367,7 +367,7 @@ services:
     build:
       context: ./agents/artifact-debug-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
@@ -403,7 +403,7 @@ services:
     build:
       context: ./agents/synthesis-agent
       additional_contexts:
-        certs: ${CA_CERT_DIR:-./certs}
+        certs: ./certs
         prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}

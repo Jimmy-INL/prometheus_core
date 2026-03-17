@@ -141,6 +141,8 @@ docker run -p 8000:8000 --env-file .env my-analysis-agent
 
 The agent starts a uvicorn server and self-registers with the registry (if `REGISTRY_URL` is set).
 
+Custom CA certificates should be placed in the repo-local [`certs`](/Users/schwd/Programs/prometheus/prometheus_platform/certs) directory as `*.pem` files only. The Docker build context for certificates is intentionally limited to that directory.
+
 ### 5. Add to Docker Compose
 
 Add a service block to `docker-compose.yml`:
@@ -151,7 +153,7 @@ my-analysis-agent:
     context: ./agents/my-analysis-agent
     additional_contexts:
       prometheus_api: ./prometheus_api
-      certs: ${CA_CERT_DIR:-./certs}
+      certs: ./certs
   container_name: my-analysis-agent
   ports:
     - "8010:8000"
