@@ -2971,9 +2971,13 @@ class OrchestratorAgent(PrometheusAgent):
                 continue
             if not reference.uri and reference.json_body is None:
                 continue
+            metadata = dict(reference.metadata or {})
+            if metadata.get("kind") == "conversation_message":
+                continue
+            if reference.name == "conversation_message":
+                continue
 
             if reference.conversation_id and reference.conversation_id != conversation_id:
-                metadata = dict(reference.metadata or {})
                 metadata.setdefault("source_conversation_id", reference.conversation_id)
                 reference.metadata = metadata
             reference.conversation_id = conversation_id

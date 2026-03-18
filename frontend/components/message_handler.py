@@ -281,6 +281,11 @@ async def render_artifacts(
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             continue
+        metadata = artifact.get("metadata") or {}
+        if metadata.get("kind") == "conversation_message":
+            continue
+        if artifact.get("name") == "conversation_message":
+            continue
 
         uri = artifact.get("uri", "")
         name = artifact.get("name", "Artifact")
@@ -288,7 +293,6 @@ async def render_artifacts(
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
         tags = [t.lower() for t in (artifact.get("tags") or [])]
         description = artifact.get("description", "")
-        metadata = artifact.get("metadata") or {}
 
         # Try visualization plugin system first
         element = await _plugins.render_artifact(artifact)

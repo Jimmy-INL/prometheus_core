@@ -239,6 +239,11 @@ def _normalize_a2a_artifacts(
             continue
         if not reference.name:
             continue
+        metadata = dict(reference.metadata or {})
+        if metadata.get("kind") == "conversation_message":
+            continue
+        if reference.name == "conversation_message":
+            continue
         normalized.append(reference.to_dict())
     return normalized
 

@@ -205,6 +205,10 @@ class A2AClient:
         for artifact in artifacts:
             parts = artifact.get("parts", [])
             for part in parts:
+                if part.get("kind") == "data":
+                    data = part.get("data")
+                    if isinstance(data, dict) and "status" in data:
+                        return self._dict_to_response(data)
                 text = part.get("text", "")
                 try:
                     data = json.loads(text)
