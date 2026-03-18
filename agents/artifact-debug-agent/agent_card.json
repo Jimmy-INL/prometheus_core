@@ -78,6 +78,37 @@
         },
         "required": ["artifact_id"]
       }
+    },
+    {
+      "id": "create_json_artifact",
+      "name": "Create JSON Artifact",
+      "description": "Create an inline JSON artifact with an explicit json_type so frontend JSON rendering and artifact catalog ingestion can be validated.",
+      "usage_notes": "Use this to validate native A2A structured artifact handling. Provide a stable json_type and an object payload.",
+      "requires_approval": false,
+      "expected_duration_seconds": 2,
+      "output_format": "JSON with status, artifact metadata, artifact_id, and json_type",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json_type": {
+            "type": "string",
+            "description": "Structured JSON visualization type identifier, e.g. 'prometheus.debug.echo.v1'."
+          },
+          "payload": {
+            "type": "object",
+            "description": "JSON object to store inline in the artifact."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional display name for the JSON artifact."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional human-readable artifact description."
+          }
+        },
+        "required": ["json_type"]
+      }
     }
   ]
 }

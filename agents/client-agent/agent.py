@@ -2917,32 +2917,28 @@ class OrchestratorAgent(PrometheusAgent):
                 break
             await asyncio.sleep(0.4)
 
-    @staticmethod
-    def _looks_like_artifact_reference(payload: Dict[str, Any]) -> bool:
-        """Return True for dicts that resemble metadata-only artifact references."""
-        if not isinstance(payload, dict):
-            return False
-        uri = str(payload.get("uri") or "").strip()
-        name = str(payload.get("name") or "").strip()
-        return bool(uri and name)
-
-    def _collect_artifact_reference_payloads(self, payload: Any) -> List[Dict[str, Any]]:
-        """Recursively collect artifact reference payloads from tool responses.
+    def _collect_artifact_reference_payloads(self, payload: Any) -> List[Any]:
+        """Recursively collect artifact payloads from tool responses.
 
         Used by `_execute` after `chat(...)` so orchestrator conversation state can
         track artifacts produced by downstream agents.
         """
-        collected: List[Dict[str, Any]] = []
+        collected: List[Any] = []
 
         def walk(node: Any) -> None:
             if isinstance(node, dict):
-                if self._looks_like_artifact_reference(node):
+                if (
+                    isinstance(node.get("parts"), list)
+                    or node.get("uri")
+                    or node.get("json_body") is not None
+                    or node.get("jsonBody") is not None
+                ):
                     collected.append(node)
                 artifact_node = node.get("artifact")
-                if isinstance(artifact_node, dict):
+                if artifact_node is not None:
                     walk(artifact_node)
                 artifact_ref_node = node.get("artifact_reference")
-                if isinstance(artifact_ref_node, dict):
+                if artifact_ref_node is not None:
                     walk(artifact_ref_node)
                 artifacts_node = node.get("artifacts")
                 if isinstance(artifacts_node, list):
@@ -2965,10 +2961,15 @@ class OrchestratorAgent(PrometheusAgent):
         ingested = 0
         for candidate in self._collect_artifact_reference_payloads(payload):
             try:
-                reference = ArtifactReference.from_dict(candidate)
+                reference = ArtifactReference.from_any(
+                    candidate,
+                    conversation_id=conversation_id,
+                )
             except Exception:
                 continue
-            if not reference.uri or not reference.name:
+            if reference is None or not reference.name:
+                continue
+            if not reference.uri and reference.json_body is None:
                 continue
 
             if reference.conversation_id and reference.conversation_id != conversation_id:

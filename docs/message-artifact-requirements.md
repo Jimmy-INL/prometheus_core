@@ -66,8 +66,13 @@ That text payload must contain one serialized JSON object representing the respo
 
 Artifact rendering and downstream consumption must be driven by:
 
-1. A2A `Part.mediaType`
+1. explicit MIME metadata on the primary A2A part
 2. Prometheus `json_type` for JSON parts
+
+In the currently installed Python A2A library, that means:
+
+- URI-backed artifacts use `kind: "file"` and `file.mimeType`
+- inline structured artifacts use `kind: "data"` and part `metadata.mime_type`
 
 Tags, URI extensions, and arbitrary metadata must not be required for correct routing of conforming artifacts.
 
@@ -179,8 +184,8 @@ A Prometheus-conforming artifact should look like:
         "material_id": "Alloy 600",
         "findings": ["..."]
       },
-      "mediaType": "application/json",
       "metadata": {
+        "mime_type": "application/json",
         "json_type": "prometheus.analysis.corrosion_summary.v1"
       }
     }
@@ -202,7 +207,7 @@ Requirements:
 
 ## 5.2 URI-backed artifacts
 
-URI-backed artifacts must use an A2A URL part.
+URI-backed artifacts must use an A2A file part.
 
 Example:
 
@@ -213,9 +218,12 @@ Example:
   "description": "PDF report for the corrosion run",
   "parts": [
     {
-      "kind": "url",
-      "url": "file:///tmp/report.pdf",
-      "mediaType": "application/pdf"
+      "kind": "file",
+      "file": {
+        "uri": "file:///tmp/report.pdf",
+        "mimeType": "application/pdf",
+        "name": "report.pdf"
+      }
     }
   ],
   "metadata": {
@@ -229,8 +237,8 @@ Example:
 Requirements:
 
 - URI-backed artifacts are the canonical representation for files and external resources
-- the URL part must be the authoritative locator for the content
-- the part `mediaType` must reflect the content actually available at that URL
+- the file part `file.uri` must be the authoritative locator for the content
+- the file part `file.mimeType` must reflect the content actually available at that URI
 
 ## 5.3 Inline JSON artifacts
 
@@ -249,8 +257,8 @@ Example:
       "data": {
         "rows": []
       },
-      "mediaType": "application/json",
       "metadata": {
+        "mime_type": "application/json",
         "json_type": "prometheus.requirements.trace_matrix.v1"
       }
     }
@@ -266,7 +274,7 @@ Example:
 Requirements:
 
 - inline generic structured data must use an A2A data part, not a text-encoded JSON blob
-- JSON parts must use `mediaType = "application/json"`
+- JSON parts must carry `metadata.mime_type = "application/json"`
 - JSON parts must include `metadata.json_type`
 - `json_type` must be stable, explicit, and versioned
 - the frontend must use `json_type` to choose a specialized renderer when one exists
@@ -360,7 +368,7 @@ Requirements:
 
 The frontend renderer must dispatch in this order:
 
-1. A2A part `mediaType`
+1. explicit MIME metadata on the primary part
 2. `metadata.json_type` for JSON parts
 
 Requirements:
@@ -385,8 +393,8 @@ Artifact validation must enforce:
 
 - every Prometheus artifact is a valid native A2A artifact
 - every artifact has exactly one primary part for current Prometheus usage
-- every primary part has an explicit `mediaType`
-- JSON parts use `mediaType = "application/json"`
+- every primary part has explicit MIME metadata
+- JSON parts use `metadata.mime_type = "application/json"`
 - JSON parts include `metadata.json_type`
 - Prometheus metadata includes `conversation_id`, `producer_agent_id`, and `created_at`
 
@@ -403,13 +411,13 @@ The current codebase still contains fallback-oriented behavior:
 - layered A2A response extraction across status, artifacts, and history
 - artifact rendering by MIME type, tags, URI extension, and metadata conventions
 - ad hoc inline content paths for some plugins
-- text-encoded JSON artifact emission in places where native A2A data parts should be used
+- compatibility parsing for older text-encoded artifact payloads
 
 Migration should converge on this order:
 
 1. standardize the canonical response location
 2. emit native A2A artifacts directly
-3. map URI-backed outputs to A2A URL parts
+3. map URI-backed outputs to A2A file parts
 4. map inline structured JSON outputs to A2A data parts
 5. add required Prometheus metadata conventions
 6. update frontend rendering to use media type then `json_type`

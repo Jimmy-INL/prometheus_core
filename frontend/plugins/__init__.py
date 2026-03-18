@@ -6,6 +6,7 @@ functions for artifact rendering and file upload handling.
 
 Plugin contract — each plugins/<name>/__init__.py must provide:
     MIMETYPES: list[str]        MIME types this plugin handles
+    JSON_TYPES: list[str]       artifact.json_type values this plugin handles
     TAGS: list[str]             artifact.tags values this plugin handles
     EXTENSIONS: list[str]       URI file-extension suffixes this plugin handles
     COMPONENT_NAME: str         name of the JSX CustomElement component
@@ -31,6 +32,7 @@ PLUGINS_DIR = Path(__file__).parent
 ELEMENTS_DIR = PLUGINS_DIR.parent / "public" / "elements"
 
 _mimetype_registry: dict[str, Any] = {}
+_json_type_registry: dict[str, Any] = {}
 _tag_registry: dict[str, Any] = {}
 _extension_registry: dict[str, Any] = {}
 _upload_extension_registry: dict[str, Any] = {}
@@ -58,6 +60,8 @@ def _load_plugins() -> None:
 
         for mime in getattr(module, "MIMETYPES", []):
             _mimetype_registry[mime.lower()] = module
+        for json_type in getattr(module, "JSON_TYPES", []):
+            _json_type_registry[json_type] = module
         for tag in getattr(module, "TAGS", []):
             _tag_registry[tag.lower()] = module
         for ext in getattr(module, "EXTENSIONS", []):
@@ -71,6 +75,10 @@ def _load_plugins() -> None:
 
 def find_plugin_for_artifact(artifact: dict) -> Any | None:
     """Return the plugin module that can handle a given artifact, or None."""
+    json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
+    if json_type and json_type in _json_type_registry:
+        return _json_type_registry[json_type]
+
     mime = (artifact.get("mime_type") or "").lower()
     if mime and mime in _mimetype_registry:
         return _mimetype_registry[mime]

@@ -285,6 +285,7 @@ async def render_artifacts(
         uri = artifact.get("uri", "")
         name = artifact.get("name", "Artifact")
         mime_type = (artifact.get("mime_type") or "").lower()
+        json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
         tags = [t.lower() for t in (artifact.get("tags") or [])]
         description = artifact.get("description", "")
         metadata = artifact.get("metadata") or {}
@@ -306,10 +307,15 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}** (PDF): `{uri}`")
 
         elif artifact_type == "data":
-            data_content = metadata.get("content", metadata.get("data"))
+            data_content = artifact.get("json_body")
+            if data_content is None:
+                data_content = metadata.get("content", metadata.get("data"))
             if data_content:
                 formatted = json.dumps(data_content, indent=2, default=str)
-                text_parts.append(f"**{name}:**\n```json\n{formatted}\n```")
+                heading = f"**{name}:**"
+                if json_type:
+                    heading += f" `{json_type}`"
+                text_parts.append(f"{heading}\n```json\n{formatted}\n```")
             else:
                 text_parts.append(f"- **{name}**: {description or uri}")
 
@@ -332,7 +338,7 @@ async def render_artifacts(
 
         else:
             # No plugin and no known text type — tell the user and offer a download
-            label = mime_type or (tags[0] if tags else "unknown")
+            label = json_type or mime_type or (tags[0] if tags else "unknown")
             line = f"📎 **{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"

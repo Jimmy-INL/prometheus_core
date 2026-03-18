@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, create_model
+from prometheus_api.agent import ArtifactReference
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,29 @@ def _looks_like_artifact_reference_payload(payload: Any) -> bool:
     return bool(uri and name)
 
 
+def _normalize_a2a_artifacts(
+    artifacts: Any,
+    *,
+    conversation_id: str,
+) -> List[Dict[str, Any]]:
+    """Normalize native A2A artifact payloads into catalog-entry dicts."""
+    normalized: List[Dict[str, Any]] = []
+    for artifact in artifacts or []:
+        try:
+            reference = ArtifactReference.from_any(
+                artifact,
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            reference = None
+        if reference is None:
+            continue
+        if not reference.name:
+            continue
+        normalized.append(reference.to_dict())
+    return normalized
+
+
 async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, Any]:
     """
     Call an A2A agent using JSON-RPC protocol.
@@ -302,6 +326,11 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
             print(f"[A2A] Result keys: {list(a2a_result.keys())}")
             print(f"[A2A] Full result structure: {json.dumps(a2a_result, indent=2, default=str)[:2000]}")
 
+            normalized_artifacts = _normalize_a2a_artifacts(
+                a2a_result.get("artifacts", []),
+                conversation_id=str(kwargs.get("conversation_id") or ""),
+            )
+
             # Check status.message first - this is where the final result appears
             status = a2a_result.get("status", {})
             status_message = status.get("message", {})
@@ -313,6 +342,10 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
                         try:
                             parsed = json.loads(text_content)
                             if isinstance(parsed, dict) and ("status" in parsed or "answer" in parsed or "error" in parsed):
+                                if normalized_artifacts and "artifacts" not in parsed:
+                                    enriched = dict(parsed)
+                                    enriched["artifacts"] = normalized_artifacts
+                                    parsed = enriched
                                 print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")
                                 return parsed
                         except json.JSONDecodeError as e:
@@ -323,25 +356,17 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
             if artifacts:
                 print(f"[A2A] Found {len(artifacts)} artifacts")
                 parsed_artifacts = []
-                latest_artifact_reference = None
                 for artifact in artifacts:
                     parts = artifact.get("parts", [])
                     for part in parts:
+                        if part.get("kind") == "data":
+                            parsed_artifacts.append(part.get("data"))
+                            continue
                         if part.get("kind") == "text" or part.get("type") == "text":
                             text_content = part.get("text", "")
                             try:
                                 parsed = json.loads(text_content)
                                 parsed_artifacts.append(parsed)
-                                if isinstance(parsed, dict):
-                                    artifact_payload = None
-                                    if _looks_like_artifact_reference_payload(parsed):
-                                        artifact_payload = parsed
-                                    elif _looks_like_artifact_reference_payload(parsed.get("artifact")):
-                                        artifact_payload = parsed.get("artifact")
-                                    elif _looks_like_artifact_reference_payload(parsed.get("artifact_reference")):
-                                        artifact_payload = parsed.get("artifact_reference")
-                                    if artifact_payload is not None:
-                                        latest_artifact_reference = artifact_payload
                             except json.JSONDecodeError as e:
                                 logger.debug(f"Failed to parse artifact part as JSON: {e}")
 
@@ -358,18 +383,18 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
                 }
                 for parsed in reversed(parsed_artifacts):
                     if isinstance(parsed, dict) and any(key in parsed for key in terminal_keys):
-                        if (
-                            latest_artifact_reference
-                            and "artifact" not in parsed
-                            and "artifact_reference" not in parsed
-                        ):
+                        if normalized_artifacts and "artifacts" not in parsed:
                             enriched = dict(parsed)
-                            enriched["artifact"] = latest_artifact_reference
+                            enriched["artifacts"] = normalized_artifacts
                             parsed = enriched
                         print(f"[A2A] Extracted terminal response from artifact: {str(parsed)[:200]}...")
                         return parsed
                 if parsed_artifacts:
                     parsed = parsed_artifacts[-1]
+                    if isinstance(parsed, dict) and normalized_artifacts and "artifacts" not in parsed:
+                        enriched = dict(parsed)
+                        enriched["artifacts"] = normalized_artifacts
+                        parsed = enriched
                     print(f"[A2A] Extracted latest artifact payload: {str(parsed)[:200]}...")
                     return parsed
 
@@ -403,10 +428,17 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
                         if part.get("kind") == "text" or part.get("type") == "text":
                             text_content = part.get("text", "")
                             print(f"[A2A] Returning last text message: {text_content[:100]}...")
-                            return {"response": text_content}
+                            response = {"response": text_content}
+                            if normalized_artifacts:
+                                response["artifacts"] = normalized_artifacts
+                            return response
 
             # Fallback: return the raw result
             print(f"[A2A] Could not extract response from history, returning raw result")
+            if normalized_artifacts and isinstance(a2a_result, dict):
+                enriched = dict(a2a_result)
+                enriched.setdefault("artifacts", normalized_artifacts)
+                return enriched
             return a2a_result
         except httpx.TimeoutException as e:
             print(f"[A2A] Request timed out: {e}")

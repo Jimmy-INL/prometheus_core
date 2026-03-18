@@ -107,6 +107,7 @@ async def _handle_artifacts_list():
     for a in artifacts:
         name = a.get("name", "Unnamed")
         mime = a.get("mime_type", "")
+        json_type = a.get("json_type", "")
         uri = a.get("uri", "")
         desc = a.get("description", "")
         aid = a.get("artifact_id", "?")[:8]
@@ -118,6 +119,8 @@ async def _handle_artifacts_list():
         detail_parts = []
         if mime:
             detail_parts.append(f"Type: `{mime}`")
+        if json_type:
+            detail_parts.append(f"JSON: `{json_type}`")
         if tags:
             detail_parts.append(f"Tags: {tags}")
         if uri:

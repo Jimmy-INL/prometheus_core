@@ -23,6 +23,7 @@ from xml.sax.saxutils import escape as xml_escape
 from PIL import Image, ImageDraw, ImageFont
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
+from a2a.types import Artifact, DataPart, FilePart, Part, TaskArtifactUpdateEvent
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
 from starlette.responses import FileResponse, JSONResponse
 
@@ -89,6 +90,17 @@ class ArtifactDebugAgent(PrometheusAgent):
         relative = artifact_path.relative_to(self.artifact_root).as_posix()
         return f"{self.public_base_url}/artifacts/{relative}"
 
+    def _artifact_event_metadata(self, reference: ArtifactReference) -> Dict[str, Any]:
+        """Build the native A2A artifact metadata envelope from a catalog entry."""
+        return {
+            "conversation_id": reference.conversation_id,
+            "producer_agent_id": reference.producer_agent_id or self._producer_agent_id,
+            "created_at": reference.created_at,
+            "tags": list(reference.tags),
+            "size_bytes": reference.size_bytes,
+            **dict(reference.metadata or {}),
+        }
+
     async def _register_reference_for_conversation(
         self,
         *,
@@ -123,12 +135,31 @@ class ArtifactDebugAgent(PrometheusAgent):
             metadata=dict(metadata or {}),
         )
         registered = self.artifact_registry.register(reference)
-        await self.send_json_artifact(
-            context=context,
-            event_queue=event_queue,
-            payload={"artifact": registered.to_dict()},
-            name="artifact_reference",
-            metadata={"kind": "artifact_reference", **dict(metadata or {})},
+        await event_queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                artifact=Artifact(
+                    artifactId=registered.artifact_id,
+                    name=registered.name,
+                    description=registered.description,
+                    metadata=self._artifact_event_metadata(registered),
+                    parts=[
+                        Part(
+                            root=FilePart(
+                                file={
+                                    "uri": registered.uri,
+                                    "mimeType": registered.mime_type,
+                                    "name": registered.name,
+                                }
+                            )
+                        )
+                    ],
+                ),
+                append=False,
+                lastChunk=False,
+                metadata={"kind": "artifact_reference", **dict(metadata or {})},
+            )
         )
         return registered
 
@@ -451,6 +482,112 @@ class ArtifactDebugAgent(PrometheusAgent):
             "artifact_uri": output_ref.uri,
         }
 
+    async def _handle_create_json_artifact(
+        self,
+        params: Dict[str, Any],
+        conversation_id: str,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
+        """Create an inline JSON artifact with an explicit json_type."""
+        json_type = str(params.get("json_type") or "").strip()
+        if not json_type:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": "Parameter 'json_type' is required to create a JSON artifact.",
+            }
+
+        payload = params.get("payload")
+        if payload is None:
+            payload = {
+                "message": "Debug JSON artifact",
+                "requested_json_type": json_type,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        if not isinstance(payload, dict):
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": "Parameter 'payload' must be a JSON object.",
+            }
+
+        name = str(params.get("name") or "debug_json_artifact").strip() or "debug_json_artifact"
+        description = str(
+            params.get("description")
+            or f"Debug JSON artifact for '{json_type}'."
+        )
+
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message=f"Creating JSON artifact '{name}'.",
+        )
+
+        artifact_ref = self.artifact_registry.register(
+            ArtifactReference(
+                artifact_id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                name=name,
+                description=description,
+                mime_type="application/json",
+                json_type=json_type,
+                json_body=payload,
+                producer_agent_id=self._producer_agent_id,
+                metadata={
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "debug": True,
+                },
+            )
+        )
+        artifact_id = artifact_ref.artifact_id
+        await event_queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                artifact=Artifact(
+                    artifactId=artifact_id,
+                    name=name,
+                    description=description,
+                    metadata=self._artifact_event_metadata(artifact_ref),
+                    parts=[
+                        Part(
+                            root=DataPart(
+                                data=payload,
+                                metadata={
+                                    "mime_type": "application/json",
+                                    "json_type": json_type,
+                                },
+                            )
+                        )
+                    ],
+                ),
+                append=False,
+                lastChunk=False,
+                metadata={"debug": True, "json_type": json_type},
+            )
+        )
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message=f"Created JSON artifact {artifact_id}.",
+        )
+        await self.send_conversation_message(
+            context=context,
+            event_queue=event_queue,
+            message="JSON artifact created successfully.",
+            metadata={"artifact_id": artifact_id, "json_type": json_type},
+        )
+
+        return {
+            "status": "created",
+            "conversation_id": conversation_id,
+            "message": "JSON artifact created successfully.",
+            "artifact": artifact_ref.to_dict(),
+            "artifact_id": artifact_id,
+            "json_type": json_type,
+        }
+
     async def _execute(
         self,
         params: Dict[str, Any],
@@ -465,6 +602,14 @@ class ArtifactDebugAgent(PrometheusAgent):
             event_queue=event_queue,
             message="Parsing artifact debug request.",
         )
+
+        if params.get("json_type") or params.get("payload") is not None:
+            return await self._handle_create_json_artifact(
+                params=params,
+                conversation_id=conversation_id,
+                context=context,
+                event_queue=event_queue,
+            )
 
         if params.get("artifact_id"):
             return await self._handle_convert_svg_to_png(
