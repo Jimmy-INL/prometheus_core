@@ -1,9 +1,11 @@
 import json
+import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import chainlit as cl
+import httpx
 
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
