@@ -1,5 +1,6 @@
 """Tests for frontend A2A response extraction."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -12,37 +13,35 @@ from utils.a2a_client import A2AClient
 
 def test_parse_response_extracts_conversation_response_from_data_artifact() -> None:
     client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    payload = {
+        "conversation_id": "conv-1",
+        "status": "completed",
+        "message": "SVG artifact created successfully.",
+        "new_artifacts": [
+            {
+                "artifact_id": "artifact-1",
+                "conversation_id": "conv-1",
+                "name": "prometheus.svg",
+                "description": "Debug SVG containing the word 'prometheus'.",
+                "uri": "http://localhost:8008/artifacts/conv-1/prometheus.svg",
+                "mime_type": "image/svg+xml",
+                "metadata": {"word": "prometheus"},
+            }
+        ],
+    }
 
     result = {
         "result": {
-            "artifacts": [
-                {
-                    "artifactId": "result-artifact",
-                    "name": "result",
+            "status": {
+                "message": {
                     "parts": [
                         {
-                            "kind": "data",
-                            "data": {
-                                "conversation_id": "conv-1",
-                                "status": "completed",
-                                "message": "SVG artifact created successfully.",
-                                "new_artifacts": [
-                                    {
-                                        "artifact_id": "artifact-1",
-                                        "conversation_id": "conv-1",
-                                        "name": "prometheus.svg",
-                                        "description": "Debug SVG containing the word 'prometheus'.",
-                                        "uri": "http://localhost:8008/artifacts/conv-1/prometheus.svg",
-                                        "mime_type": "image/svg+xml",
-                                        "metadata": {"word": "prometheus"},
-                                    }
-                                ],
-                            },
-                            "metadata": {"mime_type": "application/json"},
+                            "kind": "text",
+                            "text": json.dumps(payload),
                         }
-                    ],
+                    ]
                 }
-            ]
+            }
         }
     }
 

@@ -153,34 +153,18 @@ class A2AClient:
     def _parse_response(self, result: Dict[str, Any], fallback_conv_id: str) -> ConversationResponse:
         """Parse A2A JSON-RPC response into ConversationResponse.
 
-        Follows the extraction logic from tool_discovery.py:
-        1. Check result.status.message.parts[] for final response
-        2. Fall back to result.artifacts[] for structured payloads
-        3. Scan result.history[] in reverse for last agent message with JSON result
-        4. Return raw result if no JSON found
+        Expects the canonical final response in result.status.message.parts[].
         """
         a2a_result = result.get("result", {})
 
-        # Try to extract from status message parts
         parsed = self._extract_from_status(a2a_result)
         if parsed:
             return parsed
 
-        # Try to extract from artifacts
-        parsed = self._extract_from_artifacts(a2a_result, fallback_conv_id)
-        if parsed:
-            return parsed
-
-        # Try to extract from history (reverse scan)
-        parsed = self._extract_from_history(a2a_result, fallback_conv_id)
-        if parsed:
-            return parsed
-
-        # Fallback: treat as plain text answer
         return ConversationResponse(
             conversation_id=fallback_conv_id,
-            status="answer",
-            response_text=str(a2a_result),
+            status="error",
+            message="Agent response missing canonical final status payload.",
         )
 
     def _extract_from_status(self, a2a_result: Dict) -> Optional[ConversationResponse]:
@@ -197,42 +181,6 @@ class A2AClient:
                     return self._dict_to_response(data)
             except (json.JSONDecodeError, TypeError):
                 continue
-        return None
-
-    def _extract_from_artifacts(self, a2a_result: Dict, fallback_conv_id: str) -> Optional[ConversationResponse]:
-        """Extract ConversationResponse from artifacts."""
-        artifacts = a2a_result.get("artifacts", [])
-        for artifact in artifacts:
-            parts = artifact.get("parts", [])
-            for part in parts:
-                if part.get("kind") == "data":
-                    data = part.get("data")
-                    if isinstance(data, dict) and "status" in data:
-                        return self._dict_to_response(data)
-                text = part.get("text", "")
-                try:
-                    data = json.loads(text)
-                    if isinstance(data, dict) and "status" in data:
-                        return self._dict_to_response(data)
-                except (json.JSONDecodeError, TypeError):
-                    continue
-        return None
-
-    def _extract_from_history(self, a2a_result: Dict, fallback_conv_id: str) -> Optional[ConversationResponse]:
-        """Scan history in reverse for last agent message with JSON result."""
-        history = a2a_result.get("history", [])
-        for msg in reversed(history):
-            if msg.get("role") != "agent":
-                continue
-            parts = msg.get("parts", [])
-            for part in parts:
-                text = part.get("text", "")
-                try:
-                    data = json.loads(text)
-                    if isinstance(data, dict) and "status" in data:
-                        return self._dict_to_response(data)
-                except (json.JSONDecodeError, TypeError):
-                    continue
         return None
 
     def _dict_to_response(self, data: Dict) -> ConversationResponse:

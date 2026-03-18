@@ -16,8 +16,6 @@ import chainlit as cl
 import httpx
 
 MIMETYPES = ["image/svg+xml"]
-TAGS = ["svg"]
-EXTENSIONS = [".svg"]
 UPLOAD_EXTENSIONS = [".svg"]
 COMPONENT_NAME = "SVGViewer"
 

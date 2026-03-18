@@ -291,7 +291,6 @@ async def render_artifacts(
         name = artifact.get("name", "Artifact")
         mime_type = (artifact.get("mime_type") or "").lower()
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
-        tags = [t.lower() for t in (artifact.get("tags") or [])]
         description = artifact.get("description", "")
 
         # Try visualization plugin system first
@@ -301,7 +300,7 @@ async def render_artifacts(
             continue
 
         # Fallback: text-based rendering for non-visual artifact types
-        artifact_type = _classify_artifact(uri, mime_type, tags, metadata)
+        artifact_type = _classify_artifact(mime_type)
 
         if artifact_type == "pdf":
             el = await _render_pdf_artifact(uri, name)
@@ -312,8 +311,6 @@ async def render_artifacts(
 
         elif artifact_type == "data":
             data_content = artifact.get("json_body")
-            if data_content is None:
-                data_content = metadata.get("content", metadata.get("data"))
             if data_content:
                 formatted = json.dumps(data_content, indent=2, default=str)
                 heading = f"**{name}:**"
@@ -324,7 +321,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "report":
-            report_text = metadata.get("content", metadata.get("text", description))
+            report_text = description
             if report_text:
                 text_parts.append(f"### {name}\n{report_text}")
             else:
@@ -342,7 +339,7 @@ async def render_artifacts(
 
         else:
             # No plugin and no known text type — tell the user and offer a download
-            label = json_type or mime_type or (tags[0] if tags else "unknown")
+            label = json_type or mime_type or "unknown"
             line = f"📎 **{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
@@ -356,26 +353,20 @@ async def render_artifacts(
     return elements, "\n".join(text_parts)
 
 
-def _classify_artifact(uri: str, mime_type: str, tags: list, metadata: dict) -> str:
-    """Classify artifact for text-based fallback rendering."""
-    # Only handle types not covered by the plugin system
-    explicit_type = (metadata.get("type") or "").lower()
-    if explicit_type in ("pdf", "data", "report", "reference", "file"):
-        return explicit_type
-
-    uri_lower = uri.lower()
-
-    if uri_lower.endswith(".pdf") or "application/pdf" in mime_type or "pdf" in tags or "document" in tags:
+def _classify_artifact(mime_type: str) -> str:
+    """Classify artifact for MIME-driven fallback rendering."""
+    if mime_type == "application/pdf":
         return "pdf"
-    if mime_type in ("application/json", "text/csv") or "data" in tags:
+    if mime_type in ("application/json", "text/csv"):
         return "data"
-    if "report" in tags or mime_type in ("text/markdown", "text/plain"):
+    if mime_type in ("text/markdown", "text/plain"):
         return "report"
-    if "reference" in tags or "citation" in tags:
-        return "reference"
-    if uri_lower and any(uri_lower.endswith(ext) for ext in (
-        ".csv", ".xlsx", ".zip", ".tar", ".gz", ".txt", ".log", ".inp", ".i",
-    )):
+    if mime_type in (
+        "application/octet-stream",
+        "application/zip",
+        "application/gzip",
+        "text/csv",
+    ):
         return "file"
 
     return "unknown"

@@ -7,8 +7,6 @@ from typing import Any, Optional
 import chainlit as cl
 
 MIMETYPES = ["model/ifc", "application/ifc"]
-TAGS = ["ifc"]
-EXTENSIONS = [".ifc"]
 UPLOAD_EXTENSIONS = [".ifc"]
 COMPONENT_NAME = "IFCViewer"
 

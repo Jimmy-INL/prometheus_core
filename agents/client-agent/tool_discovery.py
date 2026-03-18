@@ -211,15 +211,6 @@ def create_input_schema_from_skill(skill: Dict) -> type[BaseModel]:
     return model
 
 
-def _looks_like_artifact_reference_payload(payload: Any) -> bool:
-    """Return True for metadata-only artifact reference payload dicts."""
-    if not isinstance(payload, dict):
-        return False
-    uri = str(payload.get("uri") or "").strip()
-    name = str(payload.get("name") or "").strip()
-    return bool(uri and name)
-
-
 def _normalize_a2a_artifacts(
     artifacts: Any,
     *,
@@ -255,10 +246,9 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
     Implements the Agent-to-Agent (A2A) communication protocol for invoking
     remote agent skills. Uses JSON-RPC with blocking=True to wait for completion.
 
-    The response extraction handles the A2A protocol wrapper structure which can vary:
-    - Checks status.message.parts for final results
-    - Falls back to artifacts.parts for structured responses
-    - Scans history for last agent message with JSON result
+    The response extraction expects the canonical final response in
+    result.status.message.parts[*].text and separately normalizes native
+    A2A artifacts from result.artifacts.
 
     Args:
         agent_url: Base URL of the agent
@@ -336,115 +326,32 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
                 conversation_id=str(kwargs.get("conversation_id") or ""),
             )
 
-            # Check status.message first - this is where the final result appears
             status = a2a_result.get("status", {})
             status_message = status.get("message", {})
-            if status_message:
-                parts = status_message.get("parts", [])
-                for part in parts:
-                    if part.get("kind") == "text" or part.get("type") == "text":
-                        text_content = part.get("text", "")
-                        try:
-                            parsed = json.loads(text_content)
-                            if isinstance(parsed, dict) and ("status" in parsed or "answer" in parsed or "error" in parsed):
-                                if normalized_artifacts and "artifacts" not in parsed:
-                                    enriched = dict(parsed)
-                                    enriched["artifacts"] = normalized_artifacts
-                                    parsed = enriched
-                                print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")
-                                return parsed
-                        except json.JSONDecodeError as e:
-                            logger.debug(f"Failed to parse status message as JSON: {e}")
+            parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
+            for part in parts:
+                if part.get("kind") != "text" and part.get("type") != "text":
+                    continue
+                text_content = part.get("text", "")
+                try:
+                    parsed = json.loads(text_content)
+                except json.JSONDecodeError as e:
+                    logger.debug(f"Failed to parse final status message as JSON: {e}")
+                    continue
+                if not isinstance(parsed, dict) or "status" not in parsed:
+                    continue
+                if normalized_artifacts and "artifacts" not in parsed:
+                    parsed = {**parsed, "artifacts": normalized_artifacts}
+                print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")
+                return parsed
 
-            # Check for artifacts (where the actual response might be)
-            artifacts = a2a_result.get("artifacts", [])
-            if artifacts:
-                print(f"[A2A] Found {len(artifacts)} artifacts")
-                parsed_artifacts = []
-                for artifact in artifacts:
-                    parts = artifact.get("parts", [])
-                    for part in parts:
-                        if part.get("kind") == "data":
-                            parsed_artifacts.append(part.get("data"))
-                            continue
-                        if part.get("kind") == "text" or part.get("type") == "text":
-                            text_content = part.get("text", "")
-                            try:
-                                parsed = json.loads(text_content)
-                                parsed_artifacts.append(parsed)
-                            except json.JSONDecodeError as e:
-                                logger.debug(f"Failed to parse artifact part as JSON: {e}")
-
-                # Prefer a structured terminal payload if available, otherwise
-                # return the newest parsed artifact (final chunk for most agents).
-                terminal_keys = {
-                    "status",
-                    "message",
-                    "response_text",
-                    "answer",
-                    "report",
-                    "followup_questions",
-                    "plan",
-                }
-                for parsed in reversed(parsed_artifacts):
-                    if isinstance(parsed, dict) and any(key in parsed for key in terminal_keys):
-                        if normalized_artifacts and "artifacts" not in parsed:
-                            enriched = dict(parsed)
-                            enriched["artifacts"] = normalized_artifacts
-                            parsed = enriched
-                        print(f"[A2A] Extracted terminal response from artifact: {str(parsed)[:200]}...")
-                        return parsed
-                if parsed_artifacts:
-                    parsed = parsed_artifacts[-1]
-                    if isinstance(parsed, dict) and normalized_artifacts and "artifacts" not in parsed:
-                        enriched = dict(parsed)
-                        enriched["artifacts"] = normalized_artifacts
-                        parsed = enriched
-                    print(f"[A2A] Extracted latest artifact payload: {str(parsed)[:200]}...")
-                    return parsed
-
-            # The response is in the history array - find the LAST agent message with JSON content
-            history = a2a_result.get("history", [])
-            print(f"[A2A] History has {len(history)} messages")
-
-            # Iterate in reverse to find the last agent message with actual JSON result
-            for msg in reversed(history):
-                if msg.get("role") == "agent":
-                    parts = msg.get("parts", [])
-                    for part in parts:
-                        if part.get("kind") == "text" or part.get("type") == "text":
-                            text_content = part.get("text", "")
-                            # Try to parse as JSON - look for responses with 'status' or 'answer' keys
-                            try:
-                                parsed = json.loads(text_content)
-                                # Check if this looks like the actual result (not just a status message)
-                                if isinstance(parsed, dict) and ("status" in parsed or "answer" in parsed or "error" in parsed):
-                                    print(f"[A2A] Extracted final response: {str(parsed)[:200]}...")
-                                    return parsed
-                            except json.JSONDecodeError as e:
-                                # Not JSON, continue looking
-                                logger.debug(f"Failed to parse history message as JSON: {e}")
-
-            # If no JSON result found, return the last text message
-            for msg in reversed(history):
-                if msg.get("role") == "agent":
-                    parts = msg.get("parts", [])
-                    for part in parts:
-                        if part.get("kind") == "text" or part.get("type") == "text":
-                            text_content = part.get("text", "")
-                            print(f"[A2A] Returning last text message: {text_content[:100]}...")
-                            response = {"response": text_content}
-                            if normalized_artifacts:
-                                response["artifacts"] = normalized_artifacts
-                            return response
-
-            # Fallback: return the raw result
-            print(f"[A2A] Could not extract response from history, returning raw result")
-            if normalized_artifacts and isinstance(a2a_result, dict):
-                enriched = dict(a2a_result)
-                enriched.setdefault("artifacts", normalized_artifacts)
-                return enriched
-            return a2a_result
+            error_payload: Dict[str, Any] = {
+                "status": "error",
+                "message": "Agent response missing canonical final status payload.",
+            }
+            if normalized_artifacts:
+                error_payload["artifacts"] = normalized_artifacts
+            return error_payload
         except httpx.TimeoutException as e:
             print(f"[A2A] Request timed out: {e}")
             raise Exception(f"Agent request timed out after {timeout_seconds}s")

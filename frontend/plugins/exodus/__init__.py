@@ -6,8 +6,6 @@ from typing import Any, Optional
 import chainlit as cl
 
 MIMETYPES = ["application/x-exodus", "application/exodus"]
-TAGS = ["exodus", "vtk"]
-EXTENSIONS = [".exo", ".e"]
 UPLOAD_EXTENSIONS = [".exo", ".e"]
 COMPONENT_NAME = "ExodusViewer"
 

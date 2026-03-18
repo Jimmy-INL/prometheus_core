@@ -5,8 +5,6 @@ from typing import Any, Optional
 import chainlit as cl
 
 MIMETYPES = ["text/x-mermaid", "application/vnd.mermaid"]
-TAGS = ["mermaid"]
-EXTENSIONS = [".mmd", ".mermaid"]
 UPLOAD_EXTENSIONS = []
 COMPONENT_NAME = "MermaidViewer"
 

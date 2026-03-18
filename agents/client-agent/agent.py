@@ -2931,15 +2931,11 @@ class OrchestratorAgent(PrometheusAgent):
                     isinstance(node.get("parts"), list)
                     or node.get("uri")
                     or node.get("json_body") is not None
-                    or node.get("jsonBody") is not None
                 ):
                     collected.append(node)
                 artifact_node = node.get("artifact")
                 if artifact_node is not None:
                     walk(artifact_node)
-                artifact_ref_node = node.get("artifact_reference")
-                if artifact_ref_node is not None:
-                    walk(artifact_ref_node)
                 artifacts_node = node.get("artifacts")
                 if isinstance(artifacts_node, list):
                     for item in artifacts_node:

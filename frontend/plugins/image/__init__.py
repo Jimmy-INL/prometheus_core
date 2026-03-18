@@ -12,8 +12,6 @@ import chainlit as cl
 import httpx
 
 MIMETYPES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]
-TAGS = ["png", "jpeg", "jpg", "gif", "webp", "image"]
-EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
 UPLOAD_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
 COMPONENT_NAME = None  # uses cl.Image, not a CustomElement
 
