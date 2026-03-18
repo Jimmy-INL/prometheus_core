@@ -223,3 +223,29 @@ def test_artifact_reference_from_a2a_data_part():
     assert reference.mime_type == "application/json"
     assert reference.json_type == "prometheus.analysis.corrosion_summary.v1"
     assert reference.json_body == {"material_id": "Alloy 600", "finding_count": 3}
+
+
+def test_artifact_reference_preserves_data_part_metadata():
+    payload = {
+        "artifactId": "artifact-3",
+        "name": "conversation_message",
+        "parts": [
+            {
+                "kind": "data",
+                "data": {"message": "Hello"},
+                "metadata": {
+                    "mime_type": "application/json",
+                    "kind": "conversation_message",
+                },
+            }
+        ],
+        "metadata": {
+            "conversation_id": "conv-data",
+            "producer_agent_id": "analysis-agent",
+        },
+    }
+
+    reference = ArtifactReference.from_a2a_artifact(payload)
+
+    assert reference is not None
+    assert reference.metadata["kind"] == "conversation_message"

@@ -182,7 +182,7 @@ class ArtifactReference:
                 producer_agent_id=normalized_producer,
                 created_at=created_at,
                 tags=normalized_tags,
-                metadata=artifact_metadata,
+                metadata={**artifact_metadata, **part_metadata},
             )
 
         if part_kind == "data":
@@ -211,7 +211,7 @@ class ArtifactReference:
                 producer_agent_id=normalized_producer,
                 created_at=created_at,
                 tags=normalized_tags,
-                metadata=artifact_metadata,
+                metadata={**artifact_metadata, **part_metadata},
             )
 
         if part_kind == "text":
