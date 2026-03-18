@@ -75,27 +75,22 @@ class ArtifactReference:
 
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "ArtifactReference":
-        """Parse storage/API payloads with backward-compatible field aliases."""
-        json_body = payload.get("json_body")
-        if json_body is None and "jsonBody" in payload:
-            json_body = payload.get("jsonBody")
+        """Parse the normalized internal catalog shape used by Prometheus."""
         return cls(
             artifact_id=str(
                 payload.get("artifact_id")
-                or payload.get("id")
-                or payload.get("artifactId")
                 or uuid.uuid4()
             ),
-            conversation_id=str(payload.get("conversation_id") or payload.get("conversationId") or ""),
+            conversation_id=str(payload.get("conversation_id") or ""),
             name=str(payload.get("name") or ""),
             description=str(payload.get("description") or ""),
             uri=str(payload.get("uri") or "").strip() or None,
-            mime_type=payload.get("mime_type") or payload.get("mimeType"),
-            json_type=payload.get("json_type") or payload.get("jsonType"),
-            json_body=json_body,
-            size_bytes=_coerce_int(payload.get("size_bytes") or payload.get("sizeBytes")),
-            producer_agent_id=payload.get("producer_agent_id") or payload.get("producerAgentId"),
-            created_at=str(payload.get("created_at") or payload.get("createdAt") or _utc_now_iso()),
+            mime_type=payload.get("mime_type"),
+            json_type=payload.get("json_type"),
+            json_body=payload.get("json_body"),
+            size_bytes=_coerce_int(payload.get("size_bytes")),
+            producer_agent_id=payload.get("producer_agent_id"),
+            created_at=str(payload.get("created_at") or _utc_now_iso()),
             tags=[str(tag) for tag in (payload.get("tags") or []) if tag is not None],
             metadata=dict(payload.get("metadata") or {}),
         )
@@ -111,28 +106,21 @@ class ArtifactReference:
         """Normalize a native A2A artifact payload into a catalog entry."""
         if hasattr(payload, "model_dump"):
             payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
-
-        if isinstance(payload, dict) and isinstance(payload.get("artifact"), dict):
-            payload = payload.get("artifact")
-
         if not isinstance(payload, dict) or not isinstance(payload.get("parts"), list):
             return None
 
         artifact_metadata = dict(payload.get("metadata") or {})
         created_at = str(
             artifact_metadata.get("created_at")
-            or artifact_metadata.get("createdAt")
             or _utc_now_iso()
         )
         normalized_conversation_id = str(
             conversation_id
             or artifact_metadata.get("conversation_id")
-            or artifact_metadata.get("conversationId")
             or ""
         )
         normalized_producer = (
             artifact_metadata.get("producer_agent_id")
-            or artifact_metadata.get("producerAgentId")
             or producer_agent_id
         )
         normalized_tags = [
@@ -144,13 +132,11 @@ class ArtifactReference:
         description = str(payload.get("description") or "").strip()
         artifact_id = str(
             payload.get("artifact_id")
-            or payload.get("id")
             or payload.get("artifactId")
             or uuid.uuid4()
         )
         size_bytes = _coerce_int(
             artifact_metadata.get("size_bytes")
-            or artifact_metadata.get("sizeBytes")
         )
 
         parts = payload.get("parts") or []
@@ -164,11 +150,7 @@ class ArtifactReference:
         if part_kind == "file":
             file_payload = dict(primary_part.get("file") or {})
             uri = str(file_payload.get("uri") or "").strip() or None
-            mime_type = (
-                file_payload.get("mimeType")
-                or artifact_metadata.get("mime_type")
-                or artifact_metadata.get("mimeType")
-            )
+            mime_type = file_payload.get("mimeType")
             if not name:
                 name = str(file_payload.get("name") or "").strip() or "artifact"
             return cls(
@@ -188,9 +170,6 @@ class ArtifactReference:
         if part_kind == "data":
             mime_type = (
                 part_metadata.get("mime_type")
-                or part_metadata.get("mimeType")
-                or artifact_metadata.get("mime_type")
-                or artifact_metadata.get("mimeType")
                 or "application/json"
             )
             return cls(
@@ -198,13 +177,10 @@ class ArtifactReference:
                 conversation_id=normalized_conversation_id,
                 name=name or "artifact",
                 description=description,
-                uri=str(artifact_metadata.get("uri") or "").strip() or None,
+                uri=None,
                 mime_type=mime_type,
                 json_type=(
                     part_metadata.get("json_type")
-                    or part_metadata.get("jsonType")
-                    or artifact_metadata.get("json_type")
-                    or artifact_metadata.get("jsonType")
                 ),
                 json_body=primary_part.get("data"),
                 size_bytes=size_bytes,
@@ -213,32 +189,6 @@ class ArtifactReference:
                 tags=normalized_tags,
                 metadata={**artifact_metadata, **part_metadata},
             )
-
-        if part_kind == "text":
-            text_payload = primary_part.get("text")
-            if isinstance(text_payload, str):
-                try:
-                    parsed = json.loads(text_payload)
-                except Exception:
-                    parsed = None
-                if isinstance(parsed, dict):
-                    if isinstance(parsed.get("artifact"), dict) or isinstance(parsed.get("parts"), list):
-                        return cls.from_a2a_artifact(
-                            parsed,
-                            conversation_id=normalized_conversation_id,
-                            producer_agent_id=normalized_producer,
-                        )
-                    if (
-                        parsed.get("uri")
-                        or parsed.get("json_body") is not None
-                        or parsed.get("jsonBody") is not None
-                    ):
-                        reference = cls.from_dict(parsed)
-                        if not reference.conversation_id:
-                            reference.conversation_id = normalized_conversation_id
-                        if not reference.producer_agent_id:
-                            reference.producer_agent_id = normalized_producer
-                        return reference
 
         return None
 
@@ -250,7 +200,7 @@ class ArtifactReference:
         conversation_id: Optional[str] = None,
         producer_agent_id: Optional[str] = None,
     ) -> Optional["ArtifactReference"]:
-        """Parse either a native A2A artifact or the legacy normalized dict shape."""
+        """Parse either a native A2A artifact or the normalized internal catalog shape."""
         normalized = cls.from_a2a_artifact(
             payload,
             conversation_id=conversation_id,
@@ -268,7 +218,6 @@ class ArtifactReference:
         if not (
             payload.get("uri")
             or payload.get("json_body") is not None
-            or payload.get("jsonBody") is not None
         ):
             return None
 

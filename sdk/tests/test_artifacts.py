@@ -68,7 +68,7 @@ def test_artifact_registry_conversation_scoping():
     assert len(registry.list("conv-b")) == 1
 
 
-def test_send_json_artifact_auto_registers_reference():
+def test_send_json_artifact_does_not_auto_register_uri_payloads():
     agent = _DummyAgent(agent_name="Test Agent")
     context = MagicMock(spec=RequestContext)
     context.task_id = "task-1"
@@ -92,13 +92,16 @@ def test_send_json_artifact_auto_registers_reference():
     )
 
     registered = agent.resolve_artifact_by_name("conv-auto", "cad model")
-    assert registered is not None
-    assert registered.uri == "file:///tmp/rotor.step"
+    assert registered is None
 
     event = queue.enqueue_event.call_args[0][0]
     payload = _extract_data_part(event)
-    assert payload["artifact_id"] == registered.artifact_id
-    assert payload["conversation_id"] == "conv-auto"
+    assert payload == {
+        "name": "CAD Model",
+        "description": "Rotor CAD output",
+        "uri": "file:///tmp/rotor.step",
+        "mime_type": "model/step",
+    }
 
 
 def test_send_json_artifact_catalogs_inline_json_artifact():

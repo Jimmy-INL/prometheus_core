@@ -200,8 +200,30 @@ await self.send_text_artifact(
 ```
 
 By default, you do not need to send terminal statuses:
-- If your agent does **not** emit a final status, the base class sends final artifact + `completed` (or `failed` on exceptions).
+- If your agent does **not** emit a final status, the base class sends a final `completed` status whose `status.message.parts[*].text` contains your returned dict serialized as JSON.
 - If your agent emits a final status (`final=True`) itself, the base class skips automatic terminal events to avoid duplicates.
+
+### Final Response Contract
+
+The canonical final structured response is the dict you return from `_execute(...)`.
+
+Example:
+
+```python
+return {
+    "conversation_id": context.context_id,
+    "status": "completed",
+    "message": "SVG artifact created successfully.",
+    "new_artifacts": [...],
+}
+```
+
+The base executor emits that payload in the final `TaskStatusUpdateEvent`:
+
+- `status.state = completed`
+- `status.message.parts[0].text = json.dumps(your_return_value)`
+
+Do not emit your final result as a wrapper artifact unless you have a specific non-conversational streaming reason to do so.
 
 #### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
 
@@ -215,15 +237,20 @@ Helper for emitting task status events from your agent class.
 - `message` (str, optional) - Human-readable status text
 - `metadata` (dict, optional) - Additional status metadata
 
-#### `send_json_artifact(context, event_queue, payload, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+#### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None)`
 
-Helper for emitting JSON artifacts from your agent class.
+Helper for emitting native A2A `data` artifacts from your agent class.
+
+Use this for structured non-file outputs. If the JSON artifact should be persisted in the conversation artifact catalog and reusable by downstream agents, set `catalog_artifact=True`.
 
 **Parameters:**
 - `context` (RequestContext) - Current request context
 - `event_queue` (EventQueue) - Queue used to publish events
 - `payload` (Any) - JSON-serializable payload
 - `name` (str, optional) - Artifact name
+- `description` (str, optional) - Human-readable artifact description
+- `json_type` (str, optional) - Visualization/type discriminator for `application/json` payloads
+- `catalog_artifact` (bool, optional) - Persist this JSON artifact in the conversation catalog
 - `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
 - `append` (bool, optional) - Append parts to existing artifact
 - `last_chunk` (bool, optional) - Mark last chunk in stream
@@ -231,6 +258,47 @@ Helper for emitting JSON artifacts from your agent class.
 
 **Returns:**
 - `str` - `artifact_id` used for the event
+
+**Example: inline JSON artifact**
+
+```python
+artifact_id = await self.send_json_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="trace_matrix",
+    description="Requirements traceability matrix",
+    payload={"rows": rows},
+    json_type="prometheus.requirements.trace_matrix.v1",
+    catalog_artifact=True,
+)
+```
+
+This emits a native A2A `data` part and registers a normalized `ArtifactReference` with:
+
+- `mime_type = "application/json"`
+- `json_type = "prometheus.requirements.trace_matrix.v1"`
+- `json_body = {"rows": ...}`
+
+#### `send_artifact_reference(context, event_queue, name, description, uri, mime_type=None, size_bytes=None, artifact_id=None, tags=None, metadata=None)`
+
+Helper for emitting URI-backed native A2A `file` artifacts and registering them in the conversation artifact catalog.
+
+Use this for generated files or externally addressable resources.
+
+**Example: file artifact**
+
+```python
+artifact = await self.send_artifact_reference(
+    context=context,
+    event_queue=event_queue,
+    name="report.pdf",
+    description="Generated corrosion report",
+    uri="file:///tmp/report.pdf",
+    mime_type="application/pdf",
+)
+```
+
+This emits a native A2A `file` part and registers a reusable conversation-scoped artifact entry.
 
 #### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
 
@@ -248,6 +316,22 @@ Helper for emitting text artifacts from your agent class.
 
 **Returns:**
 - `str` - `artifact_id` used for the event
+
+#### `send_conversation_message(context, event_queue, message, metadata=None)`
+
+Emit a durable conversation-visible message payload without treating it as a reusable file/data artifact.
+
+Use this when you want a user-facing message to appear in chat history in addition to your final returned response.
+
+**Example**
+
+```python
+await self.send_conversation_message(
+    context=context,
+    event_queue=event_queue,
+    message="SVG artifact created successfully.",
+)
+```
 
 #### `run(host, port)`
 
@@ -282,6 +366,7 @@ Notes:
 - `_execute` signature stays the same: `async def _execute(self, params, context, event_queue)`.
 - Returning a normal final dict still works for both `message/send` and `message/stream`.
 - For useful live progress, emit intermediate status/artifact events from `_execute`.
+- The final conversational result should still come from your returned dict, not from a final wrapper artifact.
 
 #### `/api/chat` Compatibility Endpoint
 
@@ -307,7 +392,7 @@ Response shape:
 - `task_id`
 - `context_id`
 - `state` (final task state, when available)
-- `result` (parsed final artifact payload)
+- `result` (parsed final structured response from the final status message)
 - `events` (included only when `include_events=true`)
 
 Notes:
@@ -339,13 +424,14 @@ Create the executor instance. Override if you need custom executor behavior.
 
 If you subclass `PrometheusAgentExecutor` directly, additional protected helpers are available:
 - `_emit_status(...)`
-- `_emit_json_artifact(...)`
-- `_emit_text_artifact(...)`
+- final response emission is handled automatically through the final status message
 
 These are executor-level internals. For normal `PrometheusAgent` subclasses, prefer:
 - `send_status_update(...)`
 - `send_json_artifact(...)`
+- `send_artifact_reference(...)`
 - `send_text_artifact(...)`
+- `send_conversation_message(...)`
 
 ## Environment Variables
 
@@ -432,7 +518,7 @@ my-agent/
 
 6. **Status Management**
    - Sends "working" status automatically
-   - Sends final artifact and "completed" status when agent does not self-finalize
+   - Sends final `completed` status with the returned payload serialized into `status.message`
    - Sends "failed" status on error when agent does not self-finalize
    - Avoids duplicate terminal events when agent emits final status itself
 

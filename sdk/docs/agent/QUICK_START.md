@@ -105,8 +105,10 @@ That is enough to accept `message/stream` requests.
 
 Optional (recommended) for useful streaming:
 - Emit intermediate status updates with `self.send_status_update(...)`
-- Emit partial artifacts with `self.send_text_artifact(...)` or `self.send_json_artifact(...)`
+- Emit partial artifacts with `self.send_text_artifact(...)`, `self.send_json_artifact(...)`, or `self.send_artifact_reference(...)`
 - If your agent emits a terminal status (`final=True`) itself, the base executor will skip automatic terminal events to avoid duplicates
+
+The final conversational result should come from the dict you return from `_execute(...)`. The base executor publishes it in the final status message.
 
 ## Common Patterns
 
@@ -146,6 +148,63 @@ class StorageAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
         item = self.storage.items.get(params["item_id"])
         return {"status": "success", "item": item.name}
+```
+
+### Emit a File Artifact
+
+```python
+class FileAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        report_path = "/tmp/report.pdf"
+
+        artifact = await self.send_artifact_reference(
+            context=context,
+            event_queue=event_queue,
+            name="report.pdf",
+            description="Generated corrosion report",
+            uri=f"file://{report_path}",
+            mime_type="application/pdf",
+        )
+
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": "Report created successfully.",
+            "new_artifacts": [artifact.to_dict()],
+        }
+```
+
+### Emit an Inline JSON Artifact
+
+```python
+class JsonArtifactAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        artifact_id = await self.send_json_artifact(
+            context=context,
+            event_queue=event_queue,
+            name="trace_matrix",
+            description="Requirements traceability matrix",
+            payload={"rows": [{"id": "REQ-1", "status": "covered"}]},
+            json_type="prometheus.requirements.trace_matrix.v1",
+            catalog_artifact=True,
+        )
+
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": "Trace matrix generated.",
+            "artifact_id": artifact_id,
+        }
+```
+
+### Send a Durable Conversation Message
+
+```python
+await self.send_conversation_message(
+    context=context,
+    event_queue=event_queue,
+    message="Conversion started.",
+)
 ```
 
 ### Custom Port/Host

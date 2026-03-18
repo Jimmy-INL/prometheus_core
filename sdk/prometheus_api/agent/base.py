@@ -75,14 +75,11 @@ class _TrackedEventQueue:
 
     def __init__(self, event_queue: EventQueue):
         self._event_queue = event_queue
-        self.seen_artifact = False
         self.seen_final_status = False
 
     async def enqueue_event(self, event: Any) -> None:
         """Forward event to wrapped queue while tracking task-finalization signals."""
-        if isinstance(event, TaskArtifactUpdateEvent):
-            self.seen_artifact = True
-        elif isinstance(event, TaskStatusUpdateEvent) and event.final:
+        if isinstance(event, TaskStatusUpdateEvent) and event.final:
             self.seen_final_status = True
 
         await self._event_queue.enqueue_event(event)
@@ -120,7 +117,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         1. Extract parameters from message
         2. Send "working" status
         3. Call _execute() (implemented by subclass)
-        4. Send completion status and artifact
+        4. Send completion status with the canonical final structured response
         5. Handle errors
 
         Args:
@@ -149,21 +146,12 @@ class PrometheusAgentExecutor(AgentExecutor):
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
             if not tracked_queue.seen_final_status:
-                # Send result artifact if the agent didn't already stream artifacts.
-                if not tracked_queue.seen_artifact:
-                    await self._emit_json_artifact(
-                        context=context,
-                        event_queue=tracked_queue,
-                        payload=result,
-                        name="result",
-                    )
-
-                # Send completion status (must come after artifact).
                 await self._emit_status(
                     context=context,
                     event_queue=tracked_queue,
                     state=TaskState.completed,
                     final=True,
+                    message=json.dumps(result, default=str),
                 )
             else:
                 logger.debug(
@@ -211,124 +199,6 @@ class PrometheusAgentExecutor(AgentExecutor):
                 contextId=context.context_id,
                 final=final,
                 status=TaskStatus(state=state, message=status_message),
-                metadata=metadata,
-            )
-        )
-
-    async def _emit_json_artifact(
-        self,
-        context: RequestContext,
-        event_queue: EventQueue,
-        payload: Any,
-        name: str = "result",
-        artifact_id: Optional[str] = None,
-        append: bool = False,
-        last_chunk: Optional[bool] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit an artifact update with structured JSON payload content."""
-        artifact_metadata = _build_artifact_metadata(
-            context=context,
-            agent_name=self.agent_name,
-        )
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=artifact_id or str(uuid.uuid4()),
-                    name=name,
-                    metadata=artifact_metadata,
-                    parts=[
-                        Part(
-                            root=DataPart(
-                                data=payload if isinstance(payload, dict) else {"value": payload},
-                                metadata={"mime_type": "application/json"},
-                            )
-                        )
-                    ],
-                ),
-                append=append,
-                lastChunk=last_chunk,
-                metadata=metadata,
-            )
-        )
-
-    async def _emit_text_artifact(
-        self,
-        context: RequestContext,
-        event_queue: EventQueue,
-        text: str,
-        name: str = "result",
-        artifact_id: Optional[str] = None,
-        append: bool = False,
-        last_chunk: Optional[bool] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit an artifact update with text content."""
-        artifact_metadata = _build_artifact_metadata(
-            context=context,
-            agent_name=self.agent_name,
-        )
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=artifact_id or str(uuid.uuid4()),
-                    name=name,
-                    metadata=artifact_metadata,
-                    parts=[Part(root=TextPart(text=text, metadata={"mime_type": "text/plain"}))],
-                ),
-                append=append,
-                lastChunk=last_chunk,
-                metadata=metadata,
-            )
-        )
-
-    async def _emit_file_artifact(
-        self,
-        context: RequestContext,
-        event_queue: EventQueue,
-        *,
-        uri: str,
-        name: str,
-        mime_type: Optional[str] = None,
-        artifact_id: Optional[str] = None,
-        description: Optional[str] = None,
-        append: bool = False,
-        last_chunk: Optional[bool] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit an artifact update with a URI-backed file part."""
-        artifact_metadata = _build_artifact_metadata(
-            context=context,
-            agent_name=self.agent_name,
-        )
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=artifact_id or str(uuid.uuid4()),
-                    name=name,
-                    description=description,
-                    metadata=artifact_metadata,
-                    parts=[
-                        Part(
-                            root=FilePart(
-                                file={
-                                    "uri": uri,
-                                    "mimeType": mime_type,
-                                    "name": name,
-                                },
-                                metadata=metadata,
-                            )
-                        )
-                    ],
-                ),
-                append=append,
-                lastChunk=last_chunk,
                 metadata=metadata,
             )
         )
@@ -492,56 +362,6 @@ class PrometheusAgent:
     def _producer_agent_id(self) -> str:
         """Stable producer identifier for emitted artifacts and registry entries."""
         return _normalize_producer_agent_id(self.agent_name)
-
-    @staticmethod
-    def _payload_to_artifact_reference(
-        payload: Any,
-        *,
-        fallback_name: str,
-        conversation_id: str,
-        producer_agent_id: str,
-    ) -> Optional[ArtifactReference]:
-        """Best-effort extraction of artifact metadata from JSON artifact payloads.
-
-        This lets existing producer agents keep using `send_json_artifact(...)` while
-        automatically registering artifact references whenever payloads include URI data.
-        """
-        candidate: Optional[Dict[str, Any]] = None
-        if isinstance(payload, dict):
-            if isinstance(payload.get("artifact"), dict):
-                candidate = dict(payload.get("artifact") or {})
-            elif isinstance(payload.get("artifact_reference"), dict):
-                candidate = dict(payload.get("artifact_reference") or {})
-            elif isinstance(payload.get("uri"), str):
-                candidate = dict(payload)
-
-        if not isinstance(candidate, dict):
-            return None
-        uri = str(candidate.get("uri") or "").strip()
-        if not uri:
-            return None
-
-        name = str(candidate.get("name") or fallback_name or "").strip() or "artifact"
-        description = str(candidate.get("description") or "").strip()
-        artifact_id = str(
-            candidate.get("artifact_id")
-            or candidate.get("id")
-            or candidate.get("artifactId")
-            or uuid.uuid4()
-        )
-
-        return ArtifactReference(
-            artifact_id=artifact_id,
-            conversation_id=conversation_id,
-            name=name,
-            description=description,
-            uri=uri,
-            mime_type=candidate.get("mime_type") or candidate.get("mimeType"),
-            size_bytes=candidate.get("size_bytes") or candidate.get("sizeBytes"),
-            producer_agent_id=candidate.get("producer_agent_id") or producer_agent_id,
-            tags=[str(tag) for tag in (candidate.get("tags") or []) if tag is not None],
-            metadata=dict(candidate.get("metadata") or {}),
-        )
 
     def register_artifact_reference(
         self,
@@ -903,7 +723,6 @@ class PrometheusAgent:
 
         Behavior:
         - Emits a native A2A data artifact.
-        - Auto-registers URI-based legacy payloads when present.
         - Optionally registers inline JSON artifacts in the conversation catalog
           when `catalog_artifact=True`.
 
@@ -912,28 +731,7 @@ class PrometheusAgent:
         """
         artifact_id = artifact_id or str(uuid.uuid4())
 
-        # If payload resembles an artifact reference, register it conversation-wide
-        # and inject the canonical artifact_id into the payload.
-        parsed_ref = self._payload_to_artifact_reference(
-            payload,
-            fallback_name=name,
-            conversation_id=self._context_conversation_id(context),
-            producer_agent_id=self._producer_agent_id,
-        )
-        if parsed_ref is not None:
-            registered = self.register_artifact_reference(context, parsed_ref)
-            artifact_id = registered.artifact_id
-            if isinstance(payload, dict):
-                if isinstance(payload.get("artifact"), dict):
-                    payload["artifact"]["artifact_id"] = registered.artifact_id
-                    payload["artifact"]["conversation_id"] = registered.conversation_id
-                elif isinstance(payload.get("artifact_reference"), dict):
-                    payload["artifact_reference"]["artifact_id"] = registered.artifact_id
-                    payload["artifact_reference"]["conversation_id"] = registered.conversation_id
-                else:
-                    payload["artifact_id"] = registered.artifact_id
-                    payload["conversation_id"] = registered.conversation_id
-        elif catalog_artifact:
+        if catalog_artifact:
             registered = self.register_artifact_reference(
                 context,
                 ArtifactReference(
@@ -1163,34 +961,16 @@ class PrometheusAgent:
                 async def enqueue_event(self, event: Any) -> None:
                     self.events.append(event)
 
-            def extract_artifact_payload(events: list[Any]) -> Any:
+            def extract_result_payload(events: list[Any]) -> Any:
                 for event in reversed(events):
-                    if not isinstance(event, TaskArtifactUpdateEvent):
+                    if not isinstance(event, TaskStatusUpdateEvent) or not event.final:
                         continue
 
-                    artifact_payload = None
-                    if hasattr(event.artifact, "model_dump"):
-                        artifact_payload = event.artifact.model_dump(
-                            mode="json",
-                            by_alias=True,
-                            exclude_none=True,
-                        )
-                    else:
-                        artifact_payload = event.artifact
+                    status_message = getattr(event.status, "message", None)
+                    if status_message is None:
+                        continue
 
-                    normalized = ArtifactReference.from_a2a_artifact(
-                        artifact_payload,
-                        conversation_id=context_id,
-                    )
-                    if normalized is not None:
-                        return normalized.to_dict()
-
-                    for part in event.artifact.parts:
-                        if hasattr(part, "data"):
-                            return part.data
-                        if hasattr(part, "root") and hasattr(part.root, "data"):
-                            return part.root.data
-
+                    for part in getattr(status_message, "parts", []) or []:
                         text_value = None
                         if hasattr(part, "text"):
                             text_value = part.text
@@ -1286,7 +1066,7 @@ class PrometheusAgent:
                     error_response["events"] = serialize_events(local_queue.events)
                 return JSONResponse(error_response, status_code=500)
 
-            result_payload = extract_artifact_payload(local_queue.events)
+            result_payload = extract_result_payload(local_queue.events)
             final_state = None
             for event in reversed(local_queue.events):
                 if isinstance(event, TaskStatusUpdateEvent):

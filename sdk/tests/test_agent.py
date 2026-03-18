@@ -1,8 +1,9 @@
 """Tests for the agent module."""
 
+import asyncio
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from prometheus_api.agent import (
     PrometheusAgent,
@@ -14,6 +15,7 @@ from prometheus_api.agent import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
 )
+from a2a.types import Artifact, TextPart
 
 
 class TestPrometheusAgentExecutor:
@@ -70,8 +72,7 @@ class TestPrometheusAgentExecutor:
 
         assert params == {"message": "Hello, this is plain text"}
 
-    @pytest.mark.asyncio
-    async def test_execute_calls_enqueue_event(self, executor, mock_context, mock_event_queue):
+    def test_execute_calls_enqueue_event(self, executor, mock_context, mock_event_queue):
         """Test that execute uses enqueue_event for status updates."""
 
         # Create a concrete implementation for testing
@@ -81,14 +82,14 @@ class TestPrometheusAgentExecutor:
 
         test_executor = TestExecutor(agent_name="TestAgent")
 
-        await test_executor.execute(mock_context, mock_event_queue)
+        asyncio.run(test_executor.execute(mock_context, mock_event_queue))
 
         # Verify enqueue_event was called (not put)
         assert mock_event_queue.enqueue_event.called
         calls = mock_event_queue.enqueue_event.call_args_list
 
-        # Should have at least 3 calls: working status, completed status, artifact
-        assert len(calls) >= 3
+        # Should have working status then final completed status with the result payload.
+        assert len(calls) == 2
 
         # Check first call is working status
         first_event = calls[0][0][0]
@@ -97,19 +98,15 @@ class TestPrometheusAgentExecutor:
         assert first_event.task_id == "test-task-123"
         assert first_event.context_id == "test-context-456"
 
-        # Check second call is artifact
+        # Check second call is completed status with the final response payload
         second_event = calls[1][0][0]
-        assert isinstance(second_event, TaskArtifactUpdateEvent)
-        assert second_event.task_id == "test-task-123"
+        assert isinstance(second_event, TaskStatusUpdateEvent)
+        assert second_event.status.state == TaskState.completed
+        assert second_event.final is True
+        payload_text = second_event.status.message.parts[0].root.text
+        assert json.loads(payload_text) == {"status": "success", "data": "test data"}
 
-        # Check third call is completed status
-        third_event = calls[2][0][0]
-        assert isinstance(third_event, TaskStatusUpdateEvent)
-        assert third_event.status.state == TaskState.completed
-        assert third_event.final is True
-
-    @pytest.mark.asyncio
-    async def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
+    def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
         """Test that execute sends failed status on error."""
 
         class FailingExecutor(PrometheusAgentExecutor):
@@ -119,7 +116,7 @@ class TestPrometheusAgentExecutor:
         test_executor = FailingExecutor(agent_name="TestAgent")
 
         with pytest.raises(ValueError, match="Test error"):
-            await test_executor.execute(mock_context, mock_event_queue)
+            asyncio.run(test_executor.execute(mock_context, mock_event_queue))
 
         # Should have sent working status, then failed status
         calls = mock_event_queue.enqueue_event.call_args_list
@@ -130,8 +127,7 @@ class TestPrometheusAgentExecutor:
         assert isinstance(last_event, TaskStatusUpdateEvent)
         assert last_event.status.state == TaskState.failed
 
-    @pytest.mark.asyncio
-    async def test_execute_skips_auto_finalization_when_agent_finalizes(
+    def test_execute_skips_auto_finalization_when_agent_finalizes(
         self, mock_context, mock_event_queue
     ):
         """If _execute emits final status, executor should not emit extra terminal events."""
@@ -149,7 +145,7 @@ class TestPrometheusAgentExecutor:
                 return {"status": "handled-by-agent"}
 
         test_executor = FinalizingExecutor(agent_name="TestAgent")
-        await test_executor.execute(mock_context, mock_event_queue)
+        asyncio.run(test_executor.execute(mock_context, mock_event_queue))
 
         calls = mock_event_queue.enqueue_event.call_args_list
         assert len(calls) == 2
@@ -164,11 +160,10 @@ class TestPrometheusAgentExecutor:
         assert second_event.status.state == TaskState.completed
         assert second_event.final is True
 
-    @pytest.mark.asyncio
-    async def test_execute_skips_auto_artifact_when_agent_streams_artifact(
+    def test_execute_allows_streamed_artifacts_without_adding_extra_result_artifact(
         self, mock_context, mock_event_queue
     ):
-        """If _execute emits artifacts, executor should avoid adding duplicate result artifact."""
+        """If _execute emits artifacts, executor should still finalize via status.message only."""
 
         class ArtifactStreamingExecutor(PrometheusAgentExecutor):
             async def _execute(self, params, context, event_queue):
@@ -186,13 +181,13 @@ class TestPrometheusAgentExecutor:
                 return {"status": "done"}
 
         test_executor = ArtifactStreamingExecutor(agent_name="TestAgent")
-        await test_executor.execute(mock_context, mock_event_queue)
+        asyncio.run(test_executor.execute(mock_context, mock_event_queue))
 
         calls = mock_event_queue.enqueue_event.call_args_list
         artifact_events = [
             call[0][0]
             for call in calls
-            if isinstance(call[0][0], TaskArtifactUpdateEvent)
+            if type(call[0][0]).__name__ == "TaskArtifactUpdateEvent"
         ]
         completed_events = [
             call[0][0]
@@ -205,11 +200,12 @@ class TestPrometheusAgentExecutor:
         assert len(artifact_events) == 1
         assert artifact_events[0].artifact.artifact_id == "streamed-artifact"
         assert len(completed_events) == 1
+        payload_text = completed_events[0].status.message.parts[0].root.text
+        assert json.loads(payload_text) == {"status": "done"}
 
-    @pytest.mark.asyncio
-    async def test_cancel_sends_canceled_status(self, executor, mock_context, mock_event_queue):
+    def test_cancel_sends_canceled_status(self, executor, mock_context, mock_event_queue):
         """Test that cancel sends canceled status."""
-        await executor.cancel(mock_context, mock_event_queue)
+        asyncio.run(executor.cancel(mock_context, mock_event_queue))
 
         mock_event_queue.enqueue_event.assert_called_once()
         event = mock_event_queue.enqueue_event.call_args[0][0]
@@ -220,11 +216,10 @@ class TestPrometheusAgentExecutor:
         assert event.context_id == "test-context-456"
         assert event.final is True
 
-    @pytest.mark.asyncio
-    async def test__execute_not_implemented(self, executor, mock_context, mock_event_queue):
+    def test__execute_not_implemented(self, executor, mock_context, mock_event_queue):
         """Test that base executor raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
-            await executor._execute({}, mock_context, mock_event_queue)
+            asyncio.run(executor._execute({}, mock_context, mock_event_queue))
 
 
 class TestPrometheusAgent:
@@ -248,8 +243,7 @@ class TestPrometheusAgent:
 
         assert agent.agent_card_path == "/custom/path/card.json"
 
-    @pytest.mark.asyncio
-    async def test_agent__execute_not_implemented(self):
+    def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""
         agent = PrometheusAgent(agent_name="MyAgent")
 
@@ -257,7 +251,7 @@ class TestPrometheusAgent:
         mock_queue = AsyncMock(spec=EventQueue)
 
         with pytest.raises(NotImplementedError):
-            await agent._execute({}, mock_context, mock_queue)
+            asyncio.run(agent._execute({}, mock_context, mock_queue))
 
     def test_create_executor_returns_custom_executor(self):
         """Test that create_executor returns a working executor."""
@@ -308,8 +302,7 @@ class TestEventTypes:
 class TestAgentIntegration:
     """Integration tests for agent components."""
 
-    @pytest.mark.asyncio
-    async def test_full_execution_flow(self):
+    def test_full_execution_flow(self):
         """Test complete execution flow with a concrete agent."""
 
         class EchoAgent(PrometheusAgent):
@@ -332,7 +325,7 @@ class TestAgentIntegration:
         queue = AsyncMock(spec=EventQueue)
 
         # Execute
-        await executor.execute(context, queue)
+        asyncio.run(executor.execute(context, queue))
 
         # Verify the flow
         calls = queue.enqueue_event.call_args_list
@@ -340,16 +333,9 @@ class TestAgentIntegration:
         # Working status
         assert calls[0][0][0].status.state == TaskState.working
 
-        # Completed status
+        # Completed status with canonical final payload
         assert calls[1][0][0].status.state == TaskState.completed
-
-        # Artifact with result
-        artifact_event = calls[2][0][0]
-        assert isinstance(artifact_event, TaskArtifactUpdateEvent)
-        # The parts are TextPart objects with a 'text' attribute
-        part = artifact_event.artifact.parts[0]
-        # Access the text content (may need to access root for union types)
-        text_content = part.text if hasattr(part, 'text') else part.root.text
+        text_content = calls[1][0][0].status.message.parts[0].root.text
         result = json.loads(text_content)
         assert result["echo"] == "Hello, World!"
         assert result["task_id"] == "echo-task-1"

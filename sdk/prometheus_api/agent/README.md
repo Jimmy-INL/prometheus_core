@@ -21,6 +21,13 @@ That's all you need! The base class handles authentication, registry, and server
 
 To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}` in `agent_card.json`.
 
+Current artifact contract:
+
+- Return your final structured response dict from `_execute(...)`
+- Use `send_artifact_reference(...)` for URI-backed file artifacts
+- Use `send_json_artifact(..., catalog_artifact=True)` for reusable inline JSON artifacts
+- Use `send_conversation_message(...)` for durable chat-visible messages
+
 ## Documentation
 
 For complete documentation, see:
