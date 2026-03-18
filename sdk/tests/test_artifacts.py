@@ -22,6 +22,24 @@ def _extract_text_part(event) -> str:
     raise AssertionError("Unsupported artifact part structure")
 
 
+def _extract_data_part(event):
+    part = event.artifact.parts[0]
+    if hasattr(part, "data"):
+        return part.data
+    if hasattr(part, "root") and hasattr(part.root, "data"):
+        return part.root.data
+    raise AssertionError("Unsupported data part structure")
+
+
+def _extract_file_part(event):
+    part = event.artifact.parts[0]
+    if hasattr(part, "file"):
+        return part.file
+    if hasattr(part, "root") and hasattr(part.root, "file"):
+        return part.root.file
+    raise AssertionError("Unsupported file part structure")
+
+
 def test_artifact_registry_conversation_scoping():
     registry = ArtifactRegistry(redis_url="redis://localhost:0", ttl_seconds=60)
 
@@ -78,9 +96,40 @@ def test_send_json_artifact_auto_registers_reference():
     assert registered.uri == "file:///tmp/rotor.step"
 
     event = queue.enqueue_event.call_args[0][0]
-    serialized = json.loads(_extract_text_part(event))
-    assert serialized["artifact_id"] == registered.artifact_id
-    assert serialized["conversation_id"] == "conv-auto"
+    payload = _extract_data_part(event)
+    assert payload["artifact_id"] == registered.artifact_id
+    assert payload["conversation_id"] == "conv-auto"
+
+
+def test_send_json_artifact_catalogs_inline_json_artifact():
+    agent = _DummyAgent(agent_name="Test Agent")
+    context = MagicMock(spec=RequestContext)
+    context.task_id = "task-json"
+    context.context_id = "conv-json"
+    queue = AsyncMock(spec=EventQueue)
+
+    payload = {"hello": "world"}
+
+    artifact_id = asyncio.run(
+        agent.send_json_artifact(
+            context=context,
+            event_queue=queue,
+            payload=payload,
+            name="Debug JSON",
+            description="Inline debug payload",
+            json_type="prometheus.debug.echo.v1",
+            catalog_artifact=True,
+        )
+    )
+
+    registered = agent.resolve_artifact_reference("conv-json", artifact_id)
+    assert registered is not None
+    assert registered.mime_type == "application/json"
+    assert registered.json_type == "prometheus.debug.echo.v1"
+    assert registered.json_body == payload
+
+    event = queue.enqueue_event.call_args[0][0]
+    assert _extract_data_part(event) == payload
 
 
 def test_send_artifact_reference_registers_and_emits():
@@ -106,3 +155,71 @@ def test_send_artifact_reference_registers_and_emits():
     resolved = agent.resolve_artifact_reference("conv-ref", reference.artifact_id)
     assert resolved is not None
     assert resolved.uri == "deeplynx://container/file/mesh-123"
+    event = queue.enqueue_event.call_args[0][0]
+    file_payload = _extract_file_part(event)
+    assert file_payload.uri == "deeplynx://container/file/mesh-123"
+
+
+def test_artifact_reference_from_a2a_file_part():
+    payload = {
+        "artifactId": "artifact-1",
+        "name": "Mesh Output",
+        "description": "Hex mesh generated from CAD",
+        "parts": [
+            {
+                "kind": "file",
+                "file": {
+                    "uri": "deeplynx://container/file/mesh-123",
+                    "mimeType": "application/octet-stream",
+                    "name": "mesh.exo",
+                },
+            }
+        ],
+        "metadata": {
+            "conversation_id": "conv-file",
+            "producer_agent_id": "artifact-debug-agent",
+            "created_at": "2026-03-18T00:00:00+00:00",
+            "tags": ["mesh"],
+        },
+    }
+
+    reference = ArtifactReference.from_a2a_artifact(payload)
+
+    assert reference is not None
+    assert reference.artifact_id == "artifact-1"
+    assert reference.conversation_id == "conv-file"
+    assert reference.uri == "deeplynx://container/file/mesh-123"
+    assert reference.mime_type == "application/octet-stream"
+    assert reference.tags == ["mesh"]
+
+
+def test_artifact_reference_from_a2a_data_part():
+    payload = {
+        "artifactId": "artifact-2",
+        "name": "Corrosion Summary",
+        "description": "Inline analysis output",
+        "parts": [
+            {
+                "kind": "data",
+                "data": {"material_id": "Alloy 600", "finding_count": 3},
+                "metadata": {
+                    "mime_type": "application/json",
+                    "json_type": "prometheus.analysis.corrosion_summary.v1",
+                },
+            }
+        ],
+        "metadata": {
+            "conversation_id": "conv-data",
+            "producer_agent_id": "analysis-agent",
+            "created_at": "2026-03-18T00:00:00+00:00",
+        },
+    }
+
+    reference = ArtifactReference.from_a2a_artifact(payload)
+
+    assert reference is not None
+    assert reference.artifact_id == "artifact-2"
+    assert reference.conversation_id == "conv-data"
+    assert reference.mime_type == "application/json"
+    assert reference.json_type == "prometheus.analysis.corrosion_summary.v1"
+    assert reference.json_body == {"material_id": "Alloy 600", "finding_count": 3}

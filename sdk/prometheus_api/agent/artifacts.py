@@ -1,11 +1,9 @@
-"""Artifact reference models and storage for cross-agent handoff.
+"""Artifact catalog models and storage for cross-agent handoff.
 
 This module is used by :class:`prometheus_api.agent.base.PrometheusAgent` to:
-1. Persist metadata-only artifact references per conversation
-2. Resolve references by ID or name for downstream agent calls
-3. Keep large/raw artifact contents out of prompt context by default
-
-The registry stores only references (id/name/description/uri + metadata), not file bytes.
+1. Persist conversation-scoped artifact catalog entries
+2. Normalize native A2A artifacts into a stable app-facing shape
+3. Resolve catalog entries by ID or name for downstream agent calls
 """
 
 from __future__ import annotations
@@ -46,11 +44,11 @@ def _coerce_int(value: Any) -> Optional[int]:
 
 @dataclass
 class ArtifactReference:
-    """Metadata-only reference to an artifact produced in a conversation.
+    """Conversation-scoped artifact catalog entry.
 
     Who uses this:
-    - Producer agents emit this when they create files/records (CAD, mesh, reports, etc.).
-    - Orchestrator and downstream agents resolve it to pass stable IDs between skills.
+    - Producer helpers normalize native A2A artifacts into this form for persistence.
+    - Orchestrator and downstream agents resolve entries to pass stable IDs between skills.
     - UI/debug endpoints render these entries to show available session artifacts.
     """
 
@@ -58,8 +56,10 @@ class ArtifactReference:
     conversation_id: str
     name: str
     description: str
-    uri: str
+    uri: Optional[str] = None
     mime_type: Optional[str] = None
+    json_type: Optional[str] = None
+    json_body: Optional[Any] = None
     size_bytes: Optional[int] = None
     producer_agent_id: Optional[str] = None
     created_at: str = field(default_factory=_utc_now_iso)
@@ -76,6 +76,9 @@ class ArtifactReference:
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "ArtifactReference":
         """Parse storage/API payloads with backward-compatible field aliases."""
+        json_body = payload.get("json_body")
+        if json_body is None and "jsonBody" in payload:
+            json_body = payload.get("jsonBody")
         return cls(
             artifact_id=str(
                 payload.get("artifact_id")
@@ -86,14 +89,195 @@ class ArtifactReference:
             conversation_id=str(payload.get("conversation_id") or payload.get("conversationId") or ""),
             name=str(payload.get("name") or ""),
             description=str(payload.get("description") or ""),
-            uri=str(payload.get("uri") or ""),
+            uri=str(payload.get("uri") or "").strip() or None,
             mime_type=payload.get("mime_type") or payload.get("mimeType"),
+            json_type=payload.get("json_type") or payload.get("jsonType"),
+            json_body=json_body,
             size_bytes=_coerce_int(payload.get("size_bytes") or payload.get("sizeBytes")),
             producer_agent_id=payload.get("producer_agent_id") or payload.get("producerAgentId"),
             created_at=str(payload.get("created_at") or payload.get("createdAt") or _utc_now_iso()),
             tags=[str(tag) for tag in (payload.get("tags") or []) if tag is not None],
             metadata=dict(payload.get("metadata") or {}),
         )
+
+    @classmethod
+    def from_a2a_artifact(
+        cls,
+        payload: Any,
+        *,
+        conversation_id: Optional[str] = None,
+        producer_agent_id: Optional[str] = None,
+    ) -> Optional["ArtifactReference"]:
+        """Normalize a native A2A artifact payload into a catalog entry."""
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        if isinstance(payload, dict) and isinstance(payload.get("artifact"), dict):
+            payload = payload.get("artifact")
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("parts"), list):
+            return None
+
+        artifact_metadata = dict(payload.get("metadata") or {})
+        created_at = str(
+            artifact_metadata.get("created_at")
+            or artifact_metadata.get("createdAt")
+            or _utc_now_iso()
+        )
+        normalized_conversation_id = str(
+            conversation_id
+            or artifact_metadata.get("conversation_id")
+            or artifact_metadata.get("conversationId")
+            or ""
+        )
+        normalized_producer = (
+            artifact_metadata.get("producer_agent_id")
+            or artifact_metadata.get("producerAgentId")
+            or producer_agent_id
+        )
+        normalized_tags = [
+            str(tag)
+            for tag in (artifact_metadata.get("tags") or [])
+            if tag is not None
+        ]
+        name = str(payload.get("name") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        artifact_id = str(
+            payload.get("artifact_id")
+            or payload.get("id")
+            or payload.get("artifactId")
+            or uuid.uuid4()
+        )
+        size_bytes = _coerce_int(
+            artifact_metadata.get("size_bytes")
+            or artifact_metadata.get("sizeBytes")
+        )
+
+        parts = payload.get("parts") or []
+        primary_part = parts[0] if parts else None
+        if not isinstance(primary_part, dict):
+            return None
+
+        part_kind = str(primary_part.get("kind") or "").strip().lower()
+        part_metadata = dict(primary_part.get("metadata") or {})
+
+        if part_kind == "file":
+            file_payload = dict(primary_part.get("file") or {})
+            uri = str(file_payload.get("uri") or "").strip() or None
+            mime_type = (
+                file_payload.get("mimeType")
+                or artifact_metadata.get("mime_type")
+                or artifact_metadata.get("mimeType")
+            )
+            if not name:
+                name = str(file_payload.get("name") or "").strip() or "artifact"
+            return cls(
+                artifact_id=artifact_id,
+                conversation_id=normalized_conversation_id,
+                name=name,
+                description=description,
+                uri=uri,
+                mime_type=mime_type,
+                size_bytes=size_bytes,
+                producer_agent_id=normalized_producer,
+                created_at=created_at,
+                tags=normalized_tags,
+                metadata=artifact_metadata,
+            )
+
+        if part_kind == "data":
+            mime_type = (
+                part_metadata.get("mime_type")
+                or part_metadata.get("mimeType")
+                or artifact_metadata.get("mime_type")
+                or artifact_metadata.get("mimeType")
+                or "application/json"
+            )
+            return cls(
+                artifact_id=artifact_id,
+                conversation_id=normalized_conversation_id,
+                name=name or "artifact",
+                description=description,
+                uri=str(artifact_metadata.get("uri") or "").strip() or None,
+                mime_type=mime_type,
+                json_type=(
+                    part_metadata.get("json_type")
+                    or part_metadata.get("jsonType")
+                    or artifact_metadata.get("json_type")
+                    or artifact_metadata.get("jsonType")
+                ),
+                json_body=primary_part.get("data"),
+                size_bytes=size_bytes,
+                producer_agent_id=normalized_producer,
+                created_at=created_at,
+                tags=normalized_tags,
+                metadata=artifact_metadata,
+            )
+
+        if part_kind == "text":
+            text_payload = primary_part.get("text")
+            if isinstance(text_payload, str):
+                try:
+                    parsed = json.loads(text_payload)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    if isinstance(parsed.get("artifact"), dict) or isinstance(parsed.get("parts"), list):
+                        return cls.from_a2a_artifact(
+                            parsed,
+                            conversation_id=normalized_conversation_id,
+                            producer_agent_id=normalized_producer,
+                        )
+                    if (
+                        parsed.get("uri")
+                        or parsed.get("json_body") is not None
+                        or parsed.get("jsonBody") is not None
+                    ):
+                        reference = cls.from_dict(parsed)
+                        if not reference.conversation_id:
+                            reference.conversation_id = normalized_conversation_id
+                        if not reference.producer_agent_id:
+                            reference.producer_agent_id = normalized_producer
+                        return reference
+
+        return None
+
+    @classmethod
+    def from_any(
+        cls,
+        payload: Any,
+        *,
+        conversation_id: Optional[str] = None,
+        producer_agent_id: Optional[str] = None,
+    ) -> Optional["ArtifactReference"]:
+        """Parse either a native A2A artifact or the legacy normalized dict shape."""
+        normalized = cls.from_a2a_artifact(
+            payload,
+            conversation_id=conversation_id,
+            producer_agent_id=producer_agent_id,
+        )
+        if normalized is not None:
+            return normalized
+
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        if not isinstance(payload, dict):
+            return None
+
+        if not (
+            payload.get("uri")
+            or payload.get("json_body") is not None
+            or payload.get("jsonBody") is not None
+        ):
+            return None
+
+        reference = cls.from_dict(payload)
+        if not reference.conversation_id and conversation_id:
+            reference.conversation_id = str(conversation_id)
+        if not reference.producer_agent_id and producer_agent_id:
+            reference.producer_agent_id = str(producer_agent_id)
+        return reference
 
     def to_context_dict(self) -> Dict[str, Any]:
         """Compact, metadata-only view suitable for LLM context injection."""
@@ -103,6 +287,7 @@ class ArtifactReference:
             "description": self.description[:280] if self.description else "",
             "uri": self.uri,
             "mime_type": self.mime_type,
+            "json_type": self.json_type,
             "size_bytes": self.size_bytes,
             "producer_agent_id": self.producer_agent_id,
             "created_at": self.created_at,
@@ -111,7 +296,7 @@ class ArtifactReference:
 
 
 class ArtifactRegistry:
-    """Conversation-scoped artifact reference registry with Redis + memory fallback.
+    """Conversation-scoped artifact catalog with Redis + memory fallback.
 
     Primary callers:
     - `PrometheusAgent.send_json_artifact` (auto-registration when payload has URI metadata)
@@ -196,8 +381,8 @@ class ArtifactRegistry:
         conversation_id = str(reference.conversation_id or "").strip()
         if not conversation_id:
             raise ValueError("conversation_id is required for artifact registration")
-        if not reference.uri:
-            raise ValueError("uri is required for artifact registration")
+        if not reference.uri and reference.json_body is None:
+            raise ValueError("artifact registration requires uri or json_body")
 
         artifact_id = str(reference.artifact_id or uuid.uuid4())
         reference.artifact_id = artifact_id
