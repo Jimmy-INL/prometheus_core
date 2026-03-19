@@ -3,7 +3,6 @@
 from .client import StorageClient
 from .async_client import AsyncStorageClient
 from .connection import ConnectionConfig
-from .filesystem import DeeplynxFileSystem
 from .models.item import Item, ItemCreate, ItemUpdate, Tag
 from .models.file import FileMetadata, FileUpload
 from .models.relationship import Relationship, RelationshipCreate
@@ -24,8 +23,6 @@ __all__ = [
     "AsyncStorageClient",
     # Configuration
     "ConnectionConfig",
-    # Integrations
-    "DeeplynxFileSystem",
     # Models
     "Item",
     "ItemCreate",

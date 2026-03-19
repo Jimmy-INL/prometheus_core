@@ -4,11 +4,8 @@ These tests require a .env file with valid credentials.
 All test items are marked with _test_suite_marker property for safe cleanup.
 """
 
-import filecmp
-import fsspec
 import pytest
 import time
-import uuid
 from pathlib import Path
 from datetime import datetime
 from prometheus_api.storage_client import (
@@ -56,8 +53,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "alpha",
                 "priority": 1,
-                "status": "active",
-            },
+                "status": "active"
+            }
         },
         {
             "name": "Test Item Beta",
@@ -67,8 +64,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "beta",
                 "priority": 2,
-                "status": "active",
-            },
+                "status": "active"
+            }
         },
         {
             "name": "Test Item Gamma",
@@ -78,8 +75,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "gamma",
                 "priority": 3,
-                "status": "pending",
-            },
+                "status": "pending"
+            }
         },
         {
             "name": "Test Item Delta",
@@ -89,8 +86,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "delta",
                 "priority": 1,
-                "status": "completed",
-            },
+                "status": "completed"
+            }
         },
         {
             "name": "Test Item Epsilon",
@@ -100,8 +97,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "epsilon",
                 "priority": 2,
-                "status": "active",
-            },
+                "status": "active"
+            }
         },
     ]
 
@@ -151,17 +148,15 @@ class TestItemCreation:
 
     def test_create_single_item(self, client):
         """Test creating a single item."""
-        item = client.items.create(
-            ItemCreate(
-                name="Single Test Item",
-                description="A single test item",
-                properties={
-                    "_test_suite_marker": TEST_MARKER,
-                    "_test_run_id": TEST_RUN_ID,
-                    "test": "single_create",
-                },
-            )
-        )
+        item = client.items.create(ItemCreate(
+            name="Single Test Item",
+            description="A single test item",
+            properties={
+                "_test_suite_marker": TEST_MARKER,
+                "_test_run_id": TEST_RUN_ID,
+                "test": "single_create"
+            }
+        ))
 
         assert item.id is not None
         assert item.name == "Single Test Item"
@@ -172,21 +167,19 @@ class TestItemCreation:
 
     def test_create_item_with_all_fields(self, client):
         """Test creating an item with all available fields."""
-        item = client.items.create(
-            ItemCreate(
-                name="Complete Test Item",
-                description="Item with all fields populated",
-                properties={
-                    "_test_suite_marker": TEST_MARKER,
-                    "_test_run_id": TEST_RUN_ID,
-                    "string_field": "test",
-                    "number_field": 42,
-                    "boolean_field": True,
-                    "nested_field": {"key": "value"},
-                },
-                original_id=f"test-original-{int(time.time())}",
-            )
-        )
+        item = client.items.create(ItemCreate(
+            name="Complete Test Item",
+            description="Item with all fields populated",
+            properties={
+                "_test_suite_marker": TEST_MARKER,
+                "_test_run_id": TEST_RUN_ID,
+                "string_field": "test",
+                "number_field": 42,
+                "boolean_field": True,
+                "nested_field": {"key": "value"}
+            },
+            original_id=f"test-original-{int(time.time())}"
+        ))
 
         assert item.id is not None
         assert item.name == "Complete Test Item"
@@ -205,8 +198,8 @@ class TestItemCreation:
                 properties={
                     "_test_suite_marker": TEST_MARKER,
                     "_test_run_id": TEST_RUN_ID,
-                    "bulk_index": i,
-                },
+                    "bulk_index": i
+                }
             )
             for i in range(3)
         ]
@@ -305,7 +298,10 @@ class TestItemUpdate:
         item = test_items[0]
         new_name = f"{item.name} - Updated"
 
-        updated = client.items.update(item.id, ItemUpdate(name=new_name))
+        updated = client.items.update(
+            item.id,
+            ItemUpdate(name=new_name)
+        )
 
         assert updated.id == item.id
         assert updated.name == new_name
@@ -319,7 +315,10 @@ class TestItemUpdate:
         new_props["updated"] = True
         new_props["update_time"] = datetime.now().isoformat()
 
-        updated = client.items.update(item.id, ItemUpdate(properties=new_props))
+        updated = client.items.update(
+            item.id,
+            ItemUpdate(properties=new_props)
+        )
 
         assert updated.properties["updated"] is True
         assert "update_time" in updated.properties
@@ -370,14 +369,15 @@ class TestRelationships:
 
         rel_id = None
         try:
-            rel = client.relationships.create(
-                RelationshipCreate(
-                    from_item_id=item1.id,
-                    to_item_id=item2.id,
-                    relationship_type="test_relationship",
-                    properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
-                )
-            )
+            rel = client.relationships.create(RelationshipCreate(
+                from_item_id=item1.id,
+                to_item_id=item2.id,
+                relationship_type="test_relationship",
+                properties={
+                    "_test_suite_marker": TEST_MARKER,
+                    "_test_run_id": TEST_RUN_ID
+                }
+            ))
             rel_id = rel.id
 
             assert rel.id is not None
@@ -404,14 +404,15 @@ class TestRelationships:
         rel_id = None
         try:
             # Create a relationship
-            rel = client.relationships.create(
-                RelationshipCreate(
-                    from_item_id=item1.id,
-                    to_item_id=item2.id,
-                    relationship_type="test_link",
-                    properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
-                )
-            )
+            rel = client.relationships.create(RelationshipCreate(
+                from_item_id=item1.id,
+                to_item_id=item2.id,
+                relationship_type="test_link",
+                properties={
+                    "_test_suite_marker": TEST_MARKER,
+                    "_test_run_id": TEST_RUN_ID
+                }
+            ))
             rel_id = rel.id
 
             # Get relationships for item1
@@ -420,7 +421,10 @@ class TestRelationships:
             assert len(rels) > 0
             # Verify our relationship is in the list (by node IDs, not relationship ID)
             # Note: Simplified format doesn't return relationship IDs, so compare by endpoints
-            found = any(r.from_item_id == item1.id and r.to_item_id == item2.id for r in rels)
+            found = any(
+                r.from_item_id == item1.id and r.to_item_id == item2.id
+                for r in rels
+            )
             assert found, f"Created relationship {item1.id}→{item2.id} not found in results"
 
         except Exception as e:
@@ -450,7 +454,7 @@ class TestFileUpload:
             file_meta = client.files.upload(
                 test_file,
                 name="test_binary.bin",
-                description="Test binary file for integration tests",
+                description="Test binary file for integration tests"
             )
             file_id = file_meta.id
 
@@ -487,9 +491,7 @@ class TestFileUpload:
 
             # Verify content matches
             downloaded_content = download_path.read_bytes()
-            assert (
-                downloaded_content == binary_content
-            ), "Downloaded content does not match original"
+            assert downloaded_content == binary_content, "Downloaded content does not match original"
 
         finally:
             if file_id:
@@ -506,7 +508,10 @@ class TestFileUpload:
         file_id = None
         try:
             # Upload
-            file_meta = client.files.upload(test_file, description="Metadata test file")
+            file_meta = client.files.upload(
+                test_file,
+                description="Metadata test file"
+            )
             file_id = file_meta.id
 
             # Retrieve metadata
@@ -523,101 +528,20 @@ class TestFileUpload:
                     print(f"Warning: Failed to delete test file {file_id}: {e}")
 
 
-class TestDeeplynxFileSystem:
-
-    def test_moose_integration(self, client, tmp_path):
-        """
-        Test a MOOSE-like integration.
-
-        This is the following emulation of an agent using MOOSE MCP:
-        1. Agent(s) create input and supporting files like mesh and material properties and uploads as artifacts
-        2. MOOSE MCP stages the inputs and supporting files locally
-        3. MOOSE MCP runs, generates output files locally, and uploads the outputs
-        4. Agent(s) retrieve outputs for analysis
-        """
-        fs = fsspec.filesystem("deeplynx", client=client)
-        session_dir = "session-abc123"
-        data_dir = "data"
-        moose_dir = "moose"
-        moose_run_dir = "run-" + str(uuid.uuid1())[:5]
-
-        def write_file(path, data, is_bytes=False):
-            path: Path = tmp_path / path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if not is_bytes:
-                path.write_text(data, "utf-8")
-            else:
-                path.write_bytes(data)
-            return path
-
-        def create_uri(path):
-            return f"deeplynx://{session_dir}/{path}"
-
-        try:
-            # 1. Upload data files and ensure they are listed
-            mesh_file = write_file(f"{data_dir}/mesh.e", b"This is my mesh.", is_bytes=True)
-            mesh_uri = create_uri(f"{data_dir}/mesh.e")
-            fs.put(str(mesh_file), mesh_uri)
-            csv_file = write_file(f"{data_dir}/data.csv", "foo,bar,baz")
-            csv_uri = create_uri(f"{data_dir}/data.csv")
-            fs.put(str(csv_file), csv_uri)
-            input_file = write_file(f"{moose_dir}/input.i", "[Mesh]\n  file = mesh.e\n[]\n")
-            input_uri = create_uri(f"{moose_dir}/input.i")
-            fs.put(str(input_file), input_uri)
-            ls_session = sorted(fs.glob(create_uri("**"), detail=False))
-            ls_session_expected = sorted(
-                [
-                    f"{session_dir}",
-                    f"{session_dir}/{data_dir}",
-                    f"{session_dir}/{data_dir}/data.csv",
-                    f"{session_dir}/{data_dir}/mesh.e",
-                    f"{session_dir}/{moose_dir}",
-                    f"{session_dir}/{moose_dir}/input.i",
-                ]
-            )
-            assert ls_session == ls_session_expected
-
-            # 2. Stage files locally and make sure they are equivalent to the original
-            moose_run_path: Path = tmp_path / moose_run_dir
-            moose_run_path.mkdir()
-            for uri, file in zip([mesh_uri, csv_uri, input_uri], [mesh_file, csv_file, input_file]):
-                fs.get(uri, str(moose_run_path))
-                run_file = moose_run_path / file.name
-                assert filecmp.cmp(str(run_file), str(file))
-
-            # 3. Upload from MOOSE run
-            exodus_file = write_file(
-                f"{moose_run_dir}/input_out.e", b"This is my output.", is_bytes=True
-            )
-            fs.put(str(exodus_file.parent), create_uri(""), recursive=True)
-            for file in ["input.i", "mesh.e", "data.csv", "input_out.e"]:
-                assert fs.isfile(create_uri(f"{moose_run_dir}/{file}"))
-
-            # 4. Retrieve exodus from the run
-            moose_path = tmp_path / moose_dir
-            fs.get(create_uri(f"{moose_run_dir}/{exodus_file.name}"), str(moose_path))
-            assert filecmp.cmp(str(moose_path / exodus_file.name), str(exodus_file))
-
-        except Exception:
-            session_uri = create_uri("")
-            if fs.isdir(session_uri):
-                fs.rm(session_uri, recursive=True)
-            raise
-
-
 class TestCleanup:
     """Test cleanup functionality."""
 
     def test_delete_item(self, client):
         """Test deleting an item."""
         # Create a temporary item
-        item = client.items.create(
-            ItemCreate(
-                name="Temporary Item",
-                description="Will be deleted",
-                properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
-            )
-        )
+        item = client.items.create(ItemCreate(
+            name="Temporary Item",
+            description="Will be deleted",
+            properties={
+                "_test_suite_marker": TEST_MARKER,
+                "_test_run_id": TEST_RUN_ID
+            }
+        ))
 
         item_id = item.id
 
@@ -644,8 +568,7 @@ def test_cleanup_orphaned_items(client):
         # Get recent items and check for test marker
         recent = client.search.recent(limit=100)
         orphaned = [
-            item
-            for item in recent
+            item for item in recent
             if item.properties.get("_test_suite_marker") == TEST_MARKER
             and item.properties.get("_test_run_id") != TEST_RUN_ID
         ]
