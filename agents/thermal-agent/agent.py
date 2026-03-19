@@ -5,7 +5,7 @@ Implements A2A protocol using prometheus_api with Bearer token authentication
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent
@@ -15,6 +15,84 @@ from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+THERMAL_ANALYSIS_JSON_TYPE = "prometheus.thermal_analysis.result.v1"
+
+
+def _format_number(value: Any, suffix: str = "") -> str:
+    if isinstance(value, bool) or value is None:
+        return "not provided"
+    if isinstance(value, int):
+        return f"{value}{suffix}"
+    if isinstance(value, float):
+        if value != 0 and abs(value) < 0.001:
+            return f"{value:.2e}{suffix}"
+        if value.is_integer():
+            return f"{int(value)}{suffix}"
+        return f"{value:.2f}{suffix}"
+    return f"{value}{suffix}" if suffix else str(value)
+
+
+def _build_thermal_summary(material_id: str, analysis: Dict[str, Any]) -> str:
+    status = str(analysis.get("status") or "completed").replace("_", " ")
+    operating_temperature_c = analysis.get("operating_temperature_c")
+    thermal_stress_mpa = analysis.get("thermal_stress_mpa")
+    fatigue_usage = analysis.get("thermal_fatigue_usage_factor")
+
+    parts: List[str] = [f"Thermal analysis for {material_id} completed."]
+    if operating_temperature_c is not None:
+        parts.append(f"Operating temperature: {_format_number(operating_temperature_c, ' C')}.")
+    parts.append(f"Overall status: {status}.")
+    if thermal_stress_mpa is not None:
+        parts.append(f"Thermal stress: {_format_number(thermal_stress_mpa, ' MPa')}.")
+    if fatigue_usage is not None:
+        parts.append(f"Fatigue usage factor: {_format_number(fatigue_usage)}.")
+    return " ".join(parts)
+
+
+def _build_thermal_report(material_id: str, analysis: Dict[str, Any]) -> str:
+    status = str(analysis.get("status") or "unknown").replace("_", " ")
+    confidence = analysis.get("confidence")
+    recommendations = analysis.get("recommendations") or []
+    fatigue = analysis.get("fatigue_analysis") or {}
+    creep = analysis.get("creep_analysis") or {}
+    cycle_categories = analysis.get("cycle_categories") or {}
+
+    lines = [
+        f"Thermal Analysis for {material_id}",
+        "",
+        f"- Overall status: {status}",
+        f"- Confidence: {_format_number(confidence)}",
+        f"- Operating temperature: {_format_number(analysis.get('operating_temperature_c'), ' C')}",
+        f"- Thermal stress: {_format_number(analysis.get('thermal_stress_mpa'), ' MPa')}",
+        f"- Thermal fatigue usage factor: {_format_number(analysis.get('thermal_fatigue_usage_factor'))}",
+        f"- Creep strain: {_format_number(analysis.get('creep_strain_percent'), ' %')}",
+        f"- Thermal conductivity degradation: {_format_number(analysis.get('thermal_conductivity_degradation_percent'), ' %')}",
+        "",
+        "Cycle summary:",
+        f"- Total thermal cycles: {_format_number(analysis.get('thermal_cycles_accumulated'))}",
+        f"- Startup and shutdown cycles: {_format_number(cycle_categories.get('startup_shutdown'))}",
+        f"- Load-following cycles: {_format_number(cycle_categories.get('load_following'))}",
+        f"- Thermal transients: {_format_number(cycle_categories.get('thermal_transients'))}",
+        "",
+        "Fatigue analysis:",
+        f"- Design cycles: {_format_number(fatigue.get('design_cycles'))}",
+        f"- Accumulated cycles: {_format_number(fatigue.get('accumulated_cycles'))}",
+        f"- Remaining cycles: {_format_number(fatigue.get('remaining_cycles'))}",
+        f"- Fatigue curve: {fatigue.get('fatigue_curve') or 'not provided'}",
+        "",
+        "Creep analysis:",
+        f"- Creep rate: {_format_number(creep.get('creep_rate_percent_per_hour'), ' %/hour')}",
+        f"- Larson-Miller parameter: {_format_number(creep.get('larson_miller_parameter'))}",
+        f"- Rupture life fraction used: {_format_number(creep.get('rupture_life_fraction_used'))}",
+        f"- Tertiary creep onset: {creep.get('tertiary_creep_onset') or 'not provided'}",
+    ]
+
+    if recommendations:
+        lines.extend(["", "Recommendations:"])
+        for item in recommendations:
+            lines.append(f"- {item}")
+
+    return "\n".join(lines)
 
 
 class ThermalAnalysisAgent(PrometheusAgent):
@@ -37,6 +115,8 @@ class ThermalAnalysisAgent(PrometheusAgent):
 
         if not material_id:
             return {"error": "material_id is required"}
+        if not isinstance(operating_context, dict) or operating_context.get("temperature_c") is None:
+            return {"error": "context.temperature_c is required"}
 
         if not ANTHROPIC_API_KEY:
             return {
@@ -123,8 +203,35 @@ Consider thermal fatigue, creep damage, thermal aging, and thermal stress per AS
             analysis["timestamp"] = datetime.now(timezone.utc).isoformat()
             analysis["analysis_type"] = "thermal"
             analysis["model_used"] = MODEL_NAME
+            analysis["operating_temperature_c"] = operating_context.get(
+                "temperature_c",
+                analysis.get("operating_temperature_c"),
+            )
+            if operating_context.get("pressure_mpa") is not None:
+                analysis["pressure_mpa"] = operating_context["pressure_mpa"]
+            if operating_context.get("operating_hours") is not None:
+                analysis["operating_hours"] = operating_context["operating_hours"]
+            if operating_context.get("thermal_cycles") is not None:
+                analysis["thermal_cycles_input"] = operating_context["thermal_cycles"]
 
-            return analysis
+            message = _build_thermal_summary(material_id, analysis)
+            report = _build_thermal_report(material_id, analysis)
+
+            await self.send_json_artifact(
+                context=context,
+                event_queue=event_queue,
+                payload=analysis,
+                name=f"{material_id.lower()}_thermal_analysis",
+                description=f"Thermal analysis result for {material_id}.",
+                json_type=THERMAL_ANALYSIS_JSON_TYPE,
+                catalog_artifact=True,
+            )
+
+            return {
+                **analysis,
+                "message": message,
+                "report": report,
+            }
 
         except Exception as e:
             return {

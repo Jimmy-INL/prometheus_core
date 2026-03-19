@@ -90,8 +90,8 @@ class CapabilityCache:
     """
 
     TTL_SECONDS = 300  # 5 minutes
-    CACHE_KEY = "capability_cache:capabilities"
-    TIMESTAMP_KEY = "capability_cache:last_refresh"
+    CACHE_KEY = "capability_cache:v3:capabilities"
+    TIMESTAMP_KEY = "capability_cache:v3:last_refresh"
 
     def __init__(self, redis_url: Optional[str] = None):
         """Initialize the capability cache.
@@ -176,9 +176,12 @@ class CapabilityCache:
                     # Route all calls through LiteLLM: /a2a/{agent_name}
                     agent_url = f"{LITELLM_URL}/a2a/{agent_id}"
 
-                    # Agent card is already in discover_agents() response; use it
-                    # directly to avoid an extra HTTP call.
-                    agent_card = agent.get("agent_card_params") or await get_agent_card(agent_id)
+                    # LiteLLM's /v1/agents payload is a lossy summary and may omit
+                    # per-skill inputSchema/approval metadata. Always fetch the
+                    # full agent card for capability planning.
+                    agent_card = await get_agent_card(agent_id, direct_url=direct_url)
+                    if not agent_card.get("skills"):
+                        agent_card = agent.get("agent_card_params") or agent_card
 
                     # Extract capabilities from each skill
                     for skill in agent_card.get("skills", []):

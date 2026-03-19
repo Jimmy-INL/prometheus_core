@@ -51,3 +51,42 @@ def test_parse_response_extracts_conversation_response_from_data_artifact() -> N
     assert response.message == "SVG artifact created successfully."
     assert response.new_artifacts is not None
     assert response.new_artifacts[0]["name"] == "prometheus.svg"
+
+
+def test_parse_response_extracts_from_rooted_text_part() -> None:
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    payload = {
+        "conversation_id": "conv-1",
+        "status": "needs_info",
+        "message": "I need the operating temperature.",
+        "followup_questions": [
+            {
+                "field": "context.temperature_c",
+                "question": "Operating temperature in Celsius",
+                "type": "number",
+            }
+        ],
+    }
+
+    result = {
+        "result": {
+            "status": {
+                "message": {
+                    "parts": [
+                        {
+                            "root": {
+                                "kind": "text",
+                                "text": json.dumps(payload),
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    response = client._parse_response(result, "fallback-conv")
+
+    assert response.status == "needs_info"
+    assert response.followup_questions is not None
+    assert response.followup_questions[0]["field"] == "context.temperature_c"

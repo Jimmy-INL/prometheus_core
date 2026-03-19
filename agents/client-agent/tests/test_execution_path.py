@@ -92,3 +92,129 @@ def test_execute_current_plan_routes_templates_through_workflow_engine(monkeypat
 
     assert calls == {"workflow": 1, "direct": 0}
     assert result["final_report"] == "render complete"
+
+
+def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(monkeypatch) -> None:
+    async def fake_compile_query_plan(state, **kwargs):
+        return {
+            "routing_decision": {
+                "primary_skill": "analyze_thermal",
+                "supporting_skills": [],
+                "workflow_type": "single",
+                "extracted_params": {"material_id": "SS316"},
+                "requires_approval": True,
+                "required_params": ["material_id", "context.temperature_c"],
+                "missing_required_params": ["context.temperature_c"],
+            },
+            "plan": {
+                "intent": "Perform a thermal analysis of ss316",
+                "workflow_type": "single",
+                "skills": ["analyze_thermal"],
+                "required_params": ["material_id", "context.temperature_c"],
+                "steps": ["Invoke analyze_thermal"],
+                "missing_info": ["context.temperature_c"],
+                "estimated_duration_seconds": 5,
+                "param_metadata": {},
+            },
+            "missing_info": ["context.temperature_c"],
+            "context": {},
+            "material_id": "SS316",
+        }
+
+    async def fake_ask_followup_dynamic(state):
+        return {
+            "conversation_history": state.get("conversation_history", []) + [
+                {
+                    "role": "assistant",
+                    "type": "followup_questions",
+                    "questions": [
+                        {
+                            "field": "context.temperature_c",
+                            "question": "Operating temperature in Celsius",
+                            "type": "number",
+                        }
+                    ],
+                }
+            ],
+            "missing_info": ["context.temperature_c"],
+            "awaiting_approval": False,
+        }
+
+    async def should_not_extract(*args, **kwargs):
+        raise AssertionError("Initial turn should not auto-extract missing follow-up answers from the query.")
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", fake_compile_query_plan)
+    monkeypatch.setattr(agent_module, "ask_followup_dynamic", fake_ask_followup_dynamic)
+    monkeypatch.setattr(agent_module, "extract_followup_answers_from_query", should_not_extract)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="Perform a thermal analysis of ss316",
+                conversation_id="conv-1",
+            )
+        )
+    )
+
+    assert response.status == "needs_info"
+    assert response.followup_questions == [
+        {
+            "field": "context.temperature_c",
+            "question": "Operating temperature in Celsius",
+            "type": "number",
+        }
+    ]
+
+
+def test_invoke_skill_validates_nested_required_paths(monkeypatch) -> None:
+    capability = SimpleNamespace(
+        input_schema={
+            "type": "object",
+            "properties": {
+                "material_id": {"type": "string"},
+                "context": {
+                    "type": "object",
+                    "properties": {
+                        "temperature_c": {"type": "number"},
+                    },
+                    "required": ["temperature_c"],
+                },
+            },
+            "required": ["material_id", "context"],
+        }
+    )
+
+    class _UnexpectedTool:
+        async def ainvoke(self, params):
+            raise AssertionError("Tool should not be invoked when nested required params are missing.")
+
+    async def fake_find_tool_for_skill(*args, **kwargs):
+        return _UnexpectedTool()
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return capability
+
+    monkeypatch.setattr(
+        agent_module,
+        "find_tool_for_skill",
+        fake_find_tool_for_skill,
+    )
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capability_by_skill_id=fake_get_capability_by_skill_id),
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    result = asyncio.run(
+        agent_module.invoke_skill(
+            "analyze_thermal",
+            {"material_id": "SS316"},
+            "conv-1",
+        )
+    )
+
+    assert result["missing_required_params"] == ["context.temperature_c"]

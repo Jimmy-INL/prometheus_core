@@ -29,9 +29,9 @@ import tool_discovery
 
 
 class _FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
-        self.status_code = 200
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
         return None
@@ -52,6 +52,50 @@ class _FakeAsyncClient:
 
     async def post(self, endpoint, json=None, headers=None):
         return _FakeResponse(self._payload)
+
+
+def test_get_agent_card_prefers_raw_prometheus_endpoint(monkeypatch) -> None:
+    responses = {
+        "http://thermal-agent:8000/api/agent-card": _FakeResponse(
+            {
+                "skills": [
+                    {
+                        "id": "analyze_thermal",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["material_id", "context"],
+                        },
+                        "requires_approval": True,
+                    }
+                ]
+            }
+        )
+    }
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, endpoint):
+            return responses.get(endpoint, _FakeResponse({}, status_code=404))
+
+    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _Client)
+
+    result = asyncio.run(
+        tool_discovery.get_agent_card(
+            "thermal-analysis-agent",
+            direct_url="http://thermal-agent:8000",
+        )
+    )
+
+    assert result["skills"][0]["requires_approval"] is True
+    assert result["skills"][0]["inputSchema"]["required"] == ["material_id", "context"]
 
 
 def test_call_a2a_agent_enriches_response_with_native_artifacts(monkeypatch) -> None:
@@ -158,3 +202,99 @@ def test_call_a2a_agent_enriches_response_with_native_artifacts(monkeypatch) -> 
         "material_id": "Alloy 600",
         "finding_count": 3,
     }
+
+
+def test_call_a2a_agent_preserves_error_payload_from_final_status(monkeypatch) -> None:
+    a2a_payload = {
+        "result": {
+            "status": {
+                "message": {
+                    "parts": [
+                        {
+                            "kind": "text",
+                            "text": json.dumps(
+                                {
+                                    "error": "context.temperature_c is required",
+                                }
+                            ),
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _FakeAsyncClient(payload=a2a_payload, **kwargs),
+    )
+
+    result = asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/thermal-analysis-agent",
+            "analyze_thermal",
+            conversation_id="conv-1",
+            material_id="SS316",
+        )
+    )
+
+    assert result == {"error": "context.temperature_c is required"}
+
+
+def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
+    async def fake_discover_agents():
+        return [
+            {
+                "agent_id": "thermal-analysis-agent",
+                "name": "Thermal Analysis Agent",
+                "url": "http://thermal-agent:8000",
+                "agent_card_params": {"skills": []},
+            }
+        ]
+
+    async def fake_get_agent_card(agent_id: str, direct_url: str | None = None):
+        assert agent_id == "thermal-analysis-agent"
+        assert direct_url == "http://thermal-agent:8000"
+        return {
+            "skills": [
+                {
+                    "id": "analyze_thermal",
+                    "description": "Analyze thermal effects",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "material_id": {"type": "string"},
+                            "context": {
+                                "type": "object",
+                                "properties": {
+                                    "temperature_c": {"type": "number"},
+                                },
+                                "required": ["temperature_c"],
+                            },
+                        },
+                        "required": ["material_id", "context"],
+                    },
+                }
+            ]
+        }
+
+    created = []
+
+    async def fake_create_tool_from_skill(agent_url: str, skill: dict):
+        created.append((agent_url, skill))
+        return {"agent_url": agent_url, "skill": skill["id"]}
+
+    monkeypatch.setattr(tool_discovery, "discover_agents", fake_discover_agents)
+    monkeypatch.setattr(tool_discovery, "get_agent_card", fake_get_agent_card)
+    monkeypatch.setattr(tool_discovery, "create_tool_from_skill", fake_create_tool_from_skill)
+
+    tools = asyncio.run(tool_discovery.get_all_tools_dynamic())
+
+    assert tools == [
+        {
+            "agent_url": "http://litellm:4000/a2a/thermal-analysis-agent",
+            "skill": "analyze_thermal",
+        }
+    ]
+    assert created[0][1]["inputSchema"]["properties"]["context"]["required"] == ["temperature_c"]

@@ -12,6 +12,23 @@ from utils.a2a_client import A2AClient, ConversationResponse
 from utils.settings import settings
 
 
+def _format_status_history(history: List[str]) -> str:
+    if not history:
+        return ""
+    return "\n".join(f"{idx}. {item}" for idx, item in enumerate(history, start=1))
+
+
+async def _update_status_step(step: cl.Step, history: List[str], message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    if not history or history[-1] != text:
+        history.append(text)
+    step.name = text
+    step.output = _format_status_history(history)
+    await step.update()
+
+
 def _get_a2a_client() -> A2AClient:
     return A2AClient(
         agent_url=settings.agent_url,
@@ -64,16 +81,15 @@ async def message_handler(message: cl.Message):
     artifacts_catalog = cl.user_session.get("artifacts", [])
     client = _get_a2a_client()
 
-    status_step = cl.Step(name="Processing", type="tool")
+    status_history: List[str] = []
+    status_step = cl.Step(name="Sending request to agent...", type="tool")
 
     async def _on_status(msg: str):
-        status_step.output = msg
-        await status_step.update()
+        await _update_status_step(status_step, status_history, msg)
 
     try:
         await status_step.__aenter__()
-        status_step.output = "Sending request to agent…"
-        await status_step.update()
+        await _update_status_step(status_step, status_history, "Sending request to agent...")
 
         response = await client.send(
             query=message.content,
@@ -189,19 +205,18 @@ async def _handle_plan_ready(
         return
 
     artifacts_catalog = cl.user_session.get("artifacts", [])
-    exec_step = cl.Step(name="Executing Plan", type="tool")
+    exec_history: List[str] = []
+    exec_step = cl.Step(name="Executing plan...", type="tool")
     step_statuses: dict = {}
     steps = plan.get("steps", []) if isinstance(plan, dict) else []
 
     async def _on_exec_status(msg: str):
-        exec_step.output = msg
-        await exec_step.update()
+        await _update_status_step(exec_step, exec_history, msg)
         _update_step_statuses(step_statuses, steps, msg)
 
     try:
         await exec_step.__aenter__()
-        exec_step.output = "Executing plan…"
-        await exec_step.update()
+        await _update_status_step(exec_step, exec_history, "Executing plan...")
 
         exec_response = await client.send(
             query=original_query,

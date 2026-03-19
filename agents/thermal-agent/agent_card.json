@@ -84,7 +84,7 @@
                 "description": "Accumulated thermal cycles"
               }
             },
-            "required": ["temperature_c", "pressure_mpa"]
+            "required": ["temperature_c"]
           }
         },
         "required": ["material_id", "context"]

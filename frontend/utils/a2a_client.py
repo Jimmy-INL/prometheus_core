@@ -174,7 +174,15 @@ class A2AClient:
         parts = message.get("parts", [])
 
         for part in parts:
-            text = part.get("text", "")
+            if not isinstance(part, dict):
+                continue
+            root = part.get("root") if isinstance(part.get("root"), dict) else None
+            part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+            if part_kind != "text":
+                continue
+            text = part.get("text")
+            if text is None and root is not None:
+                text = root.get("text", "")
             try:
                 data = json.loads(text)
                 if isinstance(data, dict) and "status" in data:

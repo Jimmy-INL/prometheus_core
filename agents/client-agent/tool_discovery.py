@@ -83,13 +83,25 @@ async def discover_agents() -> List[Dict[str, Any]]:
     return result
 
 
-async def get_agent_card(agent_id: str) -> Dict[str, Any]:
+async def get_agent_card(agent_id: str, direct_url: Optional[str] = None) -> Dict[str, Any]:
     """Get the full agent card for an agent.
 
-    agent_id is the agent_name (LiteLLM routing key). The card is served by
-    LiteLLM at GET /a2a/{agent_name} (A2A well-known card endpoint).
-    Falls back to re-listing agents if that endpoint is unavailable.
+    agent_id is the agent_name (LiteLLM routing key). Prefer the specialist's
+    direct well-known agent-card endpoint because LiteLLM's `/a2a/{agent_name}`
+    response drops non-standard per-skill metadata such as `inputSchema`.
+    Falls back to LiteLLM and finally to the discovery summary payload.
     """
+    normalized_direct_url = _normalize_url(direct_url or "")
+    if normalized_direct_url:
+        for path in ("/api/agent-card", "/.well-known/agent-card.json", "/.well-known/agent.json"):
+            try:
+                async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
+                    response = await client.get(f"{normalized_direct_url}{path}")
+                    if response.status_code == 200:
+                        return response.json()
+            except Exception:
+                pass
+
     try:
         async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
             response = await client.get(f"{LITELLM_URL}/a2a/{agent_id}")
@@ -330,15 +342,21 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
             status_message = status.get("message", {})
             parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
             for part in parts:
-                if part.get("kind") != "text" and part.get("type") != "text":
+                if not isinstance(part, dict):
                     continue
-                text_content = part.get("text", "")
+                root = part.get("root") if isinstance(part.get("root"), dict) else None
+                part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+                if part_kind != "text":
+                    continue
+                text_content = part.get("text")
+                if text_content is None and root is not None:
+                    text_content = root.get("text", "")
                 try:
                     parsed = json.loads(text_content)
                 except json.JSONDecodeError as e:
                     logger.debug(f"Failed to parse final status message as JSON: {e}")
                     continue
-                if not isinstance(parsed, dict) or "status" not in parsed:
+                if not isinstance(parsed, dict):
                     continue
                 if normalized_artifacts and "artifacts" not in parsed:
                     parsed = {**parsed, "artifacts": normalized_artifacts}
@@ -450,9 +468,11 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
             # Route all calls through LiteLLM rather than directly to the agent.
             litellm_url = f"{LITELLM_URL}/a2a/{agent_id}"
 
-            # Agent card is already in the discover_agents() payload; use it
-            # directly to avoid an extra HTTP roundtrip.
-            agent_card = agent.get("agent_card_params") or await get_agent_card(agent_id)
+            # LiteLLM's /v1/agents payload can omit full per-skill metadata.
+            # Fetch the full card so tool schemas stay authoritative.
+            agent_card = await get_agent_card(agent_id, direct_url=direct_url)
+            if not agent_card.get("skills"):
+                agent_card = agent.get("agent_card_params") or agent_card
 
             # Create one tool per skill
             for skill in agent_card.get("skills", []):

@@ -484,9 +484,11 @@ def build_plan_param_metadata(
 def extract_result_text(result_data: Any) -> str:
     """Extract human-readable text from common agent response formats."""
     if isinstance(result_data, dict):
-        for key in ("answer", "response", "result", "message", "raw_response"):
+        for key in ("answer", "response", "report", "message", "result", "raw_response"):
             value = result_data.get(key)
-            if value:
+            if isinstance(value, str) and value.strip():
+                return value
+            if value and not isinstance(value, (dict, list)):
                 return str(value)
         return json.dumps(result_data, indent=2)
     return str(result_data)
@@ -1076,7 +1078,7 @@ async def invoke_skill(
     cache = get_capability_cache()
     capability = await cache.get_capability_by_skill_id(skill_id)
 
-    required_params = capability.input_schema.get("required", []) if capability else []
+    required_params = extract_required_param_paths(capability.input_schema) if capability else []
     material_ids = params.get("material_ids")
 
     async def invoke_once(single_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1103,6 +1105,12 @@ async def invoke_skill(
                     result_data = {"raw_response": raw_result}
             else:
                 result_data = raw_result
+            if isinstance(result_data, dict) and result_data.get("error"):
+                missing = [param for param in required_params if not has_param_path(invoke_params, param)]
+                payload = {"error": str(result_data.get("error"))}
+                if missing:
+                    payload["missing_required_params"] = missing
+                return payload
             if emit_status:
                 store_status_update(conversation_id, f"'{skill_id}' completed.")
             return {"result": result_data}
@@ -1657,6 +1665,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
         tool_results: Dict[str, Any] = {}
         response_lines = []
         has_errors = False
+        missing_required_params: List[str] = []
 
         def append_skill_line(skill: str, text: str, *, is_error: bool = False) -> None:
             """Render plain text for single-skill success, bracketed for multi/error cases."""
@@ -1672,6 +1681,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                 tool_results[skill_id] = {"error": item["error"]}
                 if item.get("missing_required_params"):
                     tool_results[skill_id]["missing_required_params"] = item["missing_required_params"]
+                    missing_required_params.extend(item["missing_required_params"])
                 append_skill_line(skill_id, f"Error: {item['error']}", is_error=True)
             else:
                 result_data = item.get("result", {})
@@ -1687,6 +1697,17 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         append_skill_line(skill_id, extract_result_text(result_data))
                 else:
                     append_skill_line(skill_id, extract_result_text(result_data))
+
+        if missing_required_params:
+            routing_decision = dict(state.get("routing_decision", {}) or {})
+            unique_missing = sorted(set(missing_required_params))
+            routing_decision["missing_required_params"] = unique_missing
+            return {
+                "routing_decision": routing_decision,
+                "tool_results": tool_results,
+                "missing_info": unique_missing,
+                "awaiting_approval": False,
+            }
 
         response_type = "error" if has_errors else (
             f"agent_response_{selected_skills[0]}" if len(selected_skills) == 1 else "agent_response_multi_skill"
@@ -1887,7 +1908,9 @@ REQUIRED OUTPUT KEYS:
 Rules:
 - Return ONLY a JSON object.
 - Include only keys from REQUIRED OUTPUT KEYS.
-- If a value is not present or uncertain, set it to null.
+- Only extract values that are explicitly stated in the user's text.
+- Never infer defaults, typical operating conditions, or domain assumptions.
+- If a value is not present or is uncertain, set it to null.
 - Preserve data types (number/integer/boolean/array/object/string) per schema when possible.
 """
 
@@ -2257,6 +2280,12 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
         for key, value in invoke_update.items():
             if value is not None:
                 state[key] = value
+        if state.get("missing_info"):
+            store_status_update(
+                conversation_id,
+                "Additional parameters are required before execution can continue.",
+            )
+            return state
 
     if workflow_type == "workflow_template":
         if workflow_final_output is None:
@@ -2361,6 +2390,20 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             state["awaiting_approval"] = False
             try:
                 final_state = await execute_approved_plan(state)
+                if final_state.get("missing_info"):
+                    followup_result = await ask_followup_dynamic(final_state)
+                    for key, value in followup_result.items():
+                        if value is not None:
+                            final_state[key] = value
+                    store_conversation(conv_id, final_state)
+                    store_status_update(conv_id, "Awaiting additional parameters.", final=True)
+                    latest = _latest_conversation_entry(final_state)
+                    return ConversationResponse(
+                        conversation_id=conv_id,
+                        status="needs_info",
+                        message="I need some additional information to proceed:",
+                        followup_questions=latest.get("questions", []),
+                    )
                 store_conversation(conv_id, final_state)
 
                 response_data = {
@@ -2424,6 +2467,20 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         state,
                         start_message="All required parameters resolved. Starting execution.",
                     )
+                    if final_state.get("missing_info"):
+                        followup_result = await ask_followup_dynamic(final_state)
+                        for key, value in followup_result.items():
+                            if value is not None:
+                                final_state[key] = value
+                        store_conversation(conv_id, final_state)
+                        store_status_update(conv_id, "Awaiting additional parameters.", final=True)
+                        latest = _latest_conversation_entry(final_state)
+                        return ConversationResponse(
+                            conversation_id=conv_id,
+                            status="needs_info",
+                            message="I need some additional information to proceed:",
+                            followup_questions=latest.get("questions", []),
+                        )
                     store_conversation(conv_id, final_state)
                     store_status_update(conv_id, "Response ready.", final=True)
                     return ConversationResponse(
@@ -2613,19 +2670,6 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             if value is not None:
                 state[key] = value
 
-        if state.get("missing_info") and request.query and not request.followup_answers:
-            extracted = await extract_followup_answers_from_query(state, request.query)
-            if extracted:
-                store_status_update(
-                    conv_id,
-                    "Parsed workflow parameters from natural-language input.",
-                )
-                state = await apply_followup_answers_to_state(
-                    state,
-                    extracted,
-                    query=request.query,
-                )
-
         if state.get("missing_info"):
             followup_result = await ask_followup_dynamic(state)
             for key, value in followup_result.items():
@@ -2667,6 +2711,20 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             state,
             start_message="All required parameters resolved. Starting execution.",
         )
+        if final_state.get("missing_info"):
+            followup_result = await ask_followup_dynamic(final_state)
+            for key, value in followup_result.items():
+                if value is not None:
+                    final_state[key] = value
+            store_conversation(conv_id, final_state)
+            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
+            latest = _latest_conversation_entry(final_state)
+            return ConversationResponse(
+                conversation_id=conv_id,
+                status="needs_info",
+                message="I need some additional information to proceed:",
+                followup_questions=latest.get("questions", []),
+            )
         store_conversation(conv_id, final_state)
         store_status_update(conv_id, "Response ready.", final=True)
         return ConversationResponse(
