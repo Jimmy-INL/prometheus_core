@@ -10,6 +10,7 @@ A full-featured Python client library that provides a clean, generic interface f
 - **Full Feature Set**:
   - CRUD operations for items
   - File upload/download (including chunked uploads for large files)
+  - `fsspec` filesystem protocol (`deeplynx://`) for S3-style path workflows
   - Relationship management
   - Search and query capabilities
   - Timeseries data support
@@ -148,6 +149,103 @@ client.files.download(file_id=123, output_path=Path("downloaded.csv"))
 
 # Delete a file
 client.files.delete(file_id=123)
+```
+
+### DeepLynx Filesystem Operations (`fsspec`)
+
+The library provides a filesystem implementation that maps `deeplynx://` URIs
+to DeepLynx file records while preserving logical object paths in metadata.
+
+#### Why use this
+
+- Integrates with tooling built on top of `fsspec`.
+- Supports path-based `put/get/glob/ls/rm` semantics similar to object stores.
+- Avoids separate index records by storing path/version metadata on each file record.
+
+#### Protocol registration
+
+The protocol is exposed through Python entry points (`fsspec.specs`), so this works
+for downstream packages that depend on `prometheus_api`:
+
+```python
+import fsspec
+
+fs = fsspec.filesystem("deeplynx")
+```
+
+#### Initialization modes
+
+`DeepLynxFileSystem(client=None, config=None, ...)` resolves in this order:
+
+1. Use provided `client` directly.
+2. Else create internal `StorageClient(config)` when `config` is provided.
+3. Else load `ConnectionConfig.from_env()` and create an internal client.
+
+```python
+import fsspec
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
+
+# Reuse an existing client
+config = ConnectionConfig.from_env()
+with StorageClient(config) as client:
+    fs = fsspec.filesystem("deeplynx", client=client)
+    fs.put("mesh.e", "deeplynx://session-abc/data/mesh.e")
+    fs.get("deeplynx://session-abc/data/mesh.e", "./run/")
+
+# Or let filesystem create/manage its own client
+fs = fsspec.filesystem("deeplynx", config=ConnectionConfig.from_env())
+```
+
+#### Metadata contract
+
+Files managed through the filesystem are tagged with:
+
+- `_deeplynx_fs_managed`: marker indicating record belongs to this filesystem layer
+- `_deeplynx_fs_path`: normalized POSIX object key (`session-abc/data/mesh.e`)
+- `_deeplynx_fs_version_ns`: integer version timestamp from `time.time_ns()`
+
+#### Versioning + path behavior
+
+- Repeated `put()` to the same path creates additional versions (older versions retained).
+- `get(path)` resolves the newest valid version for the exact path.
+- Records missing/invalid `_deeplynx_fs_version_ns` are ignored for read resolution.
+- `rm(file_path)` deletes all versions for that exact logical path.
+- `rm(prefix, recursive=True)` deletes all versions under that prefix.
+
+#### Lookup strategy
+
+Path lookup is search-first and degrades gracefully:
+
+1. `search.advanced_query(...)`
+2. `search.query(...)` + exact metadata filtering
+3. `search.recent(...)` (emits runtime warning)
+4. `items.iter_all(...)` full scan fallback (emits runtime warning)
+
+This keeps normal workflows efficient while still supporting DeepLynx deployments
+where some search endpoints are unavailable.
+
+#### Common filesystem operations
+
+```python
+# Upload files
+fs.put("input.i", "deeplynx://session-abc/moose/input.i")
+fs.put("./run-dir", "deeplynx://session-abc/", recursive=True)
+
+# Download files
+fs.get("deeplynx://session-abc/moose/input.i", "./local/")
+fs.get("deeplynx://session-abc/run-dir", "./downloaded-run", recursive=True)
+
+# List and glob
+entries = fs.ls("deeplynx://session-abc", detail=False)
+all_paths = fs.glob("deeplynx://session-abc/**", detail=False)
+
+# Existence checks
+fs.isfile("deeplynx://session-abc/moose/input.i")
+fs.isdir("deeplynx://session-abc/moose")
+
+# Delete paths
+fs.rm("deeplynx://session-abc/moose/input.i")  # all versions of this key
+fs.rm("deeplynx://session-abc/run-dir", recursive=True)  # recursive prefix delete
 ```
 
 ### Relationship Operations
