@@ -146,12 +146,18 @@ async def _handle_needs_info(
         field = {
             "id": q.get("field", q.get("id", q.get("question", ""))),
             "label": q.get("question", q.get("label", "")),
-            "type": q.get("type", "text"),
+            "input_type": q.get("type", q.get("input_type", "text")),
+            "required": bool(q.get("required", True)),
         }
-        if "options" in q:
-            field["options"] = q["options"]
+        if isinstance(q.get("options"), list):
+            field["options"] = [
+                opt if isinstance(opt, dict) else {"label": str(opt), "value": str(opt)}
+                for opt in q["options"]
+            ]
         if "default" in q:
             field["default"] = q["default"]
+        if q.get("description"):
+            field["help"] = q["description"]
         form_fields.append(field)
 
     element = cl.CustomElement(
@@ -164,10 +170,32 @@ async def _handle_needs_info(
             "formId": f"followup_{conversation_id}",
         },
     )
-    await cl.Message(
+    ask = cl.AskElementMessage(
         content=response.message or "Please provide the following information:",
-        elements=[element],
-    ).send()
+        element=element,
+        timeout=600,
+        raise_on_timeout=False,
+    )
+    submission = await ask.send()
+    if not submission:
+        await cl.Message(content="Follow-up form timed out.").send()
+        return
+    if not submission.get("submitted"):
+        await cl.Message(content="Follow-up form cancelled.").send()
+        return
+
+    followup_answers = {
+        key: value
+        for key, value in submission.items()
+        if key != "submitted"
+    }
+    next_response = await client.send(
+        query=original_query,
+        conversation_id=conversation_id,
+        followup_answers=followup_answers,
+        artifacts=cl.user_session.get("artifacts", []),
+    )
+    await _handle_response(client, next_response, original_query, conversation_id)
 
 
 async def _handle_plan_ready(

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from anthropic import Anthropic
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import MissingInput, PrometheusAgent
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
@@ -98,6 +98,23 @@ def _build_thermal_report(material_id: str, analysis: Dict[str, Any]) -> str:
 class ThermalAnalysisAgent(PrometheusAgent):
     """Agent for thermal analysis."""
 
+    def _merge_resolved_inputs(self, resolved: Dict[str, Any], params: Dict[str, Any], context: RequestContext) -> Dict[str, Any]:
+        merged = dict(resolved or {})
+        if params.get("material_id"):
+            merged["material_id"] = params["material_id"]
+
+        operating_context = params.get("context", {})
+        if isinstance(operating_context, dict):
+            for key in ("temperature_c", "pressure_mpa", "operating_hours", "thermal_cycles"):
+                if operating_context.get(key) is not None:
+                    merged[key] = operating_context[key]
+
+        for key, value in self.get_provided_inputs(context).items():
+            if value is not None:
+                merged[key] = value
+
+        return merged
+
     async def _execute(
         self,
         params: Dict[str, Any],
@@ -110,13 +127,66 @@ class ThermalAnalysisAgent(PrometheusAgent):
         Uses the Anthropic API to generate expert-level thermal analysis
         based on material properties and operating conditions.
         """
-        material_id = params.get("material_id")
-        operating_context = params.get("context", {})
+        state = self.load_context_state(str(context.context_id or ""))
+        resolved = self._merge_resolved_inputs(state.get("resolved", {}), params, context)
 
+        material_id = resolved.get("material_id")
         if not material_id:
-            return {"error": "material_id is required"}
-        if not isinstance(operating_context, dict) or operating_context.get("temperature_c") is None:
-            return {"error": "context.temperature_c is required"}
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="material_id",
+                        description="Canonical material identifier for the thermal analysis.",
+                        user_prompt="Which material should I analyze thermally?",
+                        type="string",
+                        resolvable_from_context=True,
+                    )
+                ],
+                hint="I need the target material before I can run the thermal analysis.",
+            )
+            self.save_context_state(
+                str(context.context_id or ""),
+                {
+                    "resolved": resolved,
+                    "pending": ["material_id"],
+                    "task_id": context.task_id,
+                },
+            )
+            return {"status": "input_required"}
+
+        operating_context = {
+            "temperature_c": resolved.get("temperature_c"),
+            "pressure_mpa": resolved.get("pressure_mpa"),
+            "operating_hours": resolved.get("operating_hours"),
+            "thermal_cycles": resolved.get("thermal_cycles"),
+        }
+
+        if operating_context.get("temperature_c") is None:
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="temperature_c",
+                        description="Operating temperature in Celsius at which the material should be evaluated.",
+                        user_prompt="What operating temperature should I use for the thermal analysis (in Celsius)?",
+                        type="number",
+                        resolvable_from_context=True,
+                    )
+                ],
+                hint="Thermal analysis requires an operating temperature before it can proceed.",
+            )
+            self.save_context_state(
+                str(context.context_id or ""),
+                {
+                    "resolved": resolved,
+                    "pending": ["temperature_c"],
+                    "task_id": context.task_id,
+                },
+            )
+            return {"status": "input_required"}
 
         if not ANTHROPIC_API_KEY:
             return {
@@ -225,6 +295,16 @@ Consider thermal fatigue, creep damage, thermal aging, and thermal stress per AS
                 description=f"Thermal analysis result for {material_id}.",
                 json_type=THERMAL_ANALYSIS_JSON_TYPE,
                 catalog_artifact=True,
+            )
+
+            self.save_context_state(
+                str(context.context_id or ""),
+                {
+                    "resolved": resolved,
+                    "pending": [],
+                    "task_id": context.task_id,
+                    "last_result_timestamp": analysis["timestamp"],
+                },
             )
 
             return {

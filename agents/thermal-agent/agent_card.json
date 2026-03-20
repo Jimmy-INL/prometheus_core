@@ -13,7 +13,7 @@
       "name": "Analyze Thermal Effects",
       "description": "Comprehensive thermal analysis including thermal fatigue cycles, creep evaluation, and thermal stress assessment",
       "usage_notes": "Use for materials experiencing temperature cycling or sustained high temperatures",
-      "requires_approval": true,
+      "requires_approval": false,
       "expected_duration_seconds": 5,
       "derivation_rules": [
         {
@@ -55,40 +55,7 @@
           }
         }
       ],
-      "output_format": "JSON with thermal damage assessment, fatigue life, creep rates, and safety factors",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "material_id": {
-            "type": "string",
-            "description": "The unique identifier of the material to analyze"
-          },
-          "context": {
-            "type": "object",
-            "description": "Operating context for thermal analysis",
-            "properties": {
-              "temperature_c": {
-                "type": "number",
-                "description": "Operating temperature in Celsius"
-              },
-              "pressure_mpa": {
-                "type": "number",
-                "description": "Operating pressure in MPa"
-              },
-              "operating_hours": {
-                "type": "integer",
-                "description": "Accumulated operating hours"
-              },
-              "thermal_cycles": {
-                "type": "integer",
-                "description": "Accumulated thermal cycles"
-              }
-            },
-            "required": ["temperature_c"]
-          }
-        },
-        "required": ["material_id", "context"]
-      }
+      "output_format": "JSON with thermal damage assessment, fatigue life, creep rates, and safety factors"
     },
     {
       "id": "calculate_thermal_fatigue",

@@ -251,6 +251,38 @@ def _normalize_a2a_artifacts(
     return normalized
 
 
+def _extract_status_payload(a2a_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract a structured payload from status.message text or data parts."""
+    status = a2a_result.get("status", {})
+    status_message = status.get("message", {})
+    parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        root = part.get("root") if isinstance(part.get("root"), dict) else None
+        part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+        if part_kind == "data":
+            data_payload = part.get("data")
+            if data_payload is None and root is not None:
+                data_payload = root.get("data")
+            if isinstance(data_payload, dict):
+                return data_payload
+            continue
+        if part_kind != "text":
+            continue
+        text_content = part.get("text")
+        if text_content is None and root is not None:
+            text_content = root.get("text", "")
+        try:
+            parsed = json.loads(text_content)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse final status message as JSON: {e}")
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
 async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, Any]:
     """
     Call an A2A agent using JSON-RPC protocol.
@@ -285,22 +317,44 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
             "message": {
                 "messageId": message_id,
                 "role": "user",
-                "parts": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(kwargs)
-                    }
-                ]
+                "parts": [],
             },
             "configuration": {
                 "blocking": True,  # Wait for task to complete before returning
             },
             "context": {
                 "skillId": skill_id,
-                "conversationId": kwargs.get("conversation_id", str(uuid.uuid4()))
+                "conversationId": kwargs.get("_a2a_context_id") or kwargs.get("conversation_id", str(uuid.uuid4()))
             }
         }
     }
+
+    request_params = {
+        key: value
+        for key, value in kwargs.items()
+        if not key.startswith("_") and key != "provided_inputs"
+    }
+    if request_params:
+        message["params"]["message"]["parts"].append(
+            {
+                "type": "text",
+                "text": json.dumps(request_params),
+            }
+        )
+    provided_inputs = kwargs.get("provided_inputs")
+    if isinstance(provided_inputs, dict) and provided_inputs:
+        message["params"]["message"]["parts"].append(
+            {
+                "kind": "data",
+                "data": {
+                    "provided_inputs": provided_inputs,
+                },
+            }
+        )
+    if kwargs.get("_a2a_context_id"):
+        message["params"]["message"]["contextId"] = kwargs["_a2a_context_id"]
+    if kwargs.get("_a2a_task_id"):
+        message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 
     # Route through LiteLLM: agent_url is {LITELLM_URL}/a2a/{agent_name}
     # LiteLLM's A2A endpoint requires the method in the URL path.
@@ -339,25 +393,17 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
             )
 
             status = a2a_result.get("status", {})
-            status_message = status.get("message", {})
-            parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                root = part.get("root") if isinstance(part.get("root"), dict) else None
-                part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
-                if part_kind != "text":
-                    continue
-                text_content = part.get("text")
-                if text_content is None and root is not None:
-                    text_content = root.get("text", "")
-                try:
-                    parsed = json.loads(text_content)
-                except json.JSONDecodeError as e:
-                    logger.debug(f"Failed to parse final status message as JSON: {e}")
-                    continue
-                if not isinstance(parsed, dict):
-                    continue
+            state = str(status.get("state") or "").strip().lower()
+            parsed = _extract_status_payload(a2a_result)
+            if state == "input-required":
+                payload = parsed if isinstance(parsed, dict) else {}
+                return {
+                    "status": "input_required",
+                    "input_required": payload,
+                    "_a2a_context_id": a2a_result.get("contextId"),
+                    "_a2a_task_id": a2a_result.get("id"),
+                }
+            if isinstance(parsed, dict):
                 if normalized_artifacts and "artifacts" not in parsed:
                     parsed = {**parsed, "artifacts": normalized_artifacts}
                 print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")

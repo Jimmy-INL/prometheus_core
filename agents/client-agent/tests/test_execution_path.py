@@ -218,3 +218,29 @@ def test_invoke_skill_validates_nested_required_paths(monkeypatch) -> None:
     )
 
     assert result["missing_required_params"] == ["context.temperature_c"]
+
+
+def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
+    state = {
+        "conversation_history": [],
+        "pending_subagent_request": {
+            "skill_id": "analyze_thermal",
+            "missing_inputs": [
+                {
+                    "name": "temperature_c",
+                    "description": "Operating temperature in Celsius at which the material should be evaluated.",
+                    "user_prompt": "What operating temperature should I use for the thermal analysis (in Celsius)?",
+                    "type": "number",
+                    "resolvable_from_context": True,
+                }
+            ],
+            "hint": "Thermal analysis requires an operating temperature before it can proceed.",
+        },
+    }
+
+    result = asyncio.run(agent_module.ask_followup_dynamic(state))
+
+    question = result["conversation_history"][-1]["questions"][0]
+    assert question["field"] == "temperature_c"
+    assert question["type"] == "number"
+    assert result["missing_info"] == ["temperature_c"]
