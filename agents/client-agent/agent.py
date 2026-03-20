@@ -105,6 +105,27 @@ class AgentState(TypedDict):
     plan: Optional[Dict]
     missing_info: List[str]
     awaiting_approval: bool
+
+    # Pending INPUT_REQUIRED from a subagent.
+    #
+    # LIMITATION: only one pending request is tracked at a time. In multi-skill
+    # invocations the last skill that returns input_required wins; earlier ones
+    # are silently overwritten. This is acceptable for the current single-skill
+    # thermal-agent use-case but will need to be generalized before multi-skill
+    # plans can reliably pause on input.
+    #
+    # FUTURE GENERALIZATION PLAN:
+    #   1. Change this field to `pending_subagent_requests: List[Dict[str, Any]]`.
+    #   2. Collect *all* input_required items from an invocation loop rather than
+    #      overwriting on each iteration.
+    #   3. In ask_followup_dynamic / _questions_from_pending_subagent_request,
+    #      merge the missing_inputs lists across all pending requests into a
+    #      single consolidated form (deduplicated by field name).
+    #   4. In resume_pending_subagent_request, route each provided answer back
+    #      to the correct skill using the skill_id stored per pending entry,
+    #      then clear only the entries that were successfully resumed.
+    #   5. Update the ConversationResponse to carry a list of pending skill IDs
+    #      so the frontend can surface which agents are still waiting.
     pending_subagent_request: Optional[Dict[str, Any]]
 
     # Query parameters (extracted from routing decision)
@@ -1135,6 +1156,13 @@ async def invoke_skill(
             single.pop("material_ids", None)
             single["material_id"] = material_id
             one = await invoke_once(single)
+            if "input_required" in one:
+                return {
+                    "skill_id": skill_id,
+                    "input_required": one["input_required"],
+                    "_a2a_context_id": one.get("_a2a_context_id"),
+                    "_a2a_task_id": one.get("_a2a_task_id"),
+                }
             if "error" in one:
                 errors[material_id] = one["error"]
             else:
@@ -1712,10 +1740,9 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     )
                     if resumed.get("input_required"):
                         payload = resumed.get("input_required", {}) or {}
-                        missing_inputs = payload.get("missing_inputs", []) if isinstance(payload, dict) else []
-                        _, unresolved = resolve_missing_inputs_from_state(state, missing_inputs)
-                        if not unresolved:
-                            unresolved = list(missing_inputs)
+                        # Auto-resolution already failed — the subagent still needs these inputs.
+                        # Do not attempt re-resolution; pass all missing_inputs to the user.
+                        unresolved = payload.get("missing_inputs", []) if isinstance(payload, dict) else []
                         if unresolved:
                             pending_subagent_request = {
                                 "skill_id": skill_id,
@@ -2456,12 +2483,12 @@ def _coerce_followup_value(value: Any, value_type: str) -> Any:
         try:
             return float(value)
         except (TypeError, ValueError):
-            return value
+            raise ValueError(f"Expected a number for field but got: {value!r}")
     if normalized_type == "integer":
         try:
             return int(value)
         except (TypeError, ValueError):
-            return value
+            raise ValueError(f"Expected an integer for field but got: {value!r}")
     if normalized_type == "boolean":
         if isinstance(value, bool):
             return value
@@ -2644,7 +2671,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     return ConversationResponse(
                         conversation_id=conv_id,
                         status="needs_info",
-                        message=(final_state.get("pending_subagent_request") or {}).get("hint") or "I need some additional information to proceed:",
+                        message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
                         followup_questions=latest.get("questions", []),
                     )
                 store_conversation(conv_id, final_state)
@@ -2691,11 +2718,10 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         store_conversation(conv_id, state)
                         store_status_update(conv_id, "Awaiting additional parameters.", final=True)
                         latest = _latest_conversation_entry(state)
-                        pending = state.get("pending_subagent_request") or {}
                         return ConversationResponse(
                             conversation_id=conv_id,
                             status="needs_info",
-                            message=pending.get("hint") or "I need some additional information to proceed:",
+                            message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
                             followup_questions=latest.get("questions", []),
                         )
                     store_conversation(conv_id, state)
@@ -2727,7 +2753,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     return ConversationResponse(
                         conversation_id=conv_id,
                         status="needs_info",
-                        message=(state.get("pending_subagent_request") or {}).get("hint") or "I need some additional information to proceed:",
+                        message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
                         followup_questions=latest.get("questions", []),
                     )
 
@@ -2748,7 +2774,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         return ConversationResponse(
                             conversation_id=conv_id,
                             status="needs_info",
-                            message=(final_state.get("pending_subagent_request") or {}).get("hint") or "I need some additional information to proceed:",
+                            message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
                             followup_questions=latest.get("questions", []),
                         )
                     store_conversation(conv_id, final_state)
@@ -2787,21 +2813,6 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                 )
 
         if request.query and has_pending_followup:
-            if state.get("pending_subagent_request"):
-                followup_result = await ask_followup_dynamic(state)
-                for key, value in followup_result.items():
-                    if value is not None:
-                        state[key] = value
-                store_conversation(conv_id, state)
-                store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                latest = _latest_conversation_entry(state)
-                pending = state.get("pending_subagent_request") or {}
-                return ConversationResponse(
-                    conversation_id=conv_id,
-                    status="needs_info",
-                    message=pending.get("hint") or "I still need a few details to proceed:",
-                    followup_questions=latest.get("questions", []),
-                )
             followup_result = await ask_followup_dynamic(state)
             for key, value in followup_result.items():
                 if value is not None:
@@ -2812,7 +2823,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message="I still need a few details to proceed:",
+                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request"), "I still need a few details to proceed:"),
                 followup_questions=latest.get("questions", []),
             )
 
@@ -2967,7 +2978,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message=(state.get("pending_subagent_request") or {}).get("hint") or "I need some additional information to proceed:",
+                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
                 followup_questions=latest.get("questions", []),
             )
 
@@ -3008,7 +3019,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message=(final_state.get("pending_subagent_request") or {}).get("hint") or "I need some additional information to proceed:",
+                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
                 followup_questions=latest.get("questions", []),
             )
         store_conversation(conv_id, final_state)

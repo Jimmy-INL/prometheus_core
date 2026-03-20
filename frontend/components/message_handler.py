@@ -106,14 +106,18 @@ async def message_handler(message: cl.Message):
         await cl.Message(content=f"Error communicating with agent: {e}").send()
 
 
+_MAX_NEEDS_INFO_DEPTH = 5
+
+
 async def _handle_response(
     client: A2AClient,
     response: ConversationResponse,
     original_query: str,
     conversation_id: str,
+    _depth: int = 0,
 ):
     if response.status == "needs_info":
-        await _handle_needs_info(client, response, original_query, conversation_id)
+        await _handle_needs_info(client, response, original_query, conversation_id, _depth=_depth)
     elif response.status == "plan_ready":
         await _handle_plan_ready(client, response, original_query, conversation_id)
     elif response.status in ("completed", "answer", "recommendation"):
@@ -134,7 +138,13 @@ async def _handle_needs_info(
     response: ConversationResponse,
     original_query: str,
     conversation_id: str,
+    *,
+    _depth: int = 0,
 ):
+    if _depth >= _MAX_NEEDS_INFO_DEPTH:
+        await cl.Message(content="Too many consecutive follow-up requests. Please start a new query.").send()
+        return
+
     questions = response.followup_questions or []
     if not questions:
         if response.message:
@@ -195,7 +205,7 @@ async def _handle_needs_info(
         followup_answers=followup_answers,
         artifacts=cl.user_session.get("artifacts", []),
     )
-    await _handle_response(client, next_response, original_query, conversation_id)
+    await _handle_response(client, next_response, original_query, conversation_id, _depth=_depth + 1)
 
 
 async def _handle_plan_ready(

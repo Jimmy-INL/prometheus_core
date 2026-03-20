@@ -64,21 +64,7 @@
       "usage_notes": "Use for components undergoing frequent temperature changes (startup/shutdown cycles)",
       "requires_approval": true,
       "expected_duration_seconds": 4,
-      "output_format": "JSON with cycle count, damage fraction, remaining life, and inspection recommendations",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "material_id": {
-            "type": "string",
-            "description": "The unique identifier of the material"
-          },
-          "context": {
-            "type": "object",
-            "description": "Temperature range, cycle count, hold times"
-          }
-        },
-        "required": ["material_id"]
-      }
+      "output_format": "JSON with cycle count, damage fraction, remaining life, and inspection recommendations"
     },
     {
       "id": "assess_creep",
@@ -87,21 +73,7 @@
       "usage_notes": "Critical for high-temperature components like steam generator tubing and piping",
       "requires_approval": true,
       "expected_duration_seconds": 4,
-      "output_format": "JSON with creep rate, accumulated strain, rupture life estimate, and compliance status",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "material_id": {
-            "type": "string",
-            "description": "The unique identifier of the material"
-          },
-          "context": {
-            "type": "object",
-            "description": "Operating temperature, stress level, service duration"
-          }
-        },
-        "required": ["material_id"]
-      }
+      "output_format": "JSON with creep rate, accumulated strain, rupture life estimate, and compliance status"
     }
   ]
 }
