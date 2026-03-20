@@ -10,6 +10,7 @@ import sys
 import json
 import logging
 import uuid
+from dataclasses import asdict, dataclass
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ from a2a.types import (
 )
 from .middleware import BearerTokenMiddleware
 from .artifacts import ArtifactReference, ArtifactRegistry
+from .context_state import ContextStateStore
 import uvicorn
 import httpx
 
@@ -86,6 +88,30 @@ class _TrackedEventQueue:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._event_queue, name)
+
+
+@dataclass
+class MissingInput:
+    """Canonical missing-input descriptor for INPUT_REQUIRED responses."""
+
+    name: str
+    description: str
+    user_prompt: str
+    type: str
+    options: Optional[List[str]] = None
+    resolvable_from_context: bool = False
+    sensitive: bool = False
+
+
+def build_input_required_payload(
+    missing_inputs: List[MissingInput],
+    hint: str,
+) -> Dict[str, Any]:
+    """Serialize missing-input requirements into the canonical payload shape."""
+    return {
+        "missing_inputs": [asdict(item) for item in missing_inputs],
+        "hint": str(hint or "").strip(),
+    }
 
 
 class PrometheusAgentExecutor(AgentExecutor):
@@ -352,6 +378,69 @@ class PrometheusAgent:
         self.agent_card_dict = None  # Raw dict for registry registration
         self.executor = None
         self.artifact_registry = ArtifactRegistry()
+        self.context_state_store = ContextStateStore()
+
+    def get_raw_agent_card(self) -> Dict[str, Any]:
+        """Return the canonical raw agent-card payload used for planning metadata."""
+        if self.agent_card_dict is None:
+            raise RuntimeError("Agent card has not been loaded yet")
+        return self.agent_card_dict
+
+    def load_context_state(self, context_id: str) -> Dict[str, Any]:
+        """Load persisted agent-local state for one A2A contextId."""
+        return self.context_state_store.load(self._producer_agent_id, str(context_id or ""))
+
+    def save_context_state(self, context_id: str, state: Dict[str, Any]) -> None:
+        """Persist agent-local state for one A2A contextId."""
+        self.context_state_store.save(self._producer_agent_id, str(context_id or ""), state)
+
+    def get_provided_inputs(self, context: RequestContext) -> Dict[str, Any]:
+        """Extract structured follow-up inputs from incoming DataParts."""
+        message = getattr(context, "message", None)
+        if message is None:
+            return {}
+
+        provided: Dict[str, Any] = {}
+        for part in getattr(message, "parts", []) or []:
+            root = getattr(part, "root", None)
+            if not isinstance(root, DataPart):
+                continue
+            data = dict(root.data or {})
+            if isinstance(data.get("provided_inputs"), dict):
+                provided.update(data["provided_inputs"])
+            else:
+                provided.update(data)
+        return provided
+
+    async def send_input_required(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        missing_inputs: List[MissingInput],
+        hint: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit a canonical final INPUT_REQUIRED status message."""
+        payload = build_input_required_payload(missing_inputs, hint=hint)
+        await event_queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                taskId=context.task_id,
+                contextId=context.context_id,
+                final=True,
+                status=TaskStatus(
+                    state=TaskState.input_required,
+                    message=Message(
+                        messageId=str(uuid.uuid4()),
+                        role="agent",
+                        parts=[Part(root=DataPart(data=payload, metadata={"mime_type": "application/json"}))],
+                        contextId=context.context_id,
+                        taskId=context.task_id,
+                    ),
+                ),
+                metadata=metadata,
+            )
+        )
 
     @staticmethod
     def _context_conversation_id(context: RequestContext) -> str:
@@ -1096,6 +1185,12 @@ class PrometheusAgent:
             return JSONResponse(response_payload)
 
         app.add_route("/api/chat", api_chat, methods=["POST"])
+
+        async def api_agent_card(request):
+            """Return the raw agent card with Prometheus-specific skill metadata."""
+            return JSONResponse(self.get_raw_agent_card())
+
+        app.add_route("/api/agent-card", api_agent_card, methods=["GET"])
 
         async def api_list_artifacts(request):
             """List metadata references available to a conversation/session."""

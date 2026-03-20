@@ -80,8 +80,13 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         if not self.required or not self.secret:
             return await call_next(request)
 
-        # Skip authentication for health check and agent card endpoints
-        if request.url.path in ["/health", "/.well-known/agent.json"]:
+        # Skip authentication for health check and public metadata endpoints.
+        if request.url.path in [
+            "/health",
+            "/.well-known/agent.json",
+            "/.well-known/agent-card.json",
+            "/api/agent-card",
+        ]:
             return await call_next(request)
 
         # Extract Authorization header

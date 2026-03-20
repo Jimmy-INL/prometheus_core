@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from prometheus_api.agent import (
+    MissingInput,
     PrometheusAgent,
     PrometheusAgentExecutor,
     RequestContext,
@@ -15,7 +16,7 @@ from prometheus_api.agent import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
 )
-from a2a.types import Artifact, TextPart
+from a2a.types import Artifact, DataPart, TextPart
 
 
 class TestPrometheusAgentExecutor:
@@ -243,6 +244,20 @@ class TestPrometheusAgent:
 
         assert agent.agent_card_path == "/custom/path/card.json"
 
+    def test_get_raw_agent_card_returns_loaded_dict(self):
+        agent = PrometheusAgent(agent_name="MyAgent")
+        agent.agent_card_dict = {
+            "name": "My Agent",
+            "skills": [
+                {
+                    "id": "analyze_thermal",
+                    "inputSchema": {"type": "object", "required": ["material_id"]},
+                }
+            ],
+        }
+
+        assert agent.get_raw_agent_card()["skills"][0]["inputSchema"]["required"] == ["material_id"]
+
     def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""
         agent = PrometheusAgent(agent_name="MyAgent")
@@ -252,6 +267,40 @@ class TestPrometheusAgent:
 
         with pytest.raises(NotImplementedError):
             asyncio.run(agent._execute({}, mock_context, mock_queue))
+
+    def test_send_input_required_emits_canonical_data_part(self):
+        """Test INPUT_REQUIRED helper emits a final status with structured payload."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        context = MagicMock(spec=RequestContext)
+        context.task_id = "task-1"
+        context.context_id = "ctx-1"
+        queue = AsyncMock(spec=EventQueue)
+
+        asyncio.run(
+            agent.send_input_required(
+                context=context,
+                event_queue=queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="temperature_c",
+                        description="Operating temperature in Celsius.",
+                        user_prompt="What operating temperature should I use?",
+                        type="number",
+                        resolvable_from_context=True,
+                    )
+                ],
+                hint="Thermal analysis requires a temperature.",
+            )
+        )
+
+        queue.enqueue_event.assert_called_once()
+        event = queue.enqueue_event.call_args[0][0]
+        assert isinstance(event, TaskStatusUpdateEvent)
+        assert event.status.state == TaskState.input_required
+        part = event.status.message.parts[0].root
+        assert isinstance(part, DataPart)
+        assert part.data["hint"] == "Thermal analysis requires a temperature."
+        assert part.data["missing_inputs"][0]["name"] == "temperature_c"
 
     def test_create_executor_returns_custom_executor(self):
         """Test that create_executor returns a working executor."""
