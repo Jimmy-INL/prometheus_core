@@ -1,291 +1,133 @@
-# PrometheusAgent - Complete Guide
+# PrometheusAgent Guide
 
 ## Overview
 
-`PrometheusAgent` is a base class that handles all the boilerplate for creating A2A-enabled agents. It provides:
+`PrometheusAgent` is the base class for A2A-enabled specialist agents in Prometheus. It handles:
 
-- Automatic agent card loading from JSON
-- Built-in Bearer token authentication
-- Registry registration with authentication
-- HTTP server setup with A2A protocol
-- Parameter extraction and error handling
-- Status update management
+- loading and serving the agent card
+- authentication middleware
+- registry registration
+- A2A request handling and task execution
+- final status emission from your returned dict
+- helper methods for status updates, artifacts, durable chat messages, and `INPUT_REQUIRED`
+- conversation artifact registration
+- per-agent context state persistence keyed by `contextId`
 
-You just inherit from `PrometheusAgent`, override `_execute()`, and call `run()`.
+You implement `_execute(params, context, event_queue)` and use the helpers when you need richer behavior.
 
-## Quick Start
+## Core Contract
 
-### Minimal Agent (15 lines)
+### 1. Return the final structured response from `_execute(...)`
 
-```python
-from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
-
-class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        input_data = params.get("input_data")
-
-        # Your logic here
-        result = {"status": "success", "data": input_data}
-
-        return result
-
-if __name__ == "__main__":
-    agent = MyAgent(agent_name="My Agent")
-    agent.run()
-```
-
-That's it! No need to:
-- Manually load agent cards
-- Set up authentication
-- Create executors and request handlers
-- Configure the HTTP server
-- Register with the registry
-
-## Usage
-
-### Basic Agent
-
-```python
-from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
-from typing import Dict, Any
-
-class DataProcessor(PrometheusAgent):
-    """Agent that processes data."""
-
-    async def _execute(
-        self,
-        params: Dict[str, Any],
-        context: RequestContext,
-        event_queue: EventQueue,
-    ) -> Dict[str, Any]:
-        """Implement your agent's logic here."""
-
-        # Extract parameters
-        data = params.get("data")
-        if not data:
-            raise ValueError("data parameter is required")
-
-        # Do your processing
-        result = self.process_data(data)
-
-        return {
-            "status": "success",
-            "result": result
-        }
-
-    def process_data(self, data):
-        """Your custom processing logic."""
-        # Implement your logic here
-        return {"processed": data}
-
-if __name__ == "__main__":
-    agent = DataProcessor(agent_name="Data Processor")
-    agent.run()
-```
-
-### With Progress Updates
-
-```python
-from prometheus_api.agent import (
-    PrometheusAgent,
-    RequestContext,
-    EventQueue,
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
-)
-import asyncio
-
-class LongRunningAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        steps = ["Loading", "Processing", "Finalizing"]
-
-        for i, step in enumerate(steps):
-            # Send progress update using A2A event types
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    taskId=context.task_id,
-                    contextId=context.context_id,
-                    final=False,
-                    status=TaskStatus(state=TaskState.working),
-                )
-            )
-
-            # Do work
-            await asyncio.sleep(1)
-
-        return {"status": "success", "steps_completed": len(steps)}
-```
-
-### Using Storage Client
-
-```python
-from prometheus_api.agent import PrometheusAgent, RequestContext, EventQueue
-from prometheus_api.storage_client import StorageClient, ConnectionConfig
-
-class StorageAgent(PrometheusAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Initialize storage client
-        self.storage = StorageClient(ConnectionConfig.from_env())
-
-    async def _execute(self, params, context, event_queue):
-        item_id = params.get("item_id")
-
-        # Fetch from storage
-        item = self.storage.items.get(item_id)
-
-        return {
-            "status": "success",
-            "item": {
-                "id": item.id,
-                "name": item.name,
-                "properties": item.properties
-            }
-        }
-```
-
-## API Reference
-
-### PrometheusAgent
-
-#### `__init__(agent_name, agent_card_path)`
-
-**Parameters:**
-- `agent_name` (str) - Name of the agent for logging and metadata
-- `agent_card_path` (str, optional) - Path to agent_card.json (default: "./agent_card.json")
-
-#### `_execute(params, context, event_queue)` [ABSTRACT]
-
-**Must be overridden in subclass.**
-
-**Parameters:**
-- `params` (Dict[str, Any]) - Parameters extracted from A2A message
-- `context` (RequestContext) - A2A request context with `task_id` and `context_id`
-- `event_queue` (EventQueue) - Queue for sending status updates and artifacts
-
-**Returns:**
-- Dict[str, Any] - Analysis results
-
-**Status Updates:**
-
-You can send progress updates manually:
-```python
-await self.send_status_update(
-    context=context,
-    event_queue=event_queue,
-    message="Working on request",
-)
-```
-
-You can also stream partial artifacts:
-```python
-artifact_id = await self.send_text_artifact(
-    context=context,
-    event_queue=event_queue,
-    name="progress",
-    text='{"phase":"loading"}',
-    last_chunk=False,
-)
-
-await self.send_text_artifact(
-    context=context,
-    event_queue=event_queue,
-    name="progress",
-    artifact_id=artifact_id,
-    append=True,
-    text='{"phase":"analyzing"}',
-    last_chunk=True,
-)
-```
-
-By default, you do not need to send terminal statuses:
-- If your agent does **not** emit a final status, the base class sends a final `completed` status whose `status.message.parts[*].text` contains your returned dict serialized as JSON.
-- If your agent emits a final status (`final=True`) itself, the base class skips automatic terminal events to avoid duplicates.
-
-### Final Response Contract
-
-The canonical final structured response is the dict you return from `_execute(...)`.
-
-Example:
+The canonical final result is the dict you return.
 
 ```python
 return {
     "conversation_id": context.context_id,
     "status": "completed",
-    "message": "SVG artifact created successfully.",
-    "new_artifacts": [...],
+    "message": "Thermal analysis complete.",
 }
 ```
 
 The base executor emits that payload in the final `TaskStatusUpdateEvent`:
 
 - `status.state = completed`
-- `status.message.parts[0].text = json.dumps(your_return_value)`
+- `status.message.parts[*].text = json.dumps(return_value)`
 
-Do not emit your final result as a wrapper artifact unless you have a specific non-conversational streaming reason to do so.
+Do not wrap the final result in a synthetic artifact unless you specifically need a separate artifact stream.
 
-#### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
+### 2. Use agent cards for routing metadata only
 
-Helper for emitting task status events from your agent class.
+`agent_card.json` should describe what the agent does. It should not declare `inputSchema` for orchestrator-side form generation.
 
-**Parameters:**
-- `context` (RequestContext) - Current request context
-- `event_queue` (EventQueue) - Queue used to publish events
-- `state` (TaskState, optional) - Status state (default: `TaskState.working`)
-- `final` (bool, optional) - Whether this is a terminal status (default: `False`)
-- `message` (str, optional) - Human-readable status text
-- `metadata` (dict, optional) - Additional status metadata
+```json
+{
+  "name": "Thermal Agent",
+  "description": "Performs thermal analyses and requests missing operating conditions at runtime.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_thermal",
+      "name": "Analyze Thermal",
+      "description": "Runs a thermal analysis for a material and requests any missing operating inputs.",
+      "tags": ["thermal", "materials", "analysis"]
+    }
+  ]
+}
+```
 
-#### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None)`
+### 3. Let the specialist own missing-input logic
 
-Helper for emitting native A2A `data` artifacts from your agent class.
+If the agent cannot proceed, it should emit `INPUT_REQUIRED` itself. The orchestrator can help resolve values from shared context, but the subagent remains authoritative about what is still missing.
 
-Use this for structured non-file outputs. If the JSON artifact should be persisted in the conversation artifact catalog and reusable by downstream agents, set `catalog_artifact=True`.
-
-**Parameters:**
-- `context` (RequestContext) - Current request context
-- `event_queue` (EventQueue) - Queue used to publish events
-- `payload` (Any) - JSON-serializable payload
-- `name` (str, optional) - Artifact name
-- `description` (str, optional) - Human-readable artifact description
-- `json_type` (str, optional) - Visualization/type discriminator for `application/json` payloads
-- `catalog_artifact` (bool, optional) - Persist this JSON artifact in the conversation catalog
-- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
-- `append` (bool, optional) - Append parts to existing artifact
-- `last_chunk` (bool, optional) - Mark last chunk in stream
-- `metadata` (dict, optional) - Artifact metadata
-
-**Returns:**
-- `str` - `artifact_id` used for the event
-
-**Example: inline JSON artifact**
+## Minimal Agent
 
 ```python
-artifact_id = await self.send_json_artifact(
+from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
+
+
+class MyAgent(PrometheusAgent):
+    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": "Request handled.",
+        }
+
+
+if __name__ == "__main__":
+    agent = MyAgent(agent_name="My Agent")
+    agent.run()
+```
+
+## Agent Actions
+
+### Send Progress Status
+
+Use `send_status_update(...)` for transient progress messages shown while work is happening.
+
+```python
+await self.send_status_update(
     context=context,
     event_queue=event_queue,
-    name="trace_matrix",
-    description="Requirements traceability matrix",
-    payload={"rows": rows},
-    json_type="prometheus.requirements.trace_matrix.v1",
-    catalog_artifact=True,
+    message="Loading source data.",
 )
 ```
 
-This emits a native A2A `data` part and registers a normalized `ArtifactReference` with:
+You can emit as many intermediate status updates as needed. In most cases you should not emit the final completed status manually; the base class handles that from your return value.
 
-- `mime_type = "application/json"`
-- `json_type = "prometheus.requirements.trace_matrix.v1"`
-- `json_body = {"rows": ...}`
+### Emit a Text Artifact
 
-#### `send_artifact_reference(context, event_queue, name, description, uri, mime_type=None, size_bytes=None, artifact_id=None, tags=None, metadata=None)`
+Use `send_text_artifact(...)` for streaming or ad hoc textual artifacts.
 
-Helper for emitting URI-backed native A2A `file` artifacts and registering them in the conversation artifact catalog.
+```python
+artifact_id = await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress.log",
+    text="phase=loading\n",
+    last_chunk=False,
+)
 
-Use this for generated files or externally addressable resources.
+await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="progress.log",
+    artifact_id=artifact_id,
+    append=True,
+    text="phase=complete\n",
+    last_chunk=True,
+)
+```
 
-**Example: file artifact**
+### Emit a File Artifact
+
+Use `send_artifact_reference(...)` for generated files or externally addressable resources.
 
 ```python
 artifact = await self.send_artifact_reference(
@@ -298,59 +140,271 @@ artifact = await self.send_artifact_reference(
 )
 ```
 
-This emits a native A2A `file` part and registers a reusable conversation-scoped artifact entry.
+This:
 
-#### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+- emits a native A2A `file` artifact part
+- registers the file in the conversation artifact catalog
+- returns a normalized `ArtifactReference`
 
-Helper for emitting text artifacts from your agent class.
+### Emit an Inline JSON Artifact
 
-**Parameters:**
-- `context` (RequestContext) - Current request context
-- `event_queue` (EventQueue) - Queue used to publish events
-- `text` (str) - Text content
-- `name` (str, optional) - Artifact name
-- `artifact_id` (str, optional) - Artifact ID (reuse for chunk appends)
-- `append` (bool, optional) - Append parts to existing artifact
-- `last_chunk` (bool, optional) - Mark last chunk in stream
-- `metadata` (dict, optional) - Artifact metadata
+Use `send_json_artifact(...)` for structured non-file outputs.
 
-**Returns:**
-- `str` - `artifact_id` used for the event
+```python
+artifact_id = await self.send_json_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="thermal_result",
+    description="Structured thermal analysis result",
+    payload={
+        "status": "acceptable",
+        "max_temperature_c": 650.0,
+    },
+    json_type="prometheus.thermal_analysis.result.v1",
+    catalog_artifact=True,
+)
+```
 
-#### `send_conversation_message(context, event_queue, message, metadata=None)`
+Recommended usage:
 
-Emit a durable conversation-visible message payload without treating it as a reusable file/data artifact.
+- set `catalog_artifact=True` when downstream agents or the frontend should be able to reuse the artifact
+- set `json_type` for frontend visualization routing
+- keep the final conversational summary in your returned dict, not only in the artifact
 
-Use this when you want a user-facing message to appear in chat history in addition to your final returned response.
+### Emit a Durable Conversation Message
 
-**Example**
+Use `send_conversation_message(...)` when a message should appear in chat history but should not be treated as a reusable file/data artifact.
 
 ```python
 await self.send_conversation_message(
     context=context,
     event_queue=event_queue,
-    message="SVG artifact created successfully.",
+    message="Artifact generation started.",
 )
 ```
 
-#### `run(host, port)`
+### Request More Input
 
-Start the agent server.
+Use `send_input_required(...)` with `MissingInput` entries when the user must provide additional values.
 
-**Parameters:**
-- `host` (str, optional) - Host to bind to (default: "0.0.0.0")
-- `port` (int, optional) - Port to listen on (default: from AGENT_PORT env var or 8000)
-
-**Usage:**
 ```python
-agent.run()                    # Use env vars
-agent.run(port=8001)          # Override port
-agent.run(host="localhost")   # Local only
+from prometheus_api.agent import MissingInput
+
+
+await self.send_input_required(
+    context=context,
+    event_queue=event_queue,
+    missing_inputs=[
+        MissingInput(
+            name="temperature_c",
+            description="Operating temperature in degrees Celsius for the analysis case.",
+            user_prompt="What operating temperature should I use?",
+            type="number",
+        )
+    ],
+    hint="This analysis needs an operating temperature before it can continue.",
+)
+return {}
 ```
 
-#### Streaming Capability
+The emitted final task status has:
 
-To make an agent streaming-capable, set this in `agent_card.json`:
+- `status.state = input_required`
+- `status.message.parts[0] = DataPart(...)`
+- canonical payload shape:
+
+```json
+{
+  "missing_inputs": [
+    {
+      "name": "temperature_c",
+      "description": "Operating temperature in degrees Celsius for the analysis case.",
+      "user_prompt": "What operating temperature should I use?",
+      "type": "number",
+      "options": null,
+      "resolvable_from_context": false,
+      "sensitive": false
+    }
+  ],
+  "hint": "This analysis needs an operating temperature before it can continue."
+}
+```
+
+## Stateful Resume by `contextId`
+
+Specialist agents should persist their own partial state keyed by the A2A `contextId`.
+
+Use:
+
+- `load_context_state(context.context_id)`
+- `save_context_state(context.context_id, state)`
+- `get_provided_inputs(context)`
+
+Example:
+
+```python
+from prometheus_api.agent import EventQueue, MissingInput, PrometheusAgent, RequestContext
+
+
+class ThermalAgent(PrometheusAgent):
+    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
+        state = self.load_context_state(context.context_id)
+        resolved = dict(state.get("resolved", {}))
+
+        resolved.update(self.get_provided_inputs(context))
+        if params.get("material_id"):
+            resolved["material_id"] = params["material_id"]
+
+        if "temperature_c" not in resolved:
+            self.save_context_state(context.context_id, {"resolved": resolved})
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="temperature_c",
+                        description="Operating temperature in degrees Celsius for the analysis case.",
+                        user_prompt="What operating temperature should I use?",
+                        type="number",
+                    )
+                ],
+                hint="Thermal analysis requires an operating temperature.",
+            )
+            return {}
+
+        self.save_context_state(context.context_id, {"resolved": resolved})
+
+        temperature_c = float(resolved["temperature_c"])
+        material_id = resolved["material_id"]
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": f"Thermal analysis complete for {material_id} at {temperature_c} C.",
+        }
+```
+
+Use the context store for:
+
+- resolved user inputs
+- partial execution progress
+- resumable cursors or workflow position
+- small derived values needed for the next turn
+
+Do not use it as a general-purpose cache for large external records.
+
+## Suggested Data-Fetching Patterns
+
+### Initialize clients once
+
+Create durable clients in `__init__` and reuse them:
+
+```python
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
+
+
+class StorageBackedAgent(PrometheusAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.storage = StorageClient(ConnectionConfig.from_env())
+```
+
+### Fetch authoritative data inside `_execute(...)`
+
+Use request parameters and resolved inputs to query upstream systems during execution:
+
+```python
+    async def _execute(self, params, context, event_queue):
+        item = self.storage.items.get(params["item_id"])
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": f"Loaded {item.name}.",
+            "item": {"id": item.id, "name": item.name},
+        }
+```
+
+### Prefer small execution state over large cached payloads
+
+Good patterns:
+
+- persist the selected `item_id`, not the entire upstream row
+- persist the resolved `temperature_c`, not a large transient report object
+- persist cursor/token/checkpoint values needed to resume
+
+Avoid:
+
+- copying upstream source-of-truth records into context state
+- storing secrets in context state
+- using context state as a substitute for a real service cache
+
+### Separate user-facing artifacts from internal fetches
+
+If fetched data should be reusable or inspectable, emit it as an artifact. If it is only an internal lookup needed to produce the final answer, keep it internal.
+
+Good:
+
+- emit a generated report as a file artifact
+- emit a structured result matrix as a JSON artifact
+- keep raw lookup tables internal unless the user or downstream agents need them
+
+## API Reference
+
+### `PrometheusAgent.__init__(agent_name, agent_card_path=None)`
+
+Parameters:
+
+- `agent_name`: display and logging name
+- `agent_card_path`: optional path to `agent_card.json`
+
+### `_execute(params, context, event_queue)`
+
+Override this in your subclass.
+
+Parameters:
+
+- `params`: parameters extracted from the incoming request
+- `context`: A2A request context with `task_id`, `context_id`, and message parts
+- `event_queue`: queue used to emit status and artifact events
+
+Returns:
+
+- final structured response dict
+
+### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
+
+Emit a task status update.
+
+### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Emit a text artifact, optionally chunked.
+
+### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None)`
+
+Emit a native A2A data artifact. Use `catalog_artifact=True` if the artifact should be registered for later reuse.
+
+### `send_artifact_reference(context, event_queue, name, description, uri, mime_type=None, size_bytes=None, artifact_id=None, tags=None, metadata=None)`
+
+Register and emit a URI-backed file artifact.
+
+### `send_conversation_message(context, event_queue, message, metadata=None)`
+
+Emit a durable chat-visible message.
+
+### `load_context_state(context_id)` / `save_context_state(context_id, state)`
+
+Load and persist agent-local state keyed by `contextId`.
+
+### `get_provided_inputs(context)`
+
+Extract structured follow-up answers from incoming A2A `DataPart`s.
+
+### `send_input_required(context, event_queue, missing_inputs, hint, metadata=None)`
+
+Emit a canonical final `INPUT_REQUIRED` payload.
+
+## Streaming
+
+To support `message/stream`, set this in `agent_card.json`:
 
 ```json
 {
@@ -360,435 +414,70 @@ To make an agent streaming-capable, set this in `agent_card.json`:
 }
 ```
 
-That is the only required change to enable `message/stream`.
+That is the only required configuration change. `_execute(...)` does not change.
 
-Notes:
-- `_execute` signature stays the same: `async def _execute(self, params, context, event_queue)`.
-- Returning a normal final dict still works for both `message/send` and `message/stream`.
-- For useful live progress, emit intermediate status/artifact events from `_execute`.
-- The final conversational result should still come from your returned dict, not from a final wrapper artifact.
+Recommended:
 
-#### `/api/chat` Compatibility Endpoint
+- emit status updates for long-running steps
+- emit chunked text artifacts when streaming incremental textual output
+- return the final conversational result as the dict from `_execute(...)`
 
-When using `PrometheusAgent.run()`, the base class also exposes:
-- `POST /api/chat`
+## `/api/chat` Compatibility Endpoint
 
-This is a convenience adapter for frontend/debug scenarios and does not replace A2A.
-Internally it routes through the same agent executor path.
+`PrometheusAgent.run()` also exposes `POST /api/chat` as a convenience adapter for frontend and debug usage. It routes through the same execution path as A2A.
 
-Accepted request body shapes:
+Accepted request shapes:
+
 - `{"message": "plain text"}`
 - `{"message": {...}}`
 - `{"params": {...}}`
 
 Optional fields:
+
 - `task_id`
 - `context_id`
-- `conversation_id` (used as fallback for `context_id`)
-- `include_events` (boolean)
+- `conversation_id`
+- `include_events`
 
-Response shape:
-- `ok` (boolean)
+Response fields:
+
+- `ok`
 - `task_id`
 - `context_id`
-- `state` (final task state, when available)
-- `result` (parsed final structured response from the final status message)
-- `events` (included only when `include_events=true`)
-
-Notes:
-- Auth middleware applies to `/api/chat` the same way as other endpoints.
-- `/.well-known/agent.json` and `/health` remain the only auth-exempt routes by default.
-
-#### `load_agent_card()` [Advanced]
-
-Load agent card from JSON file. Called automatically by `run()`.
-
-**Returns:**
-- Dict[str, Any] - Agent card with URL updated from environment
-
-#### `register_with_registry(agent_card)` [Advanced]
-
-Register agent with registry service. Called automatically by `run()`.
-
-**Parameters:**
-- `agent_card` (Dict[str, Any]) - Agent card to register
-
-#### `create_executor()` [Advanced]
-
-Create the executor instance. Override if you need custom executor behavior.
-
-**Returns:**
-- PrometheusAgentExecutor - Executor instance
-
-### PrometheusAgentExecutor (Advanced / Custom Executors)
-
-If you subclass `PrometheusAgentExecutor` directly, additional protected helpers are available:
-- `_emit_status(...)`
-- final response emission is handled automatically through the final status message
-
-These are executor-level internals. For normal `PrometheusAgent` subclasses, prefer:
-- `send_status_update(...)`
-- `send_json_artifact(...)`
-- `send_artifact_reference(...)`
-- `send_text_artifact(...)`
-- `send_conversation_message(...)`
+- `state`
+- `result`
+- `events` when requested
 
 ## Environment Variables
-
-The base class reads these environment variables:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `AGENT_PORT` | Port to listen on | `8000` | No |
 | `AGENT_HOST` | Hostname for agent card URL | `localhost` | No |
-| `AGENT_SECRET` | Shared secret for authentication | - | Yes (production) |
+| `AGENT_SECRET` | Shared secret for Bearer token authentication | - | Yes in production |
 | `AGENT_SECRET_REQUIRED` | Enforce authentication | `true` | No |
 | `REGISTRY_URL` | Registry service URL | - | No |
+| `REDIS_URL` | Redis for artifact and context-state persistence | `redis://localhost:6379` | No |
+| `AGENT_CONTEXT_TTL_SECONDS` | TTL for agent-local per-context state | `86400` | No |
 
 ## Project Structure
 
-Your agent project should have:
-
-```
+```text
 my-agent/
-├── agent.py              # Your agent implementation
-├── agent_card.json       # Agent metadata and skills
-├── .env.example          # Environment template
-├── requirements.txt      # Dependencies
-└── Dockerfile            # Container config (optional)
+├── agent.py
+├── agent_card.json
+├── .env
+├── requirements.txt
+└── Dockerfile
 ```
 
-**agent_card.json:**
-```json
-{
-  "name": "My Agent",
-  "description": "Does something useful",
-  "url": "http://localhost:8000",
-  "version": "1.0.0",
-  "capabilities": {
-    "streaming": false,
-    "pushNotifications": false
-  },
-  "skills": [
-    {
-      "id": "my_skill",
-      "name": "My Skill",
-      "description": "Does XYZ",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "input_data": {"type": "string"}
-        },
-        "required": ["input_data"]
-      }
-    }
-  ]
-}
-```
-
-## What the Base Class Handles
-
-### Automatic Boilerplate
-
-1. **Agent Card Loading**
-   - Loads from `agent_card.json`
-   - Updates URL from environment variables
-   - Validates JSON format
-
-2. **HTTP Server Setup**
-   - Creates A2A Starlette application
-   - Sets up request handler
-   - Configures task store
-   - Starts uvicorn server
-
-3. **Authentication**
-   - Adds Bearer token middleware
-   - Reads AGENT_SECRET from environment
-   - Handles authentication disabled mode
-
-4. **Registry Registration**
-   - Registers agent with registry service
-   - Includes Bearer token in request
-   - Continues gracefully if registry unavailable
-
-5. **Parameter Extraction**
-   - Parses JSON from A2A message
-   - Validates message format
-   - Logs parameters
-
-6. **Status Management**
-   - Sends "working" status automatically
-   - Sends final `completed` status with the returned payload serialized into `status.message`
-   - Sends "failed" status on error when agent does not self-finalize
-   - Avoids duplicate terminal events when agent emits final status itself
-
-7. **Error Handling**
-   - Catches and logs exceptions
-   - Sends error status to client
-   - Re-raises for proper error propagation
-
-## Advanced Usage
-
-### Custom Initialization
-
-```python
-class MyAgent(PrometheusAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Initialize custom resources
-        self.storage = StorageClient(ConnectionConfig.from_env())
-        self.cache = {}
-
-    async def _execute(self, params, context, event_queue):
-        # Use self.storage, self.cache, etc.
-        pass
-```
-
-### Custom Agent Card Path
-
-```python
-agent = MyAgent(
-    agent_name="My Agent",
-    agent_card_path="/path/to/custom_agent_card.json"
-)
-agent.run()
-```
-
-### Custom Port/Host
-
-```python
-agent = MyAgent(agent_name="My Agent")
-agent.run(host="localhost", port=8001)
-```
-
-### Override Executor Creation
-
-```python
-class MyAgent(PrometheusAgent):
-    def create_executor(self):
-        # Create custom executor if needed
-        executor = super().create_executor()
-        # Customize executor
-        return executor
-```
-
-### Override Registry Registration
-
-```python
-class MyAgent(PrometheusAgent):
-    def register_with_registry(self, agent_card):
-        # Custom registration logic
-        super().register_with_registry(agent_card)
-        # Additional registration steps
-```
-
-## Comparison: Before vs After
-
-### Before (330 lines)
-
-```python
-import os, sys, json, logging
-from typing import Dict, Any
-from datetime import datetime
-from a2a.server.agent_execution import AgentExecutor
-from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryTaskStore
-from prometheus_api.agent.middleware import BearerTokenMiddleware
-import uvicorn
-
-# ... lots of boilerplate code ...
-
-class MyExecutor(AgentExecutor):
-    async def execute(self, context, event_queue):
-        # ... manual parameter extraction ...
-        # ... manual status updates ...
-        # ... manual error handling ...
-        pass
-
-def main():
-    # ... 50+ lines of server setup ...
-    pass
-
-if __name__ == "__main__":
-    main()
-```
-
-### After (15 lines - 95% reduction!)
-
-```python
-from prometheus_api.agent import PrometheusAgent
-
-class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        # Your logic here
-        return {"status": "success"}
-
-if __name__ == "__main__":
-    agent = MyAgent(agent_name="My Agent")
-    agent.run()
-```
-
-## Benefits
-
-### 1. Simplicity
-- **Before:** 330 lines of boilerplate
-- **After:** 15-20 lines of agent logic
-
-### 2. Consistency
-- All agents use the same authentication setup
-- Same error handling patterns
-- Unified logging format
-
-### 3. Maintainability
-- Fix bugs in one place (base class)
-- All agents benefit from improvements
-- Easy to add new features
-
-### 4. Less Error-Prone
-- No forgetting to add authentication
-- No mistakes in server setup
-- Consistent parameter extraction
-
-### 5. Focus on Logic
-- Users focus on `_execute()`
-- No need to understand A2A internals
-- No need to manage HTTP server details
-
-## What You Still Control
-
-You have full control over:
-- Agent logic in `_execute()`
-- Custom initialization in `__init__()`
-- Agent card JSON file
-- Input schema and validation
-- Progress updates via event_queue
-- Error handling in your logic
-
-## Requirements
-
-Install with the `[agent]` extra:
-
-```bash
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
-```
-
-This includes:
-- `a2a-sdk[http-server]` - A2A protocol implementation
-- `starlette` - Web framework
-- `uvicorn` - ASGI server
-- `httpx` - HTTP client (for registry registration)
-
-## Testing
-
-Test your agent:
-
-```python
-# test_agent.py
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-from your_agent import MyAgent
-from prometheus_api.agent import RequestContext, EventQueue
-
-@pytest.mark.asyncio
-async def test_agent_logic():
-    agent = MyAgent(agent_name="Test Agent")
-
-    # Mock context and event queue
-    context = MagicMock(spec=RequestContext)
-    context.task_id = "test-task"
-    context.context_id = "test-context"
-
-    event_queue = AsyncMock(spec=EventQueue)
-
-    # Test _execute directly
-    result = await agent._execute(
-        {"input_data": "test"},
-        context,
-        event_queue,
-    )
-
-    assert result["status"] == "success"
-```
-
-## Logging
-
-The base class logs:
-- Agent initialization
-- Agent card loading
-- Authentication status
-- Registry registration
-- Execution start/complete
-- Errors (with stack traces)
-
-Configure logging in your agent:
-```python
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-```
-
-## Error Handling
-
-The base class automatically:
-- Catches exceptions in `_execute()`
-- Logs errors with stack traces
-- Sends "failed" status to client
-- Re-raises exception for proper error propagation
-
-You just need to raise exceptions in your code:
-```python
-async def _execute(self, params, context, event_queue):
-    if "required_param" not in params:
-        raise ValueError("required_param is required")
-
-    # Process...
-    return result
-```
-
-## Migration from Old Template
-
-### Before
-```python
-class MyExecutor(AgentExecutor):
-    def execute(self, context, event_queue):
-        params = self._extract_params(context)
-        result = self._execute(params, event_queue)
-        return result
-
-    def _execute(self, params, event_queue):
-        # Your logic
-        return result
-
-def main():
-    agent_card = create_agent_card()
-    executor = MyExecutor()
-    # ... lots of boilerplate ...
-
-if __name__ == "__main__":
-    main()
-```
-
-### After
-```python
-class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        # Same logic (now async)
-        return result
-
-if __name__ == "__main__":
-    agent = MyAgent(agent_name="My Agent")
-    agent.run()
-```
-
-**Delete:** All helper functions (`create_agent_card`, `register_with_registry`, `main`)
-**Keep:** Just `_execute()` logic (make it async)
-**Add:** Single line to create and run agent
-
-## Next Steps
-
-- See the [Quick Start Guide](QUICK_START.md) for a condensed reference
-- Check [ENV_SETUP.md](../ENV_SETUP.md) for environment configuration
-- See `prometheus_agent_template/` for template examples
+## Reference Example
+
+See [`examples/agent_patterns.py`](../../examples/agent_patterns.py) for a single example agent that demonstrates:
+
+- status updates
+- durable conversation messages
+- `INPUT_REQUIRED`
+- per-`contextId` state persistence
+- upstream data fetch patterns
+- file and JSON artifact emission

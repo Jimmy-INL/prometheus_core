@@ -51,13 +51,15 @@ with StorageClient(config) as client:
 ## Quick Start - PrometheusAgent
 
 ```python
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 
 class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        input_data = params.get("input_data")
-        # Your logic here
-        return {"status": "success", "data": input_data}
+    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
+        return {
+            "conversation_id": context.context_id,
+            "status": "completed",
+            "message": "Request handled.",
+        }
 
 if __name__ == "__main__":
     agent = MyAgent(agent_name="My Agent")
@@ -121,8 +123,9 @@ if __name__ == "__main__":
 - Registry registration
 - HTTP server setup with A2A protocol
 - Optional `message/stream` support (`agent_card.capabilities.streaming=true`)
-- Parameter extraction and error handling
-- Status update management
+- Final response emission from the returned `_execute(...)` dict
+- Status updates, native artifacts, and `INPUT_REQUIRED` helpers
+- Per-agent context-state persistence keyed by `contextId`
 - 95% reduction in boilerplate code
 
 ## Examples
@@ -132,6 +135,7 @@ See the `examples/` directory for working code:
 - `async_usage.py` - Async/await patterns
 - `file_operations.py` - File upload/download
 - `bulk_operations.py` - Bulk operations
+- `agent_patterns.py` - PrometheusAgent status, artifacts, input requests, and stateful resume
 
 ## Development
 

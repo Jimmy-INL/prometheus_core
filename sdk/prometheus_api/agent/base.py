@@ -648,8 +648,8 @@ class PrometheusAgent:
         Register this agent with LiteLLM's A2A gateway.
 
         Posts to POST /v1/agents so LiteLLM can route incoming A2A calls to
-        this agent and expose the full agent card (skills + inputSchema) to
-        the client-agent for dynamic tool discovery.
+        this agent and expose the full raw agent card for discovery and
+        routing metadata.
         """
         litellm_url = os.getenv("LITELLM_URL")
         if not litellm_url:
@@ -664,8 +664,8 @@ class PrometheusAgent:
         # agent_name becomes the routing key: /a2a/{agent_name}/message/send
         agent_name = agent_card.name.lower().replace(" ", "-")
 
-        # Use the raw agent_card dict so non-standard fields (inputSchema,
-        # usage_notes, derivation_rules, etc.) are preserved in LiteLLM.
+        # Use the raw agent_card dict so any Prometheus-specific routing or
+        # usage metadata is preserved in LiteLLM.
         agent_card_params = getattr(self, 'agent_card_dict', None) or agent_card.model_dump()
 
         try:
