@@ -20,8 +20,8 @@ matching:
 inputs:
   required:
     - material_id
-  optional:
     - context.temperature_c
+  optional:
     - context.pressure_mpa
     - context.neutron_flux_n_cm2_s
     - context.operating_hours

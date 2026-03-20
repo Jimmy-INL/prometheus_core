@@ -19,6 +19,7 @@ class StepRuntimeResult:
     status: str
     result: Any = None
     error: str | None = None
+    input_required: Dict[str, Any] | None = None
 
 
 def _ordered_steps(workflow: CompiledWorkflow) -> List[WorkflowStep]:
@@ -66,6 +67,12 @@ async def _run_step(
     payload["conversation_id"] = conversation_id
 
     invoked = await invoke_skill(step.skill_id, payload, conversation_id)
+    if "input_required" in invoked:
+        return StepRuntimeResult(
+            step_id=step.id,
+            status="input_required",
+            input_required=invoked.get("input_required"),
+        )
     if "error" in invoked:
         return StepRuntimeResult(
             step_id=step.id,
@@ -135,6 +142,7 @@ async def execute_workflow(
     statuses: Dict[str, str] = {step.id: "pending" for step in steps}
     results: Dict[str, Any] = {}
     errors: List[Dict[str, Any]] = []
+    input_required_steps: List[Dict[str, Any]] = []
     context_delta: Dict[str, Any] = {}
 
     mode = workflow.definition.execution.mode
@@ -202,6 +210,15 @@ async def execute_workflow(
                     "finished_at": datetime.now(timezone.utc).isoformat(),
                 }
                 _apply_step_outputs(step, item.result, context, context_delta)
+            elif item.status == "input_required":
+                input_required_steps.append(
+                    {
+                        "step_id": item.step_id,
+                        "skill_id": step.skill_id,
+                        "input_required": item.input_required,
+                    }
+                )
+                stop_scheduling = True
             else:
                 errors.append(
                     {
@@ -222,6 +239,7 @@ async def execute_workflow(
         "step_statuses": statuses,
         "step_results": results,
         "errors": errors,
+        "input_required_steps": input_required_steps,
         "final_output": final_output,
         "context_delta": context_delta,
         "success": success,

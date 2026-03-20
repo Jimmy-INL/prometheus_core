@@ -1930,6 +1930,16 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         if capability:
             properties = flatten_schema_properties(capability.input_schema)
 
+    # Overlay param_metadata (from workflow ui.input_overrides) to fill gaps for
+    # skills that have no inputSchema (e.g. those using INPUT_REQUIRED instead).
+    param_metadata = routing_decision.get("param_metadata", {}) or {}
+    for path, meta in param_metadata.items():
+        if path not in properties:
+            properties[path] = {}
+        for key in ("type", "description", "unit", "label", "enum"):
+            if meta.get(key) and not properties[path].get(key):
+                properties[path][key] = meta[key]
+
     questions = []
 
     for param in missing_params:
@@ -2384,6 +2394,43 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
         state["tool_results"] = tool_results
         if context_state:
             state["context"] = context_state
+
+        ir_steps = execution_result.get("input_required_steps") or []
+        if ir_steps:
+            ir = ir_steps[0]
+            ir_payload = ir.get("input_required", {}) or {}
+            missing_inputs = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
+            auto_resolved, unresolved = resolve_missing_inputs_from_state(state, missing_inputs)
+
+            if auto_resolved and not unresolved:
+                resumed = await invoke_skill(
+                    ir["skill_id"],
+                    {**input_params, "provided_inputs": auto_resolved},
+                    conversation_id,
+                )
+                if not resumed.get("input_required"):
+                    tool_results[ir["skill_id"]] = resumed.get("result")
+                    state["tool_results"] = tool_results
+                    state["missing_info"] = []
+                else:
+                    ir_payload = resumed.get("input_required", {}) or {}
+                    unresolved = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
+
+            if unresolved:
+                state["pending_subagent_request"] = {
+                    "skill_id": ir["skill_id"],
+                    "a2a_context_id": ir.get("_a2a_context_id"),
+                    "a2a_task_id": ir.get("_a2a_task_id"),
+                    "missing_inputs": unresolved,
+                    "hint": ir_payload.get("hint"),
+                }
+                state["missing_info"] = [str(item.get("name") or "") for item in unresolved if item.get("name")]
+                state["tool_results"] = tool_results
+                store_status_update(
+                    conversation_id,
+                    "Additional parameters are required before execution can continue.",
+                )
+                return state
     else:
         invoke_update = await invoke_agent_generic(state)
         for key, value in invoke_update.items():
@@ -2723,6 +2770,38 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                             status="needs_info",
                             message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
                             followup_questions=latest.get("questions", []),
+                        )
+                    # For workflow templates, re-execute the full plan so downstream steps run.
+                    rd = state.get("routing_decision", {}) or {}
+                    if rd.get("workflow_type") == "workflow_template":
+                        for key, value in followup_answers.items():
+                            rd.setdefault("extracted_params", {})[key] = value
+                        state["routing_decision"] = rd
+                        final_state = await execute_current_plan(
+                            state, start_message="Resuming workflow with provided parameters."
+                        )
+                        if final_state.get("missing_info"):
+                            followup_result = await ask_followup_dynamic(final_state)
+                            for key, value in followup_result.items():
+                                if value is not None:
+                                    final_state[key] = value
+                            store_conversation(conv_id, final_state)
+                            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
+                            latest = _latest_conversation_entry(final_state)
+                            return ConversationResponse(
+                                conversation_id=conv_id,
+                                status="needs_info",
+                                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
+                                followup_questions=latest.get("questions", []),
+                            )
+                        store_conversation(conv_id, final_state)
+                        store_status_update(conv_id, "Response ready.", final=True)
+                        return ConversationResponse(
+                            conversation_id=conv_id,
+                            status="completed",
+                            message=final_state.get("final_report", ""),
+                            report=final_state.get("final_report", ""),
+                            tool_results=final_state.get("tool_results"),
                         )
                     store_conversation(conv_id, state)
                     store_status_update(conv_id, "Response ready.", final=True)
