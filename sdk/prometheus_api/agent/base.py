@@ -412,6 +412,18 @@ class PrometheusAgent:
                 provided.update(data)
         return provided
 
+    @staticmethod
+    def pending_hint(
+        pending_subagent_request: Optional[Dict[str, Any]],
+        default: str = "I need some additional information to proceed:",
+    ) -> str:
+        """Extract the user-facing hint from a pending INPUT_REQUIRED request dict.
+
+        Use this wherever an orchestrator needs to surface the subagent's hint
+        string, falling back to a sensible default when none was provided.
+        """
+        return (pending_subagent_request or {}).get("hint") or default
+
     async def send_input_required(
         self,
         context: RequestContext,
