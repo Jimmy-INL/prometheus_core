@@ -1,0 +1,37 @@
+services:
+  artifact-debug-agent:
+    build:
+      context: .
+      additional_contexts:
+        certs: ../../certs
+        prometheus_api: ../../prometheus_api
+      args:
+        - HTTP_PROXY=${HTTP_PROXY}
+        - HTTPS_PROXY=${HTTPS_PROXY}
+        - NO_PROXY=${NO_PROXY}
+    container_name: artifact-debug-agent
+    networks:
+      - agent-network
+    environment:
+      - AGENT_HOST=artifact-debug-agent
+      - AGENT_PORT=8000
+      - AGENT_PUBLIC_URL=${ARTIFACT_DEBUG_PUBLIC_URL:-http://localhost:8008}
+      - SHARED_ARTIFACT_DIR=/app/shared/artifact-debug
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - AGENT_SECRET=${AGENT_SECRET}
+      - AGENT_SECRET_REQUIRED=false
+      - PYTHONDONTWRITEBYTECODE=1
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
+    depends_on:
+      litellm:
+        condition: service_healthy
+    volumes:
+      - ../../shared:/app/shared
+    restart: unless-stopped
+
+networks:
+  agent-network:
+    external: true
