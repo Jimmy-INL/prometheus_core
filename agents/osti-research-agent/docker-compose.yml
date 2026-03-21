@@ -38,10 +38,6 @@ services:
       - torch-cache:/root/.cache/torch
     restart: unless-stopped
 
-networks:
-  agent-network:
-    external: true
-
 volumes:
   osti-model-cache:
   huggingface-cache:

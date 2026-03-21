@@ -32,7 +32,3 @@ services:
     volumes:
       - ../../shared:/app/shared
     restart: unless-stopped
-
-networks:
-  agent-network:
-    external: true
