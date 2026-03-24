@@ -151,6 +151,9 @@ black .
 
 # Lint
 ruff check .
+
+# Update docker image
+./build_and_push_image.sh mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api
 ```
 
 ## License
