@@ -1,0 +1,120 @@
+{
+  "name": "Material Data Agent",
+  "description": "Specialist agent for retrieving and managing nuclear reactor material property data. Provides access to material specifications, historical performance data, and regulatory compliance information.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "list_materials",
+      "name": "List Materials",
+      "description": "List all available materials in the database with their basic info (ID, name, spec, max temperature, applications)",
+      "usage_notes": "Call this to discover what materials are available before requesting detailed data",
+      "requires_approval": false,
+      "expected_duration_seconds": 1,
+      "output_format": "JSON array of materials with material_id, name, specification, max_temp, and applications",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "id": "get_material_data",
+      "name": "Get Material Data",
+      "description": "Retrieve comprehensive material data including properties, specifications, operating environment, inspection history, and compliance status",
+      "usage_notes": "Always call this first to understand material properties before performing specialized analysis",
+      "requires_approval": false,
+      "expected_duration_seconds": 2,
+      "provides": [
+        {
+          "type": "context_map",
+          "context_key": "material_operating_limits_c",
+          "item_key_path": "material_data.material_id",
+          "item_value_path": "material_data.operating_environment.temperature_range_c.1",
+          "key_normalizer": "upper_no_space_hyphen",
+          "value_type": "number"
+        },
+        {
+          "type": "context_map",
+          "context_key": "material_operating_pressure_mpa",
+          "item_key_path": "material_data.material_id",
+          "item_value_path": "material_data.operating_environment.pressure_mpa",
+          "key_normalizer": "upper_no_space_hyphen",
+          "value_type": "number"
+        }
+      ],
+      "output_format": "JSON with complete material record including mechanical properties, chemistry, operating conditions, and history",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to retrieve (e.g., SS316, SS316L, SS304, SS347)"
+          }
+        },
+        "required": ["material_id"]
+      }
+    },
+    {
+      "id": "get_material_properties",
+      "name": "Get Material Properties",
+      "description": "Retrieve specific material properties including mechanical, thermal, chemical, and physical characteristics",
+      "usage_notes": "Use when you need detailed material properties for analysis calculations",
+      "requires_approval": false,
+      "expected_duration_seconds": 2,
+      "output_format": "JSON with mechanical properties (strength, ductility), thermal properties (conductivity, expansion), and chemical composition",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          }
+        },
+        "required": ["material_id"]
+      }
+    },
+    {
+      "id": "get_material_history",
+      "name": "Get Material History",
+      "description": "Retrieve historical performance data, inspection records, maintenance events, and operating history",
+      "usage_notes": "Use to understand degradation trends and previous issues",
+      "requires_approval": false,
+      "expected_duration_seconds": 2,
+      "output_format": "JSON with inspection dates, findings, operating hours, failure events, and maintenance actions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          }
+        },
+        "required": ["material_id"]
+      }
+    },
+    {
+      "id": "get_regulatory_limits",
+      "name": "Get Regulatory Limits",
+      "description": "Retrieve applicable regulatory limits, acceptance criteria, and compliance thresholds from NRC, ASME codes",
+      "usage_notes": "Use to check if analysis results meet regulatory requirements",
+      "requires_approval": false,
+      "expected_duration_seconds": 2,
+      "output_format": "JSON with regulatory limits for damage, degradation rates, and safety factors",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          }
+        },
+        "required": ["material_id"]
+      }
+    }
+  ]
+}

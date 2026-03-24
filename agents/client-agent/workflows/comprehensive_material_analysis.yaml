@@ -1,0 +1,149 @@
+id: comprehensive_material_analysis
+name: Comprehensive Material Analysis
+version: "1.0.0"
+description: Multi-step safety analysis using data and specialist skills.
+
+matching:
+  priority: 80
+  patterns:
+    - "full safety analysis of {material_id}"
+    - "comprehensive analysis of {material_id}"
+    - "full analysis for {material_id}"
+  tags:
+    - safety
+    - comprehensive
+    - multi-domain
+  semantic_fallback:
+    enabled: false
+    min_confidence: 0.8
+
+inputs:
+  required:
+    - material_id
+    - context.temperature_c
+  optional:
+    - context.pressure_mpa
+    - context.neutron_flux_n_cm2_s
+    - context.operating_hours
+
+execution:
+  mode: dag
+  max_concurrency: 3
+  on_error: fail_fast
+
+steps:
+  - id: retrieve_material
+    skill_id: get_material_data
+    params:
+      material_id:
+        from: input.material_id
+    outputs:
+      - to_context: material_data
+        from: result
+
+  - id: analyze_radiation
+    skill_id: analyze_radiation_damage
+    depends_on: [retrieve_material]
+    params:
+      material_id:
+        from: input.material_id
+      context:
+        neutron_flux_n_cm2_s:
+          from: input.context.neutron_flux_n_cm2_s
+          optional: true
+        operating_hours:
+          from: input.context.operating_hours
+          optional: true
+        temperature_c:
+          from: input.context.temperature_c
+          optional: true
+        pressure_mpa:
+          from: input.context.pressure_mpa
+          optional: true
+
+  - id: analyze_corrosion
+    skill_id: analyze_corrosion
+    depends_on: [retrieve_material]
+    params:
+      material_id:
+        from: input.material_id
+      context:
+        temperature_c:
+          from: input.context.temperature_c
+          optional: true
+        pressure_mpa:
+          from: input.context.pressure_mpa
+          optional: true
+        operating_hours:
+          from: input.context.operating_hours
+          optional: true
+
+  - id: analyze_thermal
+    skill_id: analyze_thermal
+    depends_on: [retrieve_material]
+    params:
+      material_id:
+        from: input.material_id
+      context:
+        temperature_c:
+          from: input.context.temperature_c
+          optional: true
+        pressure_mpa:
+          from: input.context.pressure_mpa
+          optional: true
+        operating_hours:
+          from: input.context.operating_hours
+          optional: true
+
+  - id: synthesize_report
+    skill_id: synthesize_material_analysis
+    depends_on: [retrieve_material, analyze_radiation, analyze_corrosion, analyze_thermal]
+    is_final: true
+    params:
+      material_id:
+        from: input.material_id
+      tool_results:
+        material_data:
+          from: step.retrieve_material.result
+        radiation:
+          from: step.analyze_radiation.result
+        corrosion:
+          from: step.analyze_corrosion.result
+        thermal:
+          from: step.analyze_thermal.result
+      context:
+        from: input.context
+        optional: true
+
+outputs:
+  final:
+    from: step.synthesize_report.result
+
+metadata:
+  requires_approval: true
+  estimated_duration_seconds: 270
+  owner: materials-team
+
+ui:
+  category: Safety
+  display_name: Comprehensive Material Analysis
+  summary: Full multi-domain assessment with data retrieval and specialist analysis.
+  input_overrides:
+    context.temperature_c:
+      label: Coolant temperature
+      description: Operating coolant temperature in Celsius.
+      unit: C
+      type: number
+    context.pressure_mpa:
+      label: System pressure
+      description: Primary system pressure in MPa.
+      unit: MPa
+      type: number
+    context.neutron_flux_n_cm2_s:
+      label: Neutron flux
+      description: Neutron flux in n/cm^2/s.
+      type: number
+    context.operating_hours:
+      label: Operating duration
+      description: Expected operating duration in hours.
+      type: integer

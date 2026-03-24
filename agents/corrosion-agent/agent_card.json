@@ -1,0 +1,119 @@
+{
+  "name": "Corrosion Analysis Agent",
+  "description": "Specialist agent for analyzing corrosion in nuclear reactor materials. Evaluates oxidation rates, pitting corrosion, stress corrosion cracking (SCC), and general corrosion mechanisms in primary and secondary coolant systems.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_corrosion",
+      "name": "Analyze Corrosion",
+      "description": "Perform comprehensive corrosion analysis including oxidation rates, pitting corrosion, stress corrosion cracking (SCC) evaluation, and corrosion mechanism identification",
+      "usage_notes": "Use for materials exposed to coolant systems or high-temperature water environments",
+      "requires_approval": true,
+      "expected_duration_seconds": 5,
+      "output_format": "JSON with corrosion risk assessment, rates, mechanisms, and recommendations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to analyze"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating context for corrosion analysis",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "description": "Operating temperature in Celsius"
+              },
+              "pressure_mpa": {
+                "type": "number",
+                "description": "Operating pressure in MPa"
+              },
+              "operating_hours": {
+                "type": "integer",
+                "description": "Accumulated operating hours"
+              },
+              "coolant_chemistry": {
+                "type": "object",
+                "description": "Coolant chemistry details (pH, dissolved oxygen, chloride, etc.)"
+              }
+            },
+            "required": ["temperature_c", "pressure_mpa"]
+          }
+        },
+        "required": ["material_id", "context"]
+      }
+    },
+    {
+      "id": "predict_corrosion_rate",
+      "name": "Predict Corrosion Rate",
+      "description": "Calculate predicted corrosion rates based on environmental conditions and material properties",
+      "usage_notes": "Use when estimating degradation timelines or planning inspection intervals",
+      "requires_approval": true,
+      "expected_duration_seconds": 3,
+      "output_format": "JSON with predicted rates in mm/year and confidence intervals",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Environmental conditions for corrosion-rate prediction",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "description": "Operating temperature in Celsius"
+              },
+              "pressure_mpa": {
+                "type": "number",
+                "description": "Operating pressure in MPa"
+              },
+              "ph": {
+                "type": "number",
+                "description": "Coolant pH value"
+              },
+              "flow_rate_m_s": {
+                "type": "number",
+                "description": "Coolant flow rate in m/s"
+              }
+            },
+            "required": ["temperature_c", "pressure_mpa"]
+          }
+        },
+        "required": ["material_id", "context"]
+      }
+    },
+    {
+      "id": "assess_coating_integrity",
+      "name": "Assess Coating Integrity",
+      "description": "Evaluate protective coating effectiveness, degradation patterns, and remaining service life",
+      "usage_notes": "Use for coated materials in primary or secondary systems",
+      "requires_approval": true,
+      "expected_duration_seconds": 4,
+      "output_format": "JSON with coating condition, degradation percentage, and maintenance recommendations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Coating type, age, and inspection history"
+          }
+        },
+        "required": ["material_id"]
+      }
+    }
+  ]
+}

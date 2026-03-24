@@ -1,0 +1,100 @@
+{
+  "name": "Radiation Damage Analysis Agent",
+  "description": "Specialist agent for analyzing radiation-induced damage in nuclear reactor materials. Evaluates neutron embrittlement, void swelling, irradiation creep, and transmutation effects on structural integrity.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_radiation_damage",
+      "name": "Analyze Radiation Damage",
+      "description": "Comprehensive radiation damage assessment including neutron embrittlement, void swelling, irradiation creep, and microstructural changes",
+      "usage_notes": "Use for materials in high-flux neutron environments like reactor pressure vessels, core internals",
+      "requires_approval": true,
+      "expected_duration_seconds": 5,
+      "output_format": "JSON with damage mechanisms, DPA levels, structural impacts, and safety margins",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to analyze"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating context for radiation analysis",
+            "properties": {
+              "neutron_flux_n_cm2_s": {
+                "type": "number",
+                "description": "Neutron flux in n/cm^2-s"
+              },
+              "operating_hours": {
+                "type": "integer",
+                "description": "Accumulated operating hours"
+              },
+              "temperature_c": {
+                "type": "number",
+                "description": "Operating temperature in Celsius"
+              },
+              "pressure_mpa": {
+                "type": "number",
+                "description": "Operating pressure in MPa"
+              }
+            },
+            "required": ["neutron_flux_n_cm2_s", "operating_hours"]
+          }
+        },
+        "required": ["material_id", "context"]
+      }
+    },
+    {
+      "id": "calculate_dpa",
+      "name": "Calculate DPA",
+      "description": "Calculate displacements per atom (DPA) accumulation and project future damage based on operating conditions",
+      "usage_notes": "Use when tracking damage accumulation or planning component lifetime extension",
+      "requires_approval": true,
+      "expected_duration_seconds": 3,
+      "output_format": "JSON with current DPA, projected DPA at end of life, and damage rate",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Neutron flux, operating hours, and planned service life"
+          }
+        },
+        "required": ["material_id"]
+      }
+    },
+    {
+      "id": "assess_embrittlement",
+      "name": "Assess Embrittlement",
+      "description": "Evaluate neutron embrittlement severity, ductile-to-brittle transition temperature (DBTT) shift, and fracture toughness degradation",
+      "usage_notes": "Critical for reactor pressure vessel integrity assessments",
+      "requires_approval": true,
+      "expected_duration_seconds": 4,
+      "output_format": "JSON with DBTT shift, fracture toughness, embrittlement severity, and regulatory compliance status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material"
+          },
+          "context": {
+            "type": "object",
+            "description": "Operating temperature, neutron fluence, and material chemistry"
+          }
+        },
+        "required": ["material_id"]
+      }
+    }
+  ]
+}

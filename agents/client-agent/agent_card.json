@@ -1,0 +1,49 @@
+{
+  "name": "Nuclear Analysis Client Agent",
+  "description": "Orchestrator agent that coordinates nuclear reactor material analysis workflows. Uses tool-based planning and deterministic capability execution to delegate specialized tasks and synthesize final answers.",
+  "url": "http://localhost:8000",
+  "version": "2.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "analyze_material",
+      "name": "Analyze Material",
+      "description": "Perform comprehensive analysis of reactor materials by orchestrating specialist agents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language analysis request."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation identifier for multi-turn interactions."
+          },
+          "followup_answers": {
+            "type": "object",
+            "description": "Answers to follow-up questions from prior turns."
+          },
+          "plan_approved": {
+            "type": "boolean",
+            "description": "Approve and execute a previously proposed plan."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "id": "coordinate_analysis",
+      "name": "Coordinate Analysis",
+      "description": "Plan and coordinate multi-agent workflows across specialist capabilities."
+    },
+    {
+      "id": "generate_report",
+      "name": "Generate Report",
+      "description": "Produce synthesis reports from specialist-agent results."
+    }
+  ]
+}

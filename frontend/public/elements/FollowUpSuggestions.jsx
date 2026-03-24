@@ -33,12 +33,12 @@ export default function FollowUpSuggestions() {
             <Button
               key={index}
               variant={selectedIndex === index ? "default" : "outline"}
-              className="justify-between text-left font-normal hover:bg-primary/10 transition-all"
+              className="justify-between text-left font-normal hover:bg-primary/10 transition-all h-auto whitespace-normal py-2"
               onClick={() => handleSuggestionClick(suggestion, index)}
               disabled={selectedIndex !== null}
             >
-              <span>{suggestion}</span>
-              <ChevronRight className="h-4 w-4 ml-2 opacity-70" />
+              <span className="flex-1 break-words">{suggestion}</span>
+              <ChevronRight className="h-4 w-4 ml-2 shrink-0 opacity-70" />
             </Button>
           ))}
         </div>
