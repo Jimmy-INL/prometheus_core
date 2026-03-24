@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api:latest
 
 # Accept proxy as build args
 ARG HTTP_PROXY
@@ -17,20 +17,19 @@ RUN cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/nu
         cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem; \
     fi && rm -rf /tmp/certs
 
-# Set SSL cert environment variables for pip and runtime
+# Set SSL cert environment variables for dependency installation and runtime
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
+ENV UV_NATIVE_TLS=true
+ENV UV_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
 
 WORKDIR /app
-
-# Copy prometheus_api from local submodule
-COPY --from=prometheus_api . /tmp/prometheus_api
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
 
 # Install dependencies
 COPY pyproject.toml /app/
-RUN pip install --no-cache-dir --default-timeout=100 \
-    "/tmp/prometheus_api[agent]" .
+RUN uv sync --no-dev --no-install-project --inexact
 
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json

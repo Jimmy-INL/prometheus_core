@@ -24,7 +24,7 @@ services:
 
   # LiteLLM proxy — A2A agent gateway and optional LLM proxy
   litellm:
-    image: docker.litellm.ai/berriai/litellm:main-latest
+    image: docker.litellm.ai/berriai/litellm:v1.81.12-stable.langfuse-fix
     container_name: litellm-proxy
     ports:
       - "9977:4000"
@@ -104,7 +104,6 @@ services:
       context: ./agents/client-agent
       additional_contexts:
         certs: ./certs
-        prometheus_api: ./prometheus_api
       args:
         - HTTP_PROXY=${HTTP_PROXY}
         - HTTPS_PROXY=${HTTPS_PROXY}

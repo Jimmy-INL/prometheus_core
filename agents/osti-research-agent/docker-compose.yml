@@ -3,7 +3,6 @@ services:
     build:
       context: .
       additional_contexts:
-        prometheus_api: ../../prometheus_api
         certs: ../../certs
       args:
         - HTTP_PROXY=${HTTP_PROXY}

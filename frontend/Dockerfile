@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api:latest
 
 # Accept proxy as build args
 ARG HTTP_PROXY
@@ -10,6 +10,7 @@ ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
 
 WORKDIR /app
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
 
 # Install system dependencies (libX11 etc. required by VTK)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,23 +33,18 @@ RUN if ls /tmp/certs/*.pem 1>/dev/null 2>&1; then \
         update-ca-certificates; \
     fi && rm -rf /tmp/certs
 
-# Install uv for dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Point uv at the system cert bundle (includes any custom CAs added above)
-ENV UV_NATIVE_TLS=true
-ENV UV_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV UV_NATIVE_TLS=true
+ENV UV_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Copy project files
 COPY frontend/pyproject.toml frontend/uv.lock ./
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-dev --frozen --no-install-project --inexact
 
 # Copy application code
 COPY frontend/ .
 
 EXPOSE 8500
 
-# Use the venv directly to avoid uv downloading a Python interpreter at runtime
-CMD ["/app/.venv/bin/chainlit", "run", "main.py", "--host", "0.0.0.0", "--port", "8500"]
+CMD ["chainlit", "run", "main.py", "--host", "0.0.0.0", "--port", "8500"]
