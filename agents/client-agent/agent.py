@@ -155,7 +155,12 @@ def _get_status_redis_client():
         import redis
 
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        _status_redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        redis_password = os.getenv("REDIS_PASSWORD")
+        _status_redis_client = redis.Redis.from_url(
+            redis_url,
+            password=redis_password,
+            decode_responses=True
+        )
     return _status_redis_client
 
 

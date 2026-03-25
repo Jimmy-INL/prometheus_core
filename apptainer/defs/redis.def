@@ -1,0 +1,9 @@
+Bootstrap: docker
+From: redis:7-alpine
+
+%runscript
+    redis-server \
+        --requirepass "${REDIS_PASSWORD}" \
+        --port "${PORT_REDIS}" \
+        --appendonly yes \
+        --dir "${REDIS_DATA_DIR}"
