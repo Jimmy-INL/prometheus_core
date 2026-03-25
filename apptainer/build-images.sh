@@ -49,17 +49,17 @@ build_image() {
 #build_image redis             redis.def
 #build_image client-agent      client-agent.def
 #build_image chainlit-frontend chainlit-frontend.def
-exit 0
 
 # Specialist agents — ports sourced from env file
 declare -A SPECIALIST_PORTS=(
-  [artifact-debug-agent]="$PORT_ARTIFACT_DEBUG_AGENT"
-  [corrosion-agent]="$PORT_CORROSION_AGENT"
-  [data-agent]="$PORT_DATA_AGENT"
-  [form-filler-agent]="$PORT_FORM_FILLER_AGENT"
-  [radiation-agent]="$PORT_RADIATION_AGENT"
-  [synthesis-agent]="$PORT_SYNTHESIS_AGENT"
-  [thermal-agent]="$PORT_THERMAL_AGENT"
+ # [artifact-debug-agent]="$PORT_ARTIFACT_DEBUG_AGENT"
+ # [corrosion-agent]="$PORT_CORROSION_AGENT"
+ # [data-agent]="$PORT_DATA_AGENT"
+ # [form-filler-agent]="$PORT_FORM_FILLER_AGENT"
+ # [radiation-agent]="$PORT_RADIATION_AGENT"
+ # [synthesis-agent]="$PORT_SYNTHESIS_AGENT"
+ # [thermal-agent]="$PORT_THERMAL_AGENT"
+  [osti-research-agent]="$PORT_OSTI_RESEARCH_AGENT"
 )
 
 for agent_name in "${!SPECIALIST_PORTS[@]}"; do
@@ -68,10 +68,6 @@ for agent_name in "${!SPECIALIST_PORTS[@]}"; do
     --build-arg "AGENT_NAME=${agent_name}" \
     --build-arg "AGENT_PORT=${port}"
 done
-
-# OSTI has its own def
-build_image osti-research-agent osti-research-agent.def \
-  --build-arg "AGENT_PORT=${PORT_OSTI_RESEARCH_AGENT}"
 
 echo ""
 echo "=== Build complete ==="

@@ -2,12 +2,10 @@ Bootstrap: docker
 From: python:3.11-slim
 
 %files
-    # Project files
     ../agents/client-agent                 /app
     ../prometheus_api                      /root/prometheus_api
 
 %post
-    # ── Python dependencies ──────────────────────────────────────────────────
     cd /app
     pip install --no-cache-dir --default-timeout=100 \
         "/root/prometheus_api[agent]" .
@@ -16,4 +14,4 @@ From: python:3.11-slim
     rm -rf /root/prometheus_api
 
 %runscript
-    exec python /app/agent.py "$@"
+    cd /app && python /app/agent.py "$@"
