@@ -45,7 +45,7 @@ docker-compose up --build
 Services start on:
 - **Chainlit UI**: http://localhost:8500
 - **Client Agent**: http://localhost:8001
-- **Registry**: http://localhost:8000
+- **LiteLLM agent gateway**: http://localhost:9977
 - **Redis**: localhost:6379
 
 ### Option 2: Local development
