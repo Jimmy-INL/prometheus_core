@@ -67,7 +67,11 @@ mkdir -p \
   "$SHARED_DIR" \
   "$OSTI_MODEL_CACHE" \
   "$HF_CACHE" \
-  "$TORCH_CACHE"
+  "$TORCH_CACHE" \
+  "$FRONTEND_DATA_DIR" \
+  "$LITELLM_PRISMA" \
+  "$LITELLM_NPM" \
+  "$LITELLM_MIGRATIONS"
 
 # ---------------------------------------------------------------------------
 # Common env flags passed to every agent instance
@@ -85,6 +89,10 @@ COMMON_APPTAINER_OPTIONS=(
   --env AGENT_SECRET="$AGENT_SECRET"
   --env AGENT_SECRET_REQUIRED="$AGENT_SECRET_REQUIRED"
   --env CA_BUNDLE="$CA_BUNDLE"
+  --env REQUESTS_CA_BUNDLE="$CA_BUNDLE"
+  --env CURL_CA_BUNDLE="$CA_BUNDLE"
+  --env SSL_CERT_FILE="$CA_BUNDLE"
+  --env NODE_EXTRA_CA_CERTS="$CA_BUNDLE"
 )
 
 # Shared volume bind flag (appended to most agents)
@@ -169,6 +177,13 @@ start_instance litellm "${SIF_DIR}/litellm.sif" \
   --env DATABASE_URL="$DATABASE_URL" \
   --env PORT_LITELLM="$PORT_LITELLM" \
   --env LITELLM_URL="$LITELLM_LOCAL_URL" \
+  --env PRISMA_HOME=/prisma \
+  --env PRISMA_BINARY_CACHE_DIR=/prisma \
+  --env npm_config_cache=/npm \
+  --env LITELLM_MIGRATION_DIR="/migrations" \
+  --bind $LITELLM_PRISMA:/prisma \
+  --bind $LITELLM_NPM:/npm \
+  --bind $LITELLM_MIGRATION:/migrations \
   --bind "../litellm_config.yaml:/app/config.yaml"
 
 wait_for_port localhost "$PORT_LITELLM" litellm 40 3
