@@ -16,6 +16,7 @@ from tool_discovery import LITELLM_URL, discover_agents, get_agent_card, is_self
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
 
 @dataclass
@@ -100,6 +101,7 @@ class CapabilityCache:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
         """
         self.redis_url = redis_url or REDIS_URL
+        self.redis_password = REDIS_PASSWORD
         self._redis: Optional[redis.Redis] = None
         self._local_cache: List[AgentCapability] = []
         self._last_refresh: Optional[datetime] = None
@@ -108,7 +110,11 @@ class CapabilityCache:
     def redis_client(self) -> redis.Redis:
         """Lazy Redis connection."""
         if self._redis is None:
-            self._redis = redis.Redis.from_url(self.redis_url, decode_responses=True)
+            self._redis = redis.Redis.from_url(
+                self.redis_url,
+                password=self.redis_password,
+                decode_responses=True
+            )
         return self._redis
 
     def _is_self_capability(self, capability: AgentCapability) -> bool:
