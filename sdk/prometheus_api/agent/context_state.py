@@ -24,6 +24,7 @@ class ContextStateStore:
 
     def __init__(self, redis_url: Optional[str] = None, ttl_seconds: Optional[int] = None):
         self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.redis_password = os.getenv("REDIS_PASSWORD")
         configured_ttl = os.getenv("AGENT_CONTEXT_TTL_SECONDS", "").strip()
         ttl = ttl_seconds
         if ttl is None and configured_ttl:
@@ -44,7 +45,11 @@ class ContextStateStore:
         if redis is None:
             return None
         try:
-            self._redis = redis.Redis.from_url(self.redis_url, decode_responses=True)
+            self._redis = redis.Redis.from_url(
+                self.redis_url,
+                password=self.redis_password,
+                decode_responses=True
+            )
             self._redis.ping()
             return self._redis
         except Exception:
