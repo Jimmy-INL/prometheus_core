@@ -93,6 +93,7 @@ COMMON_APPTAINER_OPTIONS=(
   --env CURL_CA_BUNDLE="$CA_BUNDLE"
   --env SSL_CERT_FILE="$CA_BUNDLE"
   --env NODE_EXTRA_CA_CERTS="$CA_BUNDLE"
+  --bind $CA_BUNDLE_DIR
 )
 
 # Shared volume bind flag (appended to most agents)
@@ -183,7 +184,7 @@ start_instance litellm "${SIF_DIR}/litellm.sif" \
   --env LITELLM_MIGRATION_DIR="/migrations" \
   --bind $LITELLM_PRISMA:/prisma \
   --bind $LITELLM_NPM:/npm \
-  --bind $LITELLM_MIGRATION:/migrations \
+  --bind $LITELLM_MIGRATIONS:/migrations \
   --bind "../litellm_config.yaml:/app/config.yaml"
 
 wait_for_port localhost "$PORT_LITELLM" litellm 40 3
