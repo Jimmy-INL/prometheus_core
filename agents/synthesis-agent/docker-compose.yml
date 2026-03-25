@@ -1,0 +1,33 @@
+services:
+  synthesis-agent:
+    build:
+      context: .
+      additional_contexts:
+        certs: ../../certs
+      args:
+        - HTTP_PROXY=${HTTP_PROXY}
+        - HTTPS_PROXY=${HTTPS_PROXY}
+        - NO_PROXY=${NO_PROXY}
+    container_name: synthesis-agent
+    networks:
+      - agent-network
+    environment:
+      - AGENT_HOST=synthesis-agent
+      - AGENT_PORT=8000
+      - LITELLM_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
+      - AGENT_SECRET=${AGENT_SECRET}
+      - AGENT_SECRET_REQUIRED=${AGENT_SECRET_REQUIRED:-false}
+      - PYTHONDONTWRITEBYTECODE=1
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
+    depends_on:
+      litellm:
+        condition: service_healthy
+    volumes:
+      - ../../shared:/app/shared
+    restart: unless-stopped
