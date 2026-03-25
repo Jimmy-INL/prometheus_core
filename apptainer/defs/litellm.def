@@ -1,7 +1,17 @@
 Bootstrap: docker
 From: litellm/litellm:v1.82.0-stable
 
+%arguments
+    PRISMA_HOME=/prisma
+    PRISMA_BINARY_CACHE_DIR=/prisma
+    NPM_CONFIG_CACHE=/npm
+
 %post
+    export PRISMA_HOME={{ PRISMA_HOME }}
+    export PRISMA_BINARY_CACHE_DIR={{ PRISMA_BINARY_CACHE_DIR }}
+    export npm_config_cache={{ NPM_CONFIG_CACHE }}
+    npm config set cache {{ NPM_CONFIG_CACHE }} --global
+
     litellm --skip_server_startup
 
 %runscript
