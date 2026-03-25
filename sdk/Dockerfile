@@ -24,7 +24,7 @@ RUN python -m pip install --upgrade pip uv
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,target=/src,rw \
-    uv pip install --system /src[agent]
+    uv pip install --system /src[agent,tracing]
 
 RUN rm -rf /tmp/certs
 
