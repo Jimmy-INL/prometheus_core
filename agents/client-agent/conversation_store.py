@@ -14,7 +14,12 @@ def _get_conversation_store_client() -> redis.Redis:
     global _conversation_store_client
     if _conversation_store_client is None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        _conversation_store_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        redis_password = os.getenv("REDIS_PASSWORD")
+        _conversation_store_client = redis.Redis.from_url(
+            redis_url,
+            password=redis_password,
+            decode_responses=True
+        )
     return _conversation_store_client
 
 
