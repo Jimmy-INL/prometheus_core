@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -257,6 +258,42 @@ class TestPrometheusAgent:
         }
 
         assert agent.get_raw_agent_card()["skills"][0]["inputSchema"]["required"] == ["material_id"]
+
+    def test_default_lifespan_is_a_no_op(self):
+        agent = PrometheusAgent(agent_name="MyAgent")
+
+        async def run_lifespan():
+            async with agent.lifespan(app=None):
+                return "ok"
+
+        assert asyncio.run(run_lifespan()) == "ok"
+
+    def test_custom_lifespan_runs_startup_and_shutdown(self):
+        events = []
+
+        class TestAgent(PrometheusAgent):
+            @asynccontextmanager
+            async def lifespan(self, app):
+                events.append(("startup", app))
+                try:
+                    yield
+                finally:
+                    events.append(("shutdown", app))
+
+        agent = TestAgent(agent_name="MyAgent")
+        sentinel_app = object()
+
+        async def run_lifespan():
+            async with agent.lifespan(sentinel_app):
+                events.append(("running", sentinel_app))
+
+        asyncio.run(run_lifespan())
+
+        assert events == [
+            ("startup", sentinel_app),
+            ("running", sentinel_app),
+            ("shutdown", sentinel_app),
+        ]
 
     def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""

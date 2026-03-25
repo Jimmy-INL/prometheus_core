@@ -10,8 +10,9 @@ import sys
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
-from typing import Dict, Any, Optional, List
+from typing import AsyncIterator, Dict, Any, Optional, List
 from datetime import datetime, timezone
 from pathlib import Path
 from starlette.responses import JSONResponse
@@ -974,11 +975,22 @@ class PrometheusAgent:
 
     def configure_app(self, app) -> None:
         """
-        Optional hook to register additional routes/event handlers on the Starlette app.
+        Optional hook to register additional routes or middleware on the Starlette app.
 
         Override in subclasses that need custom HTTP endpoints beyond A2A + /health + /api/chat.
+        Override `lifespan()` for startup/shutdown behavior.
         """
         return
+
+    @asynccontextmanager
+    async def lifespan(self, app) -> AsyncIterator[None]:
+        """
+        Optional Starlette lifespan hook for startup/shutdown work.
+
+        Override in subclasses that need app lifecycle management under
+        Starlette 1.x-compatible lifespan semantics.
+        """
+        yield
 
     def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
         """
@@ -1017,7 +1029,7 @@ class PrometheusAgent:
         )
 
         # Build the Starlette app
-        app = builder.build()
+        app = builder.build(lifespan=self.lifespan)
 
         # add health endpoint
         app.add_route(
