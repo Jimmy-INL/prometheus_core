@@ -4,6 +4,6 @@ From: redis:7-alpine
 %runscript
     redis-server \
         --requirepass "${REDIS_PASSWORD}" \
-        --port "${PORT_REDIS}" \
+        --port "${REDIS_PORT}" \
         --appendonly yes \
         --dir "${REDIS_DATA_DIR}"

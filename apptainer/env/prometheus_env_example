@@ -48,6 +48,7 @@ export SHARED_DIR="${PROMETHEUS_DATA_DIR}/shared"
 export OSTI_MODEL_CACHE="${PROMETHEUS_DATA_DIR}/osti-model-cache"
 export HF_CACHE="${PROMETHEUS_DATA_DIR}/huggingface-cache"
 export TORCH_CACHE="${PROMETHEUS_DATA_DIR}/torch-cache"
+export FRONTEND_DATA_DIR="${PROMETHEUS_DATA_DIR}/frontend"
 
 # --- Certificate bundle (set to your corp CA bundle if behind a proxy) -------
 export CA_BUNDLE="/etc/ssl/certs/ca-bundle.pem"

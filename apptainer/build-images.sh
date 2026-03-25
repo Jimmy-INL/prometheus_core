@@ -47,8 +47,9 @@ build_image() {
 #build_image litellm-db        litellm-db.def
 #build_image litellm           litellm.def
 #build_image redis             redis.def
-#build_image client-agent      client-agent.def
+build_image client-agent      client-agent.def
 #build_image chainlit-frontend chainlit-frontend.def
+exit 0
 
 # Specialist agents — ports sourced from env file
 declare -A SPECIALIST_PORTS=(

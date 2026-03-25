@@ -72,7 +72,10 @@ mkdir -p \
 # ---------------------------------------------------------------------------
 # Common env flags passed to every agent instance
 # ---------------------------------------------------------------------------
-COMMON_ENV=(
+COMMON_APPTAINER_OPTIONS=(
+  --containall
+  --cleanenv
+  --no-home
   --env LITELLM_URL="$LITELLM_URL"
   --env LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY"
   --env REDIS_URL="$REDIS_URL"
@@ -101,12 +104,14 @@ start_instance() {
     return
   fi
   echo "[start] Starting instance: $name"
+  set -x
+    #--writable-tmpfs \
   apptainer instance run \
-    --writable-tmpfs \
-    "${COMMON_ENV[@]}" \
+    "${COMMON_APPTAINER_OPTIONS[@]}" \
     "$@" \
     "$sif" \
     "$name"
+  set +x
 }
 
 # ---------------------------------------------------------------------------
@@ -148,7 +153,7 @@ wait_for_port localhost "$PORT_LITELLM_DB" litellm-db
 # =============================================================================
 start_instance redis "${SIF_DIR}/redis.sif" \
   --env REDIS_DATA_DIR=/data \
-  --env REDIS_PORT="$PORT_REDIS" \
+  --env REDIS_PORT=$PORT_REDIS \
   --env REDIS_PASSWORD="$REDIS_PASSWORD" \
   --bind "${REDIS_DATA_DIR}:/data"
 
@@ -211,6 +216,7 @@ done
 # =============================================================================
 start_instance chainlit-frontend "${SIF_DIR}/chainlit-frontend.sif" \
   $SHARED_BIND \
+  --bind ${FRONTEND_DATA_DIR}:/app/.files \
   --env PORT="$PORT_CHAINLIT" \
   --env CLIENT_AGENT_URL="$CLIENT_AGENT_URL" \
   --env CHAINLIT_AUTH_SECRET="$CHAINLIT_AUTH_SECRET"
