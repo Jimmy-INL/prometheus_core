@@ -1,0 +1,12 @@
+Bootstrap: docker
+From: litellm/litellm:v1.82.0-stable
+
+%post
+    litellm --skip_server_startup
+
+%runscript
+    litellm \
+    	--telemetry false \
+        --host ${LITELLM_URL} \
+        --port ${PORT_LITELLM} \
+        --config="/app/config.yaml"

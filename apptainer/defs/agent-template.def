@@ -1,0 +1,22 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%arguments
+    AGENT_NAME=
+
+%files
+    ../agents/{{ AGENT_NAME }}    /app
+    ../prometheus_api             /root/prometheus_api
+
+%post
+    cd /app
+    pip install --no-cache-dir --default-timeout=100 \
+        "/root/prometheus_api[agent]" .
+
+    rm -rf /root/prometheus_api
+
+
+%runscript
+    echo "[{{ AGENT_NAME }}] Starting on :{{ AGENT_PORT }} ..."
+    cd /app && python agent.py 
+
