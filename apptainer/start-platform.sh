@@ -179,7 +179,35 @@ start_instance client-agent "${SIF_DIR}/client-agent.sif" \
 wait_for_port localhost "$PORT_CLIENT_AGENT" client-agent 20 3
 
 # =============================================================================
-# 5. Chainlit frontend
+# 5. Specialist agents (order doesn't matter; all depend only on litellm/redis)
+# =============================================================================
+declare -A AGENTS=(
+  [corrosion-agent]="${SIF_DIR}/corrosion-agent.sif|${PORT_CORROSION_AGENT}"
+  [radiation-agent]="${SIF_DIR}/radiation-agent.sif|${PORT_RADIATION_AGENT}"
+  [thermal-agent]="${SIF_DIR}/thermal-agent.sif|${PORT_THERMAL_AGENT}"
+  [data-agent]="${SIF_DIR}/data-agent.sif|${PORT_DATA_AGENT}"
+  [form-filler-agent]="${SIF_DIR}/form-filler-agent.sif|${PORT_FORM_FILLER_AGENT}"
+  [artifact-debug-agent]="${SIF_DIR}/artifact-debug-agent.sif|${PORT_ARTIFACT_DEBUG_AGENT}"
+  [synthesis-agent]="${SIF_DIR}/synthesis-agent.sif|${PORT_SYNTHESIS_AGENT}"
+)
+
+for agent_name in "${!AGENTS[@]}"; do
+  IFS='|' read -r sif port <<< "${AGENTS[$agent_name]}"
+  start_instance "$agent_name" "$sif" \
+    --env AGENT_PORT="$port" \
+    $SHARED_BIND
+done
+
+## osti has extra model-cache bind mounts
+#start_instance osti-research-agent "${SIF_DIR}/osti-research-agent.sif" \
+#  --env AGENT_PORT="$PORT_OSTI_RESEARCH_AGENT" \
+#  $SHARED_BIND \
+#  --bind "${OSTI_MODEL_CACHE}:/root/.cache/datalab" \
+#  --bind "${HF_CACHE}:/root/.cache/huggingface" \
+#  --bind "${TORCH_CACHE}:/root/.cache/torch"
+
+# =============================================================================
+# 6. Chainlit frontend
 # =============================================================================
 start_instance chainlit-frontend "${SIF_DIR}/chainlit-frontend.sif" \
   $SHARED_BIND \
@@ -196,34 +224,6 @@ echo "  Prometheus Platform is UP"
 echo "  Chainlit UI  →  http://localhost:${PORT_CHAINLIT}"
 echo "  LiteLLM UI   →  http://localhost:${PORT_LITELLM}"
 echo "============================================================"
-
-# =============================================================================
-# 6. Specialist agents (order doesn't matter; all depend only on litellm/redis)
-# =============================================================================
-#declare -A AGENTS=(
-#  [corrosion-agent]="${SIF_DIR}/corrosion-agent.sif|${PORT_CORROSION_AGENT}"
-#  [radiation-agent]="${SIF_DIR}/radiation-agent.sif|${PORT_RADIATION_AGENT}"
-#  [thermal-agent]="${SIF_DIR}/thermal-agent.sif|${PORT_THERMAL_AGENT}"
-#  [data-agent]="${SIF_DIR}/data-agent.sif|${PORT_DATA_AGENT}"
-#  [form-filler-agent]="${SIF_DIR}/form-filler-agent.sif|${PORT_FORM_FILLER_AGENT}"
-#  [artifact-debug-agent]="${SIF_DIR}/artifact-debug-agent.sif|${PORT_ARTIFACT_DEBUG_AGENT}"
-#  [synthesis-agent]="${SIF_DIR}/synthesis-agent.sif|${PORT_SYNTHESIS_AGENT}"
-#)
-#
-#for agent_name in "${!AGENTS[@]}"; do
-#  IFS='|' read -r sif port <<< "${AGENTS[$agent_name]}"
-#  start_instance "$agent_name" "$sif" \
-#    --env AGENT_PORT="$port" \
-#    $SHARED_BIND
-#done
-#
-## osti has extra model-cache bind mounts
-#start_instance osti-research-agent "${SIF_DIR}/osti-research-agent.sif" \
-#  --env AGENT_PORT="$PORT_OSTI_RESEARCH_AGENT" \
-#  $SHARED_BIND \
-#  --bind "${OSTI_MODEL_CACHE}:/root/.cache/datalab" \
-#  --bind "${HF_CACHE}:/root/.cache/huggingface" \
-#  --bind "${TORCH_CACHE}:/root/.cache/torch"
 
 apptainer instance list
 

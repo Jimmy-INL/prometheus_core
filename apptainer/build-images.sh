@@ -52,14 +52,14 @@ build_image() {
 
 # Specialist agents — ports sourced from env file
 declare -A SPECIALIST_PORTS=(
- # [artifact-debug-agent]="$PORT_ARTIFACT_DEBUG_AGENT"
- # [corrosion-agent]="$PORT_CORROSION_AGENT"
- # [data-agent]="$PORT_DATA_AGENT"
- # [form-filler-agent]="$PORT_FORM_FILLER_AGENT"
- # [radiation-agent]="$PORT_RADIATION_AGENT"
- # [synthesis-agent]="$PORT_SYNTHESIS_AGENT"
- # [thermal-agent]="$PORT_THERMAL_AGENT"
-  [osti-research-agent]="$PORT_OSTI_RESEARCH_AGENT"
+ [artifact-debug-agent]="$PORT_ARTIFACT_DEBUG_AGENT"
+ [corrosion-agent]="$PORT_CORROSION_AGENT"
+ [data-agent]="$PORT_DATA_AGENT"
+ [form-filler-agent]="$PORT_FORM_FILLER_AGENT"
+ [radiation-agent]="$PORT_RADIATION_AGENT"
+ [synthesis-agent]="$PORT_SYNTHESIS_AGENT"
+ [thermal-agent]="$PORT_THERMAL_AGENT"
+ # [osti-research-agent]="$PORT_OSTI_RESEARCH_AGENT"
 )
 
 for agent_name in "${!SPECIALIST_PORTS[@]}"; do

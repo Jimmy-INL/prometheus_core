@@ -18,5 +18,5 @@ From: python:3.11-slim
 
 %runscript
     echo "[{{ AGENT_NAME }}] Starting on :{{ AGENT_PORT }} ..."
-    cd /app && uvicorn app:app --host 0.0.0.0 --port {{ AGENT_PORT }}
+    cd /app && python agent.py 
 
