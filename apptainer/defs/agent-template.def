@@ -1,0 +1,50 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%arguments
+    AGENT_NAME=
+
+%environment
+    export AGENT_HOST="localhost"
+    export AGENT_PORT="{{ AGENT_PORT }}"
+    export LITELLM_URL="${LITELLM_URL:-http://localhost:4000}"
+    export REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+    export MODEL_NAME="${MODEL_NAME:-claude-sonnet-4-20250514}"
+    export AGENT_SECRET_REQUIRED="${AGENT_SECRET_REQUIRED:-false}"
+    export PYTHONDONTWRITEBYTECODE="1"
+    export SSL_CERT_FILE="${CA_BUNDLE:-/etc/ssl/certs/ca-bundle.pem}"
+    export REQUESTS_CA_BUNDLE="${CA_BUNDLE:-/etc/ssl/certs/ca-bundle.pem}"
+    export NODE_EXTRA_CA_CERTS="${CA_BUNDLE:-/etc/ssl/certs/ca-bundle.pem}"
+    # Secrets injected at runtime:
+    #   LITELLM_MASTER_KEY, ANTHROPIC_API_KEY, AGENT_SECRET
+
+%files
+    ../agents/{{ AGENT_NAME }}/agent_card.json    /app/agent_card.json
+    ../agents/{{ AGENT_NAME }}/agent.py           /app/agent.py
+    ../agents/{{ AGENT_NAME }}/pyproject.toml     /app/pyproject.toml
+    ../prometheus_api                             /root/prometheus_api
+
+    # Optional: place any .pem CA certs in a local `certs/` directory before building
+    # certs/ /tmp/certs/
+
+%post
+    cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/null || true
+    if ls /tmp/certs/*.pem 1>/dev/null 2>&1; then
+        cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem
+    fi
+    rm -rf /tmp/certs
+
+    cd /app
+    pip install --no-cache-dir --default-timeout=100 \
+        "/root/prometheus_api[agent]"
+
+    rm -rf /root/prometheus_api
+
+
+%startscript
+    echo "[{{ AGENT_NAME }}] Starting on :{{ AGENT_PORT }} ..."
+    exec uvicorn app:app --host 0.0.0.0 --port {{ AGENT_PORT }}
+
+%labels
+    Name {{ AGENT_NAME }}
+

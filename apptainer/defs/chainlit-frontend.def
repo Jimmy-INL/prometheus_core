@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: python:3.13-slim
+
+%arguments
+
+%environment
+    export UV_NATIVE_TLS=true
+    export UV_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
+%files
+    ../frontend /app
+
+%post
+    # ── System dependencies ──────────────────────────────────────────────────
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1
+
+    # ── Install uv ───────────────────────────────────────────────────────────
+    apt-get update && apt-get install -y --no-install-recommends curl
+    curl -fsSL https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
+    mv /root/.local/bin/uv /usr/local/bin/uv
+
+    # ── Python dependencies ──────────────────────────────────────────────────
+    cd /app
+    uv sync --no-dev --frozen
+
+    # Cleanup
+    rm -rf /var/lib/apt/lists/*
+
+%runscript
+    PORT="${PORT:-8000}"
+    /app/.venv/bin/chainlit run /app/main.py --host 0.0.0.0 --port $PORT "$@"
+
+%labels
+    Author      Prometheus
+    Version     1.0
+    Description Chainlit frontend built from python:3.13-slim
+
+%help
+    Build:
+        apptainer build frontend.sif frontend.def
+
+    Run:
+        apptainer run --bind ./frontend:/app frontend.sif
+
+    Run on a specific port (override via env):
+        apptainer run --env PORT=8501 --bind ./frontend:/app frontend.sif
