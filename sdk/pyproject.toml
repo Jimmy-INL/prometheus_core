@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prometheus-api"
-version = "0.1.0"
+version = "0.2.0"
 description = "Storage client and agent utilities for building A2A multi-agent systems"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [
     {name = "INL Genesis", email = "daniel.schwen@inl.gov"}
@@ -17,11 +17,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -42,13 +38,23 @@ agent = [
     "httpx>=0.26.0",
     "a2a-sdk[http-server]>=0.3.0",
 ]
+[dependency-groups]
 dev = [
+    "uvicorn[standard]>=0.27.0",
+    "starlette>=0.27.0,<1.0",
+    "a2a-sdk[http-server]>=0.3.0",
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
+]
+tracing = [
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-exporter-otlp>=1.39.1",
+    "opentelemetry-instrumentation>=0.60b1",
+    "opentelemetry-instrumentation-starlette>=0.60b1",
 ]
 
 [project.urls]
@@ -86,14 +92,14 @@ markers = [
 
 [tool.black]
 line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+target-version = ['py313']
 
 [tool.ruff]
 line-length = 100
-target-version = "py38"
+target-version = "py313"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
