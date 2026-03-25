@@ -8,8 +8,9 @@ import os
 import re
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, AsyncIterator, Dict, List, Optional, TypedDict
 
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
@@ -3207,6 +3208,15 @@ class OrchestratorAgent(PrometheusAgent):
                 pass
             _refresh_task = None
 
+    @asynccontextmanager
+    async def lifespan(self, app) -> AsyncIterator[None]:
+        """Use Starlette lifespan hooks instead of deprecated event handlers."""
+        await self._on_startup()
+        try:
+            yield
+        finally:
+            await self._on_shutdown()
+
     async def _status_endpoint(self, request) -> JSONResponse:
         """Status polling endpoint."""
         conversation_id = request.path_params.get("conversation_id")
@@ -3532,9 +3542,7 @@ class OrchestratorAgent(PrometheusAgent):
         return response_payload
 
     def configure_app(self, app) -> None:
-        """Add custom orchestrator endpoints and lifecycle hooks."""
-        app.add_event_handler("startup", self._on_startup)
-        app.add_event_handler("shutdown", self._on_shutdown)
+        """Add custom orchestrator endpoints."""
         app.add_route("/status/{conversation_id}", self._status_endpoint, methods=["GET"])
         app.add_route("/discovery/refresh", self._refresh_endpoint, methods=["POST"])
         app.add_route("/workflows/catalog", self._workflow_catalog_endpoint, methods=["GET"])
