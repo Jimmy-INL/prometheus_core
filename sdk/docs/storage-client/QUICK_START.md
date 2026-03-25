@@ -149,6 +149,56 @@ results = client.search.advanced_query({
 recent = client.search.recent(limit=50)
 ```
 
+## DeepLynx Filesystem (fsspec)
+
+The storage client includes a native `fsspec` filesystem protocol: `deeplynx://`.
+It is registered via Python entry points, so downstream projects can call
+`fsspec.filesystem("deeplynx", ...)` without importing internal registration code.
+
+### Quick Example
+
+```python
+import fsspec
+from prometheus_api.storage_client import ConnectionConfig, StorageClient
+
+# Option 1: Provide an existing client
+config = ConnectionConfig.from_env()
+with StorageClient(config) as client:
+    fs = fsspec.filesystem("deeplynx", client=client)
+    fs.put("mesh.e", "deeplynx://session-abc/data/mesh.e")
+    fs.get("deeplynx://session-abc/data/mesh.e", "./run/")
+
+# Option 2: Let filesystem create an internal client from config
+fs = fsspec.filesystem("deeplynx", config=ConnectionConfig.from_env())
+fs.put("input.i", "deeplynx://session-abc/moose/input.i")
+```
+
+### Constructor Behavior
+
+`DeepLynxFileSystem(client=None, config=None, ...)` resolves inputs in this order:
+
+1. Use `client` if provided.
+2. Else build internal `StorageClient(config)` if `config` is provided.
+3. Else default to `ConnectionConfig.from_env()`.
+
+### Path + Versioning Semantics
+
+- `put()` stores path metadata on each uploaded record (no separate index table).
+- Repeated `put()` to the same path keeps prior versions.
+- `get()` resolves the latest valid version for that exact path.
+- `rm("deeplynx://path/to/file")` deletes all versions of that logical path.
+- `rm("deeplynx://path/to/prefix", recursive=True)` deletes all versions under that prefix.
+
+### Recursive Workflows
+
+```python
+# Upload a local directory tree
+fs.put("./moose-run", "deeplynx://session-abc/", recursive=True)
+
+# Fetch a whole prefix locally
+fs.get("deeplynx://session-abc/moose-run", "./downloaded-run", recursive=True)
+```
+
 ## Async Usage
 
 ```python

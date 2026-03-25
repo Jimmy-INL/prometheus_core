@@ -4,8 +4,11 @@ These tests require a .env file with valid credentials.
 All test items are marked with _test_suite_marker property for safe cleanup.
 """
 
+import filecmp
+import fsspec
 import pytest
 import time
+import uuid
 from pathlib import Path
 from datetime import datetime
 from prometheus_api.storage_client import (
@@ -526,6 +529,86 @@ class TestFileUpload:
                     client.files.delete(file_id)
                 except Exception as e:
                     print(f"Warning: Failed to delete test file {file_id}: {e}")
+
+
+class TestDeeplynxFileSystem:
+
+    def test_moose_integration(self, client, tmp_path):
+        """
+        Test a MOOSE-like integration.
+        This is the following emulation of an agent using MOOSE MCP:
+        1. Agent(s) create input and supporting files like mesh and material properties and uploads as artifacts
+        2. MOOSE MCP stages the inputs and supporting files locally
+        3. MOOSE MCP runs, generates output files locally, and uploads the outputs
+        4. Agent(s) retrieve outputs for analysis
+        """
+        fs = fsspec.filesystem("deeplynx", client=client)
+        session_dir = "session-abc123"
+        data_dir = "data"
+        moose_dir = "moose"
+        moose_run_dir = "run-" + str(uuid.uuid1())[:5]
+
+        def write_file(path, data, is_bytes=False):
+            path: Path = tmp_path / path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not is_bytes:
+                path.write_text(data, "utf-8")
+            else:
+                path.write_bytes(data)
+            return path
+
+        def create_uri(path):
+            return f"deeplynx://{session_dir}/{path}"
+
+        try:
+            # 1. Upload data files and ensure they are listed
+            mesh_file = write_file(f"{data_dir}/mesh.e", b"This is my mesh.", is_bytes=True)
+            mesh_uri = create_uri(f"{data_dir}/mesh.e")
+            fs.put(str(mesh_file), mesh_uri)
+            csv_file = write_file(f"{data_dir}/data.csv", "foo,bar,baz")
+            csv_uri = create_uri(f"{data_dir}/data.csv")
+            fs.put(str(csv_file), csv_uri)
+            input_file = write_file(f"{moose_dir}/input.i", "[Mesh]\n  file = mesh.e\n[]\n")
+            input_uri = create_uri(f"{moose_dir}/input.i")
+            fs.put(str(input_file), input_uri)
+            ls_session = sorted(fs.glob(create_uri("**"), detail=False))
+            ls_session_expected = sorted(
+                [
+                    f"{session_dir}",
+                    f"{session_dir}/{data_dir}",
+                    f"{session_dir}/{data_dir}/data.csv",
+                    f"{session_dir}/{data_dir}/mesh.e",
+                    f"{session_dir}/{moose_dir}",
+                    f"{session_dir}/{moose_dir}/input.i",
+                ]
+            )
+            assert ls_session == ls_session_expected
+
+            # 2. Stage files locally and make sure they are equivalent to the original
+            moose_run_path: Path = tmp_path / moose_run_dir
+            moose_run_path.mkdir()
+            for uri, file in zip([mesh_uri, csv_uri, input_uri], [mesh_file, csv_file, input_file]):
+                fs.get(uri, str(moose_run_path))
+                run_file = moose_run_path / file.name
+                assert filecmp.cmp(str(run_file), str(file))
+
+            # 3. Upload from MOOSE run
+            exodus_file = write_file(
+                f"{moose_run_dir}/input_out.e", b"This is my output.", is_bytes=True
+            )
+            fs.put(str(exodus_file.parent), create_uri(""), recursive=True)
+            for file in ["input.i", "mesh.e", "data.csv", "input_out.e"]:
+                assert fs.isfile(create_uri(f"{moose_run_dir}/{file}"))
+
+            # 4. Retrieve exodus from the run
+            moose_path = tmp_path / moose_dir
+            fs.get(create_uri(f"{moose_run_dir}/{exodus_file.name}"), str(moose_path))
+            assert filecmp.cmp(str(moose_path / exodus_file.name), str(exodus_file))
+
+        finally:
+            session_uri = create_uri("")
+            if fs.isdir(session_uri):
+                fs.rm(session_uri, recursive=True)
 
 
 class TestCleanup:
