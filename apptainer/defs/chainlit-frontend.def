@@ -38,7 +38,7 @@ From: python:3.13-slim
 
 %runscript
     PORT="${PORT:-8000}"
-    /app/.venv/bin/chainlit run /app/main.py --host 0.0.0.0 --port $PORT "$@"
+    cd /app && /app/.venv/bin/chainlit run /app/main.py --host 0.0.0.0 --port $PORT "$@"
 
 %labels
     Author      Prometheus

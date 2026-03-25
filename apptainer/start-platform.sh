@@ -101,14 +101,12 @@ start_instance() {
     return
   fi
   echo "[start] Starting instance: $name"
-  set -x
   apptainer instance run \
     --writable-tmpfs \
     "${COMMON_ENV[@]}" \
     "$@" \
     "$sif" \
     "$name"
-  set +x
 }
 
 # ---------------------------------------------------------------------------
@@ -160,10 +158,12 @@ wait_for_port localhost "$PORT_REDIS" redis
 # 3. LiteLLM 
 # =============================================================================
 DATABASE_URL="postgresql://litellm:${LITELLM_DB_PASSWORD}@localhost:${PORT_LITELLM_DB}/litellm"
+LITELLM_LOCAL_URL="localhost"
 
 start_instance litellm "${SIF_DIR}/litellm.sif" \
   --env DATABASE_URL="$DATABASE_URL" \
   --env PORT_LITELLM="$PORT_LITELLM" \
+  --env LITELLM_URL="$LITELLM_LOCAL_URL" \
   --bind "../litellm_config.yaml:/app/config.yaml"
 
 wait_for_port localhost "$PORT_LITELLM" litellm 40 3
@@ -172,8 +172,8 @@ wait_for_port localhost "$PORT_LITELLM" litellm 40 3
 # 4. Client agent
 # =============================================================================
 start_instance client-agent "${SIF_DIR}/client-agent.sif" \
-  --env AGENT_PORT="$PORT_CLIENT_AGENT" \
   $SHARED_BIND \
+  --env AGENT_PORT="$PORT_CLIENT_AGENT" \
   --env CLIENT_AGENT_URL="$CLIENT_AGENT_URL"
 
 wait_for_port localhost "$PORT_CLIENT_AGENT" client-agent 20 3
@@ -182,8 +182,8 @@ wait_for_port localhost "$PORT_CLIENT_AGENT" client-agent 20 3
 # 5. Chainlit frontend
 # =============================================================================
 start_instance chainlit-frontend "${SIF_DIR}/chainlit-frontend.sif" \
-  --env PORT="$PORT_CHAINLIT" \
   $SHARED_BIND \
+  --env PORT="$PORT_CHAINLIT" \
   --env CLIENT_AGENT_URL="$CLIENT_AGENT_URL" \
   --env CHAINLIT_AUTH_SECRET="$CHAINLIT_AUTH_SECRET"
 

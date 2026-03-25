@@ -3,7 +3,7 @@ From: python:3.11-slim
 
 %files
     # Project files
-    ../agents/client-agent                 /app/
+    ../agents/client-agent                 /app
     ../prometheus_api                      /root/prometheus_api
 
 %post
