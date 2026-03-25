@@ -3134,8 +3134,13 @@ async def get_status(conversation_id: str):
     import os
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_password = os.getenv("REDIS_PASSWORD")
     try:
-        redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        redis_client = redis.Redis.from_url(
+            redis_url,
+            password=redis_password,
+            decode_responses=True
+        )
         key = f"agent:status:{conversation_id}"
         status_data = redis_client.get(key)
         history_key = f"agent:status_history:{conversation_id}"
@@ -3311,7 +3316,12 @@ class OrchestratorAgent(PrometheusAgent):
         try:
             import redis
             redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-            redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+            redis_password = os.getenv("REDIS_PASSWORD")
+            redis_client = redis.Redis.from_url(
+                redis_url,
+                password=redis_password,
+                decode_responses=True
+            )
         except Exception as exc:
             print(f"[WARN] Status forwarder unavailable: {exc}")
             return
