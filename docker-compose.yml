@@ -24,7 +24,7 @@ services:
 
   # LiteLLM proxy — A2A agent gateway and optional LLM proxy
   litellm:
-    image: docker.litellm.ai/berriai/litellm:v1.82.0-stable
+    image: ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
     container_name: litellm-proxy
     ports:
       - "${LITELLM_LOCAL_PORT}:4000"
