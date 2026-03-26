@@ -5,20 +5,102 @@ Implements A2A protocol using prometheus_api with Bearer token authentication
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from anthropic import Anthropic
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import MissingInput, PrometheusAgent
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+RADIATION_DAMAGE_JSON_TYPE = "prometheus.radiation_damage.result.v1"
+
+
+def _build_radiation_summary(material_id: str, analysis: Dict[str, Any]) -> str:
+    integrity = str(analysis.get("structural_integrity") or "unknown")
+    dpa = analysis.get("dpa")
+    remaining_life = analysis.get("remaining_service_life_years")
+
+    parts: List[str] = [f"Radiation damage analysis for {material_id} completed."]
+    if dpa is not None:
+        parts.append(f"Accumulated DPA: {dpa:.2f}.")
+    if remaining_life is not None:
+        parts.append(f"Estimated remaining service life: {remaining_life:.1f} years.")
+    parts.append(f"Structural integrity: {integrity}.")
+    return " ".join(parts)
+
+
+def _build_radiation_report(material_id: str, analysis: Dict[str, Any]) -> str:
+    integrity = str(analysis.get("structural_integrity") or "unknown")
+    confidence = analysis.get("confidence")
+    mechanisms = analysis.get("damage_mechanisms") or []
+    recommendations = analysis.get("recommendations") or []
+    fluence_spectrum = analysis.get("fluence_spectrum") or {}
+    surveillance = analysis.get("surveillance_capsule_data") or {}
+    regulatory = analysis.get("regulatory_compliance") or {}
+
+    lines = [
+        f"Radiation Damage Analysis for {material_id}",
+        "",
+        f"- Structural integrity: {integrity}",
+        f"- Confidence: {confidence}",
+        f"- Total fluence: {analysis.get('total_fluence_n_cm2')} n/cm²",
+        f"- DPA: {analysis.get('dpa')}",
+        f"- DBTT shift: {analysis.get('dbtt_shift_c')} C",
+        f"- Void swelling: {analysis.get('void_swelling_percent')} %",
+        f"- Helium concentration: {analysis.get('helium_concentration_appm')} appm",
+        f"- Hydrogen concentration: {analysis.get('hydrogen_concentration_appm')} appm",
+        f"- Remaining service life: {analysis.get('remaining_service_life_years')} years",
+        "",
+        "Fluence spectrum:",
+        f"- Thermal: {fluence_spectrum.get('thermal')}",
+        f"- Epithermal: {fluence_spectrum.get('epithermal')}",
+        f"- Fast: {fluence_spectrum.get('fast')}",
+        "",
+        "Surveillance capsule data:",
+        f"- Capsules remaining: {surveillance.get('capsules_remaining')}",
+        f"- Next withdrawal: {surveillance.get('next_withdrawal_date')}",
+        "",
+        "Regulatory compliance:",
+        f"- Regulatory DBTT limit: {regulatory.get('regulatory_limit_dbtt_c')} C",
+        f"- Margin to limit: {regulatory.get('margin_to_limit_c')} C",
+        f"- Status: {regulatory.get('status')}",
+    ]
+
+    if mechanisms:
+        lines.extend(["", "Active damage mechanisms:"])
+        for m in mechanisms:
+            lines.append(f"- {m}")
+
+    if recommendations:
+        lines.extend(["", "Recommendations:"])
+        for item in recommendations:
+            lines.append(f"- {item}")
+
+    return "\n".join(lines)
 
 
 class RadiationDamageAgent(PrometheusAgent):
     """Agent for radiation damage analysis."""
+
+    def _merge_resolved_inputs(self, resolved: Dict[str, Any], params: Dict[str, Any], context: RequestContext) -> Dict[str, Any]:
+        merged = dict(resolved or {})
+        if params.get("material_id"):
+            merged["material_id"] = params["material_id"]
+
+        operating_context = params.get("context", {})
+        if isinstance(operating_context, dict):
+            for key in ("temperature_c", "pressure_mpa", "operating_hours"):
+                if operating_context.get(key) is not None:
+                    merged[key] = operating_context[key]
+
+        for key, value in self.get_provided_inputs(context).items():
+            if value is not None:
+                merged[key] = value
+
+        return merged
 
     async def _execute(
         self,
@@ -32,11 +114,34 @@ class RadiationDamageAgent(PrometheusAgent):
         Uses the Anthropic API to generate expert-level radiation damage analysis
         based on material properties and operating conditions.
         """
-        material_id = params.get("material_id")
-        operating_context = params.get("context", {})
+        state = self.load_context_state(str(context.context_id or ""))
+        resolved = self._merge_resolved_inputs(state.get("resolved", {}), params, context)
 
+        material_id = resolved.get("material_id")
         if not material_id:
-            return {"error": "material_id is required"}
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="material_id",
+                        description="Canonical material identifier for the radiation damage analysis.",
+                        user_prompt="Which material should I analyze for radiation damage?",
+                        type="string",
+                        resolvable_from_context=True,
+                    )
+                ],
+                hint="I need the target material before I can run the radiation damage analysis.",
+            )
+            self.save_context_state(
+                str(context.context_id or ""),
+                {
+                    "resolved": resolved,
+                    "pending": ["material_id"],
+                    "task_id": context.task_id,
+                },
+            )
+            return {}
 
         if not ANTHROPIC_API_KEY:
             return {
@@ -56,16 +161,23 @@ class RadiationDamageAgent(PrometheusAgent):
             )
         )
 
+        operating_context = {
+            "temperature_c": resolved.get("temperature_c"),
+            "pressure_mpa": resolved.get("pressure_mpa"),
+            "operating_hours": resolved.get("operating_hours"),
+        }
+
         # Build context for Claude
         context_str = ""
-        if operating_context:
+        non_null = {k: v for k, v in operating_context.items() if v is not None}
+        if non_null:
             context_str = "\nOperating Conditions:\n"
-            if operating_context.get("temperature_c"):
-                context_str += f"- Temperature: {operating_context['temperature_c']}C\n"
-            if operating_context.get("pressure_mpa"):
-                context_str += f"- Pressure: {operating_context['pressure_mpa']} MPa\n"
-            if operating_context.get("operating_hours"):
-                context_str += f"- Operating Hours: {operating_context['operating_hours']}\n"
+            if non_null.get("temperature_c"):
+                context_str += f"- Temperature: {non_null['temperature_c']}C\n"
+            if non_null.get("pressure_mpa"):
+                context_str += f"- Pressure: {non_null['pressure_mpa']} MPa\n"
+            if non_null.get("operating_hours"):
+                context_str += f"- Operating Hours: {non_null['operating_hours']}\n"
 
         prompt = f"""You are a nuclear reactor radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
 {context_str}
@@ -121,7 +233,34 @@ Consider neutron embrittlement, void swelling, helium embrittlement, and transmu
             analysis["analysis_type"] = "radiation_damage"
             analysis["model_used"] = MODEL_NAME
 
-            return analysis
+            message = _build_radiation_summary(material_id, analysis)
+            report = _build_radiation_report(material_id, analysis)
+
+            await self.send_json_artifact(
+                context=context,
+                event_queue=event_queue,
+                payload=analysis,
+                name=f"{material_id.lower()}_radiation_damage",
+                description=f"Radiation damage analysis result for {material_id}.",
+                json_type=RADIATION_DAMAGE_JSON_TYPE,
+                catalog_artifact=True,
+            )
+
+            self.save_context_state(
+                str(context.context_id or ""),
+                {
+                    "resolved": resolved,
+                    "pending": [],
+                    "task_id": context.task_id,
+                    "last_result_timestamp": analysis["timestamp"],
+                },
+            )
+
+            return {
+                **analysis,
+                "message": message,
+                "report": report,
+            }
 
         except Exception as e:
             return {
