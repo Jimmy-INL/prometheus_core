@@ -24,7 +24,7 @@ graph TD
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
 - Docker and Docker Compose (for multi-agent deployment)
 - Redis (for memory and conversation state)
@@ -38,8 +38,16 @@ graph TD
 cp .env.example .env
 # Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, REDIS_URL, CHAINLIT_AUTH_SECRET
 
+# Put SSL cert into certs/
+#   TODO - Update based on pulling inl certs. probably a way to do this with curl
+
+# Sign into mooseharbor to pull prometheus_api container
+docker login mooseharbor.hpc.inl.gov
+# Username: HPC USERNAME
+# Password: HPC PASSWORD
+
 # Start all services
-docker-compose up --build
+make up
 ```
 
 Services start on:
@@ -117,8 +125,6 @@ prometheus_platform/
     artifact-debug-agent/  # Testing/debug agent
     requirements-agent/    # Requirements extraction
 
-  registry/                # Agent discovery service
-  prometheus_api/          # Shared agent SDK (PrometheusAgent base class)
   docker-compose.yml       # Full-stack deployment
   docs/                    # Project documentation
 ```
