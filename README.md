@@ -123,7 +123,9 @@ prometheus_platform/
     osti-research-agent/   # OSTI literature search
     form-filler-agent/     # Dynamic form completion
     artifact-debug-agent/  # Testing/debug agent
-    requirements-agent/    # Requirements extraction
+
+  shared/
+    a2a_protocol.py        # Pydantic models for A2A protocol
 
   docker-compose.yml       # Full-stack deployment
   docs/                    # Project documentation
@@ -134,7 +136,8 @@ prometheus_platform/
 ```bash
 cd frontend
 
-make run        # Start Chainlit
+make run-local  # Start Chainlit locally on port 8500
+make run        # Start Chainlit (production HPC host/port)
 make test       # Run pytest
 make lint       # Ruff linter
 make format     # Ruff formatter check
@@ -151,9 +154,8 @@ uv run pytest -k test_name             # By name
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Adding agents](docs/adding-agents.md)
-- [Memory system](docs/memory-system.md)
-- [Artifacts](docs/artifacts.md)
-- [Visualization plugins](docs/visualization-plugins.md)
-- [Migration guide](docs/migration.md) -- what changed from the original projects and why
+- [Architecture](docs/dev-docs/architecture.md)
+- [Adding agents](docs/dev-docs/adding-agents.md)
+- [Artifacts](docs/dev-docs/artifacts.md)
+- [Visualization plugins](docs/dev-docs/visualization-plugins.md)
+- [Migration guide](docs/dev-docs/migration.md) -- what changed from the original projects and why

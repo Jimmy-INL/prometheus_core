@@ -46,7 +46,10 @@ run: ##@ Start the frontend
 	$(PYTHON) -m chainlit run main.py -h --port 6100 --host c500-prometheus.hpc.inl.gov
 
 run-dev: ##@ Start the frontend in dev
-	$(PYTHON) -m chainlit run -h main.p
+	$(PYTHON) -m chainlit run main.py -h
+
+run-local: ##@ Start the frontend locally on port 8500
+	$(PYTHON) -m chainlit run main.py -h --port 8500
 
 ##@
 ##@ Checks
