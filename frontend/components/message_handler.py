@@ -430,7 +430,17 @@ async def render_artifacts(
                     heading += f" `{json_type}`"
                 text_parts.append(f"{heading}\n```json\n{formatted}\n```")
             else:
-                text_parts.append(f"- **{name}**: {description or uri}")
+                el = await _render_remote_file_artifact(uri, name)
+                if el:
+                    elements.append(el)
+                    line = f"- **{name}**"
+                    if description:
+                        line += f": {description}"
+                    elif json_type:
+                        line += f": `{json_type}`"
+                    text_parts.append(line)
+                else:
+                    text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "report":
             report_text = description
@@ -440,7 +450,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "file":
-            el = _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name)
             if el:
                 elements.append(el)
             else:
@@ -455,7 +465,7 @@ async def render_artifacts(
             line = f"📎 **{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name)
             if el:
                 elements.append(el)
             else:
@@ -508,13 +518,28 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
     return None
 
 
-def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
+async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
+    if not uri.startswith("http"):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.get(uri)
+            resp.raise_for_status()
+        filename = Path(name).name or "artifact"
+        tmp = Path(tempfile.mkdtemp()) / filename
+        tmp.write_bytes(resp.content)
+        return cl.File(name=filename, path=str(tmp), display="inline")
+    except Exception:
+        return None
+
+
+async def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
     if uri.startswith("file://"):
         path = Path(uri[7:])
     elif uri.startswith("/"):
         path = Path(uri)
     else:
-        return None
+        return await _render_remote_file_artifact(uri, name)
     if path.exists():
         return cl.File(name=name, path=str(path), display="inline")
     return None
