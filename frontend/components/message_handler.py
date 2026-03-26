@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import chainlit as cl
 import httpx
+
+logger = logging.getLogger(__name__)
 
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
@@ -134,44 +137,11 @@ async def _handle_response(
 
 
 def _coerce_final_text(response: ConversationResponse, artifact_count: int) -> str:
-    """Collapse machine-oriented JSON payloads into compact user-facing text."""
-    candidate = response.report or response.response_text or response.message or ""
-    if isinstance(candidate, dict):
-        payload = candidate
-    elif isinstance(candidate, list):
-        payload = None
-    else:
-        text = str(candidate or "").strip()
-        if not text:
-            payload = None
-        else:
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                return text
-            payload = parsed if isinstance(parsed, dict) else None
-
-    if not isinstance(payload, dict):
-        return ""
-
-    for key in ("message", "report", "response_text", "summary"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-
-    agent = str(payload.get("agent") or "").strip()
-    final_step = str(payload.get("final_step") or payload.get("status") or "").strip()
+    text = (response.report or response.response_text or response.message or "").strip()
+    if text:
+        return text
     if artifact_count:
-        if agent and final_step:
-            return f"{agent} {final_step.replace('_', ' ')}. {artifact_count} artifact(s) ready."
-        if agent:
-            return f"{agent} completed. {artifact_count} artifact(s) ready."
         return f"{artifact_count} artifact(s) ready."
-
-    if agent and final_step:
-        return f"{agent} {final_step.replace('_', ' ')}."
-    if final_step:
-        return final_step.replace("_", " ").strip().capitalize() + "."
     return ""
 
 
@@ -487,7 +457,6 @@ def _classify_artifact(mime_type: str) -> str:
         "application/octet-stream",
         "application/zip",
         "application/gzip",
-        "text/csv",
     ):
         return "file"
 
@@ -513,8 +482,8 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
             tmp = Path(tempfile.mkdtemp()) / (name or "document.pdf")
             tmp.write_bytes(resp.content)
             return cl.Pdf(name=name, display="inline", path=str(tmp))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to render PDF artifact %r: %s", uri, e)
     return None
 
 
@@ -529,7 +498,8 @@ async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
         tmp = Path(tempfile.mkdtemp()) / filename
         tmp.write_bytes(resp.content)
         return cl.File(name=filename, path=str(tmp), display="inline")
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to render remote file artifact %r: %s", uri, e)
         return None
 
 

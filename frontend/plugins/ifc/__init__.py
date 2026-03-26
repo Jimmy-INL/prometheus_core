@@ -1,11 +1,9 @@
 """IFC 3D building model visualization plugin."""
 
 import tempfile
-import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-import chainlit as cl
 import httpx
 
 MIMETYPES = ["model/ifc", "application/ifc"]
@@ -34,23 +32,15 @@ async def render_artifact(artifact: dict) -> Optional[Any]:
         return dataset.to_chainlit_element()
 
     if uri.startswith("http"):
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.get(uri)
-                response.raise_for_status()
-            tmp_dir = Path(tempfile.mkdtemp(prefix="ifc-artifact-"))
-            tmp_path = tmp_dir / Path(name).name
-            tmp_path.write_bytes(response.content)
-            from components.ifc_integration import process_ifc_upload
-            dataset = await process_ifc_upload(tmp_path)
-            return dataset.to_chainlit_element()
-        except Exception:
-            dataset_id = str(uuid.uuid4())[:8]
-            return cl.CustomElement(
-                name=COMPONENT_NAME,
-                display="inline",
-                props={"datasetId": dataset_id, "fileUrl": uri, "filename": name},
-            )
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.get(uri)
+            response.raise_for_status()
+        tmp_dir = Path(tempfile.mkdtemp(prefix="ifc-artifact-"))
+        tmp_path = tmp_dir / Path(name).name
+        tmp_path.write_bytes(response.content)
+        from components.ifc_integration import process_ifc_upload
+        dataset = await process_ifc_upload(tmp_path)
+        return dataset.to_chainlit_element()
 
     return None
 

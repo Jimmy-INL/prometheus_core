@@ -1,40 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-function useTheme() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document === "undefined") return true;
-    const html = document.documentElement;
-    const body = document.body;
-    if (html.classList.contains("dark")) return true;
-    if (body.classList.contains("dark")) return true;
-    if (html.getAttribute("data-theme") === "dark") return true;
-    return !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  });
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      const html = document.documentElement;
-      const body = document.body;
-      setIsDark(
-        html.classList.contains("dark") ||
-          body.classList.contains("dark") ||
-          html.getAttribute("data-theme") === "dark"
-      );
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "data-theme"],
-    });
-    observer.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark;
+function getInitialTheme() {
+  if (typeof document === "undefined") return true;
+  const html = document.documentElement;
+  const body = document.body;
+  if (html.classList.contains("dark")) return true;
+  if (body.classList.contains("dark")) return true;
+  if (html.getAttribute("data-theme") === "dark") return true;
+  return !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
 }
 
 function getStyles(isDark) {
@@ -47,6 +20,7 @@ function getStyles(isDark) {
         muted: "rgba(255,255,255,0.6)",
         badgeBg: "rgba(99,102,241,0.2)",
         badgeText: "rgb(165,180,252)",
+        error: "rgba(248,113,113,0.9)",
       }
     : {
         bg: "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,249,250,0.98) 100%)",
@@ -56,6 +30,7 @@ function getStyles(isDark) {
         muted: "rgba(0,0,0,0.58)",
         badgeBg: "rgba(99,102,241,0.12)",
         badgeText: "rgb(79,70,229)",
+        error: "#b91c1c",
       };
 
   return {
@@ -105,14 +80,14 @@ function getStyles(isDark) {
     },
     error: {
       padding: "16px",
-      color: "#b91c1c",
+      color: colors.error,
       fontSize: "13px",
     },
   };
 }
 
 export default function IFCViewer() {
-  const isDark = useTheme();
+  const [isDark] = useState(getInitialTheme);
   const styles = useMemo(() => getStyles(isDark), [isDark]);
 
   const {
