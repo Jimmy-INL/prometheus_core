@@ -75,7 +75,7 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: chainlit-frontend
     ports:
-      - "${PORT_CHAINLIT_FRONTEND}:8500"
+      - "${CHAINLIT_FRONTEND_PORT}:8500"
     networks:
       - agent-network
     environment:
@@ -111,7 +111,7 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: client-agent
     ports:
-      - "${PORT_CLIENT_AGENT}:8000"
+      - "${CLIENT_AGENT_PORT}:8000"
     networks:
       - agent-network
     environment:
