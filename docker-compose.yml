@@ -24,10 +24,10 @@ services:
 
   # LiteLLM proxy — A2A agent gateway and optional LLM proxy
   litellm:
-    image: docker.litellm.ai/berriai/litellm:v1.81.12-stable.langfuse-fix
+    image: ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
     container_name: litellm-proxy
     ports:
-      - "9977:4000"
+      - "${LITELLM_LOCAL_PORT}:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
     environment:
@@ -53,7 +53,7 @@ services:
     container_name: agent-redis
     command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     ports:
-      - "6379:6379"
+      - "${REDIS_LOCAL_PORT}:6379"
     networks:
       - agent-network
     volumes:
@@ -75,20 +75,21 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: chainlit-frontend
     ports:
-      - "8500:8500"
+      - "${CHAINLIT_FRONTEND_PORT}:8500"
     networks:
       - agent-network
     environment:
-      - CLIENT_AGENT_URL=http://client-agent:8000
+      - CLIENT_AGENT_URL=${CLIENT_AGENT_URL}
       - REDIS_URL=${REDIS_URL}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - AGENT_SECRET=${AGENT_SECRET}
       - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET}
-      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_FILE=${CERT_FILE}
+      - REQUESTS_CA_BUNDLE=${CERT_FILE}
+      - NODE_EXTRA_CA_CERTS=${CERT_FILE}
     volumes:
       - ./shared:/app/shared
+      - ${LOCAL_CERT_FILE}:/${CERT_FILE}
     depends_on:
       litellm:
         condition: service_healthy
@@ -110,7 +111,7 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: client-agent
     ports:
-      - "8001:8000"
+      - "${CLIENT_AGENT_PORT}:8000"
     networks:
       - agent-network
     environment:
@@ -122,9 +123,9 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
-      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
-      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
+      - SSL_CERT_FILE=${CERT_FILE}
+      - REQUESTS_CA_BUNDLE=${CERT_FILE}
+      - NODE_EXTRA_CA_CERTS=${CERT_FILE}
     depends_on:
       litellm:
         condition: service_healthy
@@ -132,6 +133,7 @@ services:
         condition: service_started
     volumes:
       - ./shared:/app/shared
+      - ${LOCAL_CERT_FILE}:/${CERT_FILE}
     restart: unless-stopped
 
 networks:

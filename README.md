@@ -24,7 +24,7 @@ graph TD
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
 - Docker and Docker Compose (for multi-agent deployment)
 - Redis (for memory and conversation state)
@@ -38,8 +38,16 @@ graph TD
 cp .env.example .env
 # Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, REDIS_URL, CHAINLIT_AUTH_SECRET
 
+# Put SSL cert into certs/
+#   TODO - Update based on pulling inl certs. probably a way to do this with curl
+
+# Sign into mooseharbor to pull prometheus_api container
+docker login mooseharbor.hpc.inl.gov
+# Username: HPC USERNAME
+# Password: HPC PASSWORD
+
 # Start all services
-docker-compose up --build
+make up
 ```
 
 Services start on:
@@ -115,10 +123,10 @@ prometheus_platform/
     osti-research-agent/   # OSTI literature search
     form-filler-agent/     # Dynamic form completion
     artifact-debug-agent/  # Testing/debug agent
-    requirements-agent/    # Requirements extraction
 
-  registry/                # Agent discovery service
-  prometheus_api/          # Shared agent SDK (PrometheusAgent base class)
+  shared/
+    a2a_protocol.py        # Pydantic models for A2A protocol
+
   docker-compose.yml       # Full-stack deployment
   docs/                    # Project documentation
 ```
@@ -128,7 +136,8 @@ prometheus_platform/
 ```bash
 cd frontend
 
-make run        # Start Chainlit
+make run-local  # Start Chainlit locally on port 8500
+make run        # Start Chainlit (production HPC host/port)
 make test       # Run pytest
 make lint       # Ruff linter
 make format     # Ruff formatter check
@@ -145,9 +154,8 @@ uv run pytest -k test_name             # By name
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Adding agents](docs/adding-agents.md)
-- [Memory system](docs/memory-system.md)
-- [Artifacts](docs/artifacts.md)
-- [Visualization plugins](docs/visualization-plugins.md)
-- [Migration guide](docs/migration.md) -- what changed from the original projects and why
+- [Architecture](docs/dev-docs/architecture.md)
+- [Adding agents](docs/dev-docs/adding-agents.md)
+- [Artifacts](docs/dev-docs/artifacts.md)
+- [Visualization plugins](docs/dev-docs/visualization-plugins.md)
+- [Migration guide](docs/dev-docs/migration.md) -- what changed from the original projects and why
