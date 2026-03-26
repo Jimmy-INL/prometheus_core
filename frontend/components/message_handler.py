@@ -120,7 +120,7 @@ async def _handle_response(
         await _handle_needs_info(client, response, original_query, conversation_id, _depth=_depth)
     elif response.status == "plan_ready":
         await _handle_plan_ready(client, response, original_query, conversation_id)
-    elif response.status in ("completed", "answer", "recommendation"):
+    elif response.status in ("completed", "answer", "recommendation", "success"):
         await _handle_final_response(response)
     elif response.status == "executing":
         await cl.Message(content=response.message or "Agent is executing the plan…").send()
@@ -131,6 +131,48 @@ async def _handle_response(
     else:
         text = response.message or response.response_text or str(response)
         await cl.Message(content=text).send()
+
+
+def _coerce_final_text(response: ConversationResponse, artifact_count: int) -> str:
+    """Collapse machine-oriented JSON payloads into compact user-facing text."""
+    candidate = response.report or response.response_text or response.message or ""
+    if isinstance(candidate, dict):
+        payload = candidate
+    elif isinstance(candidate, list):
+        payload = None
+    else:
+        text = str(candidate or "").strip()
+        if not text:
+            payload = None
+        else:
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                return text
+            payload = parsed if isinstance(parsed, dict) else None
+
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("message", "report", "response_text", "summary"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    agent = str(payload.get("agent") or "").strip()
+    final_step = str(payload.get("final_step") or payload.get("status") or "").strip()
+    if artifact_count:
+        if agent and final_step:
+            return f"{agent} {final_step.replace('_', ' ')}. {artifact_count} artifact(s) ready."
+        if agent:
+            return f"{agent} completed. {artifact_count} artifact(s) ready."
+        return f"{artifact_count} artifact(s) ready."
+
+    if agent and final_step:
+        return f"{agent} {final_step.replace('_', ' ')}."
+    if final_step:
+        return final_step.replace("_", " ").strip().capitalize() + "."
+    return ""
 
 
 async def _handle_needs_info(
@@ -199,12 +241,28 @@ async def _handle_needs_info(
         for key, value in submission.items()
         if key != "submitted"
     }
-    next_response = await client.send(
-        query=original_query,
-        conversation_id=conversation_id,
-        followup_answers=followup_answers,
-        artifacts=cl.user_session.get("artifacts", []),
-    )
+    followup_history: List[str] = []
+    followup_step = cl.Step(name="Submitting follow-up answers...", type="tool")
+
+    async def _on_followup_status(msg: str):
+        await _update_status_step(followup_step, followup_history, msg)
+
+    try:
+        await followup_step.__aenter__()
+        await _update_status_step(followup_step, followup_history, "Submitting follow-up answers...")
+        next_response = await client.send(
+            query=original_query,
+            conversation_id=conversation_id,
+            followup_answers=followup_answers,
+            artifacts=cl.user_session.get("artifacts", []),
+            on_status=_on_followup_status,
+        )
+        await followup_step.__aexit__(None, None, None)
+    except Exception as exc:
+        await followup_step.__aexit__(type(exc), exc, exc.__traceback__)
+        await cl.Message(content=f"Error submitting follow-up answers: {exc}").send()
+        return
+
     await _handle_response(client, next_response, original_query, conversation_id, _depth=_depth + 1)
 
 
@@ -290,16 +348,17 @@ def _update_step_statuses(statuses: dict, steps: list, status_msg: str):
 
 
 async def _handle_final_response(response: ConversationResponse):
-    text = response.report or response.response_text or response.message or ""
+    artifacts_to_render = response.new_artifacts or response.artifacts or []
+    text = _coerce_final_text(response, len(artifacts_to_render))
     elements = []
 
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
-    if response.new_artifacts:
-        artifact_elements, artifact_text = await render_artifacts(response.new_artifacts)
+    if artifacts_to_render:
+        artifact_elements, artifact_text = await render_artifacts(artifacts_to_render)
         elements.extend(artifact_elements)
         if artifact_text:
-            text += "\n\n---\n" + artifact_text
+            text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
     if response.recommended_materials:
         materials = "\n".join(f"- {m}" for m in response.recommended_materials)

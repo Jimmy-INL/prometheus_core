@@ -36,7 +36,7 @@ export LITELLM_URL="http://localhost:${PORT_LITELLM}"
 export CLIENT_AGENT_URL="http://localhost:${PORT_CLIENT_AGENT}"
 
 # --- Agent secret enforcement ------------------------------------------------
-export AGENT_SECRET_REQUIRED="${AGENT_SECRET_REQUIRED:-false}"
+export AGENT_SECRET_REQUIRED="${AGENT_SECRET_REQUIRED:-true}"
 
 # --- Data / cache directories ------------------------------------------------
 # These will be bind-mounted into the containers.

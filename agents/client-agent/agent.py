@@ -1113,6 +1113,13 @@ async def invoke_skill(
         input_schema = capability.input_schema if capability else None
         invoke_params = normalize_params_for_input_schema(dict(single_params), input_schema=input_schema)
         invoke_params["conversation_id"] = conversation_id
+        if capability and capability.supports_streaming:
+            async def _status_callback(message: str) -> None:
+                text = str(message or "").strip()
+                if text:
+                    store_status_update(conversation_id, f"[{skill_id}] {text}")
+
+            invoke_params["_status_callback"] = _status_callback
         missing = [param for param in required_params if not has_param_path(invoke_params, param)]
         if missing:
             if emit_status:

@@ -132,7 +132,7 @@ uvicorn
 
 ```bash
 # Local
-AGENT_SECRET_REQUIRED=false uv run agent.py
+uv run agent.py
 
 # Docker
 docker build -t my-analysis-agent .
@@ -140,6 +140,7 @@ docker run -p 8000:8000 --env-file .env my-analysis-agent
 ```
 
 The agent starts a uvicorn server and self-registers with the registry (if `REGISTRY_URL` is set).
+Keep `AGENT_SECRET_REQUIRED=true` for local runs as well.
 
 Custom CA certificates should be placed in the repo-local [`certs`](/Users/schwd/Programs/prometheus/prometheus_platform/certs) directory as `*.pem` files only. The Docker build context for certificates is intentionally limited to that directory.
 

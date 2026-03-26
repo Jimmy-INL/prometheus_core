@@ -275,9 +275,34 @@ export default function IFCViewer() {
       setIfcReady(true);
       return;
     }
-    const handleIfcReady = () => setIfcReady(true);
+    const handleIfcReady = () => {
+      setIfcReady(true);
+      setError(null);
+    };
+    const handleIfcError = (event) => {
+      const detailError = event?.detail?.error;
+      setError(detailError || "Failed to load ThatOpen IFC bundle");
+      setIsLoading(false);
+    };
+    const existingScript = document.querySelector('script[data-prometheus-ifc-bundle="true"]');
+    let injectedScript = null;
+    if (!existingScript) {
+      injectedScript = document.createElement("script");
+      injectedScript.src = "/public/js/ifc/bundle.js";
+      injectedScript.async = false;
+      injectedScript.dataset.prometheusIfcBundle = "true";
+      injectedScript.onerror = () => {
+        setError("Failed to load ThatOpen IFC bundle");
+        setIsLoading(false);
+      };
+      document.head.appendChild(injectedScript);
+    }
     window.addEventListener("ifc-ready", handleIfcReady);
-    return () => window.removeEventListener("ifc-ready", handleIfcReady);
+    window.addEventListener("ifc-error", handleIfcError);
+    return () => {
+      window.removeEventListener("ifc-ready", handleIfcReady);
+      window.removeEventListener("ifc-error", handleIfcError);
+    };
   }, []);
 
   // Update scene background when theme changes

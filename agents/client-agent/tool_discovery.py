@@ -2,6 +2,7 @@
 Dynamic tool discovery from A2A registry.
 Creates LangChain tools by discovering agents and their skills from the registry.
 """
+from collections.abc import Awaitable, Callable
 import json
 import logging
 import os
@@ -19,6 +20,7 @@ LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 SELF_AGENT_ID = (os.getenv("AGENT_HOST") or "").strip()
 SELF_AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
+StatusCallback = Callable[[str], Awaitable[None]]
 
 
 def _litellm_headers() -> Dict[str, str]:
@@ -30,6 +32,166 @@ def _litellm_headers() -> Dict[str, str]:
 
 def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
+
+
+def _extract_status_message_text(status_payload: Dict[str, Any]) -> str:
+    """Extract plain text from a status.message payload."""
+    message = status_payload.get("message", {}) if isinstance(status_payload, dict) else {}
+    parts = message.get("parts", []) if isinstance(message, dict) else []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        if str(part.get("kind") or part.get("type") or "").strip().lower() == "text":
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        root = part.get("root")
+        if isinstance(root, dict) and str(root.get("kind") or "").strip().lower() == "text":
+            text = root.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return ""
+
+
+def _merge_a2a_artifacts(
+    existing: List[Dict[str, Any]],
+    incoming: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge artifacts while preserving order and avoiding duplicates."""
+    merged: List[Dict[str, Any]] = list(existing or [])
+    seen = {
+        str(item.get("artifactId") or item.get("artifact_id") or item.get("name") or "")
+        for item in merged
+        if isinstance(item, dict)
+    }
+    for artifact in incoming or []:
+        if not isinstance(artifact, dict):
+            continue
+        key = str(artifact.get("artifactId") or artifact.get("artifact_id") or artifact.get("name") or "")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        merged.append(artifact)
+    return merged
+
+
+async def _apply_a2a_stream_event(
+    a2a_result: Dict[str, Any],
+    envelope: Dict[str, Any],
+    status_callback: Optional[StatusCallback] = None,
+) -> Dict[str, Any]:
+    if "error" in envelope:
+        print(f"[A2A] Agent returned stream error: {envelope['error']}")
+        raise Exception(f"Agent error: {envelope['error']}")
+
+    event = envelope.get("result", {})
+    if not isinstance(event, dict):
+        return a2a_result
+
+    kind = str(event.get("kind") or "").strip().lower()
+    if kind == "status-update":
+        a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
+        a2a_result["contextId"] = event.get("contextId") or a2a_result.get("contextId")
+        a2a_result["status"] = event.get("status", {})
+        status_text = _extract_status_message_text(a2a_result["status"])
+        if status_callback and status_text and not bool(event.get("final")):
+            await status_callback(status_text)
+    elif kind == "artifact-update":
+        artifact = event.get("artifact")
+        if isinstance(artifact, dict):
+            a2a_result["artifacts"] = _merge_a2a_artifacts(
+                a2a_result.get("artifacts", []),
+                [artifact],
+            )
+    elif kind == "task":
+        a2a_result = {
+            **a2a_result,
+            **event,
+            "artifacts": _merge_a2a_artifacts(
+                a2a_result.get("artifacts", []),
+                event.get("artifacts", []),
+            ),
+        }
+    elif kind == "message":
+        a2a_result.setdefault("status", {})["message"] = event
+
+    return a2a_result
+
+
+async def _stream_a2a_agent(
+    endpoint: str,
+    message: Dict[str, Any],
+    headers: Dict[str, str],
+    timeout_seconds: float,
+    status_callback: Optional[StatusCallback] = None,
+) -> Dict[str, Any]:
+    """Stream A2A task updates and collapse them into a final task payload."""
+    a2a_result: Dict[str, Any] = {
+        "kind": "task",
+        "artifacts": [],
+    }
+
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        stream_headers = {
+            **headers,
+            "Accept": "text/event-stream, application/x-ndjson",
+        }
+        async with client.stream(
+            "POST",
+            endpoint,
+            json=message,
+            headers=stream_headers,
+        ) as response:
+            print(f"[A2A] Stream response status: {response.status_code}")
+            response.raise_for_status()
+
+            content_type = str(response.headers.get("content-type") or "").lower()
+
+            if "application/x-ndjson" in content_type:
+                async for line in response.aiter_lines():
+                    payload = str(line or "").strip()
+                    if not payload:
+                        continue
+                    envelope = json.loads(payload)
+                    a2a_result = await _apply_a2a_stream_event(
+                        a2a_result,
+                        envelope,
+                        status_callback=status_callback,
+                    )
+            elif "text/event-stream" in content_type:
+                data_lines: List[str] = []
+                async for line in response.aiter_lines():
+                    raw_line = str(line or "")
+                    stripped = raw_line.strip()
+                    if not stripped:
+                        if data_lines:
+                            envelope = json.loads("\n".join(data_lines))
+                            a2a_result = await _apply_a2a_stream_event(
+                                a2a_result,
+                                envelope,
+                                status_callback=status_callback,
+                            )
+                            data_lines = []
+                        continue
+                    if stripped.startswith(":"):
+                        continue
+                    if stripped.startswith("data:"):
+                        data_lines.append(stripped[5:].lstrip())
+
+                if data_lines:
+                    envelope = json.loads("\n".join(data_lines))
+                    a2a_result = await _apply_a2a_stream_event(
+                        a2a_result,
+                        envelope,
+                        status_callback=status_callback,
+                    )
+            else:
+                raise Exception(
+                    f"Unsupported streaming content type from A2A proxy: {content_type or 'unknown'}"
+                )
+
+    return a2a_result
 
 
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
@@ -288,7 +450,9 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
     Call an A2A agent using JSON-RPC protocol.
 
     Implements the Agent-to-Agent (A2A) communication protocol for invoking
-    remote agent skills. Uses JSON-RPC with blocking=True to wait for completion.
+    remote agent skills. Uses JSON-RPC with blocking=True for standard sends,
+    and switches to the A2A SSE stream endpoint when the downstream agent card
+    advertises streaming support.
 
     The response extraction expects the canonical final response in
     result.status.message.parts[*].text and separately normalizes native
@@ -304,6 +468,8 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
     """
     request_id = str(uuid.uuid4())
     message_id = str(uuid.uuid4())
+    prefer_streaming = bool(kwargs.get("_prefer_streaming"))
+    status_callback = kwargs.get("_status_callback")
 
     print(f"[A2A] Calling agent at {agent_url}")
     print(f"[A2A] Skill: {skill_id}, Params: {kwargs}")
@@ -367,69 +533,86 @@ async def call_a2a_agent(agent_url: str, skill_id: str, **kwargs) -> Dict[str, A
     timeout_seconds = 900.0  # 15 minutes
     print(f"[A2A] Sending request (timeout: {timeout_seconds}s)...")
 
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        try:
-            response = await client.post(endpoint, json=message, headers=headers)
-            print(f"[A2A] Response status: {response.status_code}")
-            response.raise_for_status()
-            result = response.json()
-
-            if "error" in result:
-                print(f"[A2A] Agent returned error: {result['error']}")
-                raise Exception(f"Agent error: {result['error']}")
-
-            print(f"[A2A] Got result: {str(result)[:500]}...")
-
-            # Extract the actual response from A2A protocol wrapper
-            a2a_result = result.get("result", {})
-
-            # Log full structure for debugging
-            print(f"[A2A] Result keys: {list(a2a_result.keys())}")
-            print(f"[A2A] Full result structure: {json.dumps(a2a_result, indent=2, default=str)[:2000]}")
-
-            normalized_artifacts = _normalize_a2a_artifacts(
-                a2a_result.get("artifacts", []),
-                conversation_id=str(kwargs.get("conversation_id") or ""),
+    try:
+        if prefer_streaming:
+            stream_message = dict(message)
+            stream_message["method"] = "message/stream"
+            # A2A streaming stays on the same JSON-RPC endpoint and switches the
+            # method in the payload; LiteLLM does not expose a separate
+            # /message/stream sub-route.
+            stream_endpoint = agent_url.rstrip("/")
+            print(f"[A2A] Using streaming invocation via {stream_endpoint}")
+            a2a_result = await _stream_a2a_agent(
+                stream_endpoint,
+                stream_message,
+                headers,
+                timeout_seconds,
+                status_callback=status_callback if callable(status_callback) else None,
             )
+        else:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.post(endpoint, json=message, headers=headers)
+                print(f"[A2A] Response status: {response.status_code}")
+                response.raise_for_status()
+                result = response.json()
 
-            status = a2a_result.get("status", {})
-            state = str(status.get("state") or "").strip().lower()
-            parsed = _extract_status_payload(a2a_result)
-            if state == "input-required":
-                payload = parsed if isinstance(parsed, dict) else {}
-                return {
-                    "status": "input_required",
-                    "input_required": payload,
-                    "_a2a_context_id": a2a_result.get("contextId"),
-                    "_a2a_task_id": a2a_result.get("id"),
-                }
-            if isinstance(parsed, dict):
-                if normalized_artifacts and "artifacts" not in parsed:
-                    parsed = {**parsed, "artifacts": normalized_artifacts}
-                print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")
-                return parsed
+                if "error" in result:
+                    print(f"[A2A] Agent returned error: {result['error']}")
+                    raise Exception(f"Agent error: {result['error']}")
 
-            error_payload: Dict[str, Any] = {
-                "status": "error",
-                "message": "Agent response missing canonical final status payload.",
+                print(f"[A2A] Got result: {str(result)[:500]}...")
+
+                # Extract the actual response from A2A protocol wrapper
+                a2a_result = result.get("result", {})
+
+        # Log full structure for debugging
+        print(f"[A2A] Result keys: {list(a2a_result.keys())}")
+        print(f"[A2A] Full result structure: {json.dumps(a2a_result, indent=2, default=str)[:2000]}")
+
+        normalized_artifacts = _normalize_a2a_artifacts(
+            a2a_result.get("artifacts", []),
+            conversation_id=str(kwargs.get("conversation_id") or ""),
+        )
+
+        status = a2a_result.get("status", {})
+        state = str(status.get("state") or "").strip().lower()
+        parsed = _extract_status_payload(a2a_result)
+        if state == "input-required":
+            payload = parsed if isinstance(parsed, dict) else {}
+            return {
+                "status": "input_required",
+                "input_required": payload,
+                "_a2a_context_id": a2a_result.get("contextId"),
+                "_a2a_task_id": a2a_result.get("id"),
             }
-            if normalized_artifacts:
-                error_payload["artifacts"] = normalized_artifacts
-            return error_payload
-        except httpx.TimeoutException as e:
-            print(f"[A2A] Request timed out: {e}")
-            raise Exception(f"Agent request timed out after {timeout_seconds}s")
-        except httpx.HTTPStatusError as e:
-            print(f"[A2A] HTTP error: {e}")
-            raise
-        except Exception as e:
-            print(f"[A2A] Unexpected error: {e}")
-            raise
+        if isinstance(parsed, dict):
+            if normalized_artifacts and "artifacts" not in parsed:
+                parsed = {**parsed, "artifacts": normalized_artifacts}
+            print(f"[A2A] Extracted final response from status.message: {str(parsed)[:200]}...")
+            return parsed
+
+        error_payload: Dict[str, Any] = {
+            "status": "error",
+            "message": "Agent response missing canonical final status payload.",
+        }
+        if normalized_artifacts:
+            error_payload["artifacts"] = normalized_artifacts
+        return error_payload
+    except httpx.TimeoutException as e:
+        print(f"[A2A] Request timed out: {e}")
+        raise Exception(f"Agent request timed out after {timeout_seconds}s")
+    except httpx.HTTPStatusError as e:
+        print(f"[A2A] HTTP error: {e}")
+        raise
+    except Exception as e:
+        print(f"[A2A] Unexpected error: {e}")
+        raise
 
 
 async def create_tool_from_skill(
     agent_url: str,
-    skill: Dict[str, Any]
+    skill: Dict[str, Any],
+    supports_streaming: bool = False,
 ) -> StructuredTool:
     """
     Create LangChain tool from agent skill definition.
@@ -465,7 +648,12 @@ async def create_tool_from_skill(
         try:
             # Remap any Pydantic-renamed fields back to their original names
             remapped = {_rename_map.get(k, k): v for k, v in kwargs.items()}
-            result = await call_a2a_agent(agent_url, skill_id, **remapped)
+            result = await call_a2a_agent(
+                agent_url,
+                skill_id,
+                _prefer_streaming=supports_streaming,
+                **remapped,
+            )
             return json.dumps(result, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -519,10 +707,15 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
             agent_card = await get_agent_card(agent_id, direct_url=direct_url)
             if not agent_card.get("skills"):
                 agent_card = agent.get("agent_card_params") or agent_card
+            supports_streaming = bool((agent_card.get("capabilities") or {}).get("streaming", False))
 
             # Create one tool per skill
             for skill in agent_card.get("skills", []):
-                tool = await create_tool_from_skill(litellm_url, skill)
+                tool = await create_tool_from_skill(
+                    litellm_url,
+                    skill,
+                    supports_streaming=supports_streaming,
+                )
                 tools.append(tool)
                 print(f"Discovered tool: {skill['id']} from {agent_id}")
         except Exception as e:

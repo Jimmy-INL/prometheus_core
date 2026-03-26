@@ -28,6 +28,7 @@ class AgentCapability:
     skill_id: str
     skill_name: str
     description: str
+    supports_streaming: bool = False
     usage_notes: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     input_schema: Dict[str, Any] = field(default_factory=dict)
@@ -43,6 +44,7 @@ class AgentCapability:
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
             "agent_url": self.agent_url,
+            "supports_streaming": self.supports_streaming,
             "skill_id": self.skill_id,
             "skill_name": self.skill_name,
             "description": self.description,
@@ -63,6 +65,7 @@ class AgentCapability:
             agent_id=data["agent_id"],
             agent_name=data["agent_name"],
             agent_url=data["agent_url"],
+            supports_streaming=data.get("supports_streaming", False),
             skill_id=data["skill_id"],
             skill_name=data["skill_name"],
             description=data["description"],
@@ -189,12 +192,16 @@ class CapabilityCache:
                     if not agent_card.get("skills"):
                         agent_card = agent.get("agent_card_params") or agent_card
 
+                    capabilities_meta = agent_card.get("capabilities") or {}
+                    supports_streaming = bool(capabilities_meta.get("streaming", False))
+
                     # Extract capabilities from each skill
                     for skill in agent_card.get("skills", []):
                         capability = AgentCapability(
                             agent_id=agent_id,
                             agent_name=agent_name,
                             agent_url=agent_url,
+                            supports_streaming=supports_streaming,
                             skill_id=skill["id"],
                             skill_name=skill.get("name", skill["id"]),
                             description=skill.get("description", ""),
