@@ -8,19 +8,19 @@ A multi-agent analysis platform for nuclear engineering. Users interact through 
 graph TD
   U[User] -->|chat / file upload| CL[Chainlit Frontend]
   CL -->|A2A JSON-RPC| CA[Client Agent]
-  CA -->|capability lookup| REG[Agent Registry]
+  CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
   CA -->|state + factoids| RED[(Redis)]
-  CA -->|A2A| CORR[Corrosion Agent]
-  CA -->|A2A| RAD[Radiation Agent]
-  CA -->|A2A| THERM[Thermal Agent]
-  CA -->|A2A| DATA[Data Agent]
-  CA -->|A2A| SYNTH[Synthesis Agent]
-  CA -->|A2A| OSTI[OSTI Research Agent]
-  CA -->|A2A| FF[Form Filler Agent]
+  LLM -->|A2A| CORR[Corrosion Agent]
+  LLM -->|A2A| RAD[Radiation Agent]
+  LLM -->|A2A| THERM[Thermal Agent]
+  LLM -->|A2A| DATA[Data Agent]
+  LLM -->|A2A| SYNTH[Synthesis Agent]
+  LLM -->|A2A| OSTI[OSTI Research Agent]
+  LLM -->|A2A| FF[Form Filler Agent]
   CL -->|renders| VIZ[ExodusViewer / IFCViewer / MermaidViewer]
 ```
 
-**Request flow:** User sends a message in Chainlit. The frontend forwards it as an A2A JSON-RPC request to the client-agent. The client-agent classifies the query, discovers relevant specialist agents from the registry, collects any missing parameters, builds an execution plan, and dispatches work. Results (including artifacts) flow back through the client-agent to the frontend for rendering.
+**Request flow:** User sends a message in Chainlit. The frontend forwards it as an A2A JSON-RPC request to the client-agent. The client-agent classifies the query, discovers relevant specialist agents through LiteLLM's agent directory, collects any missing parameters, builds an execution plan, and dispatches work through LiteLLM's A2A gateway. Results (including artifacts) flow back through the client-agent to the frontend for rendering.
 
 ## Prerequisites
 
@@ -36,7 +36,8 @@ graph TD
 ```bash
 # Copy and edit environment variables
 cp .env.example .env
-# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, REDIS_URL, CHAINLIT_AUTH_SECRET
+# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
+#      LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, and LITELLM_LOCAL_PORT
 
 # Put SSL cert into certs/
 #   TODO - Update based on pulling inl certs. probably a way to do this with curl
@@ -53,7 +54,7 @@ make up
 Services start on:
 - **Chainlit UI**: http://localhost:8500
 - **Client Agent**: http://localhost:8001
-- **LiteLLM agent gateway**: http://localhost:9977
+- **LiteLLM agent gateway**: http://localhost:9977 (`LITELLM_LOCAL_PORT`)
 - **Redis**: localhost:6379
 
 ### Option 2: Local development
@@ -78,6 +79,7 @@ Default credentials (defined in `frontend/config.yml`):
 ## Key features
 
 - **Multi-agent orchestration**: Client-agent dynamically routes queries to specialist agents (corrosion, radiation, thermal, data retrieval, synthesis, OSTI literature search)
+- **LiteLLM-backed discovery and routing**: Specialist agents register with LiteLLM, and the client-agent uses LiteLLM as the A2A gateway
 - **3D visualization**: Upload and render Exodus II meshes (VTK.js) and IFC building models (ThatOpen/OBC) directly in the chat
 - **Persistent memory**: Redis-backed factoid system extracts and recalls knowledge from past analyses
 - **Artifacts**: Agents produce structured artifacts (JSON, files, references) tracked in a conversation-scoped registry

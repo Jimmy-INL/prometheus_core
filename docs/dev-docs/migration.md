@@ -65,7 +65,7 @@ The old FastAPI backend was a pass-through: it received chat messages from the f
 
 ### Multi-agent orchestration
 
-The old backend had a single LLM endpoint. The new architecture routes queries to specialist agents based on capability metadata, supports multi-step execution plans with user approval, and chains agent outputs across workflow steps. This required the client-agent's LangGraph workflow, the agent registry for discovery, and the A2A protocol for inter-agent communication.
+The old backend had a single LLM endpoint. The new architecture routes queries to specialist agents based on capability metadata, supports multi-step execution plans with user approval, and chains agent outputs across workflow steps. This required the client-agent's LangGraph workflow, LiteLLM-backed agent discovery/routing, and the A2A protocol for inter-agent communication.
 
 ### Artifact management
 
@@ -101,7 +101,10 @@ Model selection and API keys are now configured on the client-agent and speciali
 | `ANTHROPIC_API_KEY` | Client-agent + specialists | LLM API access |
 | `REDIS_URL` | Client-agent + frontend | Conversation state, status polling, and history browser |
 | `REDIS_PASSWORD` | Redis container | Redis auth |
-| `REGISTRY_URL` | All agents | Agent registry endpoint |
+| `LITELLM_URL` | All agents | LiteLLM base URL for A2A routing and discovery |
+| `LITELLM_MASTER_KEY` | Client-agent + specialists | LiteLLM auth for agent discovery/registration |
+| `LITELLM_DB_PASSWORD` | LiteLLM Postgres | Persistent storage for LiteLLM agent registrations |
+| `LITELLM_LOCAL_PORT` | Docker Compose host mapping | Host port that exposes LiteLLM locally (default: `9977`) |
 | `MODEL_NAME` | All agents | LLM model selection (default: `claude-sonnet-4-20250514`) |
 | `CHAINLIT_AUTH_SECRET` | Frontend | Session encryption secret for Chainlit |
 
@@ -150,7 +153,7 @@ The deployment moved from a frontend-only Docker setup to a full multi-agent sta
 
 | Service | Port | Role |
 |---------|------|------|
-| Registry | 8000 | Agent discovery |
+| LiteLLM Agent Gateway | 9977 | Agent discovery and A2A routing |
 | Client Agent | 8001 | Orchestration |
 | Corrosion Agent | 8002 | Specialist |
 | Radiation Agent | 8003 | Specialist |
@@ -161,6 +164,7 @@ The deployment moved from a frontend-only Docker setup to a full multi-agent sta
 | Artifact Debug | 8008 | Testing |
 | Synthesis Agent | 8009 | Specialist |
 | Redis | 6379 | State/status |
+| LiteLLM DB | 5432 | Persistent LiteLLM metadata store |
 | Chainlit Frontend | 8500 | UI |
 
-All containers share the `agent-network` bridge. Specialist agents self-register with the registry on startup; the client-agent discovers them dynamically.
+All containers share the `agent-network` bridge. Specialist agents register with LiteLLM on startup, and the client-agent discovers them dynamically through LiteLLM's `/v1/agents` directory.

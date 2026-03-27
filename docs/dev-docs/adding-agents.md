@@ -1,6 +1,6 @@
 # Adding agents
 
-This guide covers how to create a new specialist agent, register it with the system, and wire it into Docker Compose.
+This guide covers how to create a new specialist agent, register it with LiteLLM, and wire it into Docker Compose.
 
 ## Creating a new agent
 
@@ -44,7 +44,7 @@ class MyAnalysisAgent(PrometheusAgent):
 The base class handles:
 - HTTP server setup with Bearer token auth
 - Agent card loading and serving at `/.well-known/agent.json`
-- Registry self-registration on startup
+- LiteLLM agent registration on startup
 - A2A JSON-RPC message parsing
 - Task lifecycle (working/completed/failed status)
 - Automatic JSON artifact emission for the return value
@@ -100,10 +100,10 @@ The agent card defines the agent's identity, skills, and capabilities:
 }
 ```
 
-Key fields for the registry:
+Key fields for discovery and routing:
 - `skills[].id`: Used by the client-agent to invoke specific skills via `skillId` in A2A context
 - `skills[].inputSchema`: The client-agent uses this to determine what parameters to collect from the user
-- `skills[].tags`: Used for capability search (`GET /capabilities/search?tag=analysis`)
+- `skills[].tags`: Used by the client-agent when matching capabilities to a request
 - `skills[].requires_approval`: If `true`, the client-agent asks the user before invoking
 
 ### 3. Create environment and dependencies
@@ -114,7 +114,8 @@ AGENT_PORT=8000
 AGENT_HOST=localhost
 AGENT_SECRET=your-shared-secret
 AGENT_SECRET_REQUIRED=true
-REGISTRY_URL=http://localhost:8000
+LITELLM_URL=http://localhost:4000
+LITELLM_MASTER_KEY=your-litellm-master-key
 ANTHROPIC_API_KEY=your-api-key
 MODEL_NAME=claude-sonnet-4-20250514
 REDIS_URL=redis://localhost:6379
@@ -139,7 +140,7 @@ docker build -t my-analysis-agent .
 docker run -p 8000:8000 --env-file .env my-analysis-agent
 ```
 
-The agent starts a uvicorn server and self-registers with the registry (if `REGISTRY_URL` is set).
+The agent starts a uvicorn server and registers with LiteLLM (if `LITELLM_URL` is set).
 Keep `AGENT_SECRET_REQUIRED=true` for local runs as well.
 
 Custom CA certificates should be placed in the repo-local [`certs`](/Users/schwd/Programs/prometheus/prometheus_platform/certs) directory as `*.pem` files only. The Docker build context for certificates is intentionally limited to that directory.
@@ -163,21 +164,22 @@ my-analysis-agent:
   environment:
     - AGENT_HOST=my-analysis-agent
     - AGENT_PORT=8000
-    - REGISTRY_URL=http://registry:8000
+    - LITELLM_URL=http://litellm:4000
+    - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - REDIS_URL=${REDIS_URL}
     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:
-    registry:
+    litellm:
       condition: service_healthy
   volumes:
     - ./shared:/app/shared
   restart: unless-stopped
 ```
 
-Once the container starts, it self-registers with the registry. The client-agent discovers it automatically through the capability catalog.
+Once the container starts, it registers with LiteLLM. The client-agent discovers it automatically through LiteLLM's agent directory and loads the full agent card from the specialist's well-known endpoint when needed.
 
 ## Workflow YAML files
 
