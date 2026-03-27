@@ -4,6 +4,9 @@ workflow-suggestions:
   - "Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW"
   - "Run FTL Safety Analysis"
   - "Design a nuclear system"
+  - "Perform a thermal analysis of SS316 at 400C"
+  - "Do a comprehensive material analysis of SS347"
+  - "Make an image with the word Success in red in it"
 
 local-users:
   - username: "admin"
