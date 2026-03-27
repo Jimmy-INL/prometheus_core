@@ -469,14 +469,11 @@ async def call_a2a_agent(
                 "messageId": message_id,
                 "role": "user",
                 "parts": [],
+                "metadata": {"skillId": skill_id},
             },
             "configuration": {
                 "blocking": True,  # Wait for task to complete before returning
             },
-            "context": {
-                "skillId": skill_id,
-                "conversationId": kwargs.get("_a2a_context_id") or kwargs.get("conversation_id", str(uuid.uuid4()))
-            }
         }
     }
 
