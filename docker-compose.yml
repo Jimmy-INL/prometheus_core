@@ -75,21 +75,20 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: chainlit-frontend
     ports:
-      - "${CHAINLIT_FRONTEND_PORT}:8500"
+      - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
     networks:
       - agent-network
     environment:
-      - CLIENT_AGENT_URL=${CLIENT_AGENT_URL}
-      - REDIS_URL=${REDIS_URL}
+      - CLIENT_AGENT_URL=${CLIENT_AGENT_URL:-http://client-agent:8000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:${REDIS_LOCAL_PORT}}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - AGENT_SECRET=${AGENT_SECRET}
       - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET}
-      - SSL_CERT_FILE=${CERT_FILE}
-      - REQUESTS_CA_BUNDLE=${CERT_FILE}
-      - NODE_EXTRA_CA_CERTS=${CERT_FILE}
+      - SSL_CERT_FILE=${CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
+      - REQUESTS_CA_BUNDLE=${CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
+      - NODE_EXTRA_CA_CERTS=${CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
     volumes:
       - ./shared:/app/shared
-      - ${LOCAL_CERT_FILE}:/${CERT_FILE}
     depends_on:
       litellm:
         condition: service_healthy
@@ -111,7 +110,7 @@ services:
         - NO_PROXY=${NO_PROXY}
     container_name: client-agent
     ports:
-      - "${CLIENT_AGENT_PORT}:8000"
+      - "${CLIENT_AGENT_PORT:-8001}:8000"
     networks:
       - agent-network
     environment:
@@ -119,13 +118,13 @@ services:
       - AGENT_PORT=8000
       - LITELLM_URL=http://litellm:4000
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
-      - SSL_CERT_FILE=${CERT_FILE}
-      - REQUESTS_CA_BUNDLE=${CERT_FILE}
-      - NODE_EXTRA_CA_CERTS=${CERT_FILE}
+      - SSL_CERT_FILE=${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+      - REQUESTS_CA_BUNDLE=${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+      - NODE_EXTRA_CA_CERTS=${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
     depends_on:
       litellm:
         condition: service_healthy
@@ -133,7 +132,6 @@ services:
         condition: service_started
     volumes:
       - ./shared:/app/shared
-      - ${LOCAL_CERT_FILE}:/${CERT_FILE}
     restart: unless-stopped
 
 networks:
