@@ -238,7 +238,8 @@ class PrometheusAgentExecutor(AgentExecutor):
             context: A2A request context
 
         Returns:
-            Dict of extracted parameters
+            Dict of extracted parameters. Always includes ``skill_id`` when
+            the caller placed a ``skillId`` key in the message metadata.
 
         Raises:
             ValueError: If message format is invalid
@@ -247,15 +248,22 @@ class PrometheusAgentExecutor(AgentExecutor):
         text = context.get_user_input()
 
         if not text:
-            # Return empty params if no text
-            return {}
+            params: Dict[str, Any] = {}
+        else:
+            try:
+                params = json.loads(text)
+            except json.JSONDecodeError:
+                # If not valid JSON, treat the text as a plain message
+                logger.debug(f"Message is not JSON, treating as plain text: {text}")
+                params = {"message": text}
 
-        try:
-            params = json.loads(text)
-        except json.JSONDecodeError:
-            # If not valid JSON, treat the text as a plain message
-            logger.debug(f"Message is not JSON, treating as plain text: {text}")
-            params = {"message": text}
+        # Inject skill_id from message metadata so agents can dispatch on
+        # which skill was invoked without needing an explicit 'action' param.
+        message = context.message
+        if message and isinstance(message.metadata, dict):
+            skill_id = message.metadata.get("skillId")
+            if skill_id and "skill_id" not in params:
+                params["skill_id"] = str(skill_id)
 
         logger.info(f"Extracted parameters: {params}")
         return params
