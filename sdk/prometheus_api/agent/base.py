@@ -699,10 +699,19 @@ class PrometheusAgent:
                             client.delete(f"{litellm_url}/v1/agents/{entry['agent_id']}")
                             logger.debug(f"Removed stale registration for '{agent_name}'")
                             break
+                registration_payload = {
+                    "agent_name": agent_name,
+                    "agent_card_params": agent_card_params,
+                }
 
+                if agent_secret := os.getenv("AGENT_SECRET"):
+                    registration_payload["static_headers"] = {
+                        "Authorization": f"Bearer {agent_secret}",
+                    }
+                logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
                 response = client.post(
                     f"{litellm_url}/v1/agents",
-                    json={"agent_name": agent_name, "agent_card_params": agent_card_params},
+                    json=registration_payload,
                 )
                 response.raise_for_status()
                 logger.info(f"Registered '{agent_name}' with LiteLLM at {litellm_url}")
