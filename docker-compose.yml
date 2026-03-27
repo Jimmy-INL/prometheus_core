@@ -30,7 +30,10 @@ services:
       - "${LITELLM_LOCAL_PORT}:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
+      - ./litellm-db/schema.prism:/usr/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma
+      - ./litellm-db/migrations/20260319000000_restore_mcp_approval_fields:/usr/lib/python3.13/site-packages/litellm_proxy_extras/migrations/20260319000000_restore_mcp_approval_fields
     environment:
+      - LITELLM_LOCAL_MODEL_COST_MAP=True
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - DATABASE_URL=postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
     command: ["--config", "/app/config.yaml", "--port", "4000"]
