@@ -293,8 +293,9 @@ AGENT_HOST=localhost
 AGENT_SECRET=your-secret          # enables Bearer token auth
 AGENT_SECRET_REQUIRED=true
 
-# Registry (optional)
-REGISTRY_URL=http://registry:8000
+# LiteLLM agent gateway (optional, used for agent registration/routing)
+LITELLM_URL=http://litellm:4000
+LITELLM_MASTER_KEY=your-litellm-master-key
 
 # Enterprise proxy / CA certs
 HTTP_PROXY=...
@@ -365,7 +366,7 @@ When `agent.run()` is called:
 2. Creates an executor wrapping `process_analysis()`
 3. Sets up a Starlette HTTP server with the A2A SDK
 4. Adds health endpoint and Bearer token middleware (if `AGENT_SECRET` is set)
-5. Registers with the agent registry (if `REGISTRY_URL` is set)
+5. Registers with LiteLLM (if `LITELLM_URL` is set)
 6. Starts uvicorn
 
 ## Testing

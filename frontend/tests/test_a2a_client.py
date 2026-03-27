@@ -1,5 +1,6 @@
 """Tests for frontend A2A response extraction."""
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -90,3 +91,79 @@ def test_parse_response_extracts_from_rooted_text_part() -> None:
     assert response.status == "needs_info"
     assert response.followup_questions is not None
     assert response.followup_questions[0]["field"] == "context.temperature_c"
+
+
+def test_poll_status_starts_after_existing_history(monkeypatch) -> None:
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    seen = []
+
+    class _FakeResponse:
+        def __init__(self, payload, status_code=200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self._payload
+
+    class _DoneTask:
+        def __init__(self):
+            self._done = False
+
+        def done(self):
+            return self._done
+
+        def mark_done(self):
+            self._done = True
+
+    status_calls = [
+        {
+            "history": [
+                {"message": "old-1"},
+                {"message": "old-2"},
+            ]
+        },
+        {
+            "history": [
+                {"message": "old-1"},
+                {"message": "old-2"},
+                {"message": "new-1"},
+                {"message": "new-2"},
+            ]
+        },
+    ]
+
+    async def _fake_sleep(_seconds):
+        return None
+
+    async def _fake_on_status(message: str):
+        seen.append(message)
+        if len(seen) >= 2:
+            send_task.mark_done()
+
+    send_task = _DoneTask()
+
+    monkeypatch.setattr("utils.a2a_client.asyncio.sleep", _fake_sleep)
+
+    class _Client:
+        async def get(self, url, headers=None, timeout=None):
+            return _FakeResponse(status_calls.pop(0))
+
+    async def _run():
+        fake_client = _Client()
+        history_count = await client._get_status_history_count(
+            fake_client,
+            "conv-1",
+            {},
+        )
+        await client._poll_status(
+            fake_client,
+            "conv-1",
+            {},
+            _fake_on_status,
+            send_task,
+            initial_seen_count=history_count,
+        )
+
+    asyncio.run(_run())
+
+    assert seen == ["new-1", "new-2"]

@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import chainlit as cl
 import httpx
+
+logger = logging.getLogger(__name__)
 
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
@@ -120,7 +123,7 @@ async def _handle_response(
         await _handle_needs_info(client, response, original_query, conversation_id, _depth=_depth)
     elif response.status == "plan_ready":
         await _handle_plan_ready(client, response, original_query, conversation_id)
-    elif response.status in ("completed", "answer", "recommendation"):
+    elif response.status in ("completed", "answer", "recommendation", "success"):
         await _handle_final_response(response)
     elif response.status == "executing":
         await cl.Message(content=response.message or "Agent is executing the plan…").send()
@@ -131,6 +134,15 @@ async def _handle_response(
     else:
         text = response.message or response.response_text or str(response)
         await cl.Message(content=text).send()
+
+
+def _coerce_final_text(response: ConversationResponse, artifact_count: int) -> str:
+    text = (response.report or response.response_text or response.message or "").strip()
+    if text:
+        return text
+    if artifact_count:
+        return f"{artifact_count} artifact(s) ready."
+    return ""
 
 
 async def _handle_needs_info(
@@ -199,12 +211,28 @@ async def _handle_needs_info(
         for key, value in submission.items()
         if key != "submitted"
     }
-    next_response = await client.send(
-        query=original_query,
-        conversation_id=conversation_id,
-        followup_answers=followup_answers,
-        artifacts=cl.user_session.get("artifacts", []),
-    )
+    followup_history: List[str] = []
+    followup_step = cl.Step(name="Submitting follow-up answers...", type="tool")
+
+    async def _on_followup_status(msg: str):
+        await _update_status_step(followup_step, followup_history, msg)
+
+    try:
+        await followup_step.__aenter__()
+        await _update_status_step(followup_step, followup_history, "Submitting follow-up answers...")
+        next_response = await client.send(
+            query=original_query,
+            conversation_id=conversation_id,
+            followup_answers=followup_answers,
+            artifacts=cl.user_session.get("artifacts", []),
+            on_status=_on_followup_status,
+        )
+        await followup_step.__aexit__(None, None, None)
+    except Exception as exc:
+        await followup_step.__aexit__(type(exc), exc, exc.__traceback__)
+        await cl.Message(content=f"Error submitting follow-up answers: {exc}").send()
+        return
+
     await _handle_response(client, next_response, original_query, conversation_id, _depth=_depth + 1)
 
 
@@ -290,16 +318,17 @@ def _update_step_statuses(statuses: dict, steps: list, status_msg: str):
 
 
 async def _handle_final_response(response: ConversationResponse):
-    text = response.report or response.response_text or response.message or ""
+    artifacts_to_render = response.new_artifacts or response.artifacts or []
+    text = _coerce_final_text(response, len(artifacts_to_render))
     elements = []
 
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
-    if response.new_artifacts:
-        artifact_elements, artifact_text = await render_artifacts(response.new_artifacts)
+    if artifacts_to_render:
+        artifact_elements, artifact_text = await render_artifacts(artifacts_to_render)
         elements.extend(artifact_elements)
         if artifact_text:
-            text += "\n\n---\n" + artifact_text
+            text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
     if response.recommended_materials:
         materials = "\n".join(f"- {m}" for m in response.recommended_materials)
@@ -371,7 +400,17 @@ async def render_artifacts(
                     heading += f" `{json_type}`"
                 text_parts.append(f"{heading}\n```json\n{formatted}\n```")
             else:
-                text_parts.append(f"- **{name}**: {description or uri}")
+                el = await _render_remote_file_artifact(uri, name)
+                if el:
+                    elements.append(el)
+                    line = f"- **{name}**"
+                    if description:
+                        line += f": {description}"
+                    elif json_type:
+                        line += f": `{json_type}`"
+                    text_parts.append(line)
+                else:
+                    text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "report":
             report_text = description
@@ -381,7 +420,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "file":
-            el = _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name)
             if el:
                 elements.append(el)
             else:
@@ -396,7 +435,7 @@ async def render_artifacts(
             line = f"📎 **{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name)
             if el:
                 elements.append(el)
             else:
@@ -418,7 +457,6 @@ def _classify_artifact(mime_type: str) -> str:
         "application/octet-stream",
         "application/zip",
         "application/gzip",
-        "text/csv",
     ):
         return "file"
 
@@ -444,18 +482,34 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
             tmp = Path(tempfile.mkdtemp()) / (name or "document.pdf")
             tmp.write_bytes(resp.content)
             return cl.Pdf(name=name, display="inline", path=str(tmp))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to render PDF artifact %r: %s", uri, e)
     return None
 
 
-def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
+async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
+    if not uri.startswith("http"):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.get(uri)
+            resp.raise_for_status()
+        filename = Path(name).name or "artifact"
+        tmp = Path(tempfile.mkdtemp()) / filename
+        tmp.write_bytes(resp.content)
+        return cl.File(name=filename, path=str(tmp), display="inline")
+    except Exception as e:
+        logger.warning("Failed to render remote file artifact %r: %s", uri, e)
+        return None
+
+
+async def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
     if uri.startswith("file://"):
         path = Path(uri[7:])
     elif uri.startswith("/"):
         path = Path(uri)
     else:
-        return None
+        return await _render_remote_file_artifact(uri, name)
     if path.exists():
         return cl.File(name=name, path=str(path), display="inline")
     return None

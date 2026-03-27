@@ -107,27 +107,9 @@ class AgentState(TypedDict):
     missing_info: List[str]
     awaiting_approval: bool
 
-    # Pending INPUT_REQUIRED from a subagent.
-    #
-    # LIMITATION: only one pending request is tracked at a time. In multi-skill
-    # invocations the last skill that returns input_required wins; earlier ones
-    # are silently overwritten. This is acceptable for the current single-skill
-    # thermal-agent use-case but will need to be generalized before multi-skill
-    # plans can reliably pause on input.
-    #
-    # FUTURE GENERALIZATION PLAN:
-    #   1. Change this field to `pending_subagent_requests: List[Dict[str, Any]]`.
-    #   2. Collect *all* input_required items from an invocation loop rather than
-    #      overwriting on each iteration.
-    #   3. In ask_followup_dynamic / _questions_from_pending_subagent_request,
-    #      merge the missing_inputs lists across all pending requests into a
-    #      single consolidated form (deduplicated by field name).
-    #   4. In resume_pending_subagent_request, route each provided answer back
-    #      to the correct skill using the skill_id stored per pending entry,
-    #      then clear only the entries that were successfully resumed.
-    #   5. Update the ConversationResponse to carry a list of pending skill IDs
-    #      so the frontend can surface which agents are still waiting.
-    pending_subagent_request: Optional[Dict[str, Any]]
+    # All pending INPUT_REQUIRED requests from subagents in the current invocation.
+    # Each entry has: skill_id, a2a_context_id, a2a_task_id, missing_inputs, hint.
+    pending_subagent_requests: List[Dict[str, Any]]
 
     # Query parameters (extracted from routing decision)
     material_id: Optional[str]
@@ -1113,6 +1095,13 @@ async def invoke_skill(
         input_schema = capability.input_schema if capability else None
         invoke_params = normalize_params_for_input_schema(dict(single_params), input_schema=input_schema)
         invoke_params["conversation_id"] = conversation_id
+        if capability and capability.supports_streaming:
+            async def _status_callback(message: str) -> None:
+                text = str(message or "").strip()
+                if text:
+                    store_status_update(conversation_id, f"[{skill_id}] {text}")
+
+            invoke_params["_status_callback"] = _status_callback
         missing = [param for param in required_params if not has_param_path(invoke_params, param)]
         if missing:
             if emit_status:
@@ -1714,7 +1703,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
         response_lines = []
         has_errors = False
         missing_required_params: List[str] = []
-        pending_subagent_request: Optional[Dict[str, Any]] = None
+        pending_subagent_requests: List[Dict[str, Any]] = []
 
         def append_skill_line(skill: str, text: str, *, is_error: bool = False) -> None:
             """Render plain text for single-skill success, bracketed for multi/error cases."""
@@ -1750,13 +1739,13 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         # Do not attempt re-resolution; pass all missing_inputs to the user.
                         unresolved = payload.get("missing_inputs", []) if isinstance(payload, dict) else []
                         if unresolved:
-                            pending_subagent_request = {
+                            pending_subagent_requests.append({
                                 "skill_id": skill_id,
                                 "a2a_context_id": resumed.get("_a2a_context_id"),
                                 "a2a_task_id": resumed.get("_a2a_task_id"),
                                 "missing_inputs": unresolved,
                                 "hint": payload.get("hint"),
-                            }
+                            })
                             missing_required_params.extend(
                                 [str(entry.get("name") or "") for entry in unresolved if entry.get("name")]
                             )
@@ -1765,13 +1754,13 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     else:
                         item = resumed
                 else:
-                    pending_subagent_request = {
+                    pending_subagent_requests.append({
                         "skill_id": skill_id,
                         "a2a_context_id": item.get("_a2a_context_id"),
                         "a2a_task_id": item.get("_a2a_task_id"),
                         "missing_inputs": unresolved,
                         "hint": payload.get("hint"),
-                    }
+                    })
                     missing_required_params.extend(
                         [str(entry.get("name") or "") for entry in unresolved if entry.get("name")]
                     )
@@ -1806,7 +1795,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                 "routing_decision": routing_decision,
                 "tool_results": tool_results,
                 "missing_info": unique_missing,
-                "pending_subagent_request": pending_subagent_request,
+                "pending_subagent_requests": pending_subagent_requests,
                 "awaiting_approval": False,
             }
 
@@ -1889,9 +1878,9 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
     Returns:
         State updates with followup_questions in conversation_history
     """
-    pending_subagent = state.get("pending_subagent_request")
+    pending_subagent = state.get("pending_subagent_requests")
     if pending_subagent:
-        questions = _questions_from_pending_subagent_request(state)
+        questions = _questions_from_pending_subagent_requests(state)
         return {
             "conversation_history": state.get("conversation_history", []) + [{
                 "role": "assistant",
@@ -2423,13 +2412,13 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
                     unresolved = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
 
             if unresolved:
-                state["pending_subagent_request"] = {
+                state["pending_subagent_requests"] = [{
                     "skill_id": ir["skill_id"],
                     "a2a_context_id": ir.get("_a2a_context_id"),
                     "a2a_task_id": ir.get("_a2a_task_id"),
                     "missing_inputs": unresolved,
                     "hint": ir_payload.get("hint"),
-                }
+                }]
                 state["missing_info"] = [str(item.get("name") or "") for item in unresolved if item.get("name")]
                 state["tool_results"] = tool_results
                 store_status_update(
@@ -2591,98 +2580,127 @@ def resolve_missing_inputs_from_state(
     return auto_resolved, unresolved
 
 
-def _questions_from_pending_subagent_request(state: AgentState) -> List[Dict[str, Any]]:
-    """Translate a pending INPUT_REQUIRED payload into frontend form fields."""
-    pending = state.get("pending_subagent_request") or {}
+def _questions_from_pending_subagent_requests(state: AgentState) -> List[Dict[str, Any]]:
+    """Translate pending INPUT_REQUIRED payloads into frontend form fields, deduplicated by field name."""
+    pending_list = state.get("pending_subagent_requests") or []
+    seen_fields: set = set()
     questions: List[Dict[str, Any]] = []
-    for item in pending.get("missing_inputs", []) or []:
-        input_type = str(item.get("type") or "string").strip().lower()
-        questions.append(
-            {
-                "field": item.get("name"),
-                "question": item.get("user_prompt") or item.get("description") or item.get("name"),
-                "type": "number" if input_type in {"number", "integer"} else ("checkbox" if input_type == "boolean" else ("select" if input_type == "enum" else "text")),
-                "options": item.get("options"),
-                "description": item.get("description"),
-                "required": True,
-                "sensitive": bool(item.get("sensitive")),
-                "value_type": input_type,
-            }
-        )
+    for pending in pending_list:
+        for item in (pending or {}).get("missing_inputs", []) or []:
+            field = item.get("name")
+            if not field or field in seen_fields:
+                continue
+            seen_fields.add(field)
+            input_type = str(item.get("type") or "string").strip().lower()
+            questions.append(
+                {
+                    "field": field,
+                    "question": item.get("user_prompt") or item.get("description") or field,
+                    "type": "number" if input_type in {"number", "integer"} else ("checkbox" if input_type == "boolean" else ("select" if input_type == "enum" else "text")),
+                    "options": item.get("options"),
+                    "description": item.get("description"),
+                    "required": True,
+                    "sensitive": bool(item.get("sensitive")),
+                    "value_type": input_type,
+                }
+            )
     return questions
 
 
-async def resume_pending_subagent_request(
+async def resume_pending_subagent_requests(
     state: AgentState,
     followup_answers: Dict[str, Any],
 ) -> AgentState:
-    """Resume a previously blocked subagent task with user-provided inputs."""
-    pending = dict(state.get("pending_subagent_request") or {})
-    if not pending:
+    """Resume all previously blocked subagent tasks with user-provided inputs."""
+    pending_list = list(state.get("pending_subagent_requests") or [])
+    if not pending_list:
         return state
 
-    skill_id = str(pending.get("skill_id") or "")
     routing_decision = dict(state.get("routing_decision", {}) or {})
     base_params = dict(routing_decision.get("extracted_params", {}) or {})
-    typed_answers: Dict[str, Any] = {}
-    for item in pending.get("missing_inputs", []) or []:
-        name = str(item.get("name") or "").strip()
-        if not name or name not in followup_answers:
-            continue
-        typed_answers[name] = _coerce_followup_value(followup_answers[name], str(item.get("type") or "string"))
+    conversation_id = state.get("conversation_id", str(uuid.uuid4())) or str(uuid.uuid4())
 
-    auto_resolved, _ = resolve_missing_inputs_from_state(state, pending.get("missing_inputs", []) or [])
-    provided_inputs = {**auto_resolved, **typed_answers}
-
-    resumed = await invoke_skill(
-        skill_id,
-        {
-            **base_params,
-            "provided_inputs": provided_inputs,
-            "_a2a_context_id": pending.get("a2a_context_id"),
-            "_a2a_task_id": pending.get("a2a_task_id"),
-        },
-        state.get("conversation_id", str(uuid.uuid4())) or str(uuid.uuid4()),
-    )
-
+    still_pending: List[Dict[str, Any]] = []
     merged_context = dict(state.get("context", {}) or {})
-    for item in pending.get("missing_inputs", []) or []:
-        name = str(item.get("name") or "").strip()
-        if not name or item.get("sensitive"):
-            continue
-        if name in provided_inputs:
-            merged_context[name] = provided_inputs[name]
-    state["context"] = merged_context
+    accumulated_tool_results = dict(state.get("tool_results") or {})
+    final_reports: List[str] = []
 
-    if resumed.get("input_required"):
-        payload = resumed.get("input_required", {}) or {}
-        _, unresolved = resolve_missing_inputs_from_state(state, payload.get("missing_inputs", []) or [])
-        state["pending_subagent_request"] = {
-            "skill_id": skill_id,
-            "a2a_context_id": resumed.get("_a2a_context_id"),
-            "a2a_task_id": resumed.get("_a2a_task_id"),
-            "missing_inputs": unresolved,
-            "hint": payload.get("hint"),
-        }
-        state["missing_info"] = [str(item.get("name") or "") for item in unresolved if item.get("name")]
+    for pending in pending_list:
+        pending = dict(pending)
+        skill_id = str(pending.get("skill_id") or "")
+        missing_inputs = pending.get("missing_inputs", []) or []
+
+        typed_answers: Dict[str, Any] = {}
+        for item in missing_inputs:
+            name = str(item.get("name") or "").strip()
+            if not name or name not in followup_answers:
+                continue
+            typed_answers[name] = _coerce_followup_value(followup_answers[name], str(item.get("type") or "string"))
+
+        auto_resolved, _ = resolve_missing_inputs_from_state(state, missing_inputs)
+        provided_inputs = {**auto_resolved, **typed_answers}
+
+        for item in missing_inputs:
+            name = str(item.get("name") or "").strip()
+            if not name or item.get("sensitive"):
+                continue
+            if name in provided_inputs:
+                merged_context[name] = provided_inputs[name]
+
+        resumed = await invoke_skill(
+            skill_id,
+            {
+                **base_params,
+                "provided_inputs": provided_inputs,
+                "_a2a_context_id": pending.get("a2a_context_id"),
+                "_a2a_task_id": pending.get("a2a_task_id"),
+            },
+            conversation_id,
+        )
+
+        if resumed.get("input_required"):
+            ir_payload = resumed.get("input_required", {}) or {}
+            _, unresolved = resolve_missing_inputs_from_state(state, ir_payload.get("missing_inputs", []) or [])
+            still_pending.append({
+                "skill_id": skill_id,
+                "a2a_context_id": resumed.get("_a2a_context_id"),
+                "a2a_task_id": resumed.get("_a2a_task_id"),
+                "missing_inputs": unresolved,
+                "hint": ir_payload.get("hint"),
+            })
+        elif resumed.get("error"):
+            accumulated_tool_results[skill_id] = {"error": resumed["error"]}
+            final_reports.append(f"[{skill_id}] Error: {resumed['error']}")
+        else:
+            result_data = resumed.get("result", {})
+            accumulated_tool_results[skill_id] = result_data
+            final_reports.append(extract_result_text(result_data))
+
+    state["context"] = merged_context
+    state["pending_subagent_requests"] = still_pending
+    state["tool_results"] = accumulated_tool_results
+
+    if still_pending:
+        state["missing_info"] = [
+            str(item.get("name") or "")
+            for p in still_pending
+            for item in (p.get("missing_inputs") or [])
+            if item.get("name")
+        ]
         return state
 
-    state["pending_subagent_request"] = None
     state["missing_info"] = []
-
-    if resumed.get("error"):
-        state["tool_results"] = {skill_id: {"error": resumed["error"]}}
-        state["final_report"] = f"[{skill_id}] Error: {resumed['error']}"
-    else:
-        result_data = resumed.get("result", {})
-        state["tool_results"] = {skill_id: result_data}
-        state["final_report"] = extract_result_text(result_data)
-
+    report = "\n\n".join(final_reports) if final_reports else ""
+    state["final_report"] = report
     state["conversation_history"] = state.get("conversation_history", []) + [{
         "role": "assistant",
-        "content": state.get("final_report", ""),
-        "type": f"agent_response_{skill_id}" if not resumed.get("error") else "error",
-        "tool_results": state.get("tool_results", {}),
+        "content": report,
+        "type": (
+            f"agent_response_{pending_list[0].get('skill_id', '')}"
+            if len(pending_list) == 1
+            else "agent_response_multi_skill"
+        ),
+        "tool_results": accumulated_tool_results,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]
     return state
@@ -2724,7 +2742,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     return ConversationResponse(
                         conversation_id=conv_id,
                         status="needs_info",
-                        message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
+                        message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
                         followup_questions=latest.get("questions", []),
                     )
                 store_conversation(conv_id, final_state)
@@ -2747,7 +2765,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
 
         followup_answers = dict(request.followup_answers or {})
 
-        if request.query and not followup_answers and has_pending_followup and not state.get("pending_subagent_request"):
+        if request.query and not followup_answers and has_pending_followup and not state.get("pending_subagent_requests"):
             state["conversation_history"] = state.get("conversation_history", []) + [{
                 "role": "user",
                 "content": request.query,
@@ -2761,8 +2779,8 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             requires_approval = routing_decision.get("requires_approval", False)
 
             try:
-                if state.get("pending_subagent_request"):
-                    state = await resume_pending_subagent_request(state, followup_answers)
+                if state.get("pending_subagent_requests"):
+                    state = await resume_pending_subagent_requests(state, followup_answers)
                     if state.get("missing_info"):
                         followup_result = await ask_followup_dynamic(state)
                         for key, value in followup_result.items():
@@ -2774,7 +2792,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         return ConversationResponse(
                             conversation_id=conv_id,
                             status="needs_info",
-                            message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
+                            message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
                             followup_questions=latest.get("questions", []),
                         )
                     # For workflow templates, re-execute the full plan so downstream steps run.
@@ -2797,7 +2815,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                             return ConversationResponse(
                                 conversation_id=conv_id,
                                 status="needs_info",
-                                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
+                                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
                                 followup_questions=latest.get("questions", []),
                             )
                         store_conversation(conv_id, final_state)
@@ -2838,7 +2856,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     return ConversationResponse(
                         conversation_id=conv_id,
                         status="needs_info",
-                        message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
+                        message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
                         followup_questions=latest.get("questions", []),
                     )
 
@@ -2859,7 +2877,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         return ConversationResponse(
                             conversation_id=conv_id,
                             status="needs_info",
-                            message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
+                            message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
                             followup_questions=latest.get("questions", []),
                         )
                     store_conversation(conv_id, final_state)
@@ -2908,7 +2926,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request"), "I still need a few details to proceed:"),
+                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests"), "I still need a few details to proceed:"),
                 followup_questions=latest.get("questions", []),
             )
 
@@ -3002,7 +3020,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
         "plan": None,
         "missing_info": [],
         "awaiting_approval": False,
-        "pending_subagent_request": None,
+        "pending_subagent_requests": [],
         "material_id": None,
         "analysis_types": None,
         "context": previous_context,
@@ -3063,7 +3081,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_request")),
+                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
                 followup_questions=latest.get("questions", []),
             )
 
@@ -3104,7 +3122,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(
                 conversation_id=conv_id,
                 status="needs_info",
-                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_request")),
+                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
                 followup_questions=latest.get("questions", []),
             )
         store_conversation(conv_id, final_state)

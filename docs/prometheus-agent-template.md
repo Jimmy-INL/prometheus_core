@@ -46,7 +46,7 @@ After confirmation, it creates a new directory with all files ready to go.
 === "uv"
 
     ```bash
-    cd ../<output-directory> && AGENT_SECRET_REQUIRED=false uv run agent.py
+    cd ../<output-directory> && uv run agent.py
     ```
 
 === "Docker
@@ -178,8 +178,9 @@ class MyAgent(PrometheusAgent):
 | `AGENT_PORT` | No | 8000 | Port to listen on |
 | `AGENT_HOST` | No | localhost | Hostname for agent card URL |
 | `AGENT_SECRET` | Prod | -- | Shared secret for Bearer token auth |
-| `AGENT_SECRET_REQUIRED` | No | false | Enforce authentication |
-| `REGISTRY_URL` | No | -- | Agent registry URL for auto-registration |
+| `AGENT_SECRET_REQUIRED` | No | true | Enforce authentication. Do not disable this in normal development or deployment. |
+| `LITELLM_URL` | No | -- | LiteLLM base URL used for agent registration and A2A routing |
+| `LITELLM_MASTER_KEY` | No | -- | LiteLLM master key used when registering the agent |
 | `DEEPLYNX_KEY` | If using storage | -- | API key for DeepLynx |
 | `DEEPLYNX_SECRET` | If using storage | -- | API secret for DeepLynx |
 | `DEEPLYNX_ORG_ID` | If using storage | -- | Organization ID |

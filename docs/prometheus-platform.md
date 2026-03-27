@@ -14,19 +14,19 @@ A multi-agent analysis platform for nuclear engineering. Users interact through 
 graph TD
   U[User] -->|chat / file upload| CL[Chainlit Frontend]
   CL -->|A2A JSON-RPC| CA[Client Agent]
-  CA -->|capability lookup| REG[Agent Registry]
+  CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
   CA -->|state + factoids| RED[(Redis)]
-  CA -->|A2A| SA[Specialist Agents]
+  LLM -->|A2A| SA[Specialist Agents]
   CL -->|renders| VIZ[ExodusViewer / IFCViewer / MermaidViewer]
 ```
 
-The frontend communicates directly with the client-agent via A2A protocol. The client-agent discovers specialist agents from the registry, manages multi-turn conversation state in Redis, and dispatches analysis work.
+The frontend communicates directly with the client-agent via A2A protocol. The client-agent discovers specialist agents from LiteLLM's agent directory, manages multi-turn conversation state in Redis, and dispatches analysis work through LiteLLM's A2A gateway.
 
 | Service | Port | Stack |
 |---------|------|-------|
 | Chainlit Frontend | 8500 | Chainlit, VTK, pyyaml |
 | Client Agent | 8001 | LangGraph, Claude, A2A SDK |
-| Registry | 8000 | FastAPI, in-memory |
+| LiteLLM Agent Gateway | 9977 | LiteLLM proxy + A2A routing |
 | Redis | 6379 | Factoids, conversation state |
 
 ## Getting started
@@ -41,7 +41,8 @@ The frontend communicates directly with the client-agent via A2A protocol. The c
 
 ```bash
 cp .env.example .env
-# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, REDIS_URL
+# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
+#      LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, and LITELLM_LOCAL_PORT
 docker-compose up --build
 ```
 
@@ -99,7 +100,7 @@ Override the config path with `PROMETHEUS_CONFIG_PATH=/path/to/config.yml`.
 
 1. User sends a message in the Chainlit UI
 2. Frontend sends an A2A JSON-RPC request to the client-agent
-3. Client-agent classifies the query, discovers relevant agents, collects parameters if needed
+3. Client-agent classifies the query, discovers relevant agents through LiteLLM, and collects parameters if needed
 4. Specialist agents execute analysis and return results with artifacts
 5. Frontend renders the response and any visualization elements
 

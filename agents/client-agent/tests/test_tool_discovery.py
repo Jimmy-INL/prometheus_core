@@ -25,6 +25,89 @@ if "langchain_core.tools" not in sys.modules:
     tools_module.StructuredTool = _StructuredTool
     sys.modules["langchain_core.tools"] = tools_module
 
+if "prometheus_api.agent" not in sys.modules:
+    prometheus_api_module = types.ModuleType("prometheus_api")
+    agent_module = types.ModuleType("prometheus_api.agent")
+
+    class _ArtifactReference:
+        def __init__(
+            self,
+            *,
+            artifact_id: str | None = None,
+            conversation_id: str | None = None,
+            name: str | None = None,
+            description: str | None = None,
+            uri: str | None = None,
+            metadata: dict | None = None,
+            json_type: str | None = None,
+            json_body: dict | None = None,
+        ):
+            self.artifact_id = artifact_id
+            self.conversation_id = conversation_id
+            self.name = name
+            self.description = description
+            self.uri = uri
+            self.metadata = metadata or {}
+            self.json_type = json_type
+            self.json_body = json_body
+
+        @classmethod
+        def from_any(cls, artifact, conversation_id=None):
+            if not isinstance(artifact, dict):
+                return None
+
+            name = artifact.get("name")
+            description = artifact.get("description")
+            metadata = dict(artifact.get("metadata") or {})
+            parts = artifact.get("parts") or []
+            uri = None
+            json_type = None
+            json_body = None
+
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                kind = str(part.get("kind") or "").strip().lower()
+                if kind == "file":
+                    file_payload = part.get("file") or {}
+                    uri = file_payload.get("uri")
+                elif kind == "data":
+                    json_body = part.get("data")
+                    part_meta = dict(part.get("metadata") or {})
+                    json_type = part_meta.get("json_type")
+                    metadata = {**part_meta, **metadata}
+
+            return cls(
+                artifact_id=artifact.get("artifactId") or artifact.get("artifact_id"),
+                conversation_id=conversation_id or metadata.get("conversation_id"),
+                name=name,
+                description=description,
+                uri=uri,
+                metadata=metadata,
+                json_type=json_type,
+                json_body=json_body,
+            )
+
+        def to_dict(self):
+            payload = {
+                "artifact_id": self.artifact_id,
+                "conversation_id": self.conversation_id,
+                "name": self.name,
+                "description": self.description,
+                "uri": self.uri,
+                "metadata": self.metadata,
+            }
+            if self.json_type is not None:
+                payload["json_type"] = self.json_type
+            if self.json_body is not None:
+                payload["json_body"] = self.json_body
+            return payload
+
+    agent_module.ArtifactReference = _ArtifactReference
+    prometheus_api_module.agent = agent_module
+    sys.modules["prometheus_api"] = prometheus_api_module
+    sys.modules["prometheus_api.agent"] = agent_module
+
 import tool_discovery
 
 
@@ -52,6 +135,47 @@ class _FakeAsyncClient:
 
     async def post(self, endpoint, json=None, headers=None):
         return _FakeResponse(self._payload)
+
+
+class _FakeSSE:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeEventSource:
+    def __init__(self, events, status_code=200):
+        self._events = events
+        self.response = _FakeResponse({}, status_code=status_code)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def aiter_sse(self):
+        for event in self._events:
+            yield _FakeSSE(event)
+
+
+class _FakeStreamingResponse:
+    def __init__(self, lines, *, content_type="application/x-ndjson", status_code=200):
+        self._lines = lines
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
 
 
 def test_get_agent_card_prefers_raw_prometheus_endpoint(monkeypatch) -> None:
@@ -257,6 +381,7 @@ def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
         assert agent_id == "thermal-analysis-agent"
         assert direct_url == "http://thermal-agent:8000"
         return {
+            "capabilities": {"streaming": True},
             "skills": [
                 {
                     "id": "analyze_thermal",
@@ -281,8 +406,12 @@ def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
 
     created = []
 
-    async def fake_create_tool_from_skill(agent_url: str, skill: dict):
-        created.append((agent_url, skill))
+    async def fake_create_tool_from_skill(
+        agent_url: str,
+        skill: dict,
+        supports_streaming: bool = False,
+    ):
+        created.append((agent_url, skill, supports_streaming))
         return {"agent_url": agent_url, "skill": skill["id"]}
 
     monkeypatch.setattr(tool_discovery, "discover_agents", fake_discover_agents)
@@ -298,3 +427,214 @@ def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
         }
     ]
     assert created[0][1]["inputSchema"]["properties"]["context"]["required"] == ["temperature_c"]
+    assert created[0][2] is True
+
+
+def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch) -> None:
+    streamed_events = [
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-1",
+                    "taskId": "task-1",
+                    "final": False,
+                    "status": {
+                        "state": "working",
+                        "message": {
+                            "parts": [
+                                {
+                                    "kind": "text",
+                                    "text": "Searching publications...",
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "result": {
+                    "kind": "artifact-update",
+                    "contextId": "conv-1",
+                    "taskId": "task-1",
+                    "artifact": {
+                        "artifactId": "artifact-1",
+                        "name": "paper-summary.json",
+                        "parts": [
+                            {
+                                "kind": "data",
+                                "data": {"count": 4},
+                                "metadata": {
+                                    "mime_type": "application/json",
+                                    "json_type": "prometheus.analysis.summary.v1",
+                                },
+                            }
+                        ],
+                        "metadata": {
+                            "conversation_id": "conv-1",
+                            "producer_agent_id": "osti-research-agent",
+                        },
+                    },
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-1",
+                    "taskId": "task-1",
+                    "final": True,
+                    "status": {
+                        "state": "completed",
+                        "message": {
+                            "parts": [
+                                {
+                                    "kind": "text",
+                                    "text": json.dumps(
+                                        {
+                                            "status": "completed",
+                                            "message": "Research complete.",
+                                        }
+                                    ),
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        ),
+    ]
+
+    statuses = []
+    request_capture = {}
+
+    async def _status_callback(message: str) -> None:
+        statuses.append(message)
+
+    class _StreamingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, **kwargs):
+            request_capture["method"] = method
+            request_capture["url"] = url
+            request_capture["json"] = kwargs.get("json")
+            request_capture["headers"] = kwargs.get("headers", {})
+            sse_lines = []
+            for event in streamed_events:
+                sse_lines.append(f"data: {event}")
+                sse_lines.append("")
+            return _FakeStreamingResponse(sse_lines, content_type="text/event-stream")
+
+    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+
+    result = asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/osti-research-agent",
+            "search_literature",
+            conversation_id="conv-1",
+            question="What is the creep rate of SS316?",
+            _prefer_streaming=True,
+            _status_callback=_status_callback,
+        )
+    )
+
+    assert statuses == ["Searching publications..."]
+    assert request_capture["method"] == "POST"
+    assert request_capture["url"] == "http://example.test/a2a/osti-research-agent"
+    assert request_capture["json"]["method"] == "message/stream"
+    assert "application/x-ndjson" in request_capture["headers"]["Accept"]
+    assert result["status"] == "completed"
+    assert result["message"] == "Research complete."
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["name"] == "paper-summary.json"
+
+
+def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
+    streamed_lines = [
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-2",
+                    "taskId": "task-2",
+                    "final": False,
+                    "status": {
+                        "state": "working",
+                        "message": {
+                            "parts": [{"kind": "text", "text": "Rendering SVG..."}]
+                        },
+                    },
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-2",
+                    "taskId": "task-2",
+                    "final": True,
+                    "status": {
+                        "state": "completed",
+                        "message": {
+                            "parts": [
+                                {
+                                    "kind": "text",
+                                    "text": json.dumps(
+                                        {
+                                            "status": "completed",
+                                            "message": "SVG ready.",
+                                        }
+                                    ),
+                                }
+                            ]
+                        },
+                    },
+                }
+            }
+        ),
+    ]
+    statuses = []
+
+    async def _status_callback(message: str) -> None:
+        statuses.append(message)
+
+    class _StreamingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, **kwargs):
+            return _FakeStreamingResponse(streamed_lines, content_type="application/x-ndjson")
+
+    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+
+    result = asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/artifact-debug-agent",
+            "create_svg_artifact",
+            conversation_id="conv-2",
+            word="secure",
+            _prefer_streaming=True,
+            _status_callback=_status_callback,
+        )
+    )
+
+    assert statuses == ["Rendering SVG..."]
+    assert result["status"] == "completed"
+    assert result["message"] == "SVG ready."

@@ -14,7 +14,7 @@ graph TD
 
   subgraph Orchestration
     CA[Client Agent<br/>LangGraph + Claude]
-    REG[Agent Registry<br/>FastAPI, in-memory]
+    LLM[LiteLLM Agent Gateway<br/>A2A routing + agent directory]
     RED[(Redis<br/>conversation state + status)]
   end
 
@@ -30,25 +30,25 @@ graph TD
   end
 
   CL -->|A2A JSON-RPC<br/>Bearer token| CA
-  CA -->|GET /agents, /capabilities| REG
+  CA -->|GET /v1/agents + A2A via /a2a/{agent}| LLM
   CA -->|store/retrieve conversation state<br/>status updates| RED
-  CA -->|A2A JSON-RPC| CORR
-  CA -->|A2A JSON-RPC| RAD
-  CA -->|A2A JSON-RPC| THERM
-  CA -->|A2A JSON-RPC| DATA
-  CA -->|A2A JSON-RPC| SYNTH
-  CA -->|A2A JSON-RPC| OSTI
-  CA -->|A2A JSON-RPC| FF
-  CA -->|A2A JSON-RPC| REQ
+  LLM -->|A2A JSON-RPC| CORR
+  LLM -->|A2A JSON-RPC| RAD
+  LLM -->|A2A JSON-RPC| THERM
+  LLM -->|A2A JSON-RPC| DATA
+  LLM -->|A2A JSON-RPC| SYNTH
+  LLM -->|A2A JSON-RPC| OSTI
+  LLM -->|A2A JSON-RPC| FF
+  LLM -->|A2A JSON-RPC| REQ
 
-  CORR -.->|self-register| REG
-  RAD -.->|self-register| REG
-  THERM -.->|self-register| REG
-  DATA -.->|self-register| REG
-  SYNTH -.->|self-register| REG
-  OSTI -.->|self-register| REG
-  FF -.->|self-register| REG
-  REQ -.->|self-register| REG
+  CORR -.->|register| LLM
+  RAD -.->|register| LLM
+  THERM -.->|register| LLM
+  DATA -.->|register| LLM
+  SYNTH -.->|register| LLM
+  OSTI -.->|register| LLM
+  FF -.->|register| LLM
+  REQ -.->|register| LLM
 ```
 
 ## Component responsibilities
@@ -72,7 +72,7 @@ The frontend communicates with the client-agent via A2A JSON-RPC. During blockin
 The client-agent is a LangGraph-based orchestrator that:
 
 1. **Classifies queries** using LLM-based routing with capability metadata
-2. **Discovers agents** from the registry's capability catalog
+2. **Discovers agents** from LiteLLM's agent directory and specialist agent cards
 3. **Collects parameters** by asking follow-up questions when information is missing
 4. **Builds execution plans** for multi-step analyses
 5. **Manages approval gates** before executing plans
@@ -89,18 +89,16 @@ understand_query → route_by_decision
     └─ "plan_and_approve"→ plan → show_plan → [approval] → execute → END
 ```
 
-### Agent registry
+### LiteLLM agent gateway
 
-A lightweight FastAPI service (~220 lines) that provides:
+LiteLLM now serves as the shared A2A gateway and agent directory. In the current stack it provides:
 
-- Agent registration and deregistration
-- Agent card hosting (A2A discovery)
-- Capability-based lookup (flattened skill catalog with input schemas)
-- Heartbeat/liveness tracking
+- Runtime agent registration persisted in PostgreSQL
+- Agent listing via `/v1/agents`
+- A2A request routing via `/a2a/{agent_name}`
+- A single in-cluster endpoint that the client-agent uses for specialist dispatch
 
-The registry uses in-memory storage. Agents self-register on startup.
-
-**Why not litellm for registry?** litellm is a model routing proxy. It handles LLM provider abstraction, load balancing, and API key management -- but it has no concept of agent skills, input schemas, or capability-based routing. Use litellm for model proxying (all agents point at a single litellm instance for LLM calls). Keep the registry for agent discovery.
+The client-agent still prefers each specialist's direct well-known agent-card endpoint when it needs full per-skill metadata, because LiteLLM's agent listing can be a lossy summary.
 
 ### Redis
 
@@ -114,7 +112,7 @@ Serves two purposes:
 Each specialist agent is a standalone container built on the `PrometheusAgent` base class from `prometheus_api`. Agents:
 
 - Load metadata from `agent_card.json`
-- Self-register with the registry on startup
+- Register with LiteLLM on startup
 - Accept A2A JSON-RPC requests with Bearer token auth
 - Execute domain-specific analysis
 - Return results as artifacts
@@ -128,16 +126,17 @@ sequenceDiagram
     participant U as User
     participant CL as Chainlit
     participant CA as Client Agent
-    participant REG as Registry
+    participant LLM as LiteLLM
     participant SA as Specialist Agent
     participant R as Redis
 
     U->>CL: "Analyze SS316 corrosion at 300C"
     CL->>CA: A2A message/send (query, conversation_id)
     CA->>R: Retrieve prior conversation state
-    CA->>REG: GET /capabilities (find corrosion agent)
+    CA->>LLM: GET /v1/agents (find corrosion agent)
     CA->>CA: LLM classifies → "direct_invoke"
-    CA->>SA: A2A message/send (params)
+    CA->>LLM: POST /a2a/corrosion-agent/message/send
+    LLM->>SA: A2A message/send (params)
     SA-->>CA: Result + artifacts
     CA->>R: Store updated conversation state
     CA-->>CL: ConversationResponse (status, artifacts)
@@ -171,11 +170,10 @@ Authentication uses Bearer tokens via the `Authorization` header, validated by `
 
 ## LiteLLM integration
 
-litellm should be deployed as a shared model proxy, not as a service registry. The recommended setup:
+LiteLLM is part of the active deployment. It serves two roles:
 
-1. Deploy litellm proxy as a sidecar or shared service
-2. Configure all agents to route LLM calls through litellm instead of creating direct `ChatAnthropic` instances
-3. litellm handles model selection, fallback, rate limiting, and API key management
+1. Agent registration/discovery for A2A routing
+2. Optional shared model proxy for LLM calls
 
 ```yaml
 # litellm config.yaml
@@ -194,7 +192,8 @@ All services are containerized via Docker Compose:
 
 | Service | Container | Port | Role |
 |---------|-----------|------|------|
-| Registry | agent-registry | 8000 | Agent discovery |
+| LiteLLM | litellm-proxy | 9977 | Agent discovery and A2A routing |
+| LiteLLM DB | litellm-db | 5432 | Persistent LiteLLM metadata |
 | Client Agent | client-agent | 8001 | Orchestration |
 | Corrosion Agent | corrosion-agent | 8002 | Specialist |
 | Radiation Agent | radiation-agent | 8003 | Specialist |
@@ -207,4 +206,4 @@ All services are containerized via Docker Compose:
 | Redis | agent-redis | 6379 | State/status |
 | Chainlit Frontend | chainlit-frontend | 8500 | UI |
 
-All containers share the `agent-network` bridge network. Environment variables for secrets (`ANTHROPIC_API_KEY`, `AGENT_SECRET`, `REDIS_PASSWORD`) are passed via `.env` file.
+All containers share the `agent-network` bridge network. Environment variables for secrets and host mappings (`ANTHROPIC_API_KEY`, `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `LITELLM_DB_PASSWORD`, `LITELLM_LOCAL_PORT`) are passed via `.env` file.

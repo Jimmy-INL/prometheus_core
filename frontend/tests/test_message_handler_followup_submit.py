@@ -65,6 +65,21 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
         def set(self, key, value):
             self._store[key] = value
 
+    class DummyStep:
+        def __init__(self, name="", type="tool"):
+            self.name = name
+            self.type = type
+            self.output = ""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def update(self):
+            return None
+
     next_response = ConversationResponse(
         conversation_id="conv-1",
         status="completed",
@@ -77,6 +92,7 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
     monkeypatch.setattr(handler.cl, "Message", DummyMessage)
     monkeypatch.setattr(handler.cl, "CustomElement", DummyCustomElement)
     monkeypatch.setattr(handler.cl, "AskElementMessage", DummyAskElementMessage)
+    monkeypatch.setattr(handler.cl, "Step", DummyStep)
     monkeypatch.setattr(handler.cl, "user_session", DummyUserSession())
     monkeypatch.setattr(handler, "_handle_response", handle_response)
 
@@ -108,10 +124,13 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
         conversation_id="conv-1",
         followup_answers={"temperature_c": "315"},
         artifacts=[],
+        on_status=client.send.await_args.kwargs["on_status"],
     )
+    assert callable(client.send.await_args.kwargs["on_status"])
     handle_response.assert_awaited_once_with(
         client,
         next_response,
         "Perform a thermal analysis of ss316",
         "conv-1",
+        _depth=1,
     )

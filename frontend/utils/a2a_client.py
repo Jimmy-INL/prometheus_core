@@ -99,6 +99,14 @@ class A2AClient:
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            initial_seen_count = 0
+            if on_status:
+                initial_seen_count = await self._get_status_history_count(
+                    client,
+                    conversation_id,
+                    headers,
+                )
+
             send_task = asyncio.create_task(
                 client.post(self.agent_url, json=message, headers=headers)
             )
@@ -106,7 +114,14 @@ class A2AClient:
             # Poll for status updates while the blocking call is in flight
             if on_status:
                 poll_task = asyncio.create_task(
-                    self._poll_status(client, conversation_id, headers, on_status, send_task)
+                    self._poll_status(
+                        client,
+                        conversation_id,
+                        headers,
+                        on_status,
+                        send_task,
+                        initial_seen_count=initial_seen_count,
+                    )
                 )
 
             response = await send_task
@@ -123,6 +138,24 @@ class A2AClient:
 
         return self._parse_response(result, conversation_id)
 
+    async def _get_status_history_count(
+        self,
+        client: httpx.AsyncClient,
+        conversation_id: str,
+        headers: Dict[str, str],
+    ) -> int:
+        """Return current status history length so polling only emits new entries."""
+        try:
+            status_url = f"{self.agent_url}/status/{conversation_id}"
+            resp = await client.get(status_url, headers=headers, timeout=5.0)
+            if resp.status_code != 200:
+                return 0
+            data = resp.json()
+            history = data.get("history", [])
+            return len(history) if isinstance(history, list) else 0
+        except Exception:
+            return 0
+
     async def _poll_status(
         self,
         client: httpx.AsyncClient,
@@ -130,9 +163,10 @@ class A2AClient:
         headers: Dict[str, str],
         on_status: Callable[[str], Coroutine],
         send_task: asyncio.Task,
+        initial_seen_count: int = 0,
     ) -> None:
         """Poll the status endpoint and invoke on_status with new messages."""
-        seen_count = 0
+        seen_count = max(0, int(initial_seen_count or 0))
         status_url = f"{self.agent_url}/status/{conversation_id}"
         await asyncio.sleep(2)  # Initial delay before first poll
         while not send_task.done():

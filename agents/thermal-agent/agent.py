@@ -154,7 +154,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
                     "task_id": context.task_id,
                 },
             )
-            return {"status": "input_required"}
+            return {}
 
         operating_context = {
             "temperature_c": resolved.get("temperature_c"),
@@ -186,7 +186,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
                     "task_id": context.task_id,
                 },
             )
-            return {"status": "input_required"}
+            return {}
 
         if not ANTHROPIC_API_KEY:
             return {
