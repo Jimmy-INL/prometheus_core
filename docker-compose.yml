@@ -118,7 +118,7 @@ services:
       - AGENT_PORT=8000
       - LITELLM_URL=http://litellm:4000
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_URL=${REDIS_URL:-redis://redis:${REDIS_LOCAL_PORT}}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
       - AGENT_SECRET=${AGENT_SECRET}
