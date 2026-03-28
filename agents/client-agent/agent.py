@@ -2520,6 +2520,9 @@ def _coerce_followup_value(value: Any, value_type: str) -> Any:
     """Coerce form-submitted values into the type requested by a subagent."""
     if value is None:
         return None
+    # Treat empty string as absent (optional field left blank)
+    if isinstance(value, str) and value.strip() == "":
+        return None
     normalized_type = str(value_type or "").strip().lower()
     if normalized_type in {"number", "float"}:
         try:
@@ -2596,10 +2599,10 @@ def _questions_from_pending_subagent_requests(state: AgentState) -> List[Dict[st
                 {
                     "field": field,
                     "question": item.get("user_prompt") or item.get("description") or field,
-                    "type": "number" if input_type in {"number", "integer"} else ("checkbox" if input_type == "boolean" else ("select" if input_type == "enum" else "text")),
+                    "type": "number" if input_type in {"number", "integer"} else ("checkbox" if input_type == "boolean" else ("select" if input_type == "enum" or item.get("options") else "text")),
                     "options": item.get("options"),
                     "description": item.get("description"),
-                    "required": True,
+                    "required": bool(item.get("required", True)),
                     "sensitive": bool(item.get("sensitive")),
                     "value_type": input_type,
                 }
@@ -2635,7 +2638,9 @@ async def resume_pending_subagent_requests(
             name = str(item.get("name") or "").strip()
             if not name or name not in followup_answers:
                 continue
-            typed_answers[name] = _coerce_followup_value(followup_answers[name], str(item.get("type") or "string"))
+            coerced = _coerce_followup_value(followup_answers[name], str(item.get("type") or "string"))
+            if coerced is not None:
+                typed_answers[name] = coerced
 
         auto_resolved, _ = resolve_missing_inputs_from_state(state, missing_inputs)
         provided_inputs = {**auto_resolved, **typed_answers}

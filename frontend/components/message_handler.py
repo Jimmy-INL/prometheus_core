@@ -394,11 +394,16 @@ async def render_artifacts(
         elif artifact_type == "data":
             data_content = artifact.get("json_body")
             if data_content:
-                formatted = json.dumps(data_content, indent=2, default=str)
-                heading = f"**{name}:**"
-                if json_type:
-                    heading += f" `{json_type}`"
-                text_parts.append(f"{heading}\n```json\n{formatted}\n```")
+                elements.append(cl.CustomElement(
+                    name="CollapsibleJson",
+                    display="inline",
+                    props={
+                        "data": data_content,
+                        "name": name,
+                        "description": description,
+                        "json_type": json_type or "",
+                    },
+                ))
             else:
                 el = await _render_remote_file_artifact(uri, name)
                 if el:
