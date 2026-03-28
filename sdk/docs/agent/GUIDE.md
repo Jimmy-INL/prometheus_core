@@ -1,49 +1,104 @@
-# PrometheusAgent Guide
+# PrometheusAgent Developer Guide
 
 ## Overview
 
-`PrometheusAgent` is the base class for A2A-enabled specialist agents in Prometheus. It handles:
+`PrometheusAgent` is the base class for A2A-enabled specialist agents in Prometheus. You subclass it, implement `_execute(params, context, event_queue)`, and call the provided helpers to emit status updates, artifacts, and `INPUT_REQUIRED` forms. The base class handles everything else: serving the agent card, authentication, registry registration, A2A task lifecycle, and automatic final status emission.
 
-- loading and serving the agent card
-- authentication middleware
-- registry registration
-- A2A request handling and task execution
-- final status emission from your returned dict
-- helper methods for status updates, artifacts, durable chat messages, and `INPUT_REQUIRED`
-- conversation artifact registration
-- per-agent context state persistence keyed by `contextId`
+---
 
-You implement `_execute(params, context, event_queue)` and use the helpers when you need richer behavior.
+## How a Request Reaches `_execute`
 
-## Core Contract
+```
+HTTP POST /  (A2A message/send)
+  └─ PrometheusAgentExecutor.execute()
+      ├─ emits "working" status automatically
+      ├─ extracts params from message JSON or text
+      ├─ injects skill_id from message.metadata.skillId
+      └─ calls your _execute(params, context, event_queue)
+             │
+             ├─ you call helpers (status, artifacts, INPUT_REQUIRED)
+             └─ you return a dict
+                    └─ base class emits final "completed" status
+                       with your dict as the message payload
+```
 
-### 1. Return the final structured response from `_execute(...)`
+The base class emits the initial `working` status and the final `completed` status automatically. You never call those yourself unless you have a specific reason to deviate.
 
-The canonical final result is the dict you return.
+---
+
+## The `_execute` Contract
+
+### Signature
 
 ```python
-return {
-    "conversation_id": context.context_id,
-    "status": "completed",
-    "message": "Thermal analysis complete.",
+async def _execute(
+    self,
+    params: Dict[str, Any],
+    context: RequestContext,
+    event_queue: EventQueue,
+) -> Dict[str, Any]:
+```
+
+### `params`
+
+A dict extracted from the incoming A2A message. Populated in priority order:
+
+1. JSON body of the message text (if valid JSON)
+2. `{"message": text}` fallback for plain-text messages
+3. `skill_id` key injected from `message.metadata.skillId`
+
+```python
+params = {
+    "skill_id": "analyze_material",    # always present if sent in metadata
+    "material_id": "SS316",            # from caller's JSON params
+    "temperature_c": 750.0,
 }
 ```
 
-The base executor emits that payload in the final `TaskStatusUpdateEvent`:
+### What to return
 
-- `status.state = completed`
-- `status.message.parts[*].text = json.dumps(return_value)`
+Return a plain dict. The base class serializes it as the text payload of the final `completed` status event. The orchestrator reads this dict as the agent's result.
 
-Do not wrap the final result in a synthetic artifact unless you specifically need a separate artifact stream.
+```python
+return {
+    "message": "Thermal analysis complete for SS316 at 750 °C.",
+    "agent": "Thermal Agent",
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    # Any other keys your callers need:
+    "max_temperature_c": 812.4,
+    "status_flag": "acceptable",
+}
+```
 
-### 2. Use agent cards for routing metadata only
+**Rules:**
 
-`agent_card.json` should describe what the agent does. It should not declare `inputSchema` for orchestrator-side form generation.
+- Always return a dict — never `None`, a string, or a list
+- If you called `send_input_required()`, return `{}` (empty dict) — the task is suspended, not complete
+- If you called `send_json_artifact()` or `send_artifact_reference()`, the artifact is already emitted; the return dict is for the conversational summary, not the data
+- Do not put large data blobs in the return dict — use artifacts for that
+- The `"message"` key is shown as the agent's conversational reply in the frontend
+
+### `context` fields used most often
+
+```python
+context.context_id   # str — stable across all turns of a conversation; use as state key
+context.task_id      # str — changes per invocation; do not use as state key
+```
+
+### Raising exceptions
+
+Unhandled exceptions from `_execute` are caught by the base class, which emits a `failed` status. Raise `ValueError` for user-visible errors; use `logger.exception` for unexpected errors you want logged.
+
+---
+
+## Agent Card and Skill Routing
+
+### `agent_card.json` structure
 
 ```json
 {
-  "name": "Thermal Agent",
-  "description": "Performs thermal analyses and requests missing operating conditions at runtime.",
+  "name": "My Agent",
+  "description": "One-sentence description used for orchestrator routing.",
   "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
@@ -52,31 +107,633 @@ Do not wrap the final result in a synthetic artifact unless you specifically nee
   },
   "skills": [
     {
-      "id": "analyze_thermal",
-      "name": "Analyze Thermal",
-      "description": "Runs a thermal analysis for a material and requests any missing operating inputs.",
-      "tags": ["thermal", "materials", "analysis"]
+      "id": "analyze_material",
+      "name": "Analyze Material",
+      "description": "Runs a thermal/corrosion analysis for a given material ID. Requests missing operating conditions interactively.",
+      "usage_notes": "Use when the user asks for material analysis, property lookup, or compatibility checks.",
+      "tags": ["materials", "thermal", "analysis", "corrosion"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "description": "Canonical material identifier, e.g. SS316, Inconel625"
+          },
+          "temperature_c": {
+            "type": "number",
+            "description": "Operating temperature in °C"
+          }
+        },
+        "required": ["material_id"]
+      }
     }
   ]
 }
 ```
 
-### 3. Let the specialist own missing-input logic
+**Important agent card conventions:**
 
-If the agent cannot proceed, it should emit `INPUT_REQUIRED` itself. The orchestrator can help resolve values from shared context, but the subagent remains authoritative about what is still missing.
+- `description` and `usage_notes` at the skill level are the primary routing signals for the orchestrator LLM — write them precisely and distinctively
+- `tags` improve keyword-based routing — include domain terms, modalities, and specific noun phrases
+- `inputSchema` tells the orchestrator which parameters it can extract from the user's query and pass directly. Parameters listed in `required` will be extracted or prompted for by the orchestrator.
+- Mark parameters the agent must collect interactively with `"x-input-source": "agent"` — the orchestrator will not prompt for these:
 
-## Minimal Agent
+```json
+"initial_query": {
+  "type": "string",
+  "description": "The user's initial request text",
+  "x-input-source": "agent"
+}
+```
+
+- The `url` field is overridden at startup by `AGENT_HOST` and `AGENT_PORT` env vars — set a placeholder in the file.
+
+### Routing multiple skills with `skill_id`
+
+When an agent exposes multiple skills, route by `params["skill_id"]`:
 
 ```python
-from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
+async def _execute(self, params, context, event_queue):
+    skill_id = params.get("skill_id")
+
+    dispatch = {
+        "analyze_material": self._handle_analyze_material,
+        "list_materials":   self._handle_list_materials,
+        "audit":            self._handle_audit,
+    }
+
+    handler = dispatch.get(skill_id)
+    if handler is None:
+        raise ValueError(
+            f"Unknown skill: '{skill_id}'. Valid skills: {', '.join(dispatch)}"
+        )
+
+    return await handler(params, context, event_queue)
+```
+
+`skill_id` is injected automatically from `message.metadata.skillId` — you do not need to parse it from message text.
+
+---
+
+## Status Updates
+
+Use `send_status_update()` to emit transient progress messages visible in the frontend's "thinking" indicator. These are not durable chat messages.
+
+```python
+await self.send_status_update(
+    context=context,
+    event_queue=event_queue,
+    message="Loading material database…",
+)
+
+# ... do work ...
+
+await self.send_status_update(
+    context=context,
+    event_queue=event_queue,
+    message="Running corrosion model…",
+)
+```
+
+**Rules:**
+
+- Emit as many intermediate updates as needed — they are cheap
+- Do not manually emit the final `completed` or `failed` status; the base class does that from your return value
+- `send_status_update` always uses `final=False` by default — do not change this
+
+---
+
+## Artifacts
+
+### Inline JSON artifact
+
+Use for structured data that the frontend should render and downstream agents might reuse.
+
+```python
+artifact_id = await self.send_json_artifact(
+    context=context,
+    event_queue=event_queue,
+    payload={
+        "material_id": "SS316",
+        "max_temperature_c": 812.4,
+        "corrosion_rate_mm_yr": 0.012,
+        "status": "acceptable",
+    },
+    name="material_analysis",
+    description="Thermal and corrosion analysis for SS316 at 750 °C.",
+    json_type="prometheus.material_analysis.v1",
+    catalog_artifact=True,
+)
+```
+
+- `json_type` is a dot-separated semantic type string used for frontend visualization routing and agent capability matching. Use a stable, versioned name like `prometheus.<domain>.<kind>.v1`.
+- `catalog_artifact=True` registers the artifact in the per-conversation artifact catalog so later agent calls can resolve it by name or ID.
+- Returns the `artifact_id` string — include it in your return dict if callers need to reference it.
+
+### File artifact
+
+Use for generated files (PDF reports, CSV exports, images).
+
+```python
+artifact = await self.send_artifact_reference(
+    context=context,
+    event_queue=event_queue,
+    name="corrosion_report.pdf",
+    description="Full corrosion analysis report for SS316",
+    uri=f"file:///tmp/{report_filename}",
+    mime_type="application/pdf",
+    tags=["report", "corrosion", "SS316"],
+)
+# artifact.artifact_id is available if needed
+```
+
+- Always set `mime_type` — it drives frontend rendering (PDF viewer, download button, etc.)
+- `uri` supports `file://`, `http://`, and bare absolute paths
+- Registers automatically in the artifact catalog
+
+### Text artifact (streaming)
+
+Use for incremental text output like logs or streaming LLM responses.
+
+```python
+# First chunk
+artifact_id = await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    name="analysis.log",
+    text="Step 1: loading data\n",
+    last_chunk=False,
+)
+
+# Subsequent chunks
+await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    artifact_id=artifact_id,   # must pass the same id to append
+    append=True,
+    text="Step 2: running model\n",
+    last_chunk=False,
+)
+
+# Final chunk
+await self.send_text_artifact(
+    context=context,
+    event_queue=event_queue,
+    artifact_id=artifact_id,
+    append=True,
+    text="Done.\n",
+    last_chunk=True,
+)
+```
+
+### Durable conversation message
+
+Use when you want a message to appear in chat history (not just as a transient spinner update) but it is not a reusable data artifact.
+
+```python
+await self.send_conversation_message(
+    context=context,
+    event_queue=event_queue,
+    message="Processing your report — this may take a moment.",
+)
+```
+
+---
+
+## `INPUT_REQUIRED` — Requesting User Input
+
+### Basic pattern
+
+When a required value is missing, emit `INPUT_REQUIRED` and return `{}`. The platform suspends the task and asks the user. When the user responds, your `_execute` is called again with the answers in `get_provided_inputs(context)`.
+
+```python
+from prometheus_api.agent import MissingInput
+
+class MyAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        context_id = str(context.context_id)
+        state = self.load_context_state(context_id)
+        provided = self.get_provided_inputs(context)
+
+        # Merge: initial params, persisted state, and new provided inputs
+        resolved = {**state.get("resolved", {}), **provided}
+        if params.get("temperature_c") is not None:
+            resolved["temperature_c"] = params["temperature_c"]
+
+        if "temperature_c" not in resolved:
+            self.save_context_state(context_id, {"resolved": resolved})
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="temperature_c",
+                        description="Operating temperature in degrees Celsius.",
+                        user_prompt="What operating temperature should I use (°C)?",
+                        type="number",
+                        required=True,
+                    )
+                ],
+                hint="Please provide the operating temperature to continue.",
+            )
+            return {}   # ← MUST return {} here — task is suspended
+
+        self.save_context_state(context_id, {"resolved": resolved})
+        temp = float(resolved["temperature_c"])
+        return {"message": f"Analysis complete at {temp} °C.", "temperature_c": temp}
+```
+
+### `MissingInput` fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | `str` | yes | Field identifier — becomes the key in `get_provided_inputs()` |
+| `description` | `str` | yes | Explanation for the orchestrator LLM; shown as help text in the form |
+| `user_prompt` | `str` | yes | The question label shown to the user in the form |
+| `type` | `str` | yes | Input type — controls form widget (see table below) |
+| `options` | `List[str]` | no | Enum values — renders as a dropdown select |
+| `required` | `bool` | no | Default `True`. Set `False` for optional fields — form can be submitted without filling them |
+| `resolvable_from_context` | `bool` | no | Default `False`. If `True`, the orchestrator will try to auto-resolve from session context without asking the user |
+| `sensitive` | `bool` | no | Default `False`. Suppresses logging and display of the value |
+
+### Type → form widget mapping
+
+| `type` value | Form widget | Notes |
+|---|---|---|
+| `"string"` | Text input | Free text |
+| `"string"` + `options=[...]` | Dropdown select | Preferred over `"enum"` |
+| `"number"` or `"integer"` | Number input | Validates numeric input |
+| `"boolean"` | Checkbox | `True`/`False`; never required even if `required=True` |
+
+### Sending multiple fields at once
+
+Send all required fields in a **single** `send_input_required()` call. The frontend renders each `MissingInput` as a separate form field. Never call `send_input_required()` multiple times in one `_execute` invocation.
+
+```python
+await self.send_input_required(
+    context=context,
+    event_queue=event_queue,
+    missing_inputs=[
+        MissingInput(
+            name="material_id",
+            description="Canonical material identifier.",
+            user_prompt="Material ID",
+            type="string",
+            required=True,
+        ),
+        MissingInput(
+            name="reactor_type",
+            description="Reactor type this material will be used in.",
+            user_prompt="Reactor type",
+            type="string",
+            options=["PWR", "BWR", "SFR", "HTGR"],
+            required=True,
+        ),
+        MissingInput(
+            name="design_temperature_c",
+            description="Peak design temperature in °C. Leave blank to use code minimum.",
+            user_prompt="Design temperature (°C)",
+            type="number",
+            required=False,   # optional — submit button activates without it
+        ),
+        MissingInput(
+            name="safety_related",
+            description="Whether the component is safety-related.",
+            user_prompt="Safety-related component?",
+            type="boolean",
+        ),
+    ],
+    hint="Please complete the component profile.",
+)
+return {}
+```
+
+### Multi-round INPUT_REQUIRED (phase state machine)
+
+For workflows that need several distinct forms (e.g. classification fields then sizing parameters), use a `phase` key in context state:
+
+```python
+async def _execute(self, params, context, event_queue):
+    context_id = str(context.context_id)
+    state = self.load_context_state(context_id)
+    phase = state.get("phase", "start")
+
+    if phase == "start":
+        return await self._phase_start(params, context, event_queue, context_id)
+    if phase == "awaiting_classification":
+        return await self._phase_classification(context, event_queue, context_id, state)
+    if phase == "awaiting_sizing":
+        return await self._phase_sizing(context, event_queue, context_id, state)
+    raise ValueError(f"Unknown phase: {phase!r}")
+
+async def _phase_start(self, params, context, event_queue, context_id):
+    self.save_context_state(context_id, {
+        "phase": "awaiting_classification",
+        "initial_params": params,
+    })
+    await self.send_input_required(
+        context=context, event_queue=event_queue,
+        missing_inputs=[
+            MissingInput(name="code_class", user_prompt="ASME code class",
+                         description="...", type="string",
+                         options=["Class_1", "Class_2", "Class_3", "NonCode"]),
+            MissingInput(name="safety_category", user_prompt="Safety category",
+                         description="...", type="string",
+                         options=["safety_related", "non_safety"]),
+        ],
+        hint="Please provide the classification fields.",
+    )
+    return {}
+
+async def _phase_classification(self, context, event_queue, context_id, state):
+    provided = self.get_provided_inputs(context)
+    profile = {**state.get("profile", {}), **provided}
+
+    self.save_context_state(context_id, {
+        "phase": "awaiting_sizing",
+        "profile": profile,
+        "initial_params": state.get("initial_params"),
+    })
+    await self.send_input_required(
+        context=context, event_queue=event_queue,
+        missing_inputs=[
+            MissingInput(name="design_pressure_mpa", user_prompt="Design pressure (MPa)",
+                         description="...", type="number", required=False),
+            MissingInput(name="design_temp_c", user_prompt="Design temperature (°C)",
+                         description="...", type="number", required=False),
+        ],
+        hint="Optional sizing parameters — leave blank to skip.",
+    )
+    return {}
+
+async def _phase_sizing(self, context, event_queue, context_id, state):
+    provided = self.get_provided_inputs(context)
+    profile = {**state.get("profile", {})}
+    for k, v in provided.items():
+        if v is not None:
+            profile[k] = v
+
+    self.save_context_state(context_id, {})   # clear state when done
+
+    result = run_analysis(profile)   # your business logic
+    await self.send_json_artifact(
+        context=context, event_queue=event_queue,
+        payload=result, name="requirements", catalog_artifact=True,
+    )
+    return {"message": "Analysis complete.", "agent": self.agent_name}
+```
+
+### Common pitfalls
+
+**1. Forgetting `return {}` after `send_input_required`**
+
+`send_input_required` emits a *final* A2A status with `state=input_required`. The task is now suspended. If you continue executing and return a normal dict afterwards, the base class will try to emit a second final status — causing a protocol error or overwriting the `INPUT_REQUIRED`.
+
+```python
+# WRONG
+await self.send_input_required(...)
+result = do_expensive_work()   # This runs unnecessarily
+return {"result": result}      # Overwrites INPUT_REQUIRED with "completed"
+
+# CORRECT
+await self.send_input_required(...)
+return {}
+```
+
+**2. Saving state after sending `INPUT_REQUIRED`**
+
+Save state *before* calling `send_input_required`, not after. Once you call it, the current invocation should immediately `return {}`.
+
+```python
+# WRONG — state is saved after the final event is emitted
+await self.send_input_required(...)
+self.save_context_state(context_id, state)   # may not persist reliably
+return {}
+
+# CORRECT
+self.save_context_state(context_id, state)
+await self.send_input_required(...)
+return {}
+```
+
+**3. Using `task_id` as the state key**
+
+`task_id` changes on every invocation (each turn is a new task). `context_id` is stable for the entire conversation. Always use `context_id` as the state key.
+
+```python
+# WRONG — state is lost on resume
+self.save_context_state(context.task_id, state)
+
+# CORRECT
+self.save_context_state(str(context.context_id), state)
+```
+
+**4. Calling `get_provided_inputs` on the first turn**
+
+On the initial call, there are no provided inputs yet — `get_provided_inputs` returns `{}`. Only on resume (after the user submits the form) does it return populated values. Always merge with existing state:
+
+```python
+state = self.load_context_state(context_id)
+resolved = dict(state.get("resolved", {}))
+resolved.update(self.get_provided_inputs(context))   # empty dict on first turn, values on resume
+```
+
+**5. Assuming `skill_id` persists across turns**
+
+`skill_id` is injected from message metadata on each call. If your agent dispatches multiple skills and needs to resume across an `INPUT_REQUIRED` boundary, save the `skill_id` in context state on the first turn and restore it on resume.
+
+```python
+# First turn
+skill_id = params.get("skill_id")
+self.save_context_state(context_id, {"skill_id": skill_id, "phase": "awaiting_input"})
+
+# Resume turn
+state = self.load_context_state(context_id)
+skill_id = params.get("skill_id") or state.get("skill_id")
+```
+
+**6. Calling `send_input_required` more than once per invocation**
+
+Only one `INPUT_REQUIRED` event can be pending at a time. Bundle all missing fields into a single call (the form renders them as separate widgets). If you need multiple distinct forms, use the phase state machine pattern above.
+
+**7. Sending status updates after `send_input_required`**
+
+Any event emitted after a final-status event is dropped by the A2A transport. Do all status updates before calling `send_input_required()`.
+
+---
+
+## Running Synchronous Code
+
+`_execute` is `async` but most data-processing libraries are synchronous. Run blocking code in a thread pool to avoid blocking the event loop:
+
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+
+class MyAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        await self.send_status_update(context, event_queue, message="Running model…")
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _EXECUTOR, self._run_sync_model, params
+        )
+
+        await self.send_json_artifact(
+            context=context, event_queue=event_queue,
+            payload=result, name="model_output", catalog_artifact=True,
+        )
+        return {"message": "Model complete.", "agent": self.agent_name}
+
+    def _run_sync_model(self, params):
+        # Synchronous heavy computation here
+        return {"output": 42}
+```
+
+---
+
+## Lifecycle Hooks
+
+### `configure_app(app)`
+
+Override to add custom HTTP routes or middleware to the Starlette app:
+
+```python
+def configure_app(self, app):
+    from starlette.routing import Route
+    from starlette.responses import JSONResponse
+
+    async def custom_endpoint(request):
+        return JSONResponse({"status": "ok"})
+
+    app.routes.append(Route("/api/custom", custom_endpoint))
+```
+
+### `lifespan(app)`
+
+Override for startup/shutdown work (loading models, opening connections):
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(self, app):
+    self._model = load_expensive_model()
+    yield
+    self._model = None
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENT_PORT` | `8000` | Port the agent listens on |
+| `AGENT_HOST` | `localhost` | Hostname used in the agent card URL (set to container name or `host.docker.internal` in Docker) |
+| `AGENT_SECRET` | — | Bearer token for inbound authentication |
+| `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header |
+| `LITELLM_URL` | — | LiteLLM gateway URL for registry registration |
+| `LITELLM_MASTER_KEY` | — | LiteLLM admin key |
+| `ANTHROPIC_API_KEY` | — | If the agent calls Claude directly |
+| `REDIS_URL` | `redis://localhost:6379` | Redis for artifact catalog and context state |
+| `REDIS_PASSWORD` | — | Redis auth password |
+| `AGENT_CONTEXT_TTL_SECONDS` | `86400` | TTL for per-context persisted state (24 h) |
+| `ENABLE_MLFLOW_TRACING` | `false` | Enable MLflow tracing middleware |
+
+---
+
+## Built-in HTTP Endpoints
+
+`agent.run()` exposes these endpoints automatically:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/` | A2A `message/send` and `message/stream` |
+| `GET` | `/.well-known/agent.json` | Agent card (public, unauthenticated) |
+| `GET` | `/health` | Health check — `{"ok": true}` (unauthenticated) |
+| `GET` | `/api/agent-card` | Raw agent card JSON |
+| `POST` | `/api/chat` | Debug endpoint: same execution path as A2A but simpler request/response |
+| `GET` | `/api/artifacts/{conversation_id}` | List artifact catalog for a conversation |
+
+---
+
+## Project Structure
+
+```text
+my-agent/
+├── agent.py              # PrometheusAgent subclass + if __name__ == "__main__": agent.run()
+├── agent_card.json       # Skill definitions, capabilities, tags
+├── Dockerfile
+├── docker-compose.yml
+└── .env                  # AGENT_PORT, LITELLM_URL, AGENT_SECRET, etc.
+```
+
+Minimal `agent.py`:
+
+```python
+from prometheus_api.agent import EventQueue, MissingInput, PrometheusAgent, RequestContext
 
 
 class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
+    async def _execute(
+        self,
+        params: dict,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> dict:
+        skill_id = params.get("skill_id")
+
+        if skill_id == "do_analysis":
+            return await self._handle_analysis(params, context, event_queue)
+
+        raise ValueError(f"Unknown skill: {skill_id!r}")
+
+    async def _handle_analysis(self, params, context, event_queue):
+        context_id = str(context.context_id)
+        state = self.load_context_state(context_id)
+        resolved = {**state.get("resolved", {}), **self.get_provided_inputs(context)}
+
+        if "material_id" not in resolved:
+            if params.get("material_id"):
+                resolved["material_id"] = params["material_id"]
+
+        if "material_id" not in resolved:
+            self.save_context_state(context_id, {"resolved": resolved})
+            await self.send_input_required(
+                context=context,
+                event_queue=event_queue,
+                missing_inputs=[
+                    MissingInput(
+                        name="material_id",
+                        description="Canonical material ID to analyze.",
+                        user_prompt="Which material should I analyze?",
+                        type="string",
+                        required=True,
+                    )
+                ],
+                hint="Please specify the material.",
+            )
+            return {}
+
+        self.save_context_state(context_id, {})  # clear on completion
+        material_id = resolved["material_id"]
+
+        await self.send_status_update(context, event_queue, message=f"Analyzing {material_id}…")
+
+        result = {"material_id": material_id, "score": 0.95}
+        await self.send_json_artifact(
+            context=context, event_queue=event_queue,
+            payload=result, name="analysis_result",
+            json_type="prometheus.my_agent.analysis.v1",
+            catalog_artifact=True,
+        )
+
         return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": "Request handled.",
+            "message": f"Analysis complete for {material_id}.",
+            "agent": self.agent_name,
         }
 
 
@@ -85,399 +742,77 @@ if __name__ == "__main__":
     agent.run()
 ```
 
-## Agent Actions
-
-### Send Progress Status
-
-Use `send_status_update(...)` for transient progress messages shown while work is happening.
-
-```python
-await self.send_status_update(
-    context=context,
-    event_queue=event_queue,
-    message="Loading source data.",
-)
-```
-
-You can emit as many intermediate status updates as needed. In most cases you should not emit the final completed status manually; the base class handles that from your return value.
-
-### Emit a Text Artifact
-
-Use `send_text_artifact(...)` for streaming or ad hoc textual artifacts.
-
-```python
-artifact_id = await self.send_text_artifact(
-    context=context,
-    event_queue=event_queue,
-    name="progress.log",
-    text="phase=loading\n",
-    last_chunk=False,
-)
-
-await self.send_text_artifact(
-    context=context,
-    event_queue=event_queue,
-    name="progress.log",
-    artifact_id=artifact_id,
-    append=True,
-    text="phase=complete\n",
-    last_chunk=True,
-)
-```
-
-### Emit a File Artifact
-
-Use `send_artifact_reference(...)` for generated files or externally addressable resources.
-
-```python
-artifact = await self.send_artifact_reference(
-    context=context,
-    event_queue=event_queue,
-    name="report.pdf",
-    description="Generated corrosion report",
-    uri="file:///tmp/report.pdf",
-    mime_type="application/pdf",
-)
-```
-
-This:
-
-- emits a native A2A `file` artifact part
-- registers the file in the conversation artifact catalog
-- returns a normalized `ArtifactReference`
-
-### Emit an Inline JSON Artifact
-
-Use `send_json_artifact(...)` for structured non-file outputs.
-
-```python
-artifact_id = await self.send_json_artifact(
-    context=context,
-    event_queue=event_queue,
-    name="thermal_result",
-    description="Structured thermal analysis result",
-    payload={
-        "status": "acceptable",
-        "max_temperature_c": 650.0,
-    },
-    json_type="prometheus.thermal_analysis.result.v1",
-    catalog_artifact=True,
-)
-```
-
-Recommended usage:
-
-- set `catalog_artifact=True` when downstream agents or the frontend should be able to reuse the artifact
-- set `json_type` for frontend visualization routing
-- keep the final conversational summary in your returned dict, not only in the artifact
-
-### Emit a Durable Conversation Message
-
-Use `send_conversation_message(...)` when a message should appear in chat history but should not be treated as a reusable file/data artifact.
-
-```python
-await self.send_conversation_message(
-    context=context,
-    event_queue=event_queue,
-    message="Artifact generation started.",
-)
-```
-
-### Request More Input
-
-Use `send_input_required(...)` with `MissingInput` entries when the user must provide additional values.
-
-```python
-from prometheus_api.agent import MissingInput
-
-
-await self.send_input_required(
-    context=context,
-    event_queue=event_queue,
-    missing_inputs=[
-        MissingInput(
-            name="temperature_c",
-            description="Operating temperature in degrees Celsius for the analysis case.",
-            user_prompt="What operating temperature should I use?",
-            type="number",
-        )
-    ],
-    hint="This analysis needs an operating temperature before it can continue.",
-)
-return {}
-```
-
-The emitted final task status has:
-
-- `status.state = input_required`
-- `status.message.parts[0] = DataPart(...)`
-- canonical payload shape:
-
-```json
-{
-  "missing_inputs": [
-    {
-      "name": "temperature_c",
-      "description": "Operating temperature in degrees Celsius for the analysis case.",
-      "user_prompt": "What operating temperature should I use?",
-      "type": "number",
-      "options": null,
-      "resolvable_from_context": false,
-      "sensitive": false
-    }
-  ],
-  "hint": "This analysis needs an operating temperature before it can continue."
-}
-```
-
-## Stateful Resume by `contextId`
-
-Specialist agents should persist their own partial state keyed by the A2A `contextId`.
-
-Use:
-
-- `load_context_state(context.context_id)`
-- `save_context_state(context.context_id, state)`
-- `get_provided_inputs(context)`
-
-Example:
-
-```python
-from prometheus_api.agent import EventQueue, MissingInput, PrometheusAgent, RequestContext
-
-
-class ThermalAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        state = self.load_context_state(context.context_id)
-        resolved = dict(state.get("resolved", {}))
-
-        resolved.update(self.get_provided_inputs(context))
-        if params.get("material_id"):
-            resolved["material_id"] = params["material_id"]
-
-        if "temperature_c" not in resolved:
-            self.save_context_state(context.context_id, {"resolved": resolved})
-            await self.send_input_required(
-                context=context,
-                event_queue=event_queue,
-                missing_inputs=[
-                    MissingInput(
-                        name="temperature_c",
-                        description="Operating temperature in degrees Celsius for the analysis case.",
-                        user_prompt="What operating temperature should I use?",
-                        type="number",
-                    )
-                ],
-                hint="Thermal analysis requires an operating temperature.",
-            )
-            return {}
-
-        self.save_context_state(context.context_id, {"resolved": resolved})
-
-        temperature_c = float(resolved["temperature_c"])
-        material_id = resolved["material_id"]
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": f"Thermal analysis complete for {material_id} at {temperature_c} C.",
-        }
-```
-
-Use the context store for:
-
-- resolved user inputs
-- partial execution progress
-- resumable cursors or workflow position
-- small derived values needed for the next turn
-
-Do not use it as a general-purpose cache for large external records.
-
-## Suggested Data-Fetching Patterns
-
-### Initialize clients once
-
-Create durable clients in `__init__` and reuse them:
-
-```python
-from prometheus_api.storage_client import ConnectionConfig, StorageClient
-
-
-class StorageBackedAgent(PrometheusAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.storage = StorageClient(ConnectionConfig.from_env())
-```
-
-### Fetch authoritative data inside `_execute(...)`
-
-Use request parameters and resolved inputs to query upstream systems during execution:
-
-```python
-    async def _execute(self, params, context, event_queue):
-        item = self.storage.items.get(params["item_id"])
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": f"Loaded {item.name}.",
-            "item": {"id": item.id, "name": item.name},
-        }
-```
-
-### Prefer small execution state over large cached payloads
-
-Good patterns:
-
-- persist the selected `item_id`, not the entire upstream row
-- persist the resolved `temperature_c`, not a large transient report object
-- persist cursor/token/checkpoint values needed to resume
-
-Avoid:
-
-- copying upstream source-of-truth records into context state
-- storing secrets in context state
-- using context state as a substitute for a real service cache
-
-### Separate user-facing artifacts from internal fetches
-
-If fetched data should be reusable or inspectable, emit it as an artifact. If it is only an internal lookup needed to produce the final answer, keep it internal.
-
-Good:
-
-- emit a generated report as a file artifact
-- emit a structured result matrix as a JSON artifact
-- keep raw lookup tables internal unless the user or downstream agents need them
+---
 
 ## API Reference
 
-### `PrometheusAgent.__init__(agent_name, agent_card_path=None)`
+### `MissingInput`
 
-Parameters:
+```python
+@dataclass
+class MissingInput:
+    name: str                             # Field key in provided_inputs on resume
+    description: str                      # Orchestrator context + form help text
+    user_prompt: str                      # Label shown to user in the form
+    type: str                             # "string" | "number" | "integer" | "boolean"
+    options: Optional[List[str]] = None   # Renders as dropdown; works with any type
+    resolvable_from_context: bool = False # Orchestrator tries to auto-resolve
+    sensitive: bool = False               # Suppress logging/display
+    required: bool = True                 # False = optional form field
+```
 
-- `agent_name`: display and logging name
-- `agent_card_path`: optional path to `agent_card.json`
+### `send_input_required(context, event_queue, *, missing_inputs, hint, metadata=None)`
 
-### `_execute(params, context, event_queue)`
-
-Override this in your subclass.
-
-Parameters:
-
-- `params`: parameters extracted from the incoming request
-- `context`: A2A request context with `task_id`, `context_id`, and message parts
-- `event_queue`: queue used to emit status and artifact events
-
-Returns:
-
-- final structured response dict
+Emit a final `INPUT_REQUIRED` status. Must be followed by `return {}`.
 
 ### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
 
-Emit a task status update.
+Emit a transient progress update.
 
-### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None)`
+### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None) → str`
 
-Emit a text artifact, optionally chunked.
+Emit a structured data artifact. Returns `artifact_id`.
 
-### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None)`
+### `send_text_artifact(context, event_queue, text, name="result", artifact_id=None, append=False, last_chunk=None, metadata=None) → str`
 
-Emit a native A2A data artifact. Use `catalog_artifact=True` if the artifact should be registered for later reuse.
+Emit or append to a text artifact. Returns `artifact_id`.
 
-### `send_artifact_reference(context, event_queue, name, description, uri, mime_type=None, size_bytes=None, artifact_id=None, tags=None, metadata=None)`
+### `send_artifact_reference(context, event_queue, *, name, description, uri, mime_type=None, size_bytes=None, artifact_id=None, tags=None, metadata=None) → ArtifactReference`
 
 Register and emit a URI-backed file artifact.
 
-### `send_conversation_message(context, event_queue, message, metadata=None)`
+### `send_conversation_message(context, event_queue, message, metadata=None) → str`
 
 Emit a durable chat-visible message.
 
-### `load_context_state(context_id)` / `save_context_state(context_id, state)`
+### `load_context_state(context_id) → Dict`
 
-Load and persist agent-local state keyed by `contextId`.
+Load persisted per-context state. Returns `{}` if nothing saved.
 
-### `get_provided_inputs(context)`
+### `save_context_state(context_id, state)`
 
-Extract structured follow-up answers from incoming A2A `DataPart`s.
+Persist agent-local state (Redis with in-memory fallback, TTL 24 h by default).
 
-### `send_input_required(context, event_queue, missing_inputs, hint, metadata=None)`
+### `get_provided_inputs(context) → Dict`
 
-Emit a canonical final `INPUT_REQUIRED` payload.
+Extract user-submitted form values from incoming `DataPart`s. Returns `{}` on the first turn.
 
-## Streaming
+### `list_artifact_references(conversation_id, limit=None) → List[ArtifactReference]`
 
-To support `message/stream`, set this in `agent_card.json`:
+List registered artifacts for a conversation, newest first.
 
-```json
-{
-  "capabilities": {
-    "streaming": true
-  }
-}
-```
+### `resolve_artifact_reference(conversation_id, artifact_id) → Optional[ArtifactReference]`
 
-That is the only required configuration change. `_execute(...)` does not change.
+Resolve one artifact by ID.
 
-Recommended:
+### `resolve_artifact_by_name(conversation_id, name_or_alias) → Optional[ArtifactReference]`
 
-- emit status updates for long-running steps
-- emit chunked text artifacts when streaming incremental textual output
-- return the final conversational result as the dict from `_execute(...)`
+Resolve one artifact by name (case-insensitive).
 
-## `/api/chat` Compatibility Endpoint
+---
 
-`PrometheusAgent.run()` also exposes `POST /api/chat` as a convenience adapter for frontend and debug usage. It routes through the same execution path as A2A.
+## See Also
 
-Accepted request shapes:
-
-- `{"message": "plain text"}`
-- `{"message": {...}}`
-- `{"params": {...}}`
-
-Optional fields:
-
-- `task_id`
-- `context_id`
-- `conversation_id`
-- `include_events`
-
-Response fields:
-
-- `ok`
-- `task_id`
-- `context_id`
-- `state`
-- `result`
-- `events` when requested
-
-## Environment Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `AGENT_PORT` | Port to listen on | `8000` | No |
-| `AGENT_HOST` | Hostname for agent card URL | `localhost` | No |
-| `AGENT_SECRET` | Shared secret for Bearer token authentication | - | Yes in production |
-| `AGENT_SECRET_REQUIRED` | Enforce authentication | `true` | No |
-| `REGISTRY_URL` | Registry service URL | - | No |
-| `REDIS_URL` | Redis for artifact and context-state persistence | `redis://localhost:6379` | No |
-| `AGENT_CONTEXT_TTL_SECONDS` | TTL for agent-local per-context state | `86400` | No |
-
-## Project Structure
-
-```text
-my-agent/
-├── agent.py
-├── agent_card.json
-├── .env
-├── requirements.txt
-└── Dockerfile
-```
-
-## Reference Example
-
-See [`examples/agent_patterns.py`](../../examples/agent_patterns.py) for a single example agent that demonstrates:
-
-- status updates
-- durable conversation messages
-- `INPUT_REQUIRED`
-- per-`contextId` state persistence
-- upstream data fetch patterns
-- file and JSON artifact emission
+- [`examples/agent_patterns.py`](../../examples/agent_patterns.py) — full reference agent demonstrating all patterns
+- [`docs/ENV_SETUP.md`](../ENV_SETUP.md) — environment variable details
+- [`docs/agent/QUICK_START.md`](./QUICK_START.md) — condensed getting-started version

@@ -1,6 +1,6 @@
 # PrometheusAgent Quick Start
 
-`PrometheusAgent` is the base class for A2A-enabled specialist agents in Prometheus. You implement `_execute(...)`, return a final structured dict, and optionally emit status updates, artifacts, or `INPUT_REQUIRED` messages while the task is running.
+Subclass `PrometheusAgent`, implement `_execute`, return a dict. The base class handles everything else.
 
 ## Install
 
@@ -8,261 +8,171 @@
 pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
 ```
 
-## Minimal Agent
+## Minimal agent
 
 ```python
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 
 
 class MyAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        material_id = params.get("material_id", "").strip()
+    async def _execute(self, params, context: RequestContext, event_queue: EventQueue) -> dict:
         return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": f"Received material {material_id or 'unknown'}.",
+            "message": f"Received skill={params.get('skill_id')!r}.",
+            "agent": self.agent_name,
         }
 
 
 if __name__ == "__main__":
-    agent = MyAgent(agent_name="My Agent")
-    agent.run()
+    MyAgent(agent_name="My Agent").run()
 ```
 
 ## Minimal `agent_card.json`
 
-Agent cards are now routing metadata only. Do not declare `inputSchema` here. Specialist agents should request missing values at runtime with `send_input_required(...)`.
-
 ```json
 {
   "name": "My Agent",
-  "description": "Performs specialist analysis.",
+  "description": "One-sentence description for orchestrator routing.",
   "url": "http://localhost:8000",
   "version": "1.0.0",
-  "capabilities": {
-    "streaming": true,
-    "pushNotifications": false
-  },
+  "capabilities": { "streaming": true, "pushNotifications": false },
   "skills": [
     {
-      "id": "analyze_material",
-      "name": "Analyze Material",
-      "description": "Performs a material analysis and requests missing inputs when needed.",
-      "tags": ["materials", "analysis"]
+      "id": "do_analysis",
+      "name": "Do Analysis",
+      "description": "Runs an analysis. Requests any missing parameters interactively.",
+      "usage_notes": "Use when the user asks for analysis, lookup, or evaluation.",
+      "tags": ["analysis"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "material_id": { "type": "string", "description": "Material identifier" }
+        },
+        "required": ["material_id"]
+      }
     }
   ]
 }
 ```
 
-## Agent Actions
-
-### Send Status Updates
-
-Use status updates for transient progress UI. These are not durable chat messages.
+## Status updates
 
 ```python
-from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
-
-
-class StatusAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message="Loading source data.",
-        )
-
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message="Running analysis.",
-        )
-
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": "Analysis complete.",
-        }
+await self.send_status_update(context, event_queue, message="Loading data…")
+await self.send_status_update(context, event_queue, message="Running model…")
+# base class emits final "completed" status from your return dict — don't emit it manually
 ```
 
-### Request Missing Input
-
-Use `load_context_state(...)`, `get_provided_inputs(...)`, and `send_input_required(...)` when execution cannot continue without more user input. Persist partial state by `contextId` so follow-up submissions can resume cleanly.
+## JSON artifact
 
 ```python
-from prometheus_api.agent import EventQueue, MissingInput, PrometheusAgent, RequestContext
-
-
-class InputRequiredAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        state = self.load_context_state(context.context_id)
-        resolved = dict(state.get("resolved", {}))
-        resolved.update(self.get_provided_inputs(context))
-        if params.get("material_id"):
-            resolved["material_id"] = params["material_id"]
-
-        if "temperature_c" not in resolved:
-            self.save_context_state(context.context_id, {"resolved": resolved})
-            await self.send_input_required(
-                context=context,
-                event_queue=event_queue,
-                missing_inputs=[
-                    MissingInput(
-                        name="temperature_c",
-                        description="Operating temperature in degrees Celsius for the analysis case.",
-                        user_prompt="What operating temperature should I use?",
-                        type="number",
-                    )
-                ],
-                hint="This analysis needs a temperature before it can proceed.",
-            )
-            return {}
-
-        self.save_context_state(context.context_id, {"resolved": resolved})
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": f"Running at {resolved['temperature_c']} C.",
-        }
-```
-
-### Emit a File Artifact
-
-Use `send_artifact_reference(...)` for files or externally addressable resources.
-
-```python
-from pathlib import Path
-
-
-class FileArtifactAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        report_path = Path("/tmp/report.pdf")
-
-        artifact = await self.send_artifact_reference(
-            context=context,
-            event_queue=event_queue,
-            name="report.pdf",
-            description="Generated report",
-            uri=f"file://{report_path}",
-            mime_type="application/pdf",
-        )
-
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": "Report created successfully.",
-            "new_artifacts": [artifact.to_dict()],
-        }
-```
-
-### Emit an Inline JSON Artifact
-
-Use `send_json_artifact(..., catalog_artifact=True)` for reusable structured data.
-
-```python
-class JsonArtifactAgent(PrometheusAgent):
-    async def _execute(self, params, context: RequestContext, event_queue: EventQueue):
-        artifact_id = await self.send_json_artifact(
-            context=context,
-            event_queue=event_queue,
-            name="thermal_result",
-            description="Structured thermal analysis result",
-            payload={"max_temperature_c": 650.0, "status": "acceptable"},
-            json_type="prometheus.thermal_analysis.result.v1",
-            catalog_artifact=True,
-        )
-
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": "Thermal analysis complete.",
-            "artifact_id": artifact_id,
-        }
-```
-
-### Emit a Durable Conversation Message
-
-Use `send_conversation_message(...)` for messages that should appear in chat history in addition to your final response.
-
-```python
-await self.send_conversation_message(
-    context=context,
-    event_queue=event_queue,
-    message="Conversion started.",
+await self.send_json_artifact(
+    context=context, event_queue=event_queue,
+    payload={"score": 0.95, "status": "acceptable"},
+    name="result",
+    description="Analysis result",
+    json_type="prometheus.my_agent.result.v1",
+    catalog_artifact=True,    # registers for downstream reuse
 )
+return {"message": "Analysis complete.", "agent": self.agent_name}
 ```
 
-## Suggested Data-Fetching Patterns
-
-### Initialize service clients in `__init__`
-
-Create reusable clients once and keep `_execute(...)` focused on request handling:
+## File artifact
 
 ```python
-from prometheus_api.storage_client import ConnectionConfig, StorageClient
-
-
-class StorageBackedAgent(PrometheusAgent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.storage = StorageClient(ConnectionConfig.from_env())
+artifact = await self.send_artifact_reference(
+    context=context, event_queue=event_queue,
+    name="report.pdf",
+    description="Generated report",
+    uri="file:///tmp/report.pdf",
+    mime_type="application/pdf",
+)
+return {"message": "Report ready.", "agent": self.agent_name}
 ```
 
-### Fetch authoritative data inside `_execute(...)`
+## `INPUT_REQUIRED` — requesting user input
 
-Read external systems during execution using the current request inputs and context state:
+Save state **before** calling `send_input_required`, then **always** `return {}`.
 
 ```python
-    async def _execute(self, params, context, event_queue):
-        item = self.storage.items.get(params["item_id"])
-        return {
-            "conversation_id": context.context_id,
-            "status": "completed",
-            "message": f"Loaded {item.name}.",
-            "item": {"id": item.id, "name": item.name},
-        }
+from prometheus_api.agent import MissingInput
+
+
+async def _execute(self, params, context, event_queue):
+    context_id = str(context.context_id)
+    state = self.load_context_state(context_id)
+    resolved = {**state.get("resolved", {}), **self.get_provided_inputs(context)}
+
+    if "temperature_c" not in resolved:
+        self.save_context_state(context_id, {"resolved": resolved})   # save BEFORE
+        await self.send_input_required(
+            context=context, event_queue=event_queue,
+            missing_inputs=[
+                MissingInput(
+                    name="temperature_c",
+                    description="Operating temperature in °C.",
+                    user_prompt="What operating temperature (°C)?",
+                    type="number",
+                    required=True,
+                )
+            ],
+            hint="I need an operating temperature to continue.",
+        )
+        return {}   # ← required — task is suspended
+
+    self.save_context_state(context_id, {})   # clear on completion
+    return {"message": f"Running at {resolved['temperature_c']} °C.", "agent": self.agent_name}
 ```
 
-### Persist only execution state in `ContextStateStore`
+Key rules:
+- Use `context.context_id` as the state key (not `task_id` — it changes each turn)
+- `get_provided_inputs()` returns `{}` on the first turn; values appear on resume
+- Bundle all missing fields into **one** `send_input_required` call — the form renders them as separate widgets
+- `type="boolean"` renders as a checkbox; `options=[...]` renders as a dropdown
 
-Use `save_context_state(...)` for partial progress, resolved inputs, or resume cursors. Do not copy large external records into the context store unless they are part of the agent's own execution state.
+## Multiple skills
 
-Good:
-- resolved user inputs
-- pagination cursors
-- chosen scenario/configuration
-- partial workflow progress
-
-Avoid:
-- duplicating source-of-truth rows from upstream systems
-- long-lived caches that belong in a dedicated service cache
-- storing secrets in plain agent context state
-
-## Environment Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `AGENT_PORT` | Port to listen on | `8000` | No |
-| `AGENT_HOST` | Hostname for agent card URL | `localhost` | No |
-| `AGENT_SECRET` | Shared secret for authentication | - | Yes in production |
-| `AGENT_SECRET_REQUIRED` | Enforce authentication | `true` | No |
-| `REGISTRY_URL` | Registry service URL | - | No |
-| `REDIS_URL` | Redis for artifact/state persistence | `redis://localhost:6379` | No |
-| `AGENT_CONTEXT_TTL_SECONDS` | TTL for persisted per-context state | `86400` | No |
-
-## Project Structure
-
-```text
-my-agent/
-├── agent.py
-├── agent_card.json
-├── .env
-├── requirements.txt
-└── Dockerfile
+```python
+async def _execute(self, params, context, event_queue):
+    skill_id = params.get("skill_id")
+    dispatch = {
+        "analyze": self._handle_analyze,
+        "list":    self._handle_list,
+    }
+    handler = dispatch.get(skill_id)
+    if handler is None:
+        raise ValueError(f"Unknown skill: {skill_id!r}")
+    return await handler(params, context, event_queue)
 ```
 
-## Next Steps
+## Sync code in async context
 
-- [PrometheusAgent Guide](./GUIDE.md)
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+_POOL = ThreadPoolExecutor(max_workers=4)
+
+async def _execute(self, params, context, event_queue):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(_POOL, self._sync_computation, params)
+    return {"result": result}
+
+def _sync_computation(self, params):
+    return heavy_library_call(params)
+```
+
+## `.env`
+
+```env
+AGENT_PORT=8001
+AGENT_HOST=host.docker.internal
+AGENT_SECRET=my-secret
+LITELLM_URL=http://litellm:4000
+LITELLM_MASTER_KEY=sk-...
+```
+
+## Next steps
+
+- [PrometheusAgent Guide](./GUIDE.md) — full reference with pitfalls, multi-round forms, lifecycle hooks
+- [`examples/agent_patterns.py`](../../examples/agent_patterns.py) — runnable reference agent
 - [Environment Setup](../ENV_SETUP.md)
-- [`examples/agent_patterns.py`](../../examples/agent_patterns.py)
