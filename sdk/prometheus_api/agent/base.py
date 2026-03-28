@@ -102,6 +102,7 @@ class MissingInput:
     options: Optional[List[str]] = None
     resolvable_from_context: bool = False
     sensitive: bool = False
+    required: bool = True
 
 
 def build_input_required_payload(
