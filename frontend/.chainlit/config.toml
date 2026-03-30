@@ -27,7 +27,7 @@ allow_origins = ["*"]
 unsafe_allow_html = false
 
 # Process and display mathematical expressions. This can clash with "$" characters in messages.
-latex = false
+latex = true
 
 # Autoscroll new user messages at the top of the window
 user_message_autoscroll = true
@@ -78,13 +78,13 @@ reaction_on_message_received = false
     enabled = false
 
 [features.mcp.sse]
-    enabled = true
+    enabled = false
 
 [features.mcp.streamable-http]
-    enabled = true
+    enabled = false
 
 [features.mcp.stdio]
-    enabled = true
+    enabled = false
     # Only the executables in the allow list can be used for MCP stdio server.
     # Only need the base name of the executable, e.g. "npx", not "/usr/bin/npx".
     # Please don't comment this line for now, we need it to parse the executable name.
@@ -99,7 +99,7 @@ chat_settings_location = "sidebar"
 
 # Force a specific language for all users (e.g., "en-US", "he-IL", "fr-FR")
 # If not set, the browser's language will be used
-# language = "en-US"
+language = "en-US"
 
 layout = "wide"
 

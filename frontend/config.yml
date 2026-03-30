@@ -21,10 +21,6 @@ agent-url: "http://localhost:8001"
 agent-secret: ""
 redis-url: "redis://localhost:6379"
 
-debug: true
+# debug: true
+debug: false
 auto-approve-steps: false
-agent-names:
-  - "Material Analyst"
-  - "Workflow Orchestrator"
-  - "CAD/BIM Specialist"
-  - "Safety Analyst"
