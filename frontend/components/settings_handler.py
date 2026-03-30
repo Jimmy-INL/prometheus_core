@@ -10,13 +10,23 @@ from utils.settings import settings as app_settings
 
 
 async def configure_settings():
-    agent_names = app_settings.agent_names
-    agent_switches = [Switch(id=f"use_{name}", label=f"Use {name}", initial=False) for name in agent_names]
     tabs = [
         Tab(
             id="ui_config",
             label="Config",
             inputs=[
+                Select(
+                    id="model",
+                    label="Model",
+                    values=[
+                        "None",
+                        "gpt-oss-120B (AmSC)",
+                        "gpt-oss-120B (INL)",
+                        "GPT-5.3 Chat (OpenAI)",
+                        "Claude Opus 4.6 (Anthropic)"
+                    ],
+                    initial_index=0,
+                ),
                 Select(
                     id="approval_type",
                     label="Approval Type",
@@ -29,7 +39,6 @@ async def configure_settings():
                 ),
             ],
         ),
-        Tab(id="agent_config", label="Enable Agents", inputs=agent_switches),
     ]
 
     if app_settings.debug:
@@ -41,7 +50,7 @@ async def configure_settings():
                     Select(
                         id="debug_feature",
                         label="Test Feature",
-                        values=["None", "Exodus File", "IFC File"],
+                        values=["None"],
                         initial_index=0,
                     )
                 ],
@@ -54,10 +63,4 @@ async def settings_debug_options(ui_settings):
     debug_feature = ui_settings.get("debug_feature")
 
     if debug_feature and debug_feature != "None":
-        match debug_feature:
-            case "Exodus File":
-                await cl.Message(content="Upload an Exodus file to test the viewer.").send()
-            case "IFC File":
-                await cl.Message(content="Upload an IFC file to test the viewer.").send()
-            case _:
-                pass
+        pass
