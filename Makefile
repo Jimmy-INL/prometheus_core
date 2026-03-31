@@ -2,7 +2,8 @@
 #
 # Specialist agents live in agents/*/docker-compose.yml.
 # Any agent directory that contains a docker-compose.yml is included automatically.
-# To exclude an agent, remove its directory or don't check out the submodule.
+# To exclude an agent, remove its directory.
+CONTAINER_RUNTIME := $(if $(shell which podman-compose 2>/dev/null),podman-compose,docker compose)
 
 COMPOSE_BASE := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
@@ -10,7 +11,7 @@ COMPOSE_AGENTS := docker-compose.agents.yml
 # All per-agent compose files found on disk (checked-out submodules only).
 AGENT_COMPOSE_FILES := $(shell find agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
 
-# Build the -f flags for docker compose.
+# Build the -f flags for $(CONTAINER_RUNTIME).
 COMPOSE_FILES := -f $(COMPOSE_BASE)
 ifneq ($(AGENT_COMPOSE_FILES),)
 COMPOSE_FILES += -f $(COMPOSE_AGENTS)
@@ -34,31 +35,31 @@ $(COMPOSE_AGENTS): $(AGENT_COMPOSE_FILES)
 
 ## Start all services (generates compose file first).
 up: generate
-	docker compose $(COMPOSE_FILES) up --build -d
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up --build -d
 
 ## Start all services in the foreground.
 up-fg: generate
-	docker compose $(COMPOSE_FILES) up --build
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up --build
 
 ## Stop all services.
 down:
-	docker compose $(COMPOSE_FILES) down
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) down
 
 ## Stop all services and remove volumes.
 down-v:
-	docker compose $(COMPOSE_FILES) down -v
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) down -v
 
 ## Build all images without starting.
 build: generate
-	docker compose $(COMPOSE_FILES) build
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) build
 
 ## Tail logs for all services (or pass SERVICE=<name> to filter).
 logs:
-	docker compose $(COMPOSE_FILES) logs -f $(SERVICE)
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) logs -f $(SERVICE)
 
 ## Show running service status.
 ps:
-	docker compose $(COMPOSE_FILES) ps
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) ps
 
 ## Remove the generated agents compose file.
 clean-generated:

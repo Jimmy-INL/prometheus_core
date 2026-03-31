@@ -1,9 +1,9 @@
 services:
   synthesis-agent:
     build:
-      context: .
+      context: agents/synthesis-agent
       additional_contexts:
-        certs: ../../certs
+        certs: certs
       args:
         - HTTP_PROXY=${HTTP_PROXY}
         - HTTPS_PROXY=${HTTPS_PROXY}
