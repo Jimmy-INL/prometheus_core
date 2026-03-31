@@ -1,5 +1,14 @@
-# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim
+
+# Accept proxy as build args
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+# Set proxy environment variables for pip
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -19,11 +28,13 @@ RUN cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/nu
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
+ENV UV_NATIVE_TLS=true
+ENV UV_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
 
 RUN python -m pip install --upgrade pip uv
 
+COPY . /src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,target=/src,rw \
     uv pip install --system /src[agent,tracing]
 
 RUN rm -rf /tmp/certs
