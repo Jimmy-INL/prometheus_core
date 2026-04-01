@@ -1,10 +1,9 @@
 """Tests for data models."""
 
-import pytest
 from datetime import datetime
 from prometheus_api.storage_client.models.item import Item, ItemCreate, ItemUpdate, Tag
 from prometheus_api.storage_client.models.pagination import Page, PageInfo
-from prometheus_api.storage_client.models.relationship import Relationship, RelationshipCreate
+from prometheus_api.storage_client.models.relationship import RelationshipCreate
 
 
 def test_item_create():

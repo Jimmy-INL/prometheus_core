@@ -1,6 +1,6 @@
 """Async search resource."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from ..models.item import Item, Tag
 from ..models.pagination import Page, PageInfo
 from .base import AsyncBaseResource

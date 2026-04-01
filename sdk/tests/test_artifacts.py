@@ -1,7 +1,6 @@
 """Tests for artifact reference management."""
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext

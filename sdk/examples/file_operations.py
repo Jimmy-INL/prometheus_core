@@ -3,7 +3,6 @@
 from prometheus_api.storage_client import StorageClient, ConnectionConfig, ItemCreate, RelationshipCreate
 from pathlib import Path
 import tempfile
-import shutil
 
 
 def main():
@@ -51,7 +50,7 @@ def main():
             to_item_id=file_meta.id,
             relationship_type="has_data_file"
         ))
-        print(f"Linked file to item")
+        print("Linked file to item")
 
         print("\n=== Downloading file ===")
         download_path = Path(tempfile.gettempdir()) / "downloaded_example.csv"

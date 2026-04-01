@@ -1,6 +1,6 @@
 """Search resource for synchronous operations."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from ..models.item import Item
 from ..models.pagination import Page, PageInfo
 from .base import BaseResource
