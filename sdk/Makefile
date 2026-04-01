@@ -1,3 +1,5 @@
+UNAME := $(shell uname -s)
+
 ##@
 ##@ Help
 ##@
@@ -36,9 +38,33 @@ else
 endif
 
 ##@
+##@ Docker
+##@
+
+IMAGE_REPO ?=
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+PUSH_LATEST ?= true
+
+docker-bp: ##@ Docker build and push (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
+ifndef IMAGE_REPO
+	$(error IMAGE_REPO is required. Example: make docker-bp IMAGE_REPO=ghcr.io/my-org/prometheus-api)
+endif
+	@echo "Building $(IMAGE_REPO):$(IMAGE_TAG)"
+	DOCKER_BUILDKIT=1 docker build -t "$(IMAGE_REPO):$(IMAGE_TAG)" .
+	@echo "Pushing $(IMAGE_REPO):$(IMAGE_TAG)"
+	docker push "$(IMAGE_REPO):$(IMAGE_TAG)"
+ifeq ($(PUSH_LATEST),true)
+	@echo "Tagging $(IMAGE_REPO):latest"
+	docker tag "$(IMAGE_REPO):$(IMAGE_TAG)" "$(IMAGE_REPO):latest"
+	@echo "Pushing $(IMAGE_REPO):latest"
+	docker push "$(IMAGE_REPO):latest"
+endif
+	@echo "Done"
+
+##@
 ##@ Podman
 ##@
 
 podman-bp: ##@ Podman build and push to registry
 	podman login mooseharbor.hpc.inl.gov
-	podman build --platform linux/amd64 -t mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api:py312 .
+	podman build --platform linux/amd64 -t mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest .
