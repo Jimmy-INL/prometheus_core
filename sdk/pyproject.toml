@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prometheus-api"
-version = "0.2.0"
+version = "0.3.0"
 description = "Storage client and agent utilities for building A2A multi-agent systems"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -97,9 +97,11 @@ target-version = ['py312']
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+exclude = ["examples"]
 
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+exclude = ["examples"]
