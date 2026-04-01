@@ -8,10 +8,10 @@
 pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
-### Install with Development Dependencies
+### Install with Agent Support
 
 ```bash
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=storage-client[dev]"
+pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
 ```
 
 ### Install Specific Version/Branch
@@ -53,7 +53,7 @@ git+https://github.inl.gov/genesis/prometheus_api.git
 git+https://github.inl.gov/genesis/prometheus_api.git@main
 
 # Or with extras
-git+https://github.inl.gov/genesis/prometheus_api.git#egg=storage-client[dev]
+git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]
 ```
 
 ## Using in pyproject.toml
@@ -63,7 +63,7 @@ For projects using `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "storage-client @ git+https://github.inl.gov/genesis/prometheus_api.git",
+    "prometheus-api @ git+https://github.inl.gov/genesis/prometheus_api.git",
 ]
 ```
 
@@ -77,7 +77,7 @@ Or in `pyproject.toml`:
 
 ```toml
 [tool.poetry.dependencies]
-storage-client = {git = "https://github.inl.gov/genesis/prometheus_api.git"}
+prometheus-api = {git = "https://github.inl.gov/genesis/prometheus_api.git"}
 ```
 
 ## Using with pip-tools
@@ -85,7 +85,7 @@ storage-client = {git = "https://github.inl.gov/genesis/prometheus_api.git"}
 In `requirements.in`:
 
 ```
-storage-client @ git+https://github.inl.gov/genesis/prometheus_api.git
+prometheus-api @ git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
 Then:
@@ -100,7 +100,7 @@ pip-sync requirements.txt
 After installation, verify it works:
 
 ```python
-python -c "import prometheus_api.storage_client; print(f'Version: {storage_client.__version__}')"
+python -c "from prometheus_api.storage_client import StorageClient; print('OK')"
 ```
 
 Or run the verification script (if cloned):
@@ -136,7 +136,7 @@ pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ## Uninstall
 
 ```bash
-pip uninstall storage-client
+pip uninstall prometheus-api
 ```
 
 ## Upgrade
@@ -154,11 +154,11 @@ pip install --force-reinstall git+https://github.inl.gov/genesis/prometheus_api.
 In your `Dockerfile`:
 
 ```dockerfile
-FROM python:3.11
+FROM python:3.12
 
 WORKDIR /app
 
-# Install storage-client from git
+# Install prometheus-api from git
 RUN pip install git+https://github.inl.gov/genesis/prometheus_api.git
 
 # Copy your application
@@ -193,16 +193,8 @@ Make sure:
 
 1. **Set up credentials:**
 ```bash
-cp .env.example .env  # If you have the example file
+cp .env.example .env
 vim .env  # Add your DeepLynx credentials
-```
-
-Or create `.env` manually:
-```bash
-DEEPLYNX_KEY=your-api-key
-DEEPLYNX_SECRET=your-api-secret
-DEEPLYNX_ORG_ID=1
-DEEPLYNX_PROJECT_ID=32
 ```
 
 2. **Use the library:**
@@ -232,17 +224,13 @@ cd prometheus_api
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# Set up pre-commit hooks (optional)
-pip install pre-commit
-pre-commit install
-
 # Run tests
 pytest tests/ -v
 ```
 
-## Questions?
+## Further Reading
 
-See:
-- README.md - User guide
-- QUICK_START.md - Quick reference
-- TESTING.md - Testing guide
+- [README.md](README.md) - Overview and quick start
+- [StorageClient Guide](docs/storage-client/GUIDE.md) - Full StorageClient documentation
+- [PrometheusAgent Guide](docs/agent/GUIDE.md) - Full agent documentation
+- [Testing Guide](docs/TESTING.md) - Running and writing tests
