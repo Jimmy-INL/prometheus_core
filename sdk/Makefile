@@ -116,6 +116,10 @@ IMAGE_REPO ?=
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
 PUSH_LATEST ?= true
 
+docker-build: ##@ Build Docker image locally (IMAGE_TAG=<tag>, default: git short hash)
+	DOCKER_BUILDKIT=1 docker build -t "prometheus-api:$(IMAGE_TAG)" .
+	@echo "Built prometheus-api:$(IMAGE_TAG)"
+
 docker-bp: ##@ Docker build and push (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
 ifndef IMAGE_REPO
 	$(error IMAGE_REPO is required. Example: make docker-bp IMAGE_REPO=ghcr.io/my-org/prometheus-api)
@@ -135,6 +139,10 @@ endif
 ##@
 ##@ Podman
 ##@
+
+podman-build: ##@ Build Podman image locally (IMAGE_TAG=<tag>, default: git short hash)
+	podman build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)" .
+	@echo "Built prometheus-api:$(IMAGE_TAG)"
 
 podman-bp: ##@ Podman build and push to registry
 	podman login mooseharbor.hpc.inl.gov
