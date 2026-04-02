@@ -93,12 +93,10 @@ services:
   client-agent:
     build:
       context: ./agents/client-agent
-      additional_contexts:
-        certs: ./certs
       args:
-        - HTTP_PROXY: ${HTTP_PROXY}
-        - HTTPS_PROXY: ${HTTPS_PROXY}
-        - NO_PROXY: ${NO_PROXY}
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     container_name: client-agent
     ports:
       - "${CLIENT_AGENT_PORT:-8001}:8000"
@@ -122,12 +120,10 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-      additional_contexts:
-        certs: ./certs
       args:
-        - HTTP_PROXY: ${HTTP_PROXY}
-        - HTTPS_PROXY: ${HTTPS_PROXY}
-        - NO_PROXY: ${NO_PROXY}
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     container_name: chainlit-frontend
     ports:
       - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
