@@ -1,4 +1,4 @@
-FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api:py312
+FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest
 
 WORKDIR /app
 
