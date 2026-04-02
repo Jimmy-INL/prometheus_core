@@ -10,7 +10,7 @@ def test_imports():
 
     try:
         # Core imports
-        from prometheus_api.storage_client import (
+        from prometheus_api.storage_client import (  # noqa: F401
             StorageClient,
             AsyncStorageClient,
             ConnectionConfig,
@@ -18,7 +18,7 @@ def test_imports():
         print("✓ Core clients imported successfully")
 
         # Model imports
-        from prometheus_api.storage_client import (
+        from prometheus_api.storage_client import (  # noqa: F401
             Item,
             ItemCreate,
             ItemUpdate,
@@ -33,7 +33,7 @@ def test_imports():
         print("✓ Data models imported successfully")
 
         # Exception imports
-        from prometheus_api.storage_client import (
+        from prometheus_api.storage_client import (  # noqa: F401
             StorageClientError,
             AuthenticationError,
             ItemNotFoundError,

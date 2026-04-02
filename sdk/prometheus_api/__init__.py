@@ -1,5 +1,7 @@
 """Prometheus API - Unified package for storage client and agent utilities."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("prometheus-api")
 
 __all__ = ["__version__"]

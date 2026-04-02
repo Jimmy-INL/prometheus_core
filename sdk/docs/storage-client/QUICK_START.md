@@ -3,12 +3,13 @@
 ## Installation
 
 ```bash
-cd /Users/schwd/Programs/prometheus_api
-pip install -r requirements.txt
+pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
 Or install in development mode:
 ```bash
+git clone https://github.inl.gov/genesis/prometheus_api.git
+cd prometheus_api
 pip install -e .
 ```
 

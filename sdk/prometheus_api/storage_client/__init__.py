@@ -15,7 +15,7 @@ from .exceptions import (
     APIError,
 )
 
-__version__ = "0.1.0"
+from prometheus_api import __version__
 
 __all__ = [
     # Clients

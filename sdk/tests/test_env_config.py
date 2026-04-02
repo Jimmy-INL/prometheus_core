@@ -5,7 +5,6 @@ the real .env file in the project root.
 """
 
 import pytest
-from pathlib import Path
 from prometheus_api.storage_client import ConnectionConfig
 
 

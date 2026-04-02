@@ -25,7 +25,7 @@ def main():
         # Load configuration from .env file
         print("Loading configuration from .env...")
         config = ConnectionConfig.from_env()
-        print(f"✓ Configuration loaded")
+        print("✓ Configuration loaded")
         print(f"  Organization: {config.organization_id}")
         print(f"  Project: {config.project_id}")
         print()
@@ -50,7 +50,7 @@ def main():
             )
 
             created_item = client.items.create(test_item)
-            print(f"✓ Item created successfully!")
+            print("✓ Item created successfully!")
             print(f"  ID: {created_item.id}")
             print(f"  Name: {created_item.name}")
             print(f"  Description: {created_item.description}")
@@ -61,7 +61,7 @@ def main():
             # Retrieve the item to verify
             print("Retrieving the item...")
             retrieved_item = client.items.get(created_item.id)
-            print(f"✓ Item retrieved successfully!")
+            print("✓ Item retrieved successfully!")
             print(f"  ID: {retrieved_item.id}")
             print(f"  Name: {retrieved_item.name}")
             print(f"  Message: {retrieved_item.properties.get('message')}")

@@ -1,6 +1,6 @@
 """Synchronous storage client."""
 
-from typing import Any, Dict, Optional
+from typing import Optional
 import httpx
 from .connection import ConnectionConfig
 from .auth import AuthHandler
@@ -144,7 +144,7 @@ class StorageClient:
                 self._handle_response(response)
                 return response
 
-            except AuthenticationError as e:
+            except AuthenticationError:
                 # On auth error, try to refresh token once
                 if attempt == 0 and self._auth_handler._managed_token:
                     try:

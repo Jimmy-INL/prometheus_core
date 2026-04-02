@@ -6,7 +6,6 @@ A2A-enabled agents, allowing you to focus on your agent's core logic.
 """
 
 import os
-import sys
 import json
 import logging
 import uuid

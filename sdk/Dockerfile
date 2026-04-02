@@ -1,5 +1,8 @@
-# syntax=docker/dockerfile:1.7
-FROM python:3.13-slim
+FROM python:3.12-slim
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -15,17 +18,13 @@ RUN cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/nu
         cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem; \
     fi && rm -rf /tmp/certs
 
-# Set SSL cert environment variables for pip and runtime
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem
 
 RUN python -m pip install --upgrade pip uv
 
+COPY . /src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,target=/src,rw \
-    uv pip install --system /src[agent,tracing]
+    uv pip install --system \
+    /src[agent,tracing]
 
-RUN rm -rf /tmp/certs
-
+RUN rm -rf /src/.git
 CMD ["python"]

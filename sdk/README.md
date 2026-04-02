@@ -103,6 +103,7 @@ if __name__ == "__main__":
 | [PrometheusAgent Quick Start](docs/agent/QUICK_START.md) | Minimal agent setup guide |
 | [Environment Setup](docs/ENV_SETUP.md) | Environment variables for both components |
 | [Testing Guide](docs/TESTING.md) | Running and writing tests |
+| [Installation Guide](INSTALL.md) | Detailed installation options |
 
 ## Features
 
@@ -146,14 +147,11 @@ pip install -e ".[dev]"
 # Run tests
 pytest tests/
 
-# Format code
-black .
-
 # Lint
 ruff check .
 
-# Update docker image
-./build_and_push_image.sh mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api
+# Format code
+ruff format .
 ```
 
 ## License

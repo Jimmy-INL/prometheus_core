@@ -2,7 +2,6 @@
 
 import pytest
 from prometheus_api.storage_client import ConnectionConfig
-from prometheus_api.storage_client.exceptions import ValidationError
 
 
 def test_connection_config_with_api_key():
