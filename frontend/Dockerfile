@@ -1,4 +1,4 @@
-FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api:py312
+FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest
 
 # Install system dependencies (libX11 etc. required by VTK)
 RUN apt-get update && apt-get install -y --no-install-recommends \
