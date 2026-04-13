@@ -35,8 +35,6 @@ class Settings(BaseSettings):
     redis_url: str = os.environ.get("REDIS_URL", data.get("redis-url", "redis://localhost:6379"))
     debug: bool = data.get("debug", True)
     auto_approve_steps: bool = data.get("auto-approve-steps", False)
-    agent_names: list[str] = data.get("agent-names", [])
-
 
 settings = Settings()
 

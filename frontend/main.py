@@ -52,6 +52,20 @@ async def on_message(message: cl.Message):
 async def on_settings_update(settings):
     await settings_debug_options(ui_settings=settings)
 
+@cl.set_chat_profiles
+async def chat_profile():
+    return [
+        cl.ChatProfile(
+            name="Beginner Chat",
+            markdown_description="This profile provides some suggestions on how to get started.",
+            icon="https://picsum.photos/id/29/200",
+        ),
+        cl.ChatProfile(
+            name="Advanced Chat",
+            markdown_description="This profile doesn't provide any suggestions.",
+            icon="https://picsum.photos/id/28/200",
+        ),
+    ]
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -61,12 +75,16 @@ async def on_chat_start():
 
     await configure_settings()
 
-    suggestions = cl.CustomElement(
-        name="FollowUpSuggestions",
-        props={"suggestions": settings.workflow_suggestions, "title": settings.chat_suggestion_title},
-    )
+    chat_profile = cl.user_session.get("chat_profile")
+    if chat_profile == "Beginner Chat":
+        suggestions = cl.CustomElement(
+            name="FollowUpSuggestions",
+            props={"suggestions": settings.workflow_suggestions, "title": settings.chat_suggestion_title},
+        )
 
-    await cl.Message(content=settings.chat_intro, elements=[suggestions]).send()
+        await cl.Message(content=settings.chat_intro, elements=[suggestions]).send()
+    else:
+        ...
 
 
 async def _handle_conversation_history():
