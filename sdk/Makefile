@@ -112,38 +112,40 @@ bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
 ##@ Docker
 ##@
 
+PLATFORMS ?= linux/amd64,linux/arm64
 IMAGE_REPO ?=
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
 PUSH_LATEST ?= true
+BUILDER_NAME ?= multiarch
 
-docker-build: ##@ Build Docker image locally (IMAGE_TAG=<tag>, default: git short hash)
-	DOCKER_BUILDKIT=1 docker build -t "prometheus-api:$(IMAGE_TAG)" .
+.PHONY: docker-setup
+docker-setup: ##@ Create a multi-platform buildx builder (required once for multi-arch builds)
+	@if ! docker buildx inspect $(BUILDER_NAME) >/dev/null 2>&1; then \
+		echo "Creating buildx builder '$(BUILDER_NAME)' with docker-container driver..."; \
+		docker buildx create --name $(BUILDER_NAME) --driver docker-container --use; \
+	else \
+		echo "Builder '$(BUILDER_NAME)' already exists"; \
+		docker buildx use $(BUILDER_NAME); \
+	fi
+
+docker-build: docker-setup ##@ Build multi-arch Docker image locally (IMAGE_TAG=<tag>, default: git short hash)
+	docker buildx build --platform $(PLATFORMS) -t "prometheus-api:$(IMAGE_TAG)" --load .
 	@echo "Built prometheus-api:$(IMAGE_TAG)"
 
-docker-bp: ##@ Docker build and push (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
+docker-bp: docker-setup ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
 ifndef IMAGE_REPO
 	$(error IMAGE_REPO is required. Example: make docker-bp IMAGE_REPO=ghcr.io/my-org/prometheus-api)
 endif
-	@echo "Building $(IMAGE_REPO):$(IMAGE_TAG)"
-	DOCKER_BUILDKIT=1 docker build -t "$(IMAGE_REPO):$(IMAGE_TAG)" .
-	@echo "Pushing $(IMAGE_REPO):$(IMAGE_TAG)"
-	docker push "$(IMAGE_REPO):$(IMAGE_TAG)"
 ifeq ($(PUSH_LATEST),true)
-	@echo "Tagging $(IMAGE_REPO):latest"
-	docker tag "$(IMAGE_REPO):$(IMAGE_TAG)" "$(IMAGE_REPO):latest"
-	@echo "Pushing $(IMAGE_REPO):latest"
-	docker push "$(IMAGE_REPO):latest"
+	@echo "Building and pushing $(IMAGE_REPO):$(IMAGE_TAG) + latest"
+	docker buildx build --platform $(PLATFORMS) \
+		-t "$(IMAGE_REPO):$(IMAGE_TAG)" \
+		-t "$(IMAGE_REPO):latest" \
+		--push .
+else
+	@echo "Building and pushing $(IMAGE_REPO):$(IMAGE_TAG)"
+	docker buildx build --platform $(PLATFORMS) \
+		-t "$(IMAGE_REPO):$(IMAGE_TAG)" \
+		--push .
 endif
 	@echo "Done"
-
-##@
-##@ Podman
-##@
-
-podman-build: ##@ Build Podman image locally (IMAGE_TAG=<tag>, default: git short hash)
-	podman build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)" .
-	@echo "Built prometheus-api:$(IMAGE_TAG)"
-
-podman-bp: ##@ Podman build and push to registry
-	podman login mooseharbor.hpc.inl.gov
-	podman build --platform linux/amd64 -t mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest .
