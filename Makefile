@@ -27,6 +27,12 @@ ifneq ($(AGENT_COMPOSE_FILES),)
 COMPOSE_FILES += -f $(ACTIVE_AGENTS_COMPOSE)
 endif
 
+# No-generate compose flags: include agents compose only if it already exists on disk.
+COMPOSE_FILES_NG := -f $(COMPOSE_BASE)
+ifneq ($(wildcard $(ACTIVE_AGENTS_COMPOSE)),)
+COMPOSE_FILES_NG += -f $(ACTIVE_AGENTS_COMPOSE)
+endif
+
 ##@
 ##@ Help
 ##@
@@ -64,9 +70,7 @@ else
 	@printf "\nmake help not supported on $(UNAME)\n"
 endif
 
-
-.PHONY: all up down build logs ps generate clean-generated restart restart-fg help
-
+.PHONY: all up down build logs ps generate clean-generated restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg help
 
 ## Generate the agents compose file from discovered agent compose files.
 generate: $(ACTIVE_AGENTS_COMPOSE)
@@ -123,6 +127,18 @@ restart: generate
 restart-fg: ##@ Restart all services without rebuilding (foreground).
 restart-fg: generate
 	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up
+
+ng-up: ##@ Start all services without regenerating agents compose (uses existing file if present).
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up --build -d
+
+ng-up-fg: ##@ Start all services without regenerating (foreground).
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up --build
+
+ng-restart: ##@ Restart without rebuilding or regenerating.
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up -d
+
+ng-restart-fg: ##@ Restart without rebuilding or regenerating (foreground).
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up
 
 down: ##@ Stop all services
 	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) down
