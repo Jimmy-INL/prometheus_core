@@ -71,7 +71,8 @@ def test_render_artifacts_downloads_remote_json_file(monkeypatch, tmp_path: Path
                     "uri": "http://example.test/output.json",
                     "description": "Generated ANL JSON intermediate output.",
                 }
-            ]
+            ],
+            tmp_path,
         )
     )
 

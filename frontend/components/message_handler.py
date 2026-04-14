@@ -324,32 +324,37 @@ async def _handle_final_response(response: ConversationResponse):
 
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
-    if artifacts_to_render:
-        artifact_elements, artifact_text = await render_artifacts(artifacts_to_render)
-        elements.extend(artifact_elements)
-        if artifact_text:
-            text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
-    if response.recommended_materials:
-        materials = "\n".join(f"- {m}" for m in response.recommended_materials)
-        text += f"\n\n**Recommended Materials:**\n{materials}"
-
-    metadata = response.message_metadata or {}
-    suggestions = metadata.get("follow_up_suggestions", [])
-    if suggestions:
-        elements.append(
-            cl.CustomElement(
-                name="FollowUpSuggestions",
-                props={"suggestions": suggestions, "title": "What would you like to do next?"},
+    with tempfile.TemporaryDirectory() as render_tmp:
+        if artifacts_to_render:
+            artifact_elements, artifact_text = await render_artifacts(
+                artifacts_to_render, Path(render_tmp)
             )
-        )
+            elements.extend(artifact_elements)
+            if artifact_text:
+                text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
-    if text or elements:
-        await cl.Message(content=text, elements=elements).send()
+        if response.recommended_materials:
+            materials = "\n".join(f"- {m}" for m in response.recommended_materials)
+            text += f"\n\n**Recommended Materials:**\n{materials}"
+
+        metadata = response.message_metadata or {}
+        suggestions = metadata.get("follow_up_suggestions", [])
+        if suggestions:
+            elements.append(
+                cl.CustomElement(
+                    name="FollowUpSuggestions",
+                    props={"suggestions": suggestions, "title": "What would you like to do next?"},
+                )
+            )
+
+        if text or elements:
+            await cl.Message(content=text, elements=elements).send()
 
 
 async def render_artifacts(
     artifacts: List[Dict[str, Any]],
+    tmp_dir: Path,
 ) -> tuple[list, str]:
     """Render artifact references into Chainlit elements and inline text.
 
@@ -385,7 +390,7 @@ async def render_artifacts(
         artifact_type = _classify_artifact(mime_type)
 
         if artifact_type == "pdf":
-            el = await _render_pdf_artifact(uri, name)
+            el = await _render_pdf_artifact(uri, name, tmp_dir)
             if el:
                 elements.append(el)
             else:
@@ -405,7 +410,7 @@ async def render_artifacts(
                     },
                 ))
             else:
-                el = await _render_remote_file_artifact(uri, name)
+                el = await _render_remote_file_artifact(uri, name, tmp_dir)
                 if el:
                     elements.append(el)
                     line = f"- **{name}**"
@@ -425,7 +430,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "file":
-            el = await _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name, tmp_dir)
             if el:
                 elements.append(el)
             else:
@@ -440,7 +445,7 @@ async def render_artifacts(
             line = f"📎 **{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = await _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name, tmp_dir)
             if el:
                 elements.append(el)
             else:
@@ -468,7 +473,7 @@ def _classify_artifact(mime_type: str) -> str:
     return "unknown"
 
 
-async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
+async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     try:
         if uri.startswith("file://"):
             path = Path(uri[7:])
@@ -484,7 +489,7 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
             async with httpx.AsyncClient(timeout=60) as http:
                 resp = await http.get(uri)
                 resp.raise_for_status()
-            tmp = Path(tempfile.mkdtemp()) / (name or "document.pdf")
+            tmp = tmp_dir / (name or "document.pdf")
             tmp.write_bytes(resp.content)
             return cl.Pdf(name=name, display="inline", path=str(tmp))
     except Exception as e:
@@ -492,7 +497,7 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
     return None
 
 
-async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
+async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     if not uri.startswith("http"):
         return None
     try:
@@ -500,7 +505,7 @@ async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
             resp = await http.get(uri)
             resp.raise_for_status()
         filename = Path(name).name or "artifact"
-        tmp = Path(tempfile.mkdtemp()) / filename
+        tmp = tmp_dir / filename
         tmp.write_bytes(resp.content)
         return cl.File(name=filename, path=str(tmp), display="inline")
     except Exception as e:
@@ -508,13 +513,13 @@ async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
         return None
 
 
-async def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
+async def _render_file_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     if uri.startswith("file://"):
         path = Path(uri[7:])
     elif uri.startswith("/"):
         path = Path(uri)
     else:
-        return await _render_remote_file_artifact(uri, name)
+        return await _render_remote_file_artifact(uri, name, tmp_dir)
     if path.exists():
         return cl.File(name=name, path=str(path), display="inline")
     return None
