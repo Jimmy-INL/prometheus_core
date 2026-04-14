@@ -109,43 +109,34 @@ bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
 	@echo "$(CURRENT_VERSION) → $(NEW_VERSION)"
 
 ##@
-##@ Docker
+##@ Container
 ##@
 
-PLATFORMS ?= linux/amd64,linux/arm64
 IMAGE_REPO ?=
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
-PUSH_LATEST ?= true
-BUILDER_NAME ?= multiarch
+PUSH_LATEST ?= false
 
-.PHONY: docker-setup
-docker-setup: ##@ Create a multi-platform buildx builder (required once for multi-arch builds)
-	@if ! docker buildx inspect $(BUILDER_NAME) >/dev/null 2>&1; then \
-		echo "Creating buildx builder '$(BUILDER_NAME)' with docker-container driver..."; \
-		docker buildx create --name $(BUILDER_NAME) --driver docker-container --use; \
-	else \
-		echo "Builder '$(BUILDER_NAME)' already exists"; \
-		docker buildx use $(BUILDER_NAME); \
-	fi
+build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, default: git short hash)
+	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
+	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
+	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
 
-docker-build: docker-setup ##@ Build multi-arch Docker image locally (IMAGE_TAG=<tag>, default: git short hash)
-	docker buildx build --platform $(PLATFORMS) -t "prometheus-api:$(IMAGE_TAG)" --load .
-	@echo "Built prometheus-api:$(IMAGE_TAG)"
-
-docker-bp: docker-setup ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
+build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
 ifndef IMAGE_REPO
-	$(error IMAGE_REPO is required. Example: make docker-bp IMAGE_REPO=ghcr.io/my-org/prometheus-api)
+	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=ghcr.io/my-org/prometheus-api)
 endif
+	docker build --platform linux/amd64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-amd64" .
+	docker build --platform linux/arm64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-arm64" .
+	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-amd64"
+	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest create "$(IMAGE_REPO):$(IMAGE_TAG)" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest push "$(IMAGE_REPO):$(IMAGE_TAG)"
 ifeq ($(PUSH_LATEST),true)
-	@echo "Building and pushing $(IMAGE_REPO):$(IMAGE_TAG) + latest"
-	docker buildx build --platform $(PLATFORMS) \
-		-t "$(IMAGE_REPO):$(IMAGE_TAG)" \
-		-t "$(IMAGE_REPO):latest" \
-		--push .
-else
-	@echo "Building and pushing $(IMAGE_REPO):$(IMAGE_TAG)"
-	docker buildx build --platform $(PLATFORMS) \
-		-t "$(IMAGE_REPO):$(IMAGE_TAG)" \
-		--push .
+	docker manifest create "$(IMAGE_REPO):latest" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest push "$(IMAGE_REPO):latest"
 endif
 	@echo "Done"
