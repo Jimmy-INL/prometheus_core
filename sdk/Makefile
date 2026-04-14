@@ -129,12 +129,12 @@ endif
 	docker build --platform linux/arm64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-arm64" .
 	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-amd64"
 	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
-	docker manifest create "$(IMAGE_REPO):$(IMAGE_TAG)" \
+	docker manifest create --amend "$(IMAGE_REPO):$(IMAGE_TAG)" \
 		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
 		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
 	docker manifest push "$(IMAGE_REPO):$(IMAGE_TAG)"
 ifeq ($(PUSH_LATEST),true)
-	docker manifest create "$(IMAGE_REPO):latest" \
+	docker manifest create --amend "$(IMAGE_REPO):latest" \
 		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
 		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
 	docker manifest push "$(IMAGE_REPO):latest"
