@@ -17,6 +17,43 @@ from prometheus_api.agent import PrometheusAgent
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 
+ANALYSIS_PROMPT_TEMPLATE = """\
+You are a nuclear materials senior reviewer.
+Synthesize the specialist analyses into one coherent engineering assessment.
+
+MATERIAL:
+{material_id}
+
+USER QUERY:
+{user_query}
+
+OPERATING CONTEXT:
+{operating_context_json}
+
+SPECIALIST RESULTS:
+{tool_results_json}
+
+Return ONLY valid JSON with this structure:
+{{
+  "executive_summary": "<2-4 sentence synthesis>",
+  "key_findings": [
+    "<finding 1>",
+    "<finding 2>"
+  ],
+  "risk_assessment": {{
+    "overall_risk": "<low|medium|high|critical>",
+    "primary_risk_drivers": ["<driver 1>", "<driver 2>"],
+    "uncertainties": ["<uncertainty 1>", "<uncertainty 2>"]
+  }},
+  "recommended_actions": [
+    "<action 1>",
+    "<action 2>"
+  ],
+  "go_no_go": "<go|go_with_conditions|no_go>",
+  "confidence": <0.0-1.0>
+}}
+"""
+
 
 class SynthesisAgent(PrometheusAgent):
     """Agent that synthesizes specialist outputs into a single report object."""
@@ -52,41 +89,12 @@ class SynthesisAgent(PrometheusAgent):
                 "tool_results": tool_results,
             }
 
-        prompt = f"""You are a nuclear materials senior reviewer.
-Synthesize the specialist analyses into one coherent engineering assessment.
-
-MATERIAL:
-{material_id}
-
-USER QUERY:
-{user_query or "(not provided)"}
-
-OPERATING CONTEXT:
-{json.dumps(operating_context, indent=2, default=str)}
-
-SPECIALIST RESULTS:
-{json.dumps(tool_results, indent=2, default=str)}
-
-Return ONLY valid JSON with this structure:
-{{
-  "executive_summary": "<2-4 sentence synthesis>",
-  "key_findings": [
-    "<finding 1>",
-    "<finding 2>"
-  ],
-  "risk_assessment": {{
-    "overall_risk": "<low|medium|high|critical>",
-    "primary_risk_drivers": ["<driver 1>", "<driver 2>"],
-    "uncertainties": ["<uncertainty 1>", "<uncertainty 2>"]
-  }},
-  "recommended_actions": [
-    "<action 1>",
-    "<action 2>"
-  ],
-  "go_no_go": "<go|go_with_conditions|no_go>",
-  "confidence": <0.0-1.0>
-}}
-"""
+        prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+            material_id=material_id,
+            user_query=user_query or "(not provided)",
+            operating_context_json=json.dumps(operating_context, indent=2, default=str),
+            tool_results_json=json.dumps(tool_results, indent=2, default=str),
+        )
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
