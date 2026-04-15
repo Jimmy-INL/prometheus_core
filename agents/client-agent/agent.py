@@ -2711,8 +2711,81 @@ async def resume_pending_subagent_requests(
     return state
 
 
+def _needs_info_response(
+    conv_id: str,
+    state: AgentState,
+    hint: str = "I need some additional information to proceed:",
+) -> ConversationResponse:
+    """Persist state and return a needs_info response with followup questions."""
+    store_conversation(conv_id, state)
+    store_status_update(conv_id, "Awaiting additional parameters.", final=True)
+    latest = _latest_conversation_entry(state)
+    return ConversationResponse(
+        conversation_id=conv_id,
+        status="needs_info",
+        message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests"), hint),
+        followup_questions=latest.get("questions", []),
+    )
+
+
+def _completed_response(conv_id: str, state: AgentState) -> ConversationResponse:
+    """Persist state and return a completed response with the final report."""
+    store_conversation(conv_id, state)
+    store_status_update(conv_id, "Response ready.", final=True)
+    return ConversationResponse(
+        conversation_id=conv_id,
+        status="completed",
+        message=state.get("final_report", ""),
+        report=state.get("final_report", ""),
+        tool_results=state.get("tool_results"),
+    )
+
+
+def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationResponse:
+    """Store error status and return an error response."""
+    store_status_update(conv_id, log_msg, final=True)
+    return ConversationResponse(conversation_id=conv_id, status="error", message=user_msg)
+
+
 async def chat(request: ConversationRequest) -> ConversationResponse:
-    """Conversational interface for material analysis."""
+    """Conversational A2A orchestration endpoint.
+
+    Every frontend message arrives here. The function dispatches to one of three
+    high-level paths based on what the request carries:
+
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ PATH A — CONTINUATION (existing conversation + followup/approval)       │
+    │                                                                         │
+    │  plan_approved=True  → execute_approved_plan → _completed_response      │
+    │                      (may loop back to _needs_info if agent requests     │
+    │                       more input mid-execution)                          │
+    │                                                                         │
+    │  followup_answers    → apply_followup_answers_to_state                  │
+    │                      → still missing?  → _needs_info_response           │
+    │                      → requires approval? → plan_ready response         │
+    │                      → otherwise → execute_current_plan                 │
+    │                                  → _completed_response                  │
+    │                                                                         │
+    │  (query only, pending followup) → ask_followup_dynamic                  │
+    │                                 → _needs_info_response                  │
+    ├─────────────────────────────────────────────────────────────────────────┤
+    │ PATH B — NEW QUERY (new conversation, or new query on existing one)     │
+    │                                                                         │
+    │  compile_query_plan → planner LLM selects skill(s) or workflow          │
+    │                                                                         │
+    │    outcome=fallback       → answer response (no subagent called)        │
+    │    missing params         → ask_followup_dynamic → _needs_info_response │
+    │    requires_approval=True → plan_ready response (await approval)        │
+    │    ready to execute       → execute_current_plan → _completed_response  │
+    └─────────────────────────────────────────────────────────────────────────┘
+
+    Key helpers:
+      compile_query_plan   — calls planner.compile_plan_with_tools (LLM-based)
+      execute_current_plan — invokes selected skills via A2A, collects results
+      ask_followup_dynamic — converts missing param paths into UI form fields
+      _needs_info_response — persist + return ConversationResponse(needs_info)
+      _completed_response  — persist + return ConversationResponse(completed)
+    """
     conv_id = request.conversation_id or str(uuid.uuid4())
     store_status_update(conv_id, "Received request.")
     request_artifacts = summarize_artifacts_for_context(request.artifacts)
@@ -2741,32 +2814,10 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     for key, value in followup_result.items():
                         if value is not None:
                             final_state[key] = value
-                    store_conversation(conv_id, final_state)
-                    store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                    latest = _latest_conversation_entry(final_state)
-                    return ConversationResponse(
-                        conversation_id=conv_id,
-                        status="needs_info",
-                        message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
-                        followup_questions=latest.get("questions", []),
-                    )
-                store_conversation(conv_id, final_state)
-
-                response_data = {
-                    "conversation_id": conv_id,
-                    "status": "completed",
-                    "report": final_state.get("final_report", ""),
-                    "tool_results": final_state.get("tool_results", {}),
-                }
-                store_status_update(conv_id, "Execution response ready.", final=True)
-                return ConversationResponse(**response_data)
+                    return _needs_info_response(conv_id, final_state)
+                return _completed_response(conv_id, final_state)
             except Exception as exc:
-                store_status_update(conv_id, f"Execution failed: {exc}", final=True)
-                return ConversationResponse(
-                    conversation_id=conv_id,
-                    status="error",
-                    message=f"Error during analysis: {exc}",
-                )
+                return _error_response(conv_id, f"Execution failed: {exc}", f"Error during analysis: {exc}")
 
         followup_answers = dict(request.followup_answers or {})
 
@@ -2791,15 +2842,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         for key, value in followup_result.items():
                             if value is not None:
                                 state[key] = value
-                        store_conversation(conv_id, state)
-                        store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                        latest = _latest_conversation_entry(state)
-                        return ConversationResponse(
-                            conversation_id=conv_id,
-                            status="needs_info",
-                            message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
-                            followup_questions=latest.get("questions", []),
-                        )
+                        return _needs_info_response(conv_id, state)
                     # For workflow templates, re-execute the full plan so downstream steps run.
                     rd = state.get("routing_decision", {}) or {}
                     if rd.get("workflow_type") == "workflow_template":
@@ -2814,33 +2857,9 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                             for key, value in followup_result.items():
                                 if value is not None:
                                     final_state[key] = value
-                            store_conversation(conv_id, final_state)
-                            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                            latest = _latest_conversation_entry(final_state)
-                            return ConversationResponse(
-                                conversation_id=conv_id,
-                                status="needs_info",
-                                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
-                                followup_questions=latest.get("questions", []),
-                            )
-                        store_conversation(conv_id, final_state)
-                        store_status_update(conv_id, "Response ready.", final=True)
-                        return ConversationResponse(
-                            conversation_id=conv_id,
-                            status="completed",
-                            message=final_state.get("final_report", ""),
-                            report=final_state.get("final_report", ""),
-                            tool_results=final_state.get("tool_results"),
-                        )
-                    store_conversation(conv_id, state)
-                    store_status_update(conv_id, "Response ready.", final=True)
-                    return ConversationResponse(
-                        conversation_id=conv_id,
-                        status="completed",
-                        message=state.get("final_report", ""),
-                        report=state.get("final_report", ""),
-                        tool_results=state.get("tool_results"),
-                    )
+                            return _needs_info_response(conv_id, final_state)
+                        return _completed_response(conv_id, final_state)
+                    return _completed_response(conv_id, state)
 
                 if routing_decision:
                     state = await apply_followup_answers_to_state(
@@ -2855,15 +2874,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     for key, value in followup_result.items():
                         if value is not None:
                             state[key] = value
-                    store_conversation(conv_id, state)
-                    store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                    latest = _latest_conversation_entry(state)
-                    return ConversationResponse(
-                        conversation_id=conv_id,
-                        status="needs_info",
-                        message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
-                        followup_questions=latest.get("questions", []),
-                    )
+                    return _needs_info_response(conv_id, state)
 
                 if not requires_approval:
                     store_status_update(conv_id, "All required parameters resolved. Executing skills.")
@@ -2876,24 +2887,8 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                         for key, value in followup_result.items():
                             if value is not None:
                                 final_state[key] = value
-                        store_conversation(conv_id, final_state)
-                        store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-                        latest = _latest_conversation_entry(final_state)
-                        return ConversationResponse(
-                            conversation_id=conv_id,
-                            status="needs_info",
-                            message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
-                            followup_questions=latest.get("questions", []),
-                        )
-                    store_conversation(conv_id, final_state)
-                    store_status_update(conv_id, "Response ready.", final=True)
-                    return ConversationResponse(
-                        conversation_id=conv_id,
-                        status="completed",
-                        message=final_state.get("final_report", ""),
-                        report=final_state.get("final_report", ""),
-                        tool_results=final_state.get("tool_results"),
-                    )
+                        return _needs_info_response(conv_id, final_state)
+                    return _completed_response(conv_id, final_state)
 
                 plan_result = plan_analysis(state)
                 for key, value in plan_result.items():
@@ -2913,46 +2908,23 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     plan=_format_plan_for_response(state),
                 )
             except Exception as exc:
-                store_status_update(conv_id, f"Follow-up processing failed: {exc}", final=True)
-                return ConversationResponse(
-                    conversation_id=conv_id,
-                    status="error",
-                    message=f"Error processing followup: {exc}",
-                )
+                return _error_response(conv_id, f"Follow-up processing failed: {exc}", f"Error processing followup: {exc}")
 
         if request.query and has_pending_followup:
             followup_result = await ask_followup_dynamic(state)
             for key, value in followup_result.items():
                 if value is not None:
                     state[key] = value
-            store_conversation(conv_id, state)
-            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-            latest = _latest_conversation_entry(state)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="needs_info",
-                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests"), "I still need a few details to proceed:"),
-                followup_questions=latest.get("questions", []),
-            )
+            return _needs_info_response(conv_id, state, "I still need a few details to proceed:")
 
-        store_status_update(conv_id, "No actionable follow-up input was provided.", final=True)
-        return ConversationResponse(
-            conversation_id=conv_id,
-            status="error",
-            message="No actionable followup input was provided.",
-        )
+        return _error_response(conv_id, "No actionable follow-up input was provided.", "No actionable followup input was provided.")
 
     # New query path: new conversation or new query in existing conversation.
     if not request.query and not request.workflow_id:
-        store_status_update(
+        return _error_response(
             conv_id,
             "A query or explicit workflow selection is required for a new planning turn.",
-            final=True,
-        )
-        return ConversationResponse(
-            conversation_id=conv_id,
-            status="error",
-            message="A query or explicit workflow selection is required for a new planning turn.",
+            "A query or explicit workflow selection is required for a new planning turn.",
         )
 
     if is_new_query_on_existing:
@@ -3080,15 +3052,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             for key, value in followup_result.items():
                 if value is not None:
                     state[key] = value
-            store_conversation(conv_id, state)
-            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-            latest = _latest_conversation_entry(state)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="needs_info",
-                message=OrchestratorAgent.pending_hint(state.get("pending_subagent_requests")),
-                followup_questions=latest.get("questions", []),
-            )
+            return _needs_info_response(conv_id, state)
 
         routing_decision = state.get("routing_decision", {}) or {}
         requires_approval = routing_decision.get("requires_approval", False)
@@ -3121,31 +3085,10 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             for key, value in followup_result.items():
                 if value is not None:
                     final_state[key] = value
-            store_conversation(conv_id, final_state)
-            store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-            latest = _latest_conversation_entry(final_state)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="needs_info",
-                message=OrchestratorAgent.pending_hint(final_state.get("pending_subagent_requests")),
-                followup_questions=latest.get("questions", []),
-            )
-        store_conversation(conv_id, final_state)
-        store_status_update(conv_id, "Response ready.", final=True)
-        return ConversationResponse(
-            conversation_id=conv_id,
-            status="completed",
-            message=final_state.get("final_report", ""),
-            report=final_state.get("final_report", ""),
-            tool_results=final_state.get("tool_results"),
-        )
+            return _needs_info_response(conv_id, final_state)
+        return _completed_response(conv_id, final_state)
     except Exception as exc:
-        store_status_update(conv_id, f"Request failed: {exc}", final=True)
-        return ConversationResponse(
-            conversation_id=conv_id,
-            status="error",
-            message=f"Error processing request: {exc}",
-        )
+        return _error_response(conv_id, f"Request failed: {exc}", f"Error processing request: {exc}")
 
 
 async def get_status(conversation_id: str):

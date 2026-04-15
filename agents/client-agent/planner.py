@@ -1,8 +1,52 @@
 """
 LLM tool-calling planner for control-plane routing decisions.
 
-This module is used by the orchestrator chat flow to compile an execution plan
-without invoking downstream subagents during planning.
+`compile_plan_with_tools` is the single entry point. It is called by `chat()`
+in `agent.py` whenever a new query needs to be routed. It drives a Claude LLM
+through a structured tool-call loop and returns a `PlanningResult` describing
+what to do next — no subagents are invoked here.
+
+HOW IT WORKS
+------------
+1. A `_PlanDraft` accumulates the plan state as the LLM calls tools.
+2. The LLM is given:
+   - The user query and conversation history
+   - Available capabilities (skills + their input schemas)
+   - Optional workflow template candidates (pre-built execution blueprints)
+3. The LLM calls planning tools until it calls `finalize_plan` or
+   `fallback_to_chat`, at which point the loop exits.
+4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+
+PLANNING TOOLS (called by the LLM, not external code)
+------------------------------------------------------
+- `select_capabilities`      — choose primary + supporting skills and workflow type
+- `select_workflow_template` — choose a pre-built workflow blueprint instead
+- `get_workflow_candidates`  — inspect matcher-provided workflow options
+- `get_requirement_status`   — check which required params are still missing
+- `set_extracted_params`     — store param values extracted from the query/context
+- `set_plan_steps`           — set human-readable steps shown in the approval UI
+- `set_user_message`         — set the planning summary shown to the user
+- `finalize_plan`            — commit the plan (validates all required params met)
+- `fallback_to_chat`         — respond directly without invoking any skill
+
+OUTCOMES (`PlanningResult.outcome`)
+------------------------------------
+- `"agent_plan"`  — one or more skills selected; `agent.py` will collect missing
+                    params then call `execute_current_plan`
+- `"fallback"`    — planner could not or should not invoke a skill; `agent.py`
+                    returns the message directly to the user
+
+WORKFLOW TEMPLATES vs DYNAMIC SKILL SELECTION
+---------------------------------------------
+Dynamic selection (always available): the planner picks skills freely from the
+capability registry. Flexible but requires the agent cards to have good metadata.
+
+Workflow templates (when ENABLE_WORKFLOW_LIBRARY=true): pre-authored blueprints
+stored in `workflow_library/`. The text matcher in `agent.py` scores templates
+against the query and passes the top candidates to `compile_plan_with_tools` as
+`workflow_candidates`. The planner can then select one via
+`select_workflow_template`. Templates define fixed skill sequences, input
+bindings, and execution order — faster and more predictable than dynamic plans.
 """
 from __future__ import annotations
 
