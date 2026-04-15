@@ -1,5 +1,6 @@
 import json
 import logging
+import mimetypes
 import tempfile
 import uuid
 from pathlib import Path
@@ -381,7 +382,11 @@ async def render_artifacts(
         description = artifact.get("description", "")
 
         # Try visualization plugin system first
-        element = await _plugins.render_artifact(artifact)
+        try:
+            element = await _plugins.render_artifact(artifact)
+        except Exception as e:
+            logger.warning("Plugin rendering failed for artifact %r: %s", name, e)
+            element = None
         if element is not None:
             elements.append(element)
             continue
@@ -410,7 +415,7 @@ async def render_artifacts(
                     },
                 ))
             else:
-                el = await _render_remote_file_artifact(uri, name, tmp_dir)
+                el = await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
                 if el:
                     elements.append(el)
                     line = f"- **{name}**"
@@ -430,7 +435,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "file":
-            el = await _render_file_artifact(uri, name, tmp_dir)
+            el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
             if el:
                 elements.append(el)
             else:
@@ -442,10 +447,10 @@ async def render_artifacts(
         else:
             # No plugin and no known text type — tell the user and offer a download
             label = json_type or mime_type or "unknown"
-            line = f"📎 **{name}** — no viewer available for `{label}`"
+            line = f"**{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = await _render_file_artifact(uri, name, tmp_dir)
+            el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
             if el:
                 elements.append(el)
             else:
@@ -497,7 +502,7 @@ async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[A
     return None
 
 
-async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
+async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: str = "") -> Optional[Any]:
     if not uri.startswith("http"):
         return None
     try:
@@ -507,21 +512,23 @@ async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path) -> Op
         filename = Path(name).name or "artifact"
         tmp = tmp_dir / filename
         tmp.write_bytes(resp.content)
-        return cl.File(name=filename, path=str(tmp), display="inline")
+        effective_mime = mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        return cl.File(name=filename, path=str(tmp), display="inline", mime=effective_mime)
     except Exception as e:
         logger.warning("Failed to render remote file artifact %r: %s", uri, e)
         return None
 
 
-async def _render_file_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
+async def _render_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: str = "") -> Optional[Any]:
     if uri.startswith("file://"):
         path = Path(uri[7:])
     elif uri.startswith("/"):
         path = Path(uri)
     else:
-        return await _render_remote_file_artifact(uri, name, tmp_dir)
+        return await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
     if path.exists():
-        return cl.File(name=name, path=str(path), display="inline")
+        effective_mime = mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return cl.File(name=name, path=str(path), display="inline", mime=effective_mime)
     return None
 
 
