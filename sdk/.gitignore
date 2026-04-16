@@ -143,3 +143,5 @@ scratch/
 secrets.json
 config.local.py
 .secrets
+
+CLAUDE.md

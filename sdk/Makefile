@@ -109,41 +109,34 @@ bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
 	@echo "$(CURRENT_VERSION) → $(NEW_VERSION)"
 
 ##@
-##@ Docker
+##@ Container
 ##@
 
 IMAGE_REPO ?=
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
-PUSH_LATEST ?= true
+PUSH_LATEST ?= false
 
-docker-build: ##@ Build Docker image locally (IMAGE_TAG=<tag>, default: git short hash)
-	DOCKER_BUILDKIT=1 docker build -t "prometheus-api:$(IMAGE_TAG)" .
-	@echo "Built prometheus-api:$(IMAGE_TAG)"
+build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, default: git short hash)
+	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
+	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
+	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
 
-docker-bp: ##@ Docker build and push (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
+build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
 ifndef IMAGE_REPO
-	$(error IMAGE_REPO is required. Example: make docker-bp IMAGE_REPO=ghcr.io/my-org/prometheus-api)
+	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=ghcr.io/my-org/prometheus-api)
 endif
-	@echo "Building $(IMAGE_REPO):$(IMAGE_TAG)"
-	DOCKER_BUILDKIT=1 docker build -t "$(IMAGE_REPO):$(IMAGE_TAG)" .
-	@echo "Pushing $(IMAGE_REPO):$(IMAGE_TAG)"
-	docker push "$(IMAGE_REPO):$(IMAGE_TAG)"
+	docker build --platform linux/amd64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-amd64" .
+	docker build --platform linux/arm64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-arm64" .
+	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-amd64"
+	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest create --amend "$(IMAGE_REPO):$(IMAGE_TAG)" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest push "$(IMAGE_REPO):$(IMAGE_TAG)"
 ifeq ($(PUSH_LATEST),true)
-	@echo "Tagging $(IMAGE_REPO):latest"
-	docker tag "$(IMAGE_REPO):$(IMAGE_TAG)" "$(IMAGE_REPO):latest"
-	@echo "Pushing $(IMAGE_REPO):latest"
-	docker push "$(IMAGE_REPO):latest"
+	docker manifest create --amend "$(IMAGE_REPO):latest" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
+		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
+	docker manifest push "$(IMAGE_REPO):latest"
 endif
 	@echo "Done"
-
-##@
-##@ Podman
-##@
-
-podman-build: ##@ Build Podman image locally (IMAGE_TAG=<tag>, default: git short hash)
-	podman build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)" .
-	@echo "Built prometheus-api:$(IMAGE_TAG)"
-
-podman-bp: ##@ Podman build and push to registry
-	podman login mooseharbor.hpc.inl.gov
-	podman build --platform linux/amd64 -t mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest .
