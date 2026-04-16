@@ -89,6 +89,37 @@ artifact = await self.send_artifact_reference(
 return {"message": "Report ready.", "agent": self.agent_name}
 ```
 
+## DeepLynx artifact
+
+Upload a local file to DeepLynx, attach metadata, and emit a `deeplynx://` URI reference.
+
+```python
+from pathlib import Path
+from prometheus_api.storage_client.connection import ConnectionConfig
+
+config = ConnectionConfig.from_env()   # reads DEEPLYNX_KEY / DEEPLYNX_SECRET / etc.
+
+artifact = await self.send_deeplynx_artifact(
+    context=context, event_queue=event_queue,
+    file_path=Path("/tmp/results.csv"),
+    name="results.csv",
+    description="Simulation output",
+    storage_config=config,
+    mime_type="text/csv",
+    json_type="prometheus.my_agent.results.v1",   # optional semantic tag
+    tags=["simulation", "validated"],
+    metadata={"run_id": "abc123"},
+)
+# artifact.uri  → "deeplynx://organizations/1/projects/2/items/42"
+# artifact.metadata["deeplynx_item_id"]  → 42
+# artifact.metadata["deeplynx_file_id"]  → 99
+return {"message": "Results uploaded.", "agent": self.agent_name}
+```
+
+The DeepLynx item's `properties` store `mime_type`, `json_type`, `file_id`, and any
+extra `metadata` keys, so the artifact is queryable in DeepLynx independently of
+the Prometheus catalog.
+
 ## `INPUT_REQUIRED` — requesting user input
 
 Save state **before** calling `send_input_required`, then **always** `return {}`.
