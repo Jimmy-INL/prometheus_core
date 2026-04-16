@@ -17,6 +17,44 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 THERMAL_ANALYSIS_JSON_TYPE = "prometheus.thermal_analysis.result.v1"
 
+ANALYSIS_PROMPT_TEMPLATE = """\
+You are a nuclear reactor thermal analysis specialist. Analyze thermal effects on material: {material_id}
+{context_str}
+Provide a comprehensive thermal analysis as a JSON object with this structure:
+{{
+    "operating_temperature_c": <float>,
+    "max_temperature_c": <float>,
+    "min_temperature_c": <float>,
+    "temperature_gradient_c_per_cm": <float>,
+    "thermal_cycles_accumulated": <int>,
+    "thermal_fatigue_usage_factor": <float 0-1>,
+    "creep_strain_percent": <float>,
+    "thermal_conductivity_degradation_percent": <float>,
+    "thermal_stress_mpa": <float>,
+    "cycle_categories": {{
+        "startup_shutdown": <int>,
+        "load_following": <int>,
+        "thermal_transients": <int>
+    }},
+    "fatigue_analysis": {{
+        "design_cycles": <int>,
+        "accumulated_cycles": <int>,
+        "remaining_cycles": <int>,
+        "fatigue_curve": "<ASME reference>"
+    }},
+    "creep_analysis": {{
+        "creep_rate_percent_per_hour": <scientific notation>,
+        "larson_miller_parameter": <float>,
+        "rupture_life_fraction_used": <float 0-1>,
+        "tertiary_creep_onset": "<detected/not_detected>"
+    }},
+    "status": "<acceptable/degraded/critical>",
+    "recommendations": [<list of recommendations>],
+    "confidence": <float 0-1>
+}}
+
+Consider thermal fatigue, creep damage, thermal aging, and thermal stress per ASME Section III."""
+
 
 def _format_number(value: Any, suffix: str = "") -> str:
     if isinstance(value, bool) or value is None:
@@ -216,42 +254,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
             if operating_context.get("operating_hours"):
                 context_str += f"- Operating Hours: {operating_context['operating_hours']}\n"
 
-        prompt = f"""You are a nuclear reactor thermal analysis specialist. Analyze thermal effects on material: {material_id}
-{context_str}
-Provide a comprehensive thermal analysis as a JSON object with this structure:
-{{
-    "operating_temperature_c": <float>,
-    "max_temperature_c": <float>,
-    "min_temperature_c": <float>,
-    "temperature_gradient_c_per_cm": <float>,
-    "thermal_cycles_accumulated": <int>,
-    "thermal_fatigue_usage_factor": <float 0-1>,
-    "creep_strain_percent": <float>,
-    "thermal_conductivity_degradation_percent": <float>,
-    "thermal_stress_mpa": <float>,
-    "cycle_categories": {{
-        "startup_shutdown": <int>,
-        "load_following": <int>,
-        "thermal_transients": <int>
-    }},
-    "fatigue_analysis": {{
-        "design_cycles": <int>,
-        "accumulated_cycles": <int>,
-        "remaining_cycles": <int>,
-        "fatigue_curve": "<ASME reference>"
-    }},
-    "creep_analysis": {{
-        "creep_rate_percent_per_hour": <scientific notation>,
-        "larson_miller_parameter": <float>,
-        "rupture_life_fraction_used": <float 0-1>,
-        "tertiary_creep_onset": "<detected/not_detected>"
-    }},
-    "status": "<acceptable/degraded/critical>",
-    "recommendations": [<list of recommendations>],
-    "confidence": <float 0-1>
-}}
-
-Consider thermal fatigue, creep damage, thermal aging, and thermal stress per ASME Section III."""
+        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)

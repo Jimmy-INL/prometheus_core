@@ -32,10 +32,11 @@ def test_render_artifacts_downloads_remote_json_file(monkeypatch, tmp_path: Path
     created = []
 
     class DummyFile:
-        def __init__(self, *, name: str, path: str, display: str):
+        def __init__(self, *, name: str, path: str, display: str, mime: str = ""):
             self.name = name
             self.path = path
             self.display = display
+            self.mime = mime
             created.append(self)
 
     class _FakeResponse:
@@ -71,7 +72,8 @@ def test_render_artifacts_downloads_remote_json_file(monkeypatch, tmp_path: Path
                     "uri": "http://example.test/output.json",
                     "description": "Generated ANL JSON intermediate output.",
                 }
-            ]
+            ],
+            tmp_path,
         )
     )
 

@@ -1,8 +1,52 @@
 """
 LLM tool-calling planner for control-plane routing decisions.
 
-This module is used by the orchestrator chat flow to compile an execution plan
-without invoking downstream subagents during planning.
+`compile_plan_with_tools` is the single entry point. It is called by `chat()`
+in `agent.py` whenever a new query needs to be routed. It drives a Claude LLM
+through a structured tool-call loop and returns a `PlanningResult` describing
+what to do next — no subagents are invoked here.
+
+HOW IT WORKS
+------------
+1. A `_PlanDraft` accumulates the plan state as the LLM calls tools.
+2. The LLM is given:
+   - The user query and conversation history
+   - Available capabilities (skills + their input schemas)
+   - Optional workflow template candidates (pre-built execution blueprints)
+3. The LLM calls planning tools until it calls `finalize_plan` or
+   `fallback_to_chat`, at which point the loop exits.
+4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+
+PLANNING TOOLS (called by the LLM, not external code)
+------------------------------------------------------
+- `select_capabilities`      — choose primary + supporting skills and workflow type
+- `select_workflow_template` — choose a pre-built workflow blueprint instead
+- `get_workflow_candidates`  — inspect matcher-provided workflow options
+- `get_requirement_status`   — check which required params are still missing
+- `set_extracted_params`     — store param values extracted from the query/context
+- `set_plan_steps`           — set human-readable steps shown in the approval UI
+- `set_user_message`         — set the planning summary shown to the user
+- `finalize_plan`            — commit the plan (validates all required params met)
+- `fallback_to_chat`         — respond directly without invoking any skill
+
+OUTCOMES (`PlanningResult.outcome`)
+------------------------------------
+- `"agent_plan"`  — one or more skills selected; `agent.py` will collect missing
+                    params then call `execute_current_plan`
+- `"fallback"`    — planner could not or should not invoke a skill; `agent.py`
+                    returns the message directly to the user
+
+WORKFLOW TEMPLATES vs DYNAMIC SKILL SELECTION
+---------------------------------------------
+Dynamic selection (always available): the planner picks skills freely from the
+capability registry. Flexible but requires the agent cards to have good metadata.
+
+Workflow templates (when ENABLE_WORKFLOW_LIBRARY=true): pre-authored blueprints
+stored in `workflow_library/`. The text matcher in `agent.py` scores templates
+against the query and passes the top candidates to `compile_plan_with_tools` as
+`workflow_candidates`. The planner can then select one via
+`select_workflow_template`. Templates define fixed skill sequences, input
+bindings, and execution order — faster and more predictable than dynamic plans.
 """
 from __future__ import annotations
 
@@ -27,6 +71,36 @@ from param_schema import (
 )
 
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+
+SYSTEM_PROMPT = """\
+You are Prometheus, an AI orchestration system for designing, licensing, building, and \
+operating nuclear power plants. Your role here is planning controller: you receive user \
+requests, decide which specialist agents to invoke, and build a validated execution plan. \
+Do not call subagents directly — use the planning tools below.
+
+CLARIFYING QUESTIONS
+- If the user's intent is ambiguous and your confidence in the correct capability is below \
+0.7, use fallback_to_chat to ask one focused clarifying question rather than guessing. \
+Prefer a single precise question (e.g. "Which material ID would you like analyzed?") over \
+committing to the wrong plan.
+- Do not ask for information that is already present in the query, history, or context.
+- When intent is clear, proceed directly — do not ask unnecessary questions.
+
+PLANNING RULES
+- Select capabilities via select_capabilities or choose a workflow via \
+select_workflow_template before calling finalize_plan.
+- Prefer select_workflow_template when a workflow candidate clearly fits the request.
+- Use get_requirement_status to check which required parameters are still missing.
+- Do not finalize a direct capability plan when required inputs are runtime-only and \
+cannot be collected from the user; choose a workflow template or different capabilities instead.
+- If required values are already present in the query, history, or context, extract them \
+with set_extracted_params.
+- If no capability should run and intent is clear (e.g. a general question), use \
+fallback_to_chat to respond directly.
+- Prefer minimal, high-confidence plans. Avoid over-engineering.
+- Keep all user-facing messages concise and professional.
+- Every planning turn must end by calling finalize_plan or fallback_to_chat.\
+"""
 
 
 class SelectCapabilitiesInput(BaseModel):
@@ -697,20 +771,7 @@ async def compile_plan_with_tools(
     )
     tools_by_name = {tool.name: tool for tool in tools}
 
-    system_prompt = (
-        "You are a planning controller for a multi-agent orchestrator.\n"
-        "Use tools to build a validated plan. Do not call subagents directly.\n"
-        "Rules:\n"
-        "- Select capabilities via select_capabilities or choose a workflow via select_workflow_template before finalize_plan.\n"
-        "- Prefer select_workflow_template when a workflow candidate clearly fits.\n"
-        "- Use get_requirement_status to check required and missing fields.\n"
-        "- Do not finalize direct capability plans with unresolved runtime-only inputs; choose a template or different skills.\n"
-        "- If required values are present in user query/history/context, put them into set_extracted_params.\n"
-        "- If no capability should run, call fallback_to_chat.\n"
-        "- Prefer minimal, high-confidence plans.\n"
-        "- Keep user-facing message concise.\n"
-        "- End by calling finalize_plan or fallback_to_chat."
-    )
+    system_prompt = SYSTEM_PROMPT
     user_prompt = _build_prompt(
         query=query,
         history=history,

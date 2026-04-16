@@ -17,6 +17,29 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 CORROSION_ANALYSIS_JSON_TYPE = "prometheus.corrosion_analysis.result.v1"
 
+ANALYSIS_PROMPT_TEMPLATE = """\
+You are a nuclear reactor corrosion specialist. Analyze the corrosion state of material: {material_id}
+{context_str}
+Provide a comprehensive corrosion analysis as a JSON object with the following structure:
+{{
+    "oxidation_rate_mm_per_year": <float>,
+    "pitting_index": <float 0-1>,
+    "scc_susceptibility": "<low/medium/high>",
+    "coating_status": "<intact/degraded/failed>",
+    "environmental_factors": {{
+        "ph_level": <float>,
+        "dissolved_oxygen_ppb": <float>,
+        "chloride_concentration_ppm": <float>
+    }},
+    "corrosion_mechanisms": [<list of active mechanisms>],
+    "affected_area_percent": <float>,
+    "recommendations": [<list of actionable recommendations>],
+    "risk_level": "<low/medium/high/critical>",
+    "confidence": <float 0-1>
+}}
+
+Focus on realistic nuclear reactor corrosion scenarios. Consider general corrosion, pitting, stress corrosion cracking (SCC), flow-accelerated corrosion, and intergranular attack."""
+
 
 def _build_corrosion_summary(material_id: str, analysis: Dict[str, Any]) -> str:
     risk_level = str(analysis.get("risk_level") or "unknown")
@@ -172,27 +195,7 @@ class CorrosionAnalysisAgent(PrometheusAgent):
             if non_null.get("operating_hours"):
                 context_str += f"- Operating Hours: {non_null['operating_hours']}\n"
 
-        prompt = f"""You are a nuclear reactor corrosion specialist. Analyze the corrosion state of material: {material_id}
-{context_str}
-Provide a comprehensive corrosion analysis as a JSON object with the following structure:
-{{
-    "oxidation_rate_mm_per_year": <float>,
-    "pitting_index": <float 0-1>,
-    "scc_susceptibility": "<low/medium/high>",
-    "coating_status": "<intact/degraded/failed>",
-    "environmental_factors": {{
-        "ph_level": <float>,
-        "dissolved_oxygen_ppb": <float>,
-        "chloride_concentration_ppm": <float>
-    }},
-    "corrosion_mechanisms": [<list of active mechanisms>],
-    "affected_area_percent": <float>,
-    "recommendations": [<list of actionable recommendations>],
-    "risk_level": "<low/medium/high/critical>",
-    "confidence": <float 0-1>
-}}
-
-Focus on realistic nuclear reactor corrosion scenarios. Consider general corrosion, pitting, stress corrosion cracking (SCC), flow-accelerated corrosion, and intergranular attack."""
+        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)

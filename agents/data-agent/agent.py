@@ -16,6 +16,23 @@ from a2a.server.events import EventQueue
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
 
+ANALYSIS_PROMPT_TEMPLATE = """\
+You are a nuclear materials engineer. Analyze this material data and provide expert insights.
+
+Material ID: {material_id}
+Data: {material_json}
+
+Provide a brief expert commentary as a JSON object:
+{{
+    "material_assessment": "<brief assessment of material suitability>",
+    "key_strengths": [<list of 2-3 key advantages>],
+    "potential_concerns": [<list of 2-3 potential concerns>],
+    "recommended_monitoring": [<list of 2-3 specific monitoring recommendations>],
+    "compatibility_notes": "<brief note on compatibility with reactor environment>"
+}}
+
+Be concise and focus on actionable insights."""
+
 # Simulated material database
 MATERIAL_DATABASE = {
     "SS316": {
@@ -260,21 +277,10 @@ class MaterialDataAgent(PrometheusAgent):
                 message="Generating expert interpretation.",
             )
             try:
-                prompt = f"""You are a nuclear materials engineer. Analyze this material data and provide expert insights.
-
-Material ID: {material_id}
-Data: {json.dumps(material, indent=2)}
-
-Provide a brief expert commentary as a JSON object:
-{{
-    "material_assessment": "<brief assessment of material suitability>",
-    "key_strengths": [<list of 2-3 key advantages>],
-    "potential_concerns": [<list of 2-3 potential concerns>],
-    "recommended_monitoring": [<list of 2-3 specific monitoring recommendations>],
-    "compatibility_notes": "<brief note on compatibility with reactor environment>"
-}}
-
-Be concise and focus on actionable insights."""
+                prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+                    material_id=material_id,
+                    material_json=json.dumps(material, indent=2),
+                )
 
                 client = Anthropic(api_key=ANTHROPIC_API_KEY)
                 response = await asyncio.to_thread(
