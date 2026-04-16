@@ -40,6 +40,9 @@ from a2a.types import (
 from .middleware import BearerTokenMiddleware
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
+from ..storage_client.async_client import AsyncStorageClient
+from ..storage_client.connection import ConnectionConfig
+from ..storage_client.models.item import ItemCreate
 import uvicorn
 import httpx
 
@@ -944,6 +947,101 @@ class PrometheusAgent:
             metadata=metadata,
         )
         return registered
+
+    async def send_deeplynx_artifact(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        file_path: Path,
+        name: str,
+        description: str,
+        storage_config: ConnectionConfig,
+        mime_type: Optional[str] = None,
+        json_type: Optional[str] = None,
+        artifact_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ArtifactReference:
+        """Upload a local file to DeepLynx and emit a deeplynx:// artifact reference.
+
+        Uploads the file, then creates a DeepLynx item whose ``properties`` carry
+        the artifact metadata (``mime_type``, ``json_type``, ``file_id``, and any
+        extra ``metadata`` keys).  The resulting URI encodes the item so downstream
+        consumers can retrieve both metadata and the raw file via the storage client.
+
+        URI format::
+
+            deeplynx://organizations/{org_id}/projects/{proj_id}/items/{item_id}
+
+        Args:
+            file_path: Local path of the file to upload.
+            name: Human-readable artifact name.
+            description: Human-readable artifact description.
+            storage_config: DeepLynx ``ConnectionConfig`` (org, project, credentials).
+            mime_type: MIME type of the file.  Defaults to ``application/octet-stream``.
+            json_type: Optional semantic type identifier stored in item properties
+                (e.g. ``"prometheus.my_agent.result.v1"``).
+            artifact_id: Explicit artifact ID; auto-generated when omitted.
+            tags: Tag names applied to the DeepLynx item and the local artifact catalog.
+            metadata: Extra key/value pairs merged into the item ``properties`` and
+                the ``ArtifactReference.metadata``.
+
+        Returns:
+            The registered ``ArtifactReference`` with ``uri`` set to the
+            ``deeplynx://`` address and ``metadata`` containing
+            ``deeplynx_item_id`` and ``deeplynx_file_id`` for quick resolution.
+        """
+        resolved_mime = mime_type or "application/octet-stream"
+
+        async with AsyncStorageClient(storage_config) as client:
+            file_meta = await client.files.upload(
+                file_path,
+                name=name,
+                description=description,
+            )
+
+            properties: Dict[str, Any] = {
+                "mime_type": resolved_mime,
+                "file_id": file_meta.id,
+            }
+            if json_type:
+                properties["json_type"] = json_type
+            if file_meta.uri:
+                properties["file_uri"] = file_meta.uri
+            if metadata:
+                properties.update(metadata)
+
+            item = await client.items.create(
+                ItemCreate(
+                    name=name,
+                    description=description,
+                    properties=properties,
+                    tags=list(tags or []),
+                )
+            )
+
+        uri = (
+            f"deeplynx://organizations/{storage_config.organization_id}"
+            f"/projects/{storage_config.project_id}"
+            f"/items/{item.id}"
+        )
+        return await self.send_artifact_reference(
+            context=context,
+            event_queue=event_queue,
+            name=name,
+            description=description,
+            uri=uri,
+            mime_type=resolved_mime,
+            size_bytes=file_meta.size,
+            artifact_id=artifact_id,
+            tags=tags,
+            metadata={
+                **(metadata or {}),
+                "deeplynx_item_id": item.id,
+                "deeplynx_file_id": file_meta.id,
+            },
+        )
 
     async def send_text_artifact(
         self,
