@@ -42,7 +42,7 @@ from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from ..storage_client.async_client import AsyncStorageClient
 from ..storage_client.connection import ConnectionConfig
-from ..storage_client.models.item import ItemCreate
+from ..storage_client.models.item import ItemUpdate
 import uvicorn
 import httpx
 
@@ -1001,30 +1001,36 @@ class PrometheusAgent:
                 description=description,
             )
 
-            properties: Dict[str, Any] = {
+            # File upload creates a record in DeepLynx; update its properties to
+            # carry artifact metadata rather than creating a separate item record.
+            existing = await client.items.get(file_meta.id)
+            merged_properties: Dict[str, Any] = dict(existing.properties or {})
+            merged_properties.update({
                 "mime_type": resolved_mime,
                 "file_id": file_meta.id,
-            }
+            })
             if json_type:
-                properties["json_type"] = json_type
+                merged_properties["json_type"] = json_type
             if file_meta.uri:
-                properties["file_uri"] = file_meta.uri
+                merged_properties["file_uri"] = file_meta.uri
             if metadata:
-                properties.update(metadata)
+                merged_properties.update(metadata)
 
-            item = await client.items.create(
-                ItemCreate(
+            item = await client.items.update(
+                file_meta.id,
+                ItemUpdate(
                     name=name,
                     description=description,
-                    properties=properties,
-                    tags=list(tags or []),
-                )
+                    properties=merged_properties,
+                ),
             )
+            if tags:
+                await client.items.add_tags(file_meta.id, list(tags))
 
         uri = (
             f"deeplynx://organizations/{storage_config.organization_id}"
             f"/projects/{storage_config.project_id}"
-            f"/items/{item.id}"
+            f"/items/{file_meta.id}"
         )
         return await self.send_artifact_reference(
             context=context,
@@ -1038,7 +1044,7 @@ class PrometheusAgent:
             tags=tags,
             metadata={
                 **(metadata or {}),
-                "deeplynx_item_id": item.id,
+                "deeplynx_item_id": file_meta.id,
                 "deeplynx_file_id": file_meta.id,
             },
         )
