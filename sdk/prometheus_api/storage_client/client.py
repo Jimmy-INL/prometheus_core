@@ -15,6 +15,7 @@ from .resources.items import ItemsResource
 from .resources.files import FilesResource
 from .resources.relationships import RelationshipsResource
 from .resources.search import SearchResource
+from .resources.tags import TagsResource
 from .resources.timeseries import TimeseriesResource
 
 
@@ -56,6 +57,7 @@ class StorageClient:
         self._files: Optional[FilesResource] = None
         self._relationships: Optional[RelationshipsResource] = None
         self._search: Optional[SearchResource] = None
+        self._tags: Optional[TagsResource] = None
         self._timeseries: Optional[TimeseriesResource] = None
 
     def __enter__(self) -> "StorageClient":
@@ -100,6 +102,13 @@ class StorageClient:
         if not self._search:
             self._search = SearchResource(self)
         return self._search
+
+    @property
+    def tags(self) -> TagsResource:
+        """Access tag operations."""
+        if not self._tags:
+            self._tags = TagsResource(self)
+        return self._tags
 
     @property
     def timeseries(self) -> TimeseriesResource:

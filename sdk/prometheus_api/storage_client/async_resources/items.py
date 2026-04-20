@@ -172,11 +172,12 @@ class AsyncItemsResource(AsyncBaseResource):
             return [self._parse_item(item_data) for item_data in data.get("records", [])]
 
     async def add_tags(self, item_id: int, tags: List[str]) -> Item:
-        """Add tags to an item asynchronously."""
+        """Add tags to an item asynchronously. Tag names are resolved to IDs."""
+        tag_ids = await self._client.tags.resolve_ids(tags)
         response = await self._client._request(
             "POST",
             f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tags}
+            json={"tags": tag_ids}
         )
 
         return self._parse_item(response.json())

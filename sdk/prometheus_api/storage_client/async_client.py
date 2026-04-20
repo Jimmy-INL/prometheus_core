@@ -15,6 +15,7 @@ from .async_resources.items import AsyncItemsResource
 from .async_resources.files import AsyncFilesResource
 from .async_resources.relationships import AsyncRelationshipsResource
 from .async_resources.search import AsyncSearchResource
+from .async_resources.tags import AsyncTagsResource
 from .async_resources.timeseries import AsyncTimeseriesResource
 
 
@@ -56,6 +57,7 @@ class AsyncStorageClient:
         self._files: Optional[AsyncFilesResource] = None
         self._relationships: Optional[AsyncRelationshipsResource] = None
         self._search: Optional[AsyncSearchResource] = None
+        self._tags: Optional[AsyncTagsResource] = None
         self._timeseries: Optional[AsyncTimeseriesResource] = None
 
     async def __aenter__(self) -> "AsyncStorageClient":
@@ -100,6 +102,13 @@ class AsyncStorageClient:
         if not self._search:
             self._search = AsyncSearchResource(self)
         return self._search
+
+    @property
+    def tags(self) -> AsyncTagsResource:
+        """Access tag operations."""
+        if not self._tags:
+            self._tags = AsyncTagsResource(self)
+        return self._tags
 
     @property
     def timeseries(self) -> AsyncTimeseriesResource:

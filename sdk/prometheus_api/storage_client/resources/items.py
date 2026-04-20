@@ -284,10 +284,11 @@ class ItemsResource(BaseResource):
             item = client.items.add_tags(123, ["important", "reviewed"])
             ```
         """
+        tag_ids = self._client.tags.resolve_ids(tags)
         response = self._client._request(
             "POST",
             f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tags}
+            json={"tags": tag_ids}
         )
 
         return self._parse_item(response.json())
