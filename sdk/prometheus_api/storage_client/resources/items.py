@@ -287,13 +287,14 @@ class ItemsResource(BaseResource):
         tag_ids = self._client.tags.resolve_ids(tags)
         if not tag_ids:
             return self.get(item_id)
-        response = self._client._request(
-            "POST",
-            f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tag_ids}
-        )
+        for tag_id in tag_ids:
+            self._client._request(
+                "POST",
+                f"{self._base_path}/records/{item_id}/tags",
+                params={"tagId": int(tag_id)},
+            )
 
-        return self._parse_item(response.json())
+        return self.get(item_id)
 
     def remove_tags(self, item_id: int, tags: List[str]) -> Item:
         """Remove tags from an item.
@@ -310,13 +311,17 @@ class ItemsResource(BaseResource):
             item = client.items.remove_tags(123, ["old-tag"])
             ```
         """
-        response = self._client._request(
-            "DELETE",
-            f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tags}
-        )
+        tag_ids = self._client.tags.resolve_ids(tags)
+        if not tag_ids:
+            return self.get(item_id)
+        for tag_id in tag_ids:
+            self._client._request(
+                "DELETE",
+                f"{self._base_path}/records/{item_id}/tags",
+                params={"tagId": int(tag_id)},
+            )
 
-        return self._parse_item(response.json())
+        return self.get(item_id)
 
     def _parse_item(self, data: Dict[str, Any]) -> Item:
         """Parse API response data into an Item model.

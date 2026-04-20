@@ -1,9 +1,13 @@
 """Async items resource."""
 
+import logging
 from typing import AsyncIterator, Dict, List, Optional, Any
+from importlib.metadata import version as pkg_version
 from ..models.item import Item, ItemCreate, ItemUpdate, Tag
 from ..models.pagination import Page, PageInfo
 from .base import AsyncBaseResource
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncItemsResource(AsyncBaseResource):
@@ -174,25 +178,34 @@ class AsyncItemsResource(AsyncBaseResource):
     async def add_tags(self, item_id: int, tags: List[str]) -> Item:
         """Add tags to an item asynchronously. Tag names are resolved to IDs."""
         tag_ids = await self._client.tags.resolve_ids(tags)
+        logger.info(
+            "prometheus-api %s add_tags: item=%s names=%r resolved_ids=%r",
+            pkg_version("prometheus-api"), item_id, tags, tag_ids,
+        )
         if not tag_ids:
             return await self.get(item_id)
-        response = await self._client._request(
-            "POST",
-            f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tag_ids}
-        )
+        for tag_id in tag_ids:
+            await self._client._request(
+                "POST",
+                f"{self._base_path}/records/{item_id}/tags",
+                params={"tagId": int(tag_id)},
+            )
 
-        return self._parse_item(response.json())
+        return await self.get(item_id)
 
     async def remove_tags(self, item_id: int, tags: List[str]) -> Item:
         """Remove tags from an item asynchronously."""
-        response = await self._client._request(
-            "DELETE",
-            f"{self._base_path}/records/{item_id}/tags",
-            json={"tags": tags}
-        )
+        tag_ids = await self._client.tags.resolve_ids(tags)
+        if not tag_ids:
+            return await self.get(item_id)
+        for tag_id in tag_ids:
+            await self._client._request(
+                "DELETE",
+                f"{self._base_path}/records/{item_id}/tags",
+                params={"tagId": int(tag_id)},
+            )
 
-        return self._parse_item(response.json())
+        return await self.get(item_id)
 
     def _parse_item(self, data: Dict[str, Any]) -> Item:
         """Parse API response data into an Item model."""

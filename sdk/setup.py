@@ -34,7 +34,7 @@ setup(
             "starlette>=0.27.0",
             "uvicorn[standard]>=0.27.0",
             "httpx>=0.26.0",
-            "a2a-sdk[http-server]>=0.3.0",
+            "a2a-sdk[http-server]>=0.3.23,<1",
         ],
         "dev": [
             "pytest>=7.0.0",
