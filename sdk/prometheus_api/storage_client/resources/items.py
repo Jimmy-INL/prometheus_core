@@ -285,6 +285,8 @@ class ItemsResource(BaseResource):
             ```
         """
         tag_ids = self._client.tags.resolve_ids(tags)
+        if not tag_ids:
+            return self.get(item_id)
         response = self._client._request(
             "POST",
             f"{self._base_path}/records/{item_id}/tags",

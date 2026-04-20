@@ -174,6 +174,8 @@ class AsyncItemsResource(AsyncBaseResource):
     async def add_tags(self, item_id: int, tags: List[str]) -> Item:
         """Add tags to an item asynchronously. Tag names are resolved to IDs."""
         tag_ids = await self._client.tags.resolve_ids(tags)
+        if not tag_ids:
+            return await self.get(item_id)
         response = await self._client._request(
             "POST",
             f"{self._base_path}/records/{item_id}/tags",
