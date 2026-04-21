@@ -1,4 +1,3 @@
-import json
 import logging
 import mimetypes
 import tempfile
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
 from utils.settings import settings
+from utils.uri_resolver import resolve_to_local_path
 
 
 def _format_status_history(history: List[str]) -> str:
@@ -380,6 +380,22 @@ async def render_artifacts(
         mime_type = (artifact.get("mime_type") or "").lower()
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
         description = artifact.get("description", "")
+
+        # Resolve deeplynx:// URIs to local files before plugin dispatch.
+        # Plugins expect file:// or http(s):// URIs; deeplynx:// must be downloaded first.
+        if uri.startswith("deeplynx://"):
+            resolved = await resolve_to_local_path(
+                uri,
+                cache_dir=tmp_dir,
+                artifact=artifact,
+                artifact_id=artifact.get("artifact_id"),
+            )
+            if resolved is not None:
+                artifact = dict(artifact)
+                artifact["uri"] = f"file://{resolved}"
+                uri = artifact["uri"]
+            else:
+                logger.warning("Could not resolve deeplynx:// artifact %r; falling back to text", name)
 
         # Try visualization plugin system first
         try:

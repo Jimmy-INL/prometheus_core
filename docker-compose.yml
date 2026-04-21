@@ -12,6 +12,11 @@ x-common-env: &common-env
   LITELLM_URL: http://litellm:4000
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
+  DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-https://deeplynx.inl.gov/api/v1}
+  DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
+  DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
+  DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
+  DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
 
 x-common-volumes: &common-volumes
   - ./shared:/app/shared

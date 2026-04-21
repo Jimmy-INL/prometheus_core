@@ -1,7 +1,12 @@
 {
   "name": "Artifact Debug Agent",
   "description": "Creates and converts debug artifacts so artifact references, routing, and UI rendering can be validated end-to-end.",
-  "url": "http://localhost:8000",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "url": "http://localhost:8000/"
+    }
+  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
@@ -11,7 +16,7 @@
     {
       "id": "create_svg_artifact",
       "name": "Create SVG Artifact",
-      "description": "Generate an SVG image artifact containing a user-provided word and register it as a conversation artifact reference.",
+      "description": "Generate an SVG image artifact containing a user-provided word, upload it to DeepLynx, and register it as a conversation artifact reference backed by a deeplynx:// URI.",
       "usage_notes": "Use this to create a deterministic test artifact for downstream artifact-aware skills.",
       "requires_approval": false,
       "expected_duration_seconds": 2,
@@ -54,7 +59,7 @@
     {
       "id": "convert_svg_to_png",
       "name": "Convert SVG To PNG",
-      "description": "Convert an existing SVG artifact into a PNG artifact. Only use this when the user explicitly requests a PNG or raster image conversion of an existing SVG — do NOT chain this automatically after create_svg_artifact.",
+      "description": "Fetch an existing SVG artifact from DeepLynx, convert it to PNG, upload the result, and register it as a new deeplynx:// artifact reference. Only use this when the user explicitly requests a PNG or raster image conversion of an existing SVG — do NOT chain this automatically after create_svg_artifact.",
       "usage_notes": "Requires artifact_id of an existing SVG artifact in the current conversation. Only invoke when the user explicitly asks to convert to PNG.",
       "requires_approval": false,
       "expected_duration_seconds": 4,

@@ -1,7 +1,12 @@
 {
   "name": "Corrosion Analysis Agent",
   "description": "Specialist agent for analyzing corrosion in nuclear reactor materials. Evaluates oxidation rates, pitting corrosion, stress corrosion cracking (SCC), and general corrosion mechanisms in primary and secondary coolant systems.",
-  "url": "http://localhost:8000",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "url": "http://localhost:8000/"
+    }
+  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,

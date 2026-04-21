@@ -1,7 +1,12 @@
 {
   "name": "OSTI Research Agent",
   "description": "Searches the OSTI scientific papers and reports database for publications to answer specific research questions.",
-  "url": "http://localhost:8000",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "url": "http://localhost:8000/"
+    }
+  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,

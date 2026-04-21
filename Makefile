@@ -26,11 +26,18 @@ COMPOSE_FILES := -f $(COMPOSE_BASE)
 ifneq ($(AGENT_COMPOSE_FILES),)
 COMPOSE_FILES += -f $(ACTIVE_AGENTS_COMPOSE)
 endif
+# Automatically include docker-compose.override.yml if present (local dev overrides).
+ifneq ($(wildcard docker-compose.override.yml),)
+COMPOSE_FILES += -f docker-compose.override.yml
+endif
 
 # No-generate compose flags: include agents compose only if it already exists on disk.
 COMPOSE_FILES_NG := -f $(COMPOSE_BASE)
 ifneq ($(wildcard $(ACTIVE_AGENTS_COMPOSE)),)
 COMPOSE_FILES_NG += -f $(ACTIVE_AGENTS_COMPOSE)
+endif
+ifneq ($(wildcard docker-compose.override.yml),)
+COMPOSE_FILES_NG += -f docker-compose.override.yml
 endif
 
 ##@

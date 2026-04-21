@@ -1,7 +1,12 @@
 {
   "name": "Material Data Agent",
   "description": "Specialist agent for retrieving and managing nuclear reactor material property data. Provides access to material specifications, historical performance data, and regulatory compliance information.",
-  "url": "http://localhost:8000",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "url": "http://localhost:8000/"
+    }
+  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,

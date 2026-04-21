@@ -1,7 +1,12 @@
 {
   "name": "Radiation Damage Analysis Agent",
   "description": "Specialist agent for analyzing radiation-induced damage in nuclear reactor materials. Evaluates neutron embrittlement, void swelling, irradiation creep, and transmutation effects on structural integrity.",
-  "url": "http://localhost:8000",
+  "supportedInterfaces": [
+    {
+      "protocolBinding": "JSONRPC",
+      "url": "http://localhost:8000/"
+    }
+  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
