@@ -1049,9 +1049,9 @@ Rules:
             context=context,
             event_queue=event_queue,
             state=(
-                TaskState.TASK_STATE_WORKING
+                TaskState.working
                 if not final
-                else TaskState.TASK_STATE_COMPLETED
+                else TaskState.completed
             ),
             final=final,
             message=status_message,
@@ -1421,7 +1421,7 @@ Return ONLY the JSON array."""
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.TASK_STATE_COMPLETED,
+            state=TaskState.completed,
             final=True,
             message=result_text,
         )

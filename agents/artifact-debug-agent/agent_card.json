@@ -1,12 +1,6 @@
 {
   "name": "Artifact Debug Agent",
   "description": "Creates and converts debug artifacts so artifact references, routing, and UI rendering can be validated end-to-end.",
-  "supportedInterfaces": [
-    {
-      "protocolBinding": "JSONRPC",
-      "url": "http://localhost:8000/"
-    }
-  ],
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
@@ -53,13 +47,15 @@
             "description": "Optional text color (CSS color or hex value, e.g. 'blue', '#1e40af')."
           }
         },
-        "required": ["word"]
+        "required": [
+          "word"
+        ]
       }
     },
     {
       "id": "convert_svg_to_png",
       "name": "Convert SVG To PNG",
-      "description": "Fetch an existing SVG artifact from DeepLynx, convert it to PNG, upload the result, and register it as a new deeplynx:// artifact reference. Only use this when the user explicitly requests a PNG or raster image conversion of an existing SVG — do NOT chain this automatically after create_svg_artifact.",
+      "description": "Fetch an existing SVG artifact from DeepLynx, convert it to PNG, upload the result, and register it as a new deeplynx:// artifact reference. Only use this when the user explicitly requests a PNG or raster image conversion of an existing SVG \u2014 do NOT chain this automatically after create_svg_artifact.",
       "usage_notes": "Requires artifact_id of an existing SVG artifact in the current conversation. Only invoke when the user explicitly asks to convert to PNG.",
       "requires_approval": false,
       "expected_duration_seconds": 4,
@@ -81,7 +77,9 @@
             "description": "Optional human-readable description for the generated PNG artifact."
           }
         },
-        "required": ["artifact_id"]
+        "required": [
+          "artifact_id"
+        ]
       }
     },
     {
@@ -112,8 +110,11 @@
             "description": "Optional human-readable artifact description."
           }
         },
-        "required": ["json_type"]
+        "required": [
+          "json_type"
+        ]
       }
     }
-  ]
+  ],
+  "url": "http://localhost:8000"
 }

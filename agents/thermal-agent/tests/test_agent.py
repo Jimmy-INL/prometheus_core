@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent
+from a2a.types import DataPart, TaskStatusUpdateEvent, TaskState
 
 THERMAL_DIR = Path(__file__).resolve().parents[1]
 PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
@@ -22,7 +22,6 @@ assert _SPEC and _SPEC.loader
 _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
 ThermalAnalysisAgent = _MODULE.ThermalAnalysisAgent
-from prometheus_api.agent.a2a_utils import TASK_STATE_INPUT_REQUIRED, extract_part_data
 
 
 def test_thermal_agent_requests_temperature_and_persists_context_state():
@@ -40,9 +39,10 @@ def test_thermal_agent_requests_temperature_and_persists_context_state():
     assert len(calls) == 1
     event = calls[0][0][0]
     assert isinstance(event, TaskStatusUpdateEvent)
-    assert event.status.state == TASK_STATE_INPUT_REQUIRED
-    payload = extract_part_data(event.status.message.parts[0])
-    assert payload["missing_inputs"][0]["name"] == "temperature_c"
+    assert event.status.state == TaskState.input_required
+    payload = event.status.message.parts[0].root
+    assert isinstance(payload, DataPart)
+    assert payload.data["missing_inputs"][0]["name"] == "temperature_c"
 
     saved = agent.load_context_state("ctx-1")
     assert saved["resolved"]["material_id"] == "SS316"
