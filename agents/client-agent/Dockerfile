@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG PROMETHEUS_API_BASE_IMAGE_HASH=latest
+ARG PROMETHEUS_API_BASE_IMAGE_HASH
 FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
 WORKDIR /app

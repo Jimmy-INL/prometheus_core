@@ -84,7 +84,7 @@ generate: $(ACTIVE_AGENTS_COMPOSE)
 
 # Generate a merged compose file with project-root-relative paths and shared
 # build args. Docker Compose YAML anchors do not cross included files.
-$(COMPOSE_AGENTS): $(AGENT_COMPOSE_FILES) scripts/generate-agents-compose.sh
+$(COMPOSE_AGENTS): $(AGENT_COMPOSE_FILES) scripts/generate-agents-compose.sh docker-compose.yml
 	@./scripts/generate-agents-compose.sh $(AGENT_COMPOSE_FILES) > $@
 	@echo "Generated $(COMPOSE_AGENTS) with $(words $(AGENT_COMPOSE_FILES)) agent(s):"
 	@for f in $(AGENT_COMPOSE_FILES); do echo "  $$f"; done
