@@ -112,31 +112,22 @@ bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
 ##@ Container
 ##@
 
-IMAGE_REPO ?=
+IMAGE_REPO ?= mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
-PUSH_LATEST ?= false
+BUILD_PUSH_TAGS := -t "$(IMAGE_REPO):$(IMAGE_TAG)"
 
 build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, default: git short hash)
 	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
 	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
 	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
 
-build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] [PUSH_LATEST=true|false])
+build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>])
 ifndef IMAGE_REPO
 	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=ghcr.io/my-org/prometheus-api)
 endif
-	docker build --platform linux/amd64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-amd64" .
-	docker build --platform linux/arm64 -t "$(IMAGE_REPO):$(IMAGE_TAG)-arm64" .
-	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-amd64"
-	docker push "$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
-	docker manifest create --amend "$(IMAGE_REPO):$(IMAGE_TAG)" \
-		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
-		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
-	docker manifest push "$(IMAGE_REPO):$(IMAGE_TAG)"
-ifeq ($(PUSH_LATEST),true)
-	docker manifest create --amend "$(IMAGE_REPO):latest" \
-		"$(IMAGE_REPO):$(IMAGE_TAG)-amd64" \
-		"$(IMAGE_REPO):$(IMAGE_TAG)-arm64"
-	docker manifest push "$(IMAGE_REPO):latest"
-endif
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--push \
+		$(BUILD_PUSH_TAGS) \
+		.
 	@echo "Done"
