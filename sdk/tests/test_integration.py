@@ -56,8 +56,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "alpha",
                 "priority": 1,
-                "status": "active"
-            }
+                "status": "active",
+            },
         },
         {
             "name": "Test Item Beta",
@@ -67,8 +67,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "beta",
                 "priority": 2,
-                "status": "active"
-            }
+                "status": "active",
+            },
         },
         {
             "name": "Test Item Gamma",
@@ -78,8 +78,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "gamma",
                 "priority": 3,
-                "status": "pending"
-            }
+                "status": "pending",
+            },
         },
         {
             "name": "Test Item Delta",
@@ -89,8 +89,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "delta",
                 "priority": 1,
-                "status": "completed"
-            }
+                "status": "completed",
+            },
         },
         {
             "name": "Test Item Epsilon",
@@ -100,8 +100,8 @@ def test_items(client):
                 "_test_run_id": TEST_RUN_ID,
                 "category": "epsilon",
                 "priority": 2,
-                "status": "active"
-            }
+                "status": "active",
+            },
         },
     ]
 
@@ -151,15 +151,17 @@ class TestItemCreation:
 
     def test_create_single_item(self, client):
         """Test creating a single item."""
-        item = client.items.create(ItemCreate(
-            name="Single Test Item",
-            description="A single test item",
-            properties={
-                "_test_suite_marker": TEST_MARKER,
-                "_test_run_id": TEST_RUN_ID,
-                "test": "single_create"
-            }
-        ))
+        item = client.items.create(
+            ItemCreate(
+                name="Single Test Item",
+                description="A single test item",
+                properties={
+                    "_test_suite_marker": TEST_MARKER,
+                    "_test_run_id": TEST_RUN_ID,
+                    "test": "single_create",
+                },
+            )
+        )
 
         assert item.id is not None
         assert item.name == "Single Test Item"
@@ -170,19 +172,21 @@ class TestItemCreation:
 
     def test_create_item_with_all_fields(self, client):
         """Test creating an item with all available fields."""
-        item = client.items.create(ItemCreate(
-            name="Complete Test Item",
-            description="Item with all fields populated",
-            properties={
-                "_test_suite_marker": TEST_MARKER,
-                "_test_run_id": TEST_RUN_ID,
-                "string_field": "test",
-                "number_field": 42,
-                "boolean_field": True,
-                "nested_field": {"key": "value"}
-            },
-            original_id=f"test-original-{int(time.time())}"
-        ))
+        item = client.items.create(
+            ItemCreate(
+                name="Complete Test Item",
+                description="Item with all fields populated",
+                properties={
+                    "_test_suite_marker": TEST_MARKER,
+                    "_test_run_id": TEST_RUN_ID,
+                    "string_field": "test",
+                    "number_field": 42,
+                    "boolean_field": True,
+                    "nested_field": {"key": "value"},
+                },
+                original_id=f"test-original-{int(time.time())}",
+            )
+        )
 
         assert item.id is not None
         assert item.name == "Complete Test Item"
@@ -201,8 +205,8 @@ class TestItemCreation:
                 properties={
                     "_test_suite_marker": TEST_MARKER,
                     "_test_run_id": TEST_RUN_ID,
-                    "bulk_index": i
-                }
+                    "bulk_index": i,
+                },
             )
             for i in range(3)
         ]
@@ -301,10 +305,7 @@ class TestItemUpdate:
         item = test_items[0]
         new_name = f"{item.name} - Updated"
 
-        updated = client.items.update(
-            item.id,
-            ItemUpdate(name=new_name)
-        )
+        updated = client.items.update(item.id, ItemUpdate(name=new_name))
 
         assert updated.id == item.id
         assert updated.name == new_name
@@ -318,10 +319,7 @@ class TestItemUpdate:
         new_props["updated"] = True
         new_props["update_time"] = datetime.now().isoformat()
 
-        updated = client.items.update(
-            item.id,
-            ItemUpdate(properties=new_props)
-        )
+        updated = client.items.update(item.id, ItemUpdate(properties=new_props))
 
         assert updated.properties["updated"] is True
         assert "update_time" in updated.properties
@@ -372,15 +370,14 @@ class TestRelationships:
 
         rel_id = None
         try:
-            rel = client.relationships.create(RelationshipCreate(
-                from_item_id=item1.id,
-                to_item_id=item2.id,
-                relationship_type="test_relationship",
-                properties={
-                    "_test_suite_marker": TEST_MARKER,
-                    "_test_run_id": TEST_RUN_ID
-                }
-            ))
+            rel = client.relationships.create(
+                RelationshipCreate(
+                    from_item_id=item1.id,
+                    to_item_id=item2.id,
+                    relationship_type="test_relationship",
+                    properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
+                )
+            )
             rel_id = rel.id
 
             assert rel.id is not None
@@ -407,15 +404,14 @@ class TestRelationships:
         rel_id = None
         try:
             # Create a relationship
-            rel = client.relationships.create(RelationshipCreate(
-                from_item_id=item1.id,
-                to_item_id=item2.id,
-                relationship_type="test_link",
-                properties={
-                    "_test_suite_marker": TEST_MARKER,
-                    "_test_run_id": TEST_RUN_ID
-                }
-            ))
+            rel = client.relationships.create(
+                RelationshipCreate(
+                    from_item_id=item1.id,
+                    to_item_id=item2.id,
+                    relationship_type="test_link",
+                    properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
+                )
+            )
             rel_id = rel.id
 
             # Get relationships for item1
@@ -424,10 +420,7 @@ class TestRelationships:
             assert len(rels) > 0
             # Verify our relationship is in the list (by node IDs, not relationship ID)
             # Note: Simplified format doesn't return relationship IDs, so compare by endpoints
-            found = any(
-                r.from_item_id == item1.id and r.to_item_id == item2.id
-                for r in rels
-            )
+            found = any(r.from_item_id == item1.id and r.to_item_id == item2.id for r in rels)
             assert found, f"Created relationship {item1.id}→{item2.id} not found in results"
 
         except Exception as e:
@@ -457,7 +450,7 @@ class TestFileUpload:
             file_meta = client.files.upload(
                 test_file,
                 name="test_binary.bin",
-                description="Test binary file for integration tests"
+                description="Test binary file for integration tests",
             )
             file_id = file_meta.id
 
@@ -494,7 +487,9 @@ class TestFileUpload:
 
             # Verify content matches
             downloaded_content = download_path.read_bytes()
-            assert downloaded_content == binary_content, "Downloaded content does not match original"
+            assert downloaded_content == binary_content, (
+                "Downloaded content does not match original"
+            )
 
         finally:
             if file_id:
@@ -511,10 +506,7 @@ class TestFileUpload:
         file_id = None
         try:
             # Upload
-            file_meta = client.files.upload(
-                test_file,
-                description="Metadata test file"
-            )
+            file_meta = client.files.upload(test_file, description="Metadata test file")
             file_id = file_meta.id
 
             # Retrieve metadata
@@ -532,7 +524,6 @@ class TestFileUpload:
 
 
 class TestDeeplynxFileSystem:
-
     def test_moose_integration(self, client, tmp_path):
         """
         Test a MOOSE-like integration.
@@ -617,14 +608,13 @@ class TestCleanup:
     def test_delete_item(self, client):
         """Test deleting an item."""
         # Create a temporary item
-        item = client.items.create(ItemCreate(
-            name="Temporary Item",
-            description="Will be deleted",
-            properties={
-                "_test_suite_marker": TEST_MARKER,
-                "_test_run_id": TEST_RUN_ID
-            }
-        ))
+        item = client.items.create(
+            ItemCreate(
+                name="Temporary Item",
+                description="Will be deleted",
+                properties={"_test_suite_marker": TEST_MARKER, "_test_run_id": TEST_RUN_ID},
+            )
+        )
 
         item_id = item.id
 
@@ -651,7 +641,8 @@ def test_cleanup_orphaned_items(client):
         # Get recent items and check for test marker
         recent = client.search.recent(limit=100)
         orphaned = [
-            item for item in recent
+            item
+            for item in recent
             if item.properties.get("_test_suite_marker") == TEST_MARKER
             and item.properties.get("_test_run_id") != TEST_RUN_ID
         ]

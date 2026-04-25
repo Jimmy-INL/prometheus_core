@@ -5,7 +5,7 @@ from prometheus_api.storage_client.exceptions import (
     AuthenticationError,
     ItemNotFoundError,
     ValidationError,
-    APIError
+    APIError,
 )
 
 
@@ -55,9 +55,7 @@ def test_validation_error():
 def test_api_error():
     """Test APIError."""
     error = APIError(
-        "Server error",
-        status_code=500,
-        response_data={"error": "Internal server error"}
+        "Server error", status_code=500, response_data={"error": "Internal server error"}
     )
 
     assert str(error) == "Server error"

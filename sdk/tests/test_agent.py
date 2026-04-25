@@ -187,9 +187,7 @@ class TestPrometheusAgentExecutor:
 
         calls = mock_event_queue.enqueue_event.call_args_list
         artifact_events = [
-            call[0][0]
-            for call in calls
-            if type(call[0][0]).__name__ == "TaskArtifactUpdateEvent"
+            call[0][0] for call in calls if type(call[0][0]).__name__ == "TaskArtifactUpdateEvent"
         ]
         completed_events = [
             call[0][0]
@@ -238,10 +236,7 @@ class TestPrometheusAgent:
 
     def test_agent_custom_card_path(self):
         """Test agent accepts custom card path."""
-        agent = PrometheusAgent(
-            agent_name="MyAgent",
-            agent_card_path="/custom/path/card.json"
-        )
+        agent = PrometheusAgent(agent_name="MyAgent", agent_card_path="/custom/path/card.json")
 
         assert agent.agent_card_path == "/custom/path/card.json"
 

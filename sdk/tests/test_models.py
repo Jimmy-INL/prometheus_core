@@ -12,7 +12,7 @@ def test_item_create():
         name="Test Item",
         description="Test description",
         properties={"key": "value"},
-        tags=["tag1", "tag2"]
+        tags=["tag1", "tag2"],
     )
 
     assert item.name == "Test Item"
@@ -39,7 +39,7 @@ def test_item_model():
         properties={"key": "value"},
         created_at=datetime.now(),
         updated_at=datetime.now(),
-        tags=[Tag(id=1, name="test")]
+        tags=[Tag(id=1, name="test")],
     )
 
     assert item.id == 123
@@ -50,10 +50,7 @@ def test_item_model():
 
 def test_item_update():
     """Test ItemUpdate model."""
-    update = ItemUpdate(
-        name="New Name",
-        properties={"new_key": "new_value"}
-    )
+    update = ItemUpdate(name="New Name", properties={"new_key": "new_value"})
 
     assert update.name == "New Name"
     assert update.properties == {"new_key": "new_value"}
@@ -66,7 +63,7 @@ def test_relationship_create():
         from_item_id=1,
         to_item_id=2,
         relationship_type="related_to",
-        properties={"strength": "high"}
+        properties={"strength": "high"},
     )
 
     assert rel.from_item_id == 1
@@ -78,11 +75,7 @@ def test_relationship_create():
 def test_page_info():
     """Test PageInfo model."""
     page_info = PageInfo(
-        page_number=2,
-        page_size=10,
-        total_count=45,
-        has_next=True,
-        has_previous=True
+        page_number=2, page_size=10, total_count=45, has_next=True, has_previous=True
     )
 
     assert page_info.page_number == 2
@@ -102,17 +95,13 @@ def test_page_model():
             properties={},
             created_at=datetime.now(),
             updated_at=datetime.now(),
-            tags=[]
+            tags=[],
         )
         for i in range(10)
     ]
 
     page_info = PageInfo(
-        page_number=1,
-        page_size=10,
-        total_count=10,
-        has_next=False,
-        has_previous=False
+        page_number=1, page_size=10, total_count=10, has_next=False, has_previous=False
     )
 
     page = Page(items=items, page_info=page_info)
