@@ -11,7 +11,6 @@ COPY pyproject.toml /app/
 RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=locked \
     uv sync --no-dev --no-install-project --inexact
 
-RUN python -c "import a2a.server.routes, prometheus_api.agent"
 
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json

@@ -14,5 +14,3 @@ dependencies = [
     "pymupdf>=1.23.0",
 ]
 
-[tool.uv]
-constraint-dependencies = ["a2a-sdk>=1.0.0"]

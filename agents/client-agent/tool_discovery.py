@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
-AGENT_SECRET = os.getenv("AGENT_SECRET", "")
 SELF_AGENT_ID = (os.getenv("AGENT_HOST") or "").strip()
 SELF_AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
 StatusCallback = Callable[[str], Awaitable[None]]
@@ -399,28 +398,22 @@ def _normalize_a2a_artifacts(
 
 
 def _extract_status_payload(a2a_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Extract a structured payload from task.status.message parts (a2a-sdk 1.0 format).
-
-    Parts are plain dicts with either a 'text' key (string) or 'data' key (dict),
-    with no 'kind' discriminator field.
-    """
-    task = a2a_result.get("task", a2a_result)  # accept both wrapped and unwrapped
-    status = task.get("status", {})
+    """Extract a structured payload from status.message text or data parts."""
+    status = a2a_result.get("status", {})
     status_message = status.get("message", {})
     parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
     for part in parts:
         if not isinstance(part, dict):
             continue
-        # Data part: 'data' key present and no 'text' key
-        if "data" in part and "text" not in part:
+        part_kind = str(part.get("kind") or "").strip().lower()
+        if part_kind == "data":
             data_payload = part.get("data")
             if isinstance(data_payload, dict):
                 return data_payload
             continue
-        # Text part: 'text' key present
-        text_content = part.get("text")
-        if text_content is None:
+        if part_kind != "text":
             continue
+        text_content = part.get("text")
         try:
             parsed = json.loads(text_content)
         except json.JSONDecodeError as e:
@@ -466,25 +459,23 @@ async def call_a2a_agent(
 
     logger.debug("[A2A] Calling agent at %s, skill: %s", agent_url, skill_id)
 
-    # Build A2A JSON-RPC message (a2a-sdk 1.0 SendMessage format)
-    context_id = str(kwargs.get("_a2a_context_id") or kwargs.get("conversation_id") or "")
+    # Build A2A JSON-RPC message
     message = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "SendMessage",
+        "method": "message/send",
         "params": {
             "message": {
                 "messageId": message_id,
-                "role": "ROLE_USER",
+                "role": "user",
                 "parts": [],
                 "metadata": {"skillId": skill_id},
             },
+            "configuration": {
+                "blocking": True,  # Wait for task to complete before returning
+            },
         }
     }
-    if context_id:
-        message["params"]["message"]["contextId"] = context_id
-    if kwargs.get("_a2a_task_id"):
-        message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 
     request_params = {
         key: value
@@ -493,20 +484,32 @@ async def call_a2a_agent(
     }
     if request_params:
         message["params"]["message"]["parts"].append(
-            {"text": json.dumps(request_params)}
+            {
+                "kind": "text",
+                "text": json.dumps(request_params),
+            }
         )
     provided_inputs = kwargs.get("provided_inputs")
     if isinstance(provided_inputs, dict) and provided_inputs:
         message["params"]["message"]["parts"].append(
-            {"data": {"provided_inputs": provided_inputs}}
+            {
+                "kind": "data",
+                "data": {
+                    "provided_inputs": provided_inputs,
+                },
+            }
         )
+    if kwargs.get("_a2a_context_id"):
+        message["params"]["message"]["contextId"] = kwargs["_a2a_context_id"]
+    if kwargs.get("_a2a_task_id"):
+        message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 
-    # Call specialist directly using a2a-sdk 1.0 format.
-    # The JSON-RPC route is registered at the root path ("/").
-    endpoint = agent_url.rstrip("/") + "/"
-    headers = {"Content-Type": "application/json", "A2A-Version": "1.0"}
-    if AGENT_SECRET:
-        headers["Authorization"] = f"Bearer {AGENT_SECRET}"
+    # Route through LiteLLM: agent_url is {LITELLM_URL}/a2a/{agent_name}
+    # LiteLLM's A2A endpoint requires the method in the URL path.
+    endpoint = agent_url.rstrip("/") + "/message/send"
+    headers = {"Content-Type": "application/json"}
+    if LITELLM_MASTER_KEY:
+        headers["Authorization"] = f"Bearer {LITELLM_MASTER_KEY}"
 
     # Use longer timeout for research agents that may take minutes
     timeout_seconds = 900.0  # 15 minutes
@@ -514,7 +517,10 @@ async def call_a2a_agent(
     try:
         if _prefer_streaming:
             stream_message = dict(message)
-            stream_message["method"] = "SendStreamingMessage"
+            stream_message["method"] = "message/stream"
+            # A2A streaming stays on the same JSON-RPC endpoint and switches the
+            # method in the payload; LiteLLM does not expose a separate
+            # /message/stream sub-route.
             stream_endpoint = agent_url.rstrip("/")
             logger.debug("[A2A] Using streaming invocation via %s", stream_endpoint)
             a2a_result = await _stream_a2a_agent(
@@ -542,22 +548,21 @@ async def call_a2a_agent(
 
         logger.debug("[A2A] Full result structure: %s", json.dumps(a2a_result, indent=2, default=str)[:2000])
 
-        task = a2a_result.get("task", a2a_result)  # unwrap task wrapper if present
         normalized_artifacts = _normalize_a2a_artifacts(
-            task.get("artifacts", []),
+            a2a_result.get("artifacts", []),
             conversation_id=str(kwargs.get("conversation_id") or ""),
         )
 
-        status = task.get("status", {})
+        status = a2a_result.get("status", {})
         state = str(status.get("state") or "").strip().lower()
         parsed = _extract_status_payload(a2a_result)
-        if state == "task_state_input_required":
+        if state == "input-required":
             payload = parsed if isinstance(parsed, dict) else {}
             return {
                 "status": "input_required",
                 "input_required": payload,
-                "_a2a_context_id": task.get("contextId"),
-                "_a2a_task_id": task.get("id"),
+                "_a2a_context_id": a2a_result.get("contextId"),
+                "_a2a_task_id": a2a_result.get("id"),
             }
         if isinstance(parsed, dict):
             if normalized_artifacts and "artifacts" not in parsed:
@@ -668,10 +673,8 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
                 logger.debug("Skipping self agent in tool discovery: %s (%s)", agent_id, direct_url)
                 continue
 
-            # Call specialists directly using a2a-sdk 1.0 SendMessage format.
-            # LiteLLM's A2A proxy uses its own older SDK which would send
-            # the deprecated message/send method to specialists.
-            agent_direct_url = direct_url
+            # Route all calls through LiteLLM rather than directly to the agent.
+            litellm_url = f"{LITELLM_URL}/a2a/{agent_id}"
 
             # LiteLLM's /v1/agents payload can omit full per-skill metadata.
             # Fetch the full card so tool schemas stay authoritative.
@@ -683,7 +686,7 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
             # Create one tool per skill
             for skill in agent_card.get("skills", []):
                 tool = await create_tool_from_skill(
-                    agent_direct_url,
+                    litellm_url,
                     skill,
                     supports_streaming=supports_streaming,
                 )

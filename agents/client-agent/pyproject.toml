@@ -20,5 +20,3 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["workflow_library*"]
 
-[tool.uv]
-constraint-dependencies = ["a2a-sdk>=1.0.0"]
