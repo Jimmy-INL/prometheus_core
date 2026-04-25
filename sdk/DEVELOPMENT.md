@@ -19,22 +19,41 @@ The project is `uv`-managed (see `uv.lock`). The Makefile wraps the common targe
 make lint        # ruff check .
 make format      # ruff format --check .
 make typecheck   # mypy prometheus_api/
-make test        # pytest (all tests)
+make test        # unit tests only (excludes integration)
+make test-integration # DeepLynx integration tests (requires .env)
+make test-all    # all tests, including integration
 make fix         # ruff check --fix . && ruff format .
 make check       # lint + format + typecheck
+make hooks       # install pre-commit and pre-push hooks
 make test-install # build wheel, install in clean venv, smoke-test imports
 ```
 
 ### Targeted test runs
 
 ```bash
+make test                                                   # unit only (no .env required)
 uv run pytest -m "not integration"                            # unit only (no .env required)
-uv run pytest -m integration                                  # integration (requires .env w/ DeepLynx creds)
+make test-integration                                        # integration (requires .env w/ DeepLynx creds)
 uv run pytest tests/test_agent.py::TestPrometheusAgentExecutor::test_execute_calls_enqueue_event
 uv run pytest --cov=prometheus_api --cov-report=html
 ```
 
 `pyproject.toml` sets `asyncio_mode = "auto"`, so async tests do **not** need `@pytest.mark.asyncio`. Tests in `test_integration.py` are auto-marked `integration` by `tests/conftest.py`.
+
+### Local hooks
+
+Install hooks once per checkout:
+
+```bash
+make hooks
+```
+
+The pre-commit hook runs ruff format and lint checks. The pre-push hook runs mypy and unit tests. Run all configured hooks manually with:
+
+```bash
+uv run pre-commit run --all-files
+uv run pre-commit run --all-files --hook-stage pre-push
+```
 
 ### Versioning & container builds
 
@@ -73,7 +92,9 @@ Artifact metadata produced by helpers always carries `conversation_id`, `produce
 ### Tests
 - `test_*.py` files at the top level of `tests/` are unit tests.
 - `test_integration.py` requires a `.env` with valid `DEEPLYNX_KEY`/`SECRET`/`ORG_ID`/`PROJECT_ID` and optionally `DEEPLYNX_DATA_SOURCE_ID` (without it, code that creates records will hit "DataSource with id 0 not found").
+- `tests/test_sync_async_parity.py` keeps sync and async resource handlers aligned for endpoint payloads and response parsing.
 - `make test-install` builds a wheel, installs it into a clean venv, and smoke-tests the imports.
+- `examples/verify_connection.py` is a manual DeepLynx smoke test; it is intentionally outside pytest discovery.
 
 ## Conventions
 
