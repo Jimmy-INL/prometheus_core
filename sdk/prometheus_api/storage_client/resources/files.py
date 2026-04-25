@@ -10,10 +10,7 @@ class FilesResource(BaseResource):
     """Handles operations related to file storage and retrieval."""
 
     def upload(
-        self,
-        file_path: Path,
-        name: Optional[str] = None,
-        description: Optional[str] = None
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
     ) -> FileMetadata:
         """Upload a file to storage.
 
@@ -47,10 +44,7 @@ class FilesResource(BaseResource):
                 data["description"] = description
 
             response = self._client._request(
-                "POST",
-                f"{self._base_path}/files",
-                files=files,
-                data=data
+                "POST", f"{self._base_path}/files", files=files, data=data
             )
 
         return self._parse_file_metadata(response.json())
@@ -60,7 +54,7 @@ class FilesResource(BaseResource):
         file_path: Path,
         chunk_size: int = 5 * 1024 * 1024,  # 5MB default
         name: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> FileMetadata:
         """Upload a large file in chunks.
 
@@ -100,10 +94,7 @@ class FilesResource(BaseResource):
             ItemNotFoundError: If file doesn't exist
         """
         # Files are retrieved via records endpoint (they're records with file attachments)
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/records/{file_id}"
-        )
+        response = self._client._request("GET", f"{self._base_path}/records/{file_id}")
 
         return self._parse_file_metadata(response.json())
 
@@ -123,10 +114,7 @@ class FilesResource(BaseResource):
             ```
         """
         # Download using the files endpoint with record ID
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/files/{file_id}"
-        )
+        response = self._client._request("GET", f"{self._base_path}/files/{file_id}")
 
         # Write file content
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -142,10 +130,7 @@ class FilesResource(BaseResource):
         Raises:
             ItemNotFoundError: If file doesn't exist
         """
-        self._client._request(
-            "DELETE",
-            f"{self._base_path}/files/{file_id}"
-        )
+        self._client._request("DELETE", f"{self._base_path}/files/{file_id}")
 
     def _parse_file_metadata(self, data: dict) -> FileMetadata:
         """Parse API response data into FileMetadata model.

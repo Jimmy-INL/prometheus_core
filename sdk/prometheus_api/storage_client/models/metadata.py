@@ -11,6 +11,4 @@ class MetadataField(BaseModel):
     value: Any = Field(..., description="Field value")
     type: Optional[str] = Field(None, description="Field type (e.g., 'string', 'number', 'date')")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

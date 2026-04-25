@@ -25,10 +25,7 @@ class ChunkedUploader:
         self.chunk_size = chunk_size
 
     def upload(
-        self,
-        file_path: Path,
-        name: Optional[str] = None,
-        description: Optional[str] = None
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
     ) -> FileMetadata:
         """Upload a file in chunks.
 
@@ -88,11 +85,12 @@ class ChunkedUploader:
                 "file_name": file_name,
                 "file_size": file_size,
                 "chunk_size": self.chunk_size,
-            }
+            },
         )
 
         data = response.json()
-        return data.get("upload_id", str(uuid.uuid4()))
+        upload_id = data.get("upload_id") if isinstance(data, dict) else None
+        return str(upload_id or uuid.uuid4())
 
     def _upload_chunk(self, upload_id: str, chunk_num: int, chunk_data: bytes) -> None:
         """Upload a single chunk.
@@ -111,15 +109,11 @@ class ChunkedUploader:
             data={
                 "upload_id": upload_id,
                 "chunk_number": chunk_num,
-            }
+            },
         )
 
     def _complete_upload(
-        self,
-        upload_id: str,
-        file_name: str,
-        description: Optional[str],
-        total_chunks: int
+        self, upload_id: str, file_name: str, description: Optional[str], total_chunks: int
     ) -> FileMetadata:
         """Complete the chunked upload.
 
@@ -142,9 +136,7 @@ class ChunkedUploader:
             payload["description"] = description
 
         response = self.client._request(
-            "POST",
-            f"{self.client.files._base_path}/files/upload/complete",
-            json=payload
+            "POST", f"{self.client.files._base_path}/files/upload/complete", json=payload
         )
 
         return self.client.files._parse_file_metadata(response.json())
@@ -155,10 +147,7 @@ class ChunkedUploader:
         Args:
             upload_id: Upload session ID
         """
-        self.client._request(
-            "DELETE",
-            f"{self.client.files._base_path}/files/upload/{upload_id}"
-        )
+        self.client._request("DELETE", f"{self.client.files._base_path}/files/upload/{upload_id}")
 
 
 class AsyncChunkedUploader:
@@ -175,10 +164,7 @@ class AsyncChunkedUploader:
         self.chunk_size = chunk_size
 
     async def upload(
-        self,
-        file_path: Path,
-        name: Optional[str] = None,
-        description: Optional[str] = None
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
     ) -> FileMetadata:
         """Upload a file in chunks asynchronously.
 
@@ -238,11 +224,12 @@ class AsyncChunkedUploader:
                 "file_name": file_name,
                 "file_size": file_size,
                 "chunk_size": self.chunk_size,
-            }
+            },
         )
 
         data = response.json()
-        return data.get("upload_id", str(uuid.uuid4()))
+        upload_id = data.get("upload_id") if isinstance(data, dict) else None
+        return str(upload_id or uuid.uuid4())
 
     async def _upload_chunk(self, upload_id: str, chunk_num: int, chunk_data: bytes) -> None:
         """Upload a single chunk.
@@ -261,15 +248,11 @@ class AsyncChunkedUploader:
             data={
                 "upload_id": upload_id,
                 "chunk_number": chunk_num,
-            }
+            },
         )
 
     async def _complete_upload(
-        self,
-        upload_id: str,
-        file_name: str,
-        description: Optional[str],
-        total_chunks: int
+        self, upload_id: str, file_name: str, description: Optional[str], total_chunks: int
     ) -> FileMetadata:
         """Complete the chunked upload.
 
@@ -292,9 +275,7 @@ class AsyncChunkedUploader:
             payload["description"] = description
 
         response = await self.client._request(
-            "POST",
-            f"{self.client.files._base_path}/files/upload/complete",
-            json=payload
+            "POST", f"{self.client.files._base_path}/files/upload/complete", json=payload
         )
 
         return self.client.files._parse_file_metadata(response.json())
@@ -306,6 +287,5 @@ class AsyncChunkedUploader:
             upload_id: Upload session ID
         """
         await self.client._request(
-            "DELETE",
-            f"{self.client.files._base_path}/files/upload/{upload_id}"
+            "DELETE", f"{self.client.files._base_path}/files/upload/{upload_id}"
         )

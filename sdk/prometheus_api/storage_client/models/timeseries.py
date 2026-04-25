@@ -11,9 +11,7 @@ class TimeseriesQuery(BaseModel):
     sql_query: str = Field(..., description="SQL query to execute")
     file_type: Optional[str] = Field(default="json", description="Output format (json, csv, etc.)")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class TimeseriesResult(BaseModel):
@@ -22,6 +20,4 @@ class TimeseriesResult(BaseModel):
     data: Any = Field(..., description="Query result data")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Query metadata")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

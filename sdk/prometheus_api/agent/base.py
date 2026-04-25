@@ -11,7 +11,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
-from typing import AsyncIterator, Dict, Any, Optional, List
+from typing import AsyncIterator, Dict, Any, Optional, List, cast
 from datetime import datetime, timezone
 from pathlib import Path
 from starlette.responses import JSONResponse
@@ -29,8 +29,10 @@ from a2a.types import (
     Artifact,
     DataPart,
     FilePart,
+    FileWithUri,
     Message,
     Part,
+    Role,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
@@ -73,6 +75,16 @@ def _build_artifact_metadata(
     }
     metadata.update(dict(extra or {}))
     return metadata
+
+
+def _context_task_id(context: RequestContext) -> str:
+    """Return a non-null task ID for A2A event models."""
+    return str(getattr(context, "task_id", "") or "")
+
+
+def _context_id(context: RequestContext) -> str:
+    """Return a non-null context ID for A2A event models."""
+    return str(getattr(context, "context_id", "") or "")
 
 
 class _TrackedEventQueue:
@@ -137,9 +149,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         self.agent_name = agent_name
         logger.info(f"Initialized {agent_name}")
 
-    async def execute(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
         Execute the agent task.
 
@@ -171,7 +181,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             )
 
             # Perform the main analysis (implemented by subclass)
-            result = await self._execute(params, context, tracked_queue)
+            result = await self._execute(params, context, cast(EventQueue, tracked_queue))
 
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
@@ -206,27 +216,29 @@ class PrometheusAgentExecutor(AgentExecutor):
     async def _emit_status(
         self,
         context: RequestContext,
-        event_queue: EventQueue,
+        event_queue: Any,
         state: TaskState,
         final: bool,
         message: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a task status update event with optional human-readable message."""
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         status_message = None
         if message:
             status_message = Message(
-                messageId=str(uuid.uuid4()),
-                role="agent",
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
                 parts=[Part(root=TextPart(text=message))],
-                contextId=context.context_id,
-                taskId=context.task_id,
+                context_id=context_id,
+                task_id=task_id,
             )
 
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 final=final,
                 status=TaskStatus(state=state, message=status_message),
                 metadata=metadata,
@@ -319,9 +331,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             "This is where your agent's core logic should go."
         )
 
-    async def cancel(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
         Handle task cancellation.
 
@@ -330,10 +340,12 @@ class PrometheusAgentExecutor(AgentExecutor):
             event_queue: Queue for sending status updates
         """
         logger.info(f"Cancellation requested for {self.agent_name}")
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 final=True,
                 status=TaskStatus(state=TaskState.canceled),
             )
@@ -370,11 +382,7 @@ class PrometheusAgent:
         ```
     """
 
-    def __init__(
-        self,
-        agent_name: str = "Agent",
-        agent_card_path: Optional[str] = None
-    ):
+    def __init__(self, agent_name: str = "Agent", agent_card_path: Optional[str] = None):
         """
         Initialize the Prometheus agent.
 
@@ -386,9 +394,9 @@ class PrometheusAgent:
         self.agent_card_path = agent_card_path or "agent_card.json"
 
         # Will be set during initialization
-        self.agent_card = None
-        self.agent_card_dict = None  # Raw dict for registry registration
-        self.executor = None
+        self.agent_card: Optional[AgentCard] = None
+        self.agent_card_dict: Optional[Dict[str, Any]] = None  # Raw dict for registry registration
+        self.executor: Optional[PrometheusAgentExecutor] = None
         self.artifact_registry = ArtifactRegistry()
         self.context_state_store = ContextStateStore()
 
@@ -436,11 +444,15 @@ class PrometheusAgent:
         """
         if not pending_subagent_requests:
             return default
-        entries = pending_subagent_requests if isinstance(pending_subagent_requests, list) else [pending_subagent_requests]
+        entries = (
+            pending_subagent_requests
+            if isinstance(pending_subagent_requests, list)
+            else [pending_subagent_requests]
+        )
         for entry in entries:
             hint = (entry or {}).get("hint")
             if hint:
-                return hint
+                return str(hint)
         return default
 
     async def send_input_required(
@@ -454,19 +466,27 @@ class PrometheusAgent:
     ) -> None:
         """Emit a canonical final INPUT_REQUIRED status message."""
         payload = build_input_required_payload(missing_inputs, hint=hint)
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 final=True,
                 status=TaskStatus(
                     state=TaskState.input_required,
                     message=Message(
-                        messageId=str(uuid.uuid4()),
-                        role="agent",
-                        parts=[Part(root=DataPart(data=payload, metadata={"mime_type": "application/json"}))],
-                        contextId=context.context_id,
-                        taskId=context.task_id,
+                        message_id=str(uuid.uuid4()),
+                        role=Role.agent,
+                        parts=[
+                            Part(
+                                root=DataPart(
+                                    data=payload, metadata={"mime_type": "application/json"}
+                                )
+                            )
+                        ],
+                        context_id=context_id,
+                        task_id=task_id,
                     ),
                 ),
                 metadata=metadata,
@@ -476,7 +496,7 @@ class PrometheusAgent:
     @staticmethod
     def _context_conversation_id(context: RequestContext) -> str:
         """Return the effective conversation scope key for registry operations."""
-        return str(getattr(context, "context_id", "") or "")
+        return _context_id(context)
 
     @property
     def _producer_agent_id(self) -> str:
@@ -511,12 +531,14 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a text artifact from public helper methods."""
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 artifact=Artifact(
-                    artifactId=artifact_id,
+                    artifact_id=artifact_id,
                     name=name,
                     metadata=_build_artifact_metadata(
                         context=context,
@@ -525,7 +547,7 @@ class PrometheusAgent:
                     parts=[Part(root=TextPart(text=text, metadata={"mime_type": "text/plain"}))],
                 ),
                 append=append,
-                lastChunk=last_chunk,
+                last_chunk=last_chunk,
                 metadata=metadata,
             )
         )
@@ -545,12 +567,14 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a URI-backed file artifact from public helper methods."""
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 artifact=Artifact(
-                    artifactId=artifact_id,
+                    artifact_id=artifact_id,
                     name=name,
                     description=description,
                     metadata=_build_artifact_metadata(
@@ -560,18 +584,18 @@ class PrometheusAgent:
                     parts=[
                         Part(
                             root=FilePart(
-                                file={
-                                    "uri": uri,
-                                    "mimeType": mime_type,
-                                    "name": name,
-                                },
+                                file=FileWithUri(
+                                    uri=uri,
+                                    mime_type=mime_type,
+                                    name=name,
+                                ),
                                 metadata=metadata,
                             )
                         )
                     ],
                 ),
                 append=append,
-                lastChunk=last_chunk,
+                last_chunk=last_chunk,
                 metadata=metadata,
             )
         )
@@ -617,12 +641,13 @@ class PrometheusAgent:
         if not agent_card_path.is_absolute():
             # Get the directory of the main script
             import __main__
-            if hasattr(__main__, '__file__'):
+
+            if hasattr(__main__, "__file__"):
                 script_dir = Path(__main__.__file__).parent
                 agent_card_path = script_dir / agent_card_path
 
         try:
-            with open(agent_card_path, 'r') as f:
+            with open(agent_card_path, "r") as f:
                 agent_card_dict = json.load(f)
         except FileNotFoundError:
             logger.error(f"agent_card.json not found at {agent_card_path}")
@@ -632,41 +657,41 @@ class PrometheusAgent:
             raise
 
         # Override URL with environment configuration
-        port = os.getenv('AGENT_PORT', '8000')
-        host = os.getenv('AGENT_HOST', 'localhost')
-        agent_card_dict['url'] = f"http://{host}:{port}"
+        port = os.getenv("AGENT_PORT", "8000")
+        host = os.getenv("AGENT_HOST", "localhost")
+        agent_card_dict["url"] = f"http://{host}:{port}"
 
         # Store the raw dict for registry registration
         self.agent_card_dict = agent_card_dict
 
         # Convert capabilities dict to AgentCapabilities object
-        capabilities_dict = agent_card_dict.get('capabilities', {})
+        capabilities_dict = agent_card_dict.get("capabilities", {})
         capabilities = AgentCapabilities(
-            streaming=capabilities_dict.get('streaming', False),
-            pushNotifications=capabilities_dict.get('pushNotifications', False),
+            streaming=capabilities_dict.get("streaming", False),
+            push_notifications=capabilities_dict.get("pushNotifications", False),
         )
 
         # Convert skills list to AgentSkill objects
         skills = [
             AgentSkill(
-                id=skill['id'],
-                name=skill['name'],
-                description=skill.get('description', ''),
-                tags=skill.get('tags', []),
+                id=skill["id"],
+                name=skill["name"],
+                description=skill.get("description", ""),
+                tags=skill.get("tags", []),
             )
-            for skill in agent_card_dict.get('skills', [])
+            for skill in agent_card_dict.get("skills", [])
         ]
 
         # Create the AgentCard object
         agent_card = AgentCard(
-            name=agent_card_dict['name'],
-            description=agent_card_dict['description'],
-            url=agent_card_dict['url'],
-            version=agent_card_dict.get('version', '1.0.0'),
+            name=agent_card_dict["name"],
+            description=agent_card_dict["description"],
+            url=agent_card_dict["url"],
+            version=agent_card_dict.get("version", "1.0.0"),
             capabilities=capabilities,
             skills=skills,
-            defaultInputModes=agent_card_dict.get('defaultInputModes', ['text']),
-            defaultOutputModes=agent_card_dict.get('defaultOutputModes', ['text']),
+            default_input_modes=agent_card_dict.get("defaultInputModes", ["text"]),
+            default_output_modes=agent_card_dict.get("defaultOutputModes", ["text"]),
         )
 
         logger.info(f"Loaded agent card: {agent_card.name} v{agent_card.version}")
@@ -697,7 +722,7 @@ class PrometheusAgent:
 
         # Use the raw agent_card dict so any Prometheus-specific routing or
         # usage metadata is preserved in LiteLLM.
-        agent_card_params = getattr(self, 'agent_card_dict', None) or agent_card.model_dump()
+        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
 
         try:
             with httpx.Client(timeout=15.0, headers=headers) as client:
@@ -813,20 +838,22 @@ class PrometheusAgent:
 
         This helper is optional and does not change `_execute` signature.
         """
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         status_message = None
         if message:
             status_message = Message(
-                messageId=str(uuid.uuid4()),
-                role="agent",
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
                 parts=[Part(root=TextPart(text=message))],
-                contextId=context.context_id,
-                taskId=context.task_id,
+                context_id=context_id,
+                task_id=task_id,
             )
 
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 final=final,
                 status=TaskStatus(state=state, message=status_message),
                 metadata=metadata,
@@ -880,12 +907,14 @@ class PrometheusAgent:
         part_metadata = {"mime_type": "application/json", **dict(metadata or {})}
         if json_type:
             part_metadata["json_type"] = json_type
+        task_id = _context_task_id(context)
+        context_id = _context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 artifact=Artifact(
-                    artifactId=artifact_id,
+                    artifact_id=artifact_id,
                     name=name,
                     description=description,
                     metadata=_build_artifact_metadata(
@@ -902,7 +931,7 @@ class PrometheusAgent:
                     ],
                 ),
                 append=append,
-                lastChunk=last_chunk,
+                last_chunk=last_chunk,
                 metadata=metadata,
             )
         )
@@ -1005,10 +1034,12 @@ class PrometheusAgent:
             # carry artifact metadata rather than creating a separate item record.
             existing = await client.items.get(file_meta.id)
             merged_properties: Dict[str, Any] = dict(existing.properties or {})
-            merged_properties.update({
-                "mime_type": resolved_mime,
-                "file_id": file_meta.id,
-            })
+            merged_properties.update(
+                {
+                    "mime_type": resolved_mime,
+                    "file_id": file_meta.id,
+                }
+            )
             if json_type:
                 merged_properties["json_type"] = json_type
             if file_meta.uri:
@@ -1016,12 +1047,14 @@ class PrometheusAgent:
             if metadata:
                 merged_properties.update(metadata)
 
-            item = await client.items.update(
+            await client.items.update(
                 file_meta.id,
                 ItemUpdate(
                     name=name,
                     description=description,
                     properties=merged_properties,
+                    class_id=existing.class_id,
+                    original_id=existing.original_id,
                 ),
             )
             if tags:
@@ -1139,22 +1172,20 @@ class PrometheusAgent:
         logger.info(f"Starting {self.agent_name}")
 
         # Load agent card
-        self.agent_card = self.load_agent_card()
+        agent_card = self.load_agent_card()
+        self.agent_card = agent_card
 
         # Create executor
-        self.executor = self.create_executor()
+        executor = self.create_executor()
+        self.executor = executor
 
         # Create request handler
         request_handler = DefaultRequestHandler(
-            agent_executor=self.executor,
-            task_store=InMemoryTaskStore()
+            agent_executor=executor, task_store=InMemoryTaskStore()
         )
 
         # Create A2A application builder
-        builder = A2AStarletteApplication(
-            agent_card=self.agent_card,
-            http_handler=request_handler
-        )
+        builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
 
         # Build the Starlette app
         app = builder.build(lifespan=self.lifespan)
@@ -1279,15 +1310,18 @@ class PrometheusAgent:
                 params = {
                     k: v
                     for k, v in body.items()
-                    if k not in {"task_id", "context_id", "conversation_id", "include_events", "include_artifacts"}
+                    if k
+                    not in {
+                        "task_id",
+                        "context_id",
+                        "conversation_id",
+                        "include_events",
+                        "include_artifacts",
+                    }
                 }
 
             task_id = str(body.get("task_id") or uuid.uuid4())
-            context_id = str(
-                body.get("context_id")
-                or body.get("conversation_id")
-                or uuid.uuid4()
-            )
+            context_id = str(body.get("context_id") or body.get("conversation_id") or uuid.uuid4())
             include_events = bool(body.get("include_events", False))
             include_artifacts = bool(body.get("include_artifacts", True))
 
@@ -1295,7 +1329,10 @@ class PrometheusAgent:
             local_queue = CollectingEventQueue()
 
             try:
-                await self.executor.execute(local_context, local_queue)
+                await executor.execute(
+                    cast(RequestContext, local_context),
+                    cast(EventQueue, local_queue),
+                )
             except Exception as e:
                 error_response = {
                     "ok": False,
@@ -1324,9 +1361,7 @@ class PrometheusAgent:
             if include_events:
                 response_payload["events"] = serialize_events(local_queue.events)
             if include_artifacts:
-                artifact_refs = [
-                    ref.to_dict() for ref in self.list_artifact_references(context_id)
-                ]
+                artifact_refs = [ref.to_dict() for ref in self.list_artifact_references(context_id)]
                 response_payload["artifacts"] = artifact_refs
                 response_payload["artifact_lookup"] = {
                     ref.get("name"): ref.get("artifact_id")
@@ -1364,29 +1399,43 @@ class PrometheusAgent:
 
         # Add Bearer token authentication middleware
         agent_secret = os.getenv("AGENT_SECRET")
-        agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
+        agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in [
+            "true",
+            "1",
+            "yes",
+        ]
 
         if agent_secret or agent_secret_required:
-            app.add_middleware(BearerTokenMiddleware, secret=agent_secret, required=agent_secret_required)
+            app.add_middleware(
+                BearerTokenMiddleware,
+                secret=agent_secret,
+                required=agent_secret_required,
+            )
             if agent_secret:
                 logger.info("Bearer token authentication enabled")
             else:
-                logger.warning("AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled")
+                logger.warning(
+                    "AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled"
+                )
         else:
             logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
 
         # Register with registry
-        self.register_with_registry(self.agent_card)
+        self.register_with_registry(agent_card)
 
         # Start HTTP server
         if port is None:
             port = int(os.getenv("AGENT_PORT", "8000"))
 
         # Configure tracing if tracing is enabled
-        tracing = os.getenv("ENABLE_MLFLOW_TRACING", 'False').lower() in ('true', '1', 'yes')
+        tracing = os.getenv("ENABLE_MLFLOW_TRACING", "False").lower() in ("true", "1", "yes")
         if tracing:
             logger.info("MLFlow Tracing enabled")
-            from prometheus_api.agent.mlflow_tracing import MLFlowTracingMiddleware, A2APayloadTracingMiddleware
+            from prometheus_api.agent.mlflow_tracing import (
+                MLFlowTracingMiddleware,
+                A2APayloadTracingMiddleware,
+            )
+
             app.add_middleware(A2APayloadTracingMiddleware, max_body_bytes=8192)
             app.add_middleware(MLFlowTracingMiddleware, agent_name=self.agent_name)
 

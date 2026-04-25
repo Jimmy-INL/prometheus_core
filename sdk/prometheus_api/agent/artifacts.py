@@ -77,10 +77,7 @@ class ArtifactReference:
     def from_dict(cls, payload: Dict[str, Any]) -> "ArtifactReference":
         """Parse the normalized internal catalog shape used by Prometheus."""
         return cls(
-            artifact_id=str(
-                payload.get("artifact_id")
-                or uuid.uuid4()
-            ),
+            artifact_id=str(payload.get("artifact_id") or uuid.uuid4()),
             conversation_id=str(payload.get("conversation_id") or ""),
             name=str(payload.get("name") or ""),
             description=str(payload.get("description") or ""),
@@ -110,34 +107,18 @@ class ArtifactReference:
             return None
 
         artifact_metadata = dict(payload.get("metadata") or {})
-        created_at = str(
-            artifact_metadata.get("created_at")
-            or _utc_now_iso()
-        )
+        created_at = str(artifact_metadata.get("created_at") or _utc_now_iso())
         normalized_conversation_id = str(
-            conversation_id
-            or artifact_metadata.get("conversation_id")
-            or ""
+            conversation_id or artifact_metadata.get("conversation_id") or ""
         )
-        normalized_producer = (
-            artifact_metadata.get("producer_agent_id")
-            or producer_agent_id
-        )
+        normalized_producer = artifact_metadata.get("producer_agent_id") or producer_agent_id
         normalized_tags = [
-            str(tag)
-            for tag in (artifact_metadata.get("tags") or [])
-            if tag is not None
+            str(tag) for tag in (artifact_metadata.get("tags") or []) if tag is not None
         ]
         name = str(payload.get("name") or "").strip()
         description = str(payload.get("description") or "").strip()
-        artifact_id = str(
-            payload.get("artifact_id")
-            or payload.get("artifactId")
-            or uuid.uuid4()
-        )
-        size_bytes = _coerce_int(
-            artifact_metadata.get("size_bytes")
-        )
+        artifact_id = str(payload.get("artifact_id") or payload.get("artifactId") or uuid.uuid4())
+        size_bytes = _coerce_int(artifact_metadata.get("size_bytes"))
 
         parts = payload.get("parts") or []
         primary_part = parts[0] if parts else None
@@ -168,10 +149,7 @@ class ArtifactReference:
             )
 
         if part_kind == "data":
-            mime_type = (
-                part_metadata.get("mime_type")
-                or "application/json"
-            )
+            mime_type = part_metadata.get("mime_type") or "application/json"
             return cls(
                 artifact_id=artifact_id,
                 conversation_id=normalized_conversation_id,
@@ -179,9 +157,7 @@ class ArtifactReference:
                 description=description,
                 uri=None,
                 mime_type=mime_type,
-                json_type=(
-                    part_metadata.get("json_type")
-                ),
+                json_type=(part_metadata.get("json_type")),
                 json_body=primary_part.get("data"),
                 size_bytes=size_bytes,
                 producer_agent_id=normalized_producer,
@@ -215,10 +191,7 @@ class ArtifactReference:
         if not isinstance(payload, dict):
             return None
 
-        if not (
-            payload.get("uri")
-            or payload.get("json_body") is not None
-        ):
+        if not (payload.get("uri") or payload.get("json_body") is not None):
             return None
 
         reference = cls.from_dict(payload)
@@ -305,9 +278,7 @@ class ArtifactRegistry:
             return None
         try:
             self._redis = redis.Redis.from_url(
-                self.redis_url,
-                password=self.redis_password,
-                decode_responses=True
+                self.redis_url, password=self.redis_password, decode_responses=True
             )
             # Light ping once to fail fast on unreachable endpoints.
             self._redis.ping()
@@ -348,7 +319,9 @@ class ArtifactRegistry:
         client = self.redis_client
         if client is not None:
             try:
-                client.hset(self._hash_key(conversation_id), artifact_id, json.dumps(payload, default=str))
+                client.hset(
+                    self._hash_key(conversation_id), artifact_id, json.dumps(payload, default=str)
+                )
                 client.zadd(
                     self._order_key(conversation_id),
                     {artifact_id: self._timestamp_score(reference.created_at)},
@@ -365,7 +338,9 @@ class ArtifactRegistry:
             conv_store = self._memory_store.setdefault(conversation_id, {})
             conv_store[artifact_id] = payload
             if normalized_name:
-                self._memory_name_to_id.setdefault(conversation_id, {})[normalized_name] = artifact_id
+                self._memory_name_to_id.setdefault(conversation_id, {})[normalized_name] = (
+                    artifact_id
+                )
         return reference
 
     def resolve_by_id(self, conversation_id: str, artifact_id: str) -> Optional[ArtifactReference]:
@@ -390,7 +365,9 @@ class ArtifactRegistry:
                 return ArtifactReference.from_dict(raw)
         return None
 
-    def resolve_by_name(self, conversation_id: str, name_or_alias: str) -> Optional[ArtifactReference]:
+    def resolve_by_name(
+        self, conversation_id: str, name_or_alias: str
+    ) -> Optional[ArtifactReference]:
         """Resolve a reference by human name within one conversation."""
         conversation_id = str(conversation_id or "").strip()
         normalized_name = _normalize_name(name_or_alias)
@@ -429,7 +406,9 @@ class ArtifactRegistry:
         if client is not None:
             try:
                 if effective_limit:
-                    artifact_ids = client.zrevrange(self._order_key(conversation_id), 0, effective_limit - 1)
+                    artifact_ids = client.zrevrange(
+                        self._order_key(conversation_id), 0, effective_limit - 1
+                    )
                 else:
                     artifact_ids = client.zrevrange(self._order_key(conversation_id), 0, -1)
                 if artifact_ids:

@@ -46,9 +46,7 @@ class ContextStateStore:
             return None
         try:
             self._redis = redis.Redis.from_url(
-                self.redis_url,
-                password=self.redis_password,
-                decode_responses=True
+                self.redis_url, password=self.redis_password, decode_responses=True
             )
             self._redis.ping()
             return self._redis
@@ -89,7 +87,11 @@ class ContextStateStore:
         client = self.redis_client
         if client is not None:
             try:
-                client.set(self._key(agent_id, context_id), json.dumps(payload, default=str), ex=self.ttl_seconds)
+                client.set(
+                    self._key(agent_id, context_id),
+                    json.dumps(payload, default=str),
+                    ex=self.ttl_seconds,
+                )
                 return
             except Exception:
                 pass

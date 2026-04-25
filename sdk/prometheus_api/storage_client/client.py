@@ -117,12 +117,7 @@ class StorageClient:
             self._timeseries = TimeseriesResource(self)
         return self._timeseries
 
-    def _request(
-        self,
-        method: str,
-        path: str,
-        **kwargs
-    ) -> httpx.Response:
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         """Make an HTTP request with authentication and error handling.
 
         Args:
@@ -167,7 +162,9 @@ class StorageClient:
                 last_error = e
                 if attempt < self.config.max_retries:
                     continue
-                raise StorageClientError(f"Request failed after {self.config.max_retries} retries: {e}")
+                raise StorageClientError(
+                    f"Request failed after {self.config.max_retries} retries: {e}"
+                )
 
             except Exception as e:
                 raise StorageClientError(f"Request failed: {e}")
@@ -197,8 +194,7 @@ class StorageClient:
         # Fetch default data source from API
         try:
             response = self._request(
-                "GET",
-                f"/projects/{self.config.project_id}/datasources/default"
+                "GET", f"/projects/{self.config.project_id}/datasources/default"
             )
             data = response.json()
             self._default_data_source_id = data.get("id")
@@ -240,10 +236,7 @@ class StorageClient:
         if status_code == 401:
             raise AuthenticationError(error_message)
         elif status_code == 404:
-            raise ItemNotFoundError(
-                item_id=data.get("id", "unknown"),
-                message=error_message
-            )
+            raise ItemNotFoundError(item_id=data.get("id", "unknown"), message=error_message)
         elif 400 <= status_code < 500:
             raise ValidationError(error_message, details=data)
         else:

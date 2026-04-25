@@ -9,10 +9,7 @@ class TimeseriesResource(BaseResource):
     """Handles operations related to timeseries data."""
 
     def upload(
-        self,
-        file_path: Path,
-        data_source_id: int,
-        description: Optional[str] = None
+        self, file_path: Path, data_source_id: int, description: Optional[str] = None
     ) -> Dict[str, Any]:
         """Upload timeseries data from a file.
 
@@ -46,17 +43,13 @@ class TimeseriesResource(BaseResource):
                 "POST",
                 f"{self._base_path}/datasources/{data_source_id}/timeseries",
                 files=files,
-                data=data
+                data=data,
             )
 
-        return response.json()
+        data = response.json()
+        return data if isinstance(data, dict) else {"result": data}
 
-    def query(
-        self,
-        data_source_id: int,
-        sql_query: str,
-        file_type: str = "json"
-    ) -> Dict[str, Any]:
+    def query(self, data_source_id: int, sql_query: str, file_type: str = "json") -> Dict[str, Any]:
         """Query timeseries data using SQL.
 
         Args:
@@ -82,9 +75,8 @@ class TimeseriesResource(BaseResource):
         }
 
         response = self._client._request(
-            "POST",
-            f"{self._base_path}/datasources/{data_source_id}/timeseries/query",
-            json=payload
+            "POST", f"{self._base_path}/datasources/{data_source_id}/timeseries/query", json=payload
         )
 
-        return response.json()
+        data = response.json()
+        return data if isinstance(data, dict) else {"result": data}

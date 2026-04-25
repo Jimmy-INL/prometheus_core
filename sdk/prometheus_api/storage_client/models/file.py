@@ -18,9 +18,7 @@ class FileMetadata(BaseModel):
     created_at: Optional[datetime] = Field(None, description="Upload timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class FileUpload(BaseModel):
@@ -40,9 +38,7 @@ class FileUpload(BaseModel):
             raise ValueError(f"Path is not a file: {v}")
         return v
 
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class ChunkedUploadSession(BaseModel):
@@ -53,6 +49,4 @@ class ChunkedUploadSession(BaseModel):
     total_chunks: int = Field(..., description="Total number of chunks")
     chunks_uploaded: int = Field(default=0, description="Number of chunks uploaded so far")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

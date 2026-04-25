@@ -25,7 +25,9 @@ class AsyncTagsResource(AsyncBaseResource):
         if not normalized:
             raise ValueError("Tag name must be non-empty")
 
-        response = await self._client._request("POST", self._project_path, json={"name": normalized})
+        response = await self._client._request(
+            "POST", self._project_path, json={"name": normalized}
+        )
         data = response.json()
         record = data if (isinstance(data, dict) and data.get("id")) else data.get("value", data)
         return TagModel(**record)

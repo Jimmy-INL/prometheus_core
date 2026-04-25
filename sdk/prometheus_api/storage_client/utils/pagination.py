@@ -6,9 +6,7 @@ T = TypeVar("T")
 
 
 def paginate_iterator(
-    fetch_page: Callable[[int, int], List[T]],
-    page_size: int = 100,
-    start_page: int = 1
+    fetch_page: Callable[[int, int], List[T]], page_size: int = 100, start_page: int = 1
 ) -> Iterator[T]:
     """Helper to iterate over paginated results.
 

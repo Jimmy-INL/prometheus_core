@@ -29,6 +29,4 @@ class Page(BaseModel, Generic[T]):
     items: List[T] = Field(..., description="List of items in the current page")
     page_info: PageInfo = Field(..., description="Pagination information")
 
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
+    model_config = {"arbitrary_types_allowed": True}
