@@ -972,8 +972,8 @@ tracing = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", specifier = ">=0.3.0" },
-    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'agent'", specifier = ">=0.3.0" },
+    { name = "a2a-sdk", specifier = ">=0.3.23,<0.4" },
+    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'agent'", specifier = ">=0.3.23,<0.4" },
     { name = "fsspec", specifier = ">=2026.2.0" },
     { name = "httpx", specifier = ">=0.24.0" },
     { name = "httpx", marker = "extra == 'agent'", specifier = ">=0.26.0" },
@@ -989,7 +989,7 @@ provides-extras = ["agent"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.0" },
+    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.23,<0.4" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
     { name = "pytest", specifier = ">=7.0.0" },

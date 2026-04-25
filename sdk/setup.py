@@ -24,17 +24,20 @@ setup(
     ],
     python_requires=">=3.12",
     install_requires=[
+        "a2a-sdk>=0.3.23,<0.4",
         "httpx>=0.24.0",
         "pydantic>=2.0.0",
         "python-dateutil>=2.8.0",
         "python-dotenv>=1.0.0",
+        "starlette>=0.35.0",
+        "uvicorn>=0.25.0",
     ],
     extras_require={
         "agent": [
             "starlette>=0.27.0",
             "uvicorn[standard]>=0.27.0",
             "httpx>=0.26.0",
-            "a2a-sdk[http-server]>=0.3.23,<1",
+            "a2a-sdk[http-server]>=0.3.23,<0.4",
         ],
         "dev": [
             "pytest>=7.0.0",
