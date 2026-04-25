@@ -445,17 +445,17 @@ All backend-specific terminology and identifiers are hidden from the public API,
 
 ```bash
 uv sync
-uv run pytest tests/
+make test
 ```
 
 ### Code Quality
 
 ```bash
 # Format code
-uv run ruff format prometheus_api/
+uv run ruff format .
 
 # Lint
-uv run ruff check prometheus_api/
+uv run ruff check .
 
 # Type checking
 uv run mypy prometheus_api/
