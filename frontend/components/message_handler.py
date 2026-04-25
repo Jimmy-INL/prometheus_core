@@ -375,7 +375,7 @@ async def render_artifacts(
         if artifact.get("name") == "conversation_message":
             continue
 
-        uri = artifact.get("uri", "")
+        uri = artifact.get("uri") or ""
         name = artifact.get("name", "Artifact")
         mime_type = (artifact.get("mime_type") or "").lower()
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
