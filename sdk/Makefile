@@ -41,7 +41,7 @@ endif
 ##@ Checks
 ##@
 
-.PHONY: lint format typecheck check fix test
+.PHONY: lint format typecheck check fix test test-unit test-integration test-all hooks
 
 lint: ##@ Run ruff linter (report only)
 	uv run ruff check .
@@ -52,7 +52,16 @@ format: ##@ Run ruff formatter (report only)
 typecheck: ##@ Run mypy type checker
 	uv run mypy prometheus_api/
 
-test: ##@ Run unit tests
+test: ##@ Run unit tests (default test target)
+test: test-unit
+
+test-unit: ##@ Run unit tests without integration tests
+	uv run pytest -m "not integration"
+
+test-integration: ##@ Run integration tests (requires .env with DeepLynx credentials)
+	uv run pytest -m integration
+
+test-all: ##@ Run all tests, including integration tests
 	uv run pytest
 
 fix: ##@ Auto-fix ruff lint issues and format
@@ -61,6 +70,9 @@ fix: ##@ Auto-fix ruff lint issues and format
 
 check: ##@ Run all checks (lint + format + typecheck)
 check: lint format typecheck
+
+hooks: ##@ Install pre-commit and pre-push hooks
+	uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 
 .PHONY: test-install
 test-install: ##@ Verify package installs and imports correctly in a clean venv
