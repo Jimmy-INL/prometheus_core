@@ -77,7 +77,7 @@ Artifact metadata produced by helpers always carries `conversation_id`, `produce
 
 ## Conventions
 
-- **Python ≥ 3.12** is hard-required (`requires-python` and `target-version` in ruff/black/mypy).
-- Line length is **100** (ruff + black). `examples/` is excluded from ruff and mypy.
+- **Python ≥ 3.12** is hard-required (`requires-python` and `target-version` in ruff/mypy).
+- Line length is **100** (ruff). `examples/` is excluded from ruff and mypy.
 - Use the Makefile targets rather than running `pytest`/`ruff`/`mypy` directly, so dev tooling stays in sync with `uv.lock`.
 - Container images target both `linux/amd64` and `linux/arm64`; the Dockerfile installs the package with the `[tracing]` extra and concatenates any `certs/*.pem` into the system CA bundle.

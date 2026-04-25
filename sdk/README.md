@@ -11,17 +11,11 @@ A Python toolkit for building data-driven applications with storage operations a
 
 ## Installation
 
-```bash
-# Basic installation (StorageClient only)
-pip install -e .
+See [INSTALL.md](INSTALL.md) for full options. Quick paths:
 
-# With agent support
-pip install -e ".[agent]"
-
-# Or from git
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git"
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
-```
+- **Runtime:** `docker pull mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest`
+- **As a library:** `pip install git+https://github.inl.gov/genesis/prometheus_api.git`
+- **For development:** `git clone … && cd prometheus_api && uv sync` (then `make check`, `make test`)
 
 ## Quick Start - StorageClient
 
@@ -104,6 +98,8 @@ if __name__ == "__main__":
 | [Environment Setup](docs/ENV_SETUP.md) | Environment variables for both components |
 | [Testing Guide](docs/TESTING.md) | Running and writing tests |
 | [Installation Guide](INSTALL.md) | Detailed installation options |
+| [Development Guide](DEVELOPMENT.md) | Architecture, commands, and conventions |
+| [HPC Notes](docs/hpc.md) | INL HPC: podman + CA bundle, SSL workarounds |
 
 ## Features
 
@@ -137,21 +133,17 @@ See the `examples/` directory for working code:
 - `file_operations.py` - File upload/download
 - `bulk_operations.py` - Bulk operations
 - `agent_patterns.py` - PrometheusAgent status, artifacts, input requests, and stateful resume
+- `env_config_usage.py` - Loading `ConnectionConfig` from `.env`
+- `list_datasources.py` - Print available DeepLynx data source IDs for your project
 
 ## Development
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) and [INSTALL.md](INSTALL.md#development) for setup. The common loop is:
+
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/
-
-# Lint
-ruff check .
-
-# Format code
-ruff format .
+make check    # ruff + mypy
+make test     # pytest (unit only)
+make fix      # auto-fix lint and format
 ```
 
 ## License

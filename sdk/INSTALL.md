@@ -1,236 +1,77 @@
-# Installation Guide
+# Installation
 
-## Install from Git Repository
+There are three supported ways to use `prometheus-api`, in order of preference:
 
-### Basic Installation
+1. **[Container](#container-recommended)** — pull a published image and run it. Easiest path; no Python toolchain required.
+2. **[Library](#library)** — install the package into your own Python environment.
+3. **[Development checkout](#development)** — clone the repo and use `uv` to work on `prometheus-api` itself.
+
+> Running on INL's HPC and need CA-bundle / podman details? See [docs/hpc.md](docs/hpc.md).
+
+---
+
+## Container (recommended)
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to INL's MooseHarbor registry:
+
+```bash
+docker pull mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest
+```
+
+You can substitute `latest` with a specific git short-SHA tag (see `make build-push` output, or browse MooseHarbor) for reproducible builds.
+
+Run the image, mounting a `.env` based on `.env.example` so DeepLynx credentials are available:
+
+```bash
+docker run -it --rm \
+  --env-file .env \
+  mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest /bin/bash
+```
+
+---
+
+## Library
+
+Install from the git repository into your own venv. Use `pip` or `uv pip`:
 
 ```bash
 pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
-### Install with Agent Support
+To pin to a specific branch, tag, or commit:
 
 ```bash
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
+pip install git+https://github.inl.gov/genesis/prometheus_api.git@<ref>
 ```
 
-### Install Specific Version/Branch
+To opt into OpenTelemetry tracing, install the `[tracing]` extra:
 
 ```bash
-# Install from a specific branch
-pip install git+https://github.inl.gov/genesis/prometheus_api.git@main
-
-# Install from a specific commit
-pip install git+https://github.inl.gov/genesis/prometheus_api.git@475268d
-
-# Install from a specific tag (when available)
-pip install git+https://github.inl.gov/genesis/prometheus_api.git@v0.1.0
+pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[tracing]"
 ```
 
-### Install in Editable Mode (for Development)
+After installing, sanity-check the import:
 
 ```bash
-# Clone the repository first
+python -c "from prometheus_api.storage_client import StorageClient; from prometheus_api.agent import PrometheusAgent; print('ok')"
+```
+
+Then copy `.env.example` to `.env` and fill in your DeepLynx credentials (see `README.md` for the variable reference).
+
+---
+
+## Development
+
+The project is `uv`-managed. To work on `prometheus-api` itself:
+
+```bash
 git clone https://github.inl.gov/genesis/prometheus_api.git
 cd prometheus_api
-
-# Install in editable mode
-pip install -e .
-
-# Or with dev dependencies
-pip install -e ".[dev]"
+uv sync
+make check    # ruff + mypy
+make test     # pytest (unit only; integration tests need .env)
 ```
 
-## Using in requirements.txt
+`uv sync` creates `.venv/` and installs everything from `uv.lock`, including the `dev` dependency group. Run any tool through `uv run` (e.g., `uv run pytest tests/test_models.py`) or use the Makefile targets.
 
-Add to your project's `requirements.txt`:
-
-```
-# Direct installation
-git+https://github.inl.gov/genesis/prometheus_api.git
-
-# Or with version/branch
-git+https://github.inl.gov/genesis/prometheus_api.git@main
-
-# Or with extras
-git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]
-```
-
-## Using in pyproject.toml
-
-For projects using `pyproject.toml`:
-
-```toml
-[project]
-dependencies = [
-    "prometheus-api @ git+https://github.inl.gov/genesis/prometheus_api.git",
-]
-```
-
-## Using with Poetry
-
-```bash
-poetry add git+https://github.inl.gov/genesis/prometheus_api.git
-```
-
-Or in `pyproject.toml`:
-
-```toml
-[tool.poetry.dependencies]
-prometheus-api = {git = "https://github.inl.gov/genesis/prometheus_api.git"}
-```
-
-## Using with pip-tools
-
-In `requirements.in`:
-
-```
-prometheus-api @ git+https://github.inl.gov/genesis/prometheus_api.git
-```
-
-Then:
-
-```bash
-pip-compile requirements.in
-pip-sync requirements.txt
-```
-
-## Verify Installation
-
-After installation, verify it works:
-
-```python
-python -c "from prometheus_api.storage_client import StorageClient; print('OK')"
-```
-
-Or run the verification script (if cloned):
-
-```bash
-python verify_installation.py
-```
-
-## Authentication for Private Repository
-
-If the repository is private, you may need to authenticate:
-
-### Using SSH
-
-```bash
-pip install git+ssh://git@github.inl.gov/genesis/prometheus_api.git
-```
-
-### Using Personal Access Token
-
-```bash
-pip install git+https://<token>@github.inl.gov/genesis/prometheus_api.git
-```
-
-### Using Git Credential Manager
-
-Configure git credentials, then:
-
-```bash
-pip install git+https://github.inl.gov/genesis/prometheus_api.git
-```
-
-## Uninstall
-
-```bash
-pip uninstall prometheus-api
-```
-
-## Upgrade
-
-```bash
-# Upgrade to latest
-pip install --upgrade git+https://github.inl.gov/genesis/prometheus_api.git
-
-# Force reinstall
-pip install --force-reinstall git+https://github.inl.gov/genesis/prometheus_api.git
-```
-
-## Docker Installation
-
-In your `Dockerfile`:
-
-```dockerfile
-FROM python:3.12
-
-WORKDIR /app
-
-# Install prometheus-api from git
-RUN pip install git+https://github.inl.gov/genesis/prometheus_api.git
-
-# Copy your application
-COPY . .
-
-CMD ["python", "your_app.py"]
-```
-
-## Common Issues
-
-### SSL Certificate Errors
-
-```bash
-pip install --trusted-host github.inl.gov git+https://github.inl.gov/genesis/prometheus_api.git
-```
-
-### Authentication Required
-
-If you get authentication errors:
-1. Set up git credentials
-2. Use SSH instead of HTTPS
-3. Use a personal access token in the URL
-
-### Package Not Found
-
-Make sure:
-1. The repository URL is correct
-2. You have access to the repository
-3. The repository is pushed to the remote
-
-## After Installation
-
-1. **Set up credentials:**
-```bash
-cp .env.example .env
-vim .env  # Add your DeepLynx credentials
-```
-
-2. **Use the library:**
-```python
-from prometheus_api.storage_client import ConnectionConfig, StorageClient, ItemCreate
-
-config = ConnectionConfig.from_env()
-
-with StorageClient(config) as client:
-    item = client.items.create(ItemCreate(
-        name="My Item",
-        description="Description",
-        properties={"key": "value"}
-    ))
-    print(f"Created: {item.id}")
-```
-
-## Development Installation
-
-For contributors:
-
-```bash
-# Clone
-git clone https://github.inl.gov/genesis/prometheus_api.git
-cd prometheus_api
-
-# Install in editable mode with dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -v
-```
-
-## Further Reading
-
-- [README.md](README.md) - Overview and quick start
-- [StorageClient Guide](docs/storage-client/GUIDE.md) - Full StorageClient documentation
-- [PrometheusAgent Guide](docs/agent/GUIDE.md) - Full agent documentation
-- [Testing Guide](docs/TESTING.md) - Running and writing tests
+For architecture, conventions, and the full list of common commands, see [DEVELOPMENT.md](DEVELOPMENT.md).
