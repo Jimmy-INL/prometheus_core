@@ -357,14 +357,14 @@ printenv | grep AGENT
 
 ### Dockerfile
 ```dockerfile
-FROM python:3.11
+FROM python:3.12
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN python -m pip install --upgrade pip uv
 
 COPY . .
+RUN uv pip install --system .
 
 # Don't copy .env - use environment variables
 CMD ["python", "agent.py"]
@@ -418,19 +418,27 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync
 
-      - name: Run tests
+      - name: Run unit tests
+        run: make test
+
+      - name: Run integration tests
         env:
           DEEPLYNX_KEY: ${{ secrets.DEEPLYNX_KEY }}
           DEEPLYNX_SECRET: ${{ secrets.DEEPLYNX_SECRET }}
           DEEPLYNX_ORG_ID: 123
           DEEPLYNX_PROJECT_ID: 456
           AGENT_SECRET: ${{ secrets.AGENT_SECRET }}
-        run: pytest
+        run: make test-integration
 ```
 
 ---
