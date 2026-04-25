@@ -5,8 +5,10 @@ Subclass `PrometheusAgent`, implement `_execute`, return a dict. The base class 
 ## Install
 
 ```bash
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[agent]"
+pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
+
+The agent stack is included in the base package. Use the `[tracing]` extra only when you need OpenTelemetry/MLflow tracing.
 
 ## Minimal agent
 
