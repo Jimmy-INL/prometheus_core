@@ -1,6 +1,7 @@
 {
   "name": "Form Filler Agent",
   "description": "Extract structured data from text using JSON schemas. Auto-populates from context, asks for missing fields via followup questions.",
+  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -39,12 +40,8 @@
             "description": "Natural language input instead of structured followup_answers"
           }
         },
-        "required": [
-          "context",
-          "schema"
-        ]
+        "required": ["context", "schema"]
       }
     }
-  ],
-  "url": "http://localhost:8000"
+  ]
 }

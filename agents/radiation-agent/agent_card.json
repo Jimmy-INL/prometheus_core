@@ -1,6 +1,7 @@
 {
   "name": "Radiation Damage Analysis Agent",
   "description": "Specialist agent for analyzing radiation-induced damage in nuclear reactor materials. Evaluates neutron embrittlement, void swelling, irradiation creep, and transmutation effects on structural integrity.",
+  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -43,16 +44,10 @@
                 "description": "Operating pressure in MPa"
               }
             },
-            "required": [
-              "neutron_flux_n_cm2_s",
-              "operating_hours"
-            ]
+            "required": ["neutron_flux_n_cm2_s", "operating_hours"]
           }
         },
-        "required": [
-          "material_id",
-          "context"
-        ]
+        "required": ["material_id", "context"]
       }
     },
     {
@@ -75,9 +70,7 @@
             "description": "Neutron flux, operating hours, and planned service life"
           }
         },
-        "required": [
-          "material_id"
-        ]
+        "required": ["material_id"]
       }
     },
     {
@@ -100,11 +93,8 @@
             "description": "Operating temperature, neutron fluence, and material chemistry"
           }
         },
-        "required": [
-          "material_id"
-        ]
+        "required": ["material_id"]
       }
     }
-  ],
-  "url": "http://localhost:8000"
+  ]
 }

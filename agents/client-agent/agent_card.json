@@ -1,6 +1,7 @@
 {
   "name": "Nuclear Analysis Client Agent",
   "description": "Orchestrator agent that coordinates nuclear reactor material analysis workflows. Uses tool-based planning and deterministic capability execution to delegate specialized tasks and synthesize final answers.",
+  "url": "http://localhost:8000",
   "version": "2.0.0",
   "capabilities": {
     "streaming": true,
@@ -44,6 +45,5 @@
       "name": "Generate Report",
       "description": "Produce synthesis reports from specialist-agent results."
     }
-  ],
-  "url": "http://localhost:8000"
+  ]
 }

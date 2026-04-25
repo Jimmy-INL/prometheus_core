@@ -1,6 +1,7 @@
 {
   "name": "OSTI Research Agent",
   "description": "Searches the OSTI scientific papers and reports database for publications to answer specific research questions.",
+  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
@@ -23,11 +24,8 @@
             "description": "Research question to answer (e.g., 'What is the creep rate of stainless steel 316 at 400C and 15MPa?', 'What operating temperature is safe for TRISO fuel?')"
           }
         },
-        "required": [
-          "question"
-        ]
+        "required": ["question"]
       }
     }
-  ],
-  "url": "http://localhost:8000"
+  ]
 }

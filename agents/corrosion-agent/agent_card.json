@@ -1,6 +1,7 @@
 {
   "name": "Corrosion Analysis Agent",
   "description": "Specialist agent for analyzing corrosion in nuclear reactor materials. Evaluates oxidation rates, pitting corrosion, stress corrosion cracking (SCC), and general corrosion mechanisms in primary and secondary coolant systems.",
+  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -43,16 +44,10 @@
                 "description": "Coolant chemistry details (pH, dissolved oxygen, chloride, etc.)"
               }
             },
-            "required": [
-              "temperature_c",
-              "pressure_mpa"
-            ]
+            "required": ["temperature_c", "pressure_mpa"]
           }
         },
-        "required": [
-          "material_id",
-          "context"
-        ]
+        "required": ["material_id", "context"]
       }
     },
     {
@@ -91,16 +86,10 @@
                 "description": "Coolant flow rate in m/s"
               }
             },
-            "required": [
-              "temperature_c",
-              "pressure_mpa"
-            ]
+            "required": ["temperature_c", "pressure_mpa"]
           }
         },
-        "required": [
-          "material_id",
-          "context"
-        ]
+        "required": ["material_id", "context"]
       }
     },
     {
@@ -123,11 +112,8 @@
             "description": "Coating type, age, and inspection history"
           }
         },
-        "required": [
-          "material_id"
-        ]
+        "required": ["material_id"]
       }
     }
-  ],
-  "url": "http://localhost:8000"
+  ]
 }
