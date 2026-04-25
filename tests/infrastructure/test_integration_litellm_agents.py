@@ -20,12 +20,7 @@ def _default_agent_card_params(name: str, url: str) -> dict:
         "name": name,
         "description": "Integration test agent",
         "version": "1.0.0",
-        "supportedInterfaces": [
-            {
-                "protocolBinding": "JSONRPC",
-                "url": f"{url.rstrip('/')}/",
-            }
-        ],
+        "url": url,
         "capabilities": {},
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
