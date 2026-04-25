@@ -135,6 +135,7 @@ See the `examples/` directory for working code:
 - `agent_patterns.py` - PrometheusAgent status, artifacts, input requests, and stateful resume
 - `env_config_usage.py` - Loading `ConnectionConfig` from `.env`
 - `list_datasources.py` - Print available DeepLynx data source IDs for your project
+- `verify_connection.py` - Manual DeepLynx connection smoke test
 
 ## Development
 
@@ -143,6 +144,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) and [INSTALL.md](INSTALL.md#development) fo
 ```bash
 make check    # ruff + mypy
 make test     # pytest (unit only)
+make test-integration  # DeepLynx tests, requires .env
+make hooks    # install pre-commit/pre-push hooks
 make fix      # auto-fix lint and format
 ```
 
