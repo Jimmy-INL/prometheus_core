@@ -182,8 +182,10 @@ class CapabilityCache:
                         print(f"Skipping self agent in capability cache: {agent_id} ({direct_url})")
                         continue
 
-                    # Route all calls through LiteLLM: /a2a/{agent_name}
-                    agent_url = f"{LITELLM_URL}/a2a/{agent_id}"
+                    # Call specialists directly using a2a-sdk 1.0 SendMessage format.
+                    # LiteLLM's A2A proxy uses its own older SDK which would send
+                    # the deprecated message/send method to specialists.
+                    agent_url = direct_url
 
                     # LiteLLM's /v1/agents payload is a lossy summary and may omit
                     # per-skill inputSchema/approval metadata. Always fetch the

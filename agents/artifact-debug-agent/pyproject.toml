@@ -8,3 +8,6 @@ dependencies = [
     "cairosvg>=2.7.1",
     "httpx>=0.26.0",
 ]
+
+[tool.uv]
+constraint-dependencies = ["a2a-sdk>=1.0.0"]

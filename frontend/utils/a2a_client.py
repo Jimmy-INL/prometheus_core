@@ -70,25 +70,21 @@ class A2AClient:
         if workflow_id:
             payload["workflow_id"] = workflow_id
 
-        # A2A JSON-RPC envelope
+        # A2A JSON-RPC envelope (a2a-sdk 1.0 format)
         message = {
             "jsonrpc": "2.0",
             "id": request_id,
-            "method": "message/send",
+            "method": "SendMessage",
             "params": {
                 "message": {
                     "messageId": message_id,
-                    "role": "user",
+                    "role": "ROLE_USER",
+                    "contextId": conversation_id,
                     "parts": [
                         {
-                            "type": "text",
                             "text": json.dumps(payload),
                         }
                     ],
-                },
-                "configuration": {"blocking": True},
-                "context": {
-                    "conversationId": conversation_id,
                 },
             },
         }
@@ -96,6 +92,7 @@ class A2AClient:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.agent_secret}",
+            "A2A-Version": "1.0",
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -187,7 +184,7 @@ class A2AClient:
     def _parse_response(self, result: Dict[str, Any], fallback_conv_id: str) -> ConversationResponse:
         """Parse A2A JSON-RPC response into ConversationResponse.
 
-        Expects the canonical final response in result.status.message.parts[].
+        Expects the canonical final response in result.task.status.message.parts[].
         """
         a2a_result = result.get("result", {})
 
@@ -202,21 +199,18 @@ class A2AClient:
         )
 
     def _extract_from_status(self, a2a_result: Dict) -> Optional[ConversationResponse]:
-        """Extract ConversationResponse from status.message.parts."""
-        status = a2a_result.get("status", {})
+        """Extract ConversationResponse from task.status.message.parts (a2a-sdk 1.0 format)."""
+        task = a2a_result.get("task", {})
+        status = task.get("status", {})
         message = status.get("message", {})
         parts = message.get("parts", [])
 
         for part in parts:
             if not isinstance(part, dict):
                 continue
-            root = part.get("root") if isinstance(part.get("root"), dict) else None
-            part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
-            if part_kind != "text":
-                continue
             text = part.get("text")
-            if text is None and root is not None:
-                text = root.get("text", "")
+            if text is None:
+                continue
             try:
                 data = json.loads(text)
                 if isinstance(data, dict) and "status" in data:

@@ -1,12 +1,17 @@
-FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest
+# syntax=docker/dockerfile:1
+ARG PROMETHEUS_API_BASE_IMAGE_HASH=latest
+FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
 WORKDIR /app
 
-ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+ENV UV_PROJECT_ENVIRONMENT="/usr/local" \
+    UV_LINK_MODE=copy
 
-# Install dependencies
 COPY pyproject.toml /app/
-RUN uv sync --no-dev --no-install-project --inexact
+RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --no-dev --no-install-project --inexact
+
+RUN python -c "import a2a.server.routes, prometheus_api.agent"
 
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json

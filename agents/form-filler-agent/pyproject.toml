@@ -8,3 +8,6 @@ dependencies = [
     "httpx>=0.26.0",
     "redis>=5.0.0",
 ]
+
+[tool.uv]
+constraint-dependencies = ["a2a-sdk>=1.0.0"]
