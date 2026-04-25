@@ -46,6 +46,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
+    "pre-commit>=4.6.0",
 ]
 
 [project.urls]
@@ -92,3 +93,13 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 exclude = ["examples"]
+
+[[tool.mypy.overrides]]
+module = [
+    "fsspec",
+    "fsspec.*",
+    "opentelemetry",
+    "opentelemetry.*",
+    "redis",
+]
+ignore_missing_imports = true
