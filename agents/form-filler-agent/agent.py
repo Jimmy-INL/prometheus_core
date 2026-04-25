@@ -22,7 +22,6 @@ from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
 
 # Add shared directory to path
 sys.path.insert(0, "/app")
@@ -448,14 +447,7 @@ Return ONLY the JSON object, no explanation:"""
             }
 
         # Send status update
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=a2a_context.task_id,
-                contextId=a2a_context.context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working),
-            )
-        )
+        await self.send_status_update(context=a2a_context, event_queue=event_queue)
 
         # Get or create state
         state = self.get_state(conversation_id)

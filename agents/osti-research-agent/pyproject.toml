@@ -13,3 +13,4 @@ dependencies = [
     "lxml>=4.9.0",
     "pymupdf>=1.23.0",
 ]
+

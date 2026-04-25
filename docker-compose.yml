@@ -12,10 +12,18 @@ x-common-env: &common-env
   LITELLM_URL: http://litellm:4000
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
+  DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-https://deeplynx.inl.gov/api/v1}
+  DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
+  DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
+  DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
+  DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
 
 x-common-volumes: &common-volumes
   - ./shared:/app/shared
   - ${LOCAL_CERT_FILE:-./certs/ca-bundle.pem}:${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+
+x-build-args: &prometheus-api-build-args
+  PROMETHEUS_API_BASE_IMAGE_HASH: f96d0d1
 
 networks:
   agent-network:
@@ -94,6 +102,7 @@ services:
     build:
       context: ./agents/client-agent
       args:
+        <<: *prometheus-api-build-args
         HTTP_PROXY: ${HTTP_PROXY}
         HTTPS_PROXY: ${HTTPS_PROXY}
         NO_PROXY: ${NO_PROXY}
@@ -121,6 +130,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
+        <<: *prometheus-api-build-args
         HTTP_PROXY: ${HTTP_PROXY}
         HTTPS_PROXY: ${HTTPS_PROXY}
         NO_PROXY: ${NO_PROXY}
@@ -147,4 +157,3 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-
