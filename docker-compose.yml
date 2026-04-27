@@ -23,7 +23,7 @@ x-common-volumes: &common-volumes
   - ${LOCAL_CERT_FILE:-./certs/ca-bundle.pem}:${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
 
 x-build-args: &prometheus-api-build-args
-  PROMETHEUS_API_BASE_IMAGE_HASH: 43dedaa
+  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
   HTTP_PROXY: ${HTTP_PROXY:-}
   HTTPS_PROXY: ${HTTPS_PROXY:-}
   NO_PROXY: ${NO_PROXY:-}
