@@ -14,7 +14,7 @@ from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear materials engineer. Analyze this material data and provide expert insights.

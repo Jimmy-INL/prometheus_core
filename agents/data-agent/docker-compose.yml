@@ -12,7 +12,7 @@ services:
       AGENT_HOST: data-agent
       AGENT_PORT: 8000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-""}
-      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-20250514}
+      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
       AGENT_SECRET: ${AGENT_SECRET}
       SSL_CERT_FILE: ${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
       REQUESTS_CA_BUNDLE: ${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}

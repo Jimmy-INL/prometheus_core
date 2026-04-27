@@ -180,7 +180,7 @@ LiteLLM is part of the active deployment. It serves two roles:
 model_list:
   - model_name: "claude-sonnet"
     litellm_params:
-      model: "anthropic/claude-sonnet-4-20250514"
+      model: "anthropic/claude-sonnet-4-6"
       api_key: "${ANTHROPIC_API_KEY}"
 ```
 

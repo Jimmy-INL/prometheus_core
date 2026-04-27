@@ -166,10 +166,10 @@ The homemade registry is also not overbuilt. It is ~220 lines of FastAPI that do
 Add LiteLLM in front of the Anthropic API in `client-agent/agent.py` and potentially the specialist agents. Benefits:
 - Centralized API key management (one `ANTHROPIC_API_KEY` in LiteLLM, virtual keys per service).
 - Cost and token tracking per agent or per conversation.
-- Easy model swap (change `claude-sonnet-4-20250514` to `claude-opus-4` in one config file).
+- Easy model swap (change `claude-sonnet-4-6` to `claude-opus-4` in one config file).
 - Rate limit retry and fallback across multiple API keys.
 
-This requires changing `ChatAnthropic(model=MODEL_NAME)` to point at `http://litellm-proxy/v1` with `model=claude-sonnet-4-20250514`. It is a two-line change and is fully independent of agent discovery.
+This requires changing `ChatAnthropic(model=MODEL_NAME)` to point at `http://litellm-proxy/v1` with `model=claude-sonnet-4-6`. It is a two-line change and is fully independent of agent discovery.
 
 ### What LiteLLM is NOT suitable for in this system
 

@@ -117,7 +117,7 @@ AGENT_SECRET_REQUIRED=true
 LITELLM_URL=http://localhost:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
 ANTHROPIC_API_KEY=your-api-key
-MODEL_NAME=claude-sonnet-4-20250514
+MODEL_NAME=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -168,7 +168,7 @@ my-analysis-agent:
     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - REDIS_URL=${REDIS_URL}
     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-20250514}
+    - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-6}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:
