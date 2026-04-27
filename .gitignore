@@ -15,8 +15,6 @@ wheels/
 *.egg-info
 
 .env
-CLAUDE.md
-AGENTS.md
 .cache
 .venv
 docs/site/
