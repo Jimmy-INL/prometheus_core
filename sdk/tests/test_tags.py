@@ -54,10 +54,12 @@ def test_sync_tags_use_project_scope():
 
 
 def test_async_tags_reject_non_positive_ids():
-    client = _AsyncClient([
-        _Response([]),
-        _Response({"id": 0, "name": "debug"}),
-    ])
+    client = _AsyncClient(
+        [
+            _Response([]),
+            _Response({"id": 0, "name": "debug"}),
+        ]
+    )
     resource = AsyncTagsResource(client)
 
     try:
@@ -100,18 +102,20 @@ def test_sync_item_add_tags_uses_singular_tag_id_params():
 
 
 def test_async_item_add_tags_uses_singular_tag_id_params():
-    client = _AsyncClient([
-        _Response({}),
-        _Response({}),
-        _Response(
-            {
-                "id": 99,
-                "name": "artifact",
-                "properties": {},
-                "tags": [{"id": 11, "name": "debug"}, {"id": 12, "name": "svg"}],
-            }
-        ),
-    ])
+    client = _AsyncClient(
+        [
+            _Response({}),
+            _Response({}),
+            _Response(
+                {
+                    "id": 99,
+                    "name": "artifact",
+                    "properties": {},
+                    "tags": [{"id": 11, "name": "debug"}, {"id": 12, "name": "svg"}],
+                }
+            ),
+        ]
+    )
     client.tags = SimpleNamespace(resolve_ids=_async_return([11, 12]))
     resource = AsyncItemsResource(client)
 

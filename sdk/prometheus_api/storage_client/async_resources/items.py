@@ -15,27 +15,20 @@ class AsyncItemsResource(AsyncBaseResource):
 
     async def create(self, item: ItemCreate) -> Item:
         """Create a new item asynchronously."""
-        payload = {
+        payload: Dict[str, Any] = {
             "name": item.name,
+            "description": item.description or "",
             "properties": item.properties,
+            "original_id": item.original_id or f"client-{item.name}-{id(item)}",
         }
 
-        if item.description:
-            payload["description"] = item.description
         if item.class_id:
-            payload["metatype_id"] = item.class_id
-        if item.original_id:
-            payload["original_data_id"] = item.original_id
+            payload["class_id"] = item.class_id
 
-        params = {
-            "dataSourceId": await self._client._get_data_source_id()
-        }
+        params = {"dataSourceId": await self._client._get_data_source_id()}
 
         response = await self._client._request(
-            "POST",
-            f"{self._base_path}/records",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/records", json=payload, params=params
         )
 
         item_data = response.json()
@@ -49,16 +42,13 @@ class AsyncItemsResource(AsyncBaseResource):
 
     async def get(self, item_id: int) -> Item:
         """Get an item by ID asynchronously."""
-        response = await self._client._request(
-            "GET",
-            f"{self._base_path}/records/{item_id}"
-        )
+        response = await self._client._request("GET", f"{self._base_path}/records/{item_id}")
 
         return self._parse_item(response.json())
 
     async def update(self, item_id: int, update: ItemUpdate) -> Item:
         """Update an existing item asynchronously."""
-        payload = {}
+        payload: Dict[str, Any] = {}
 
         if update.name is not None:
             payload["name"] = update.name
@@ -67,31 +57,23 @@ class AsyncItemsResource(AsyncBaseResource):
         if update.properties is not None:
             payload["properties"] = update.properties
         if update.class_id is not None:
-            payload["metatype_id"] = update.class_id
+            payload["class_id"] = update.class_id
         if update.original_id is not None:
-            payload["original_data_id"] = update.original_id
+            payload["original_id"] = update.original_id
 
         # Use PUT for full update (PATCH tries to unarchive which can fail)
         response = await self._client._request(
-            "PUT",
-            f"{self._base_path}/records/{item_id}",
-            json=payload
+            "PUT", f"{self._base_path}/records/{item_id}", json=payload
         )
 
         return self._parse_item(response.json())
 
     async def delete(self, item_id: int) -> None:
         """Delete an item asynchronously."""
-        await self._client._request(
-            "DELETE",
-            f"{self._base_path}/records/{item_id}"
-        )
+        await self._client._request("DELETE", f"{self._base_path}/records/{item_id}")
 
     async def list(
-        self,
-        page: int = 1,
-        page_size: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, page: int = 1, page_size: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> Page[Item]:
         """List items with pagination asynchronously."""
         params = {
@@ -102,11 +84,7 @@ class AsyncItemsResource(AsyncBaseResource):
         if filters:
             params.update(filters)
 
-        response = await self._client._request(
-            "GET",
-            f"{self._base_path}/records",
-            params=params
-        )
+        response = await self._client._request("GET", f"{self._base_path}/records", params=params)
 
         data = response.json()
 
@@ -122,15 +100,13 @@ class AsyncItemsResource(AsyncBaseResource):
             page_size=page_size,
             total_count=total_count,
             has_next=page * page_size < total_count,
-            has_previous=page > 1
+            has_previous=page > 1,
         )
 
         return Page(items=items, page_info=page_info)
 
     async def iter_all(
-        self,
-        page_size: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, page_size: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> AsyncIterator[Item]:
         """Iterate over all items with automatic pagination asynchronously."""
         page = 1
@@ -149,23 +125,18 @@ class AsyncItemsResource(AsyncBaseResource):
         payload = [
             {
                 "name": item.name,
-                "description": item.description,
+                "description": item.description or "",
                 "properties": item.properties,
-                "metatype_id": item.class_id,
-                "original_data_id": item.original_id,
+                "original_id": item.original_id or f"client-{item.name}-{i}",
+                "class_id": item.class_id,
             }
-            for item in items
+            for i, item in enumerate(items)
         ]
 
-        params = {
-            "dataSourceId": await self._client._get_data_source_id()
-        }
+        params = {"dataSourceId": await self._client._get_data_source_id()}
 
         response = await self._client._request(
-            "POST",
-            f"{self._base_path}/records/bulk",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/records/bulk", json=payload, params=params
         )
 
         data = response.json()
@@ -180,7 +151,10 @@ class AsyncItemsResource(AsyncBaseResource):
         tag_ids = await self._client.tags.resolve_ids(tags)
         logger.info(
             "prometheus-api %s add_tags: item=%s names=%r resolved_ids=%r",
-            pkg_version("prometheus-api"), item_id, tags, tag_ids,
+            pkg_version("prometheus-api"),
+            item_id,
+            tags,
+            tag_ids,
         )
         if not tag_ids:
             return await self.get(item_id)
@@ -217,15 +191,15 @@ class AsyncItemsResource(AsyncBaseResource):
         if isinstance(properties, str):
             try:
                 properties = json_lib.loads(properties)
-            except:
+            except (TypeError, ValueError):
                 properties = {}
 
         # Parse timestamp
         timestamp_str = data.get("lastUpdatedAt")
         if timestamp_str:
             try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            except:
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            except ValueError:
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()

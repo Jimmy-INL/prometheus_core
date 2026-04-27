@@ -21,40 +21,32 @@ classifiers = [
 ]
 
 dependencies = [
-    "a2a-sdk>=0.3.23,<0.4",
+    "a2a-sdk[http-server]>=0.3.23,<1",
     "fsspec>=2026.2.0",
-    "httpx>=0.24.0",
+    "httpx>=0.26.0",
     "pydantic>=2.0.0",
     "python-dateutil>=2.8.0",
     "python-dotenv>=1.0.0",
     "starlette>=0.35.0",
-    "uvicorn>=0.25.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [project.optional-dependencies]
-agent = [
-    "starlette>=0.27.0",
-    "uvicorn[standard]>=0.27.0",
-    "httpx>=0.26.0",
-    "a2a-sdk[http-server]>=0.3.23,<0.4",
-]
-[dependency-groups]
-dev = [
-    "uvicorn[standard]>=0.27.0",
-    "starlette>=0.27.0",
-    "a2a-sdk[http-server]>=0.3.23,<0.4",
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "mypy>=1.0.0",
-    "ruff>=0.1.0",
-]
 tracing = [
     "opentelemetry-api>=1.39.1",
     "opentelemetry-exporter-otlp>=1.39.1",
     "opentelemetry-instrumentation>=0.60b1",
     "opentelemetry-instrumentation-starlette>=0.60b1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+    "pre-commit>=4.6.0",
 ]
 
 [project.urls]
@@ -90,10 +82,6 @@ markers = [
     "slow: Slow running tests",
 ]
 
-[tool.black]
-line-length = 100
-target-version = ['py312']
-
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -105,3 +93,13 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 exclude = ["examples"]
+
+[[tool.mypy.overrides]]
+module = [
+    "fsspec",
+    "fsspec.*",
+    "opentelemetry",
+    "opentelemetry.*",
+    "redis",
+]
+ignore_missing_imports = true

@@ -33,9 +33,7 @@ class AuthHandler:
             if not self._jwt_token or (self._managed_token and self._needs_refresh()):
                 self._refresh_token()
 
-        return {
-            "Authorization": f"Bearer {self._jwt_token}"
-        }
+        return {"Authorization": f"Bearer {self._jwt_token}"}
 
     def _needs_refresh(self) -> bool:
         """Check if the JWT token needs to be refreshed."""
@@ -57,7 +55,7 @@ class AuthHandler:
                 json={
                     "apiKey": self.config.api_key,
                     "apiSecret": self.config.api_secret,
-                    "expirationMinutes": None  # Use default expiration
+                    "expirationMinutes": None,  # Use default expiration
                 },
                 headers={"Content-Type": "application/json"},
                 timeout=self.config.timeout,
@@ -110,9 +108,7 @@ class AsyncAuthHandler:
             if not self._jwt_token or (self._managed_token and self._needs_refresh()):
                 await self._refresh_token()
 
-        return {
-            "Authorization": f"Bearer {self._jwt_token}"
-        }
+        return {"Authorization": f"Bearer {self._jwt_token}"}
 
     def _needs_refresh(self) -> bool:
         """Check if the JWT token needs to be refreshed."""
@@ -134,7 +130,7 @@ class AsyncAuthHandler:
                 json={
                     "apiKey": self.config.api_key,
                     "apiSecret": self.config.api_secret,
-                    "expirationMinutes": None  # Use default expiration
+                    "expirationMinutes": None,  # Use default expiration
                 },
                 headers={"Content-Type": "application/json"},
                 timeout=self.config.timeout,

@@ -10,7 +10,7 @@ Or install in development mode:
 ```bash
 git clone https://github.inl.gov/genesis/prometheus_api.git
 cd prometheus_api
-pip install -e .
+uv sync
 ```
 
 ## Setup Credentials

@@ -444,21 +444,21 @@ All backend-specific terminology and identifiers are hidden from the public API,
 ### Running Tests
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/
+uv sync
+make test
 ```
 
 ### Code Quality
 
 ```bash
 # Format code
-black storage_client/
+uv run ruff format .
 
 # Lint
-ruff check storage_client/
+uv run ruff check .
 
 # Type checking
-mypy storage_client/
+uv run mypy prometheus_api/
 ```
 
 ## Next Steps

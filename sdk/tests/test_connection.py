@@ -7,10 +7,7 @@ from prometheus_api.storage_client import ConnectionConfig
 def test_connection_config_with_api_key():
     """Test creating connection config with API key."""
     config = ConnectionConfig(
-        organization_id=123,
-        project_id=456,
-        api_key="test-key",
-        api_secret="test-secret"
+        organization_id=123, project_id=456, api_key="test-key", api_secret="test-secret"
     )
 
     assert config.organization_id == 123
@@ -23,11 +20,7 @@ def test_connection_config_with_api_key():
 
 def test_connection_config_with_jwt():
     """Test creating connection config with JWT token."""
-    config = ConnectionConfig(
-        organization_id=123,
-        project_id=456,
-        jwt_token="test-token"
-    )
+    config = ConnectionConfig(organization_id=123, project_id=456, jwt_token="test-token")
 
     assert config.jwt_token == "test-token"
     assert config.uses_api_key is False
@@ -37,10 +30,7 @@ def test_connection_config_with_jwt():
 def test_connection_config_requires_auth():
     """Test that connection config requires authentication."""
     with pytest.raises(ValueError, match="Must provide either jwt_token"):
-        ConnectionConfig(
-            organization_id=123,
-            project_id=456
-        )
+        ConnectionConfig(organization_id=123, project_id=456)
 
 
 def test_connection_config_rejects_both_auth_methods():
@@ -51,7 +41,7 @@ def test_connection_config_rejects_both_auth_methods():
             project_id=456,
             api_key="key",
             api_secret="secret",
-            jwt_token="token"
+            jwt_token="token",
         )
 
 
@@ -62,7 +52,7 @@ def test_connection_config_base_url_normalization():
         project_id=456,
         api_key="key",
         api_secret="secret",
-        base_url="https://example.com/"
+        base_url="https://example.com/",
     )
 
     assert config.base_url == "https://example.com"
@@ -71,10 +61,7 @@ def test_connection_config_base_url_normalization():
 def test_connection_config_immutable():
     """Test that connection config is immutable."""
     config = ConnectionConfig(
-        organization_id=123,
-        project_id=456,
-        api_key="key",
-        api_secret="secret"
+        organization_id=123, project_id=456, api_key="key", api_secret="secret"
     )
 
     with pytest.raises(Exception):  # Pydantic will raise an error
@@ -84,10 +71,7 @@ def test_connection_config_immutable():
 def test_connection_config_default_values():
     """Test default configuration values."""
     config = ConnectionConfig(
-        organization_id=123,
-        project_id=456,
-        api_key="key",
-        api_secret="secret"
+        organization_id=123, project_id=456, api_key="key", api_secret="secret"
     )
 
     assert config.timeout == 30.0

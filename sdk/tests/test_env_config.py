@@ -38,15 +38,11 @@ DEEPLYNX_PROJECT_ID=200
 """)
 
     # Override org/project IDs
-    config = ConnectionConfig.from_env(
-        env_file=test_env,
-        organization_id=999,
-        project_id=888
-    )
+    config = ConnectionConfig.from_env(env_file=test_env, organization_id=999, project_id=888)
 
     assert config.organization_id == 999  # Overridden
-    assert config.project_id == 888      # Overridden
-    assert config.api_key == "env-key"   # From file
+    assert config.project_id == 888  # Overridden
+    assert config.api_key == "env-key"  # From file
 
 
 def test_from_env_with_jwt(tmp_path):
@@ -102,11 +98,7 @@ DEEPLYNX_PROJECT_ID=456
 DEEPLYNX_BASE_URL=https://custom.api.com/v1
 """)
 
-    config = ConnectionConfig.from_env(
-        env_file=test_env,
-        timeout=60.0,
-        max_retries=5
-    )
+    config = ConnectionConfig.from_env(env_file=test_env, timeout=60.0, max_retries=5)
 
     assert config.base_url == "https://custom.api.com/v1"
     assert config.timeout == 60.0

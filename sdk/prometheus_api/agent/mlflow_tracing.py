@@ -2,7 +2,7 @@ import json
 import os
 import socket
 import uuid
-from typing import Callable
+from typing import Any, Awaitable, Callable, cast
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -19,13 +19,15 @@ def _setup_tracing(agent_name: str) -> TracerProvider:
     mlflow_tracking_uri = os.getenv("MLFLOW_URL", "https://mlflow.american-science-cloud.org")
     mlflow_experiment_id = os.getenv("MLFLOW_EXPERIMENT_ID", "20")
 
-    resource = Resource.create({
-        "service.name": f"Prometheus-A2A-{agent_name}",
-        "service.version": "1.0",
-        "deployment.environment": os.getenv("ENV", "dev"),
-        "host.name": socket.gethostname(),
-        "mlflow.experiment_id": mlflow_experiment_id,
-    })
+    resource = Resource.create(
+        {
+            "service.name": f"Prometheus-A2A-{agent_name}",
+            "service.version": "1.0",
+            "deployment.environment": os.getenv("ENV", "dev"),
+            "host.name": socket.gethostname(),
+            "mlflow.experiment_id": mlflow_experiment_id,
+        }
+    )
 
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(
@@ -75,7 +77,11 @@ class A2APayloadTracingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._max_bytes = max_body_bytes
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         span = trace.get_current_span()
 
         # Only instrument A2A JSON-RPC paths
@@ -84,7 +90,7 @@ class A2APayloadTracingMiddleware(BaseHTTPMiddleware):
 
         # --- Capture request body ---
         raw_req = await request.body()
-        req_text = raw_req[:self._max_bytes].decode("utf-8", errors="replace")
+        req_text = raw_req[: self._max_bytes].decode("utf-8", errors="replace")
         if span.is_recording():
             span.set_attribute("a2a.request.body", req_text)
             try:
@@ -100,7 +106,7 @@ class A2APayloadTracingMiddleware(BaseHTTPMiddleware):
                         first_text = next(
                             (p.get("text", "") for p in messages if p.get("type") == "text"), ""
                         )
-                        span.set_attribute("a2a.input.text", first_text[:self._max_bytes])
+                        span.set_attribute("a2a.input.text", first_text[: self._max_bytes])
             except (json.JSONDecodeError, AttributeError):
                 pass
 
@@ -112,12 +118,13 @@ class A2APayloadTracingMiddleware(BaseHTTPMiddleware):
 
         # --- Capture response body ---
         response = await call_next(request)
+        streaming_response = cast(Any, response)
         resp_chunks = []
-        async for chunk in response.body_iterator:
+        async for chunk in streaming_response.body_iterator:
             resp_chunks.append(chunk if isinstance(chunk, bytes) else chunk.encode())
 
         raw_resp = b"".join(resp_chunks)
-        resp_text = raw_resp[:self._max_bytes].decode("utf-8", errors="replace")
+        resp_text = raw_resp[: self._max_bytes].decode("utf-8", errors="replace")
 
         if span.is_recording():
             span.set_attribute("a2a.response.body", resp_text)
@@ -132,7 +139,7 @@ class A2APayloadTracingMiddleware(BaseHTTPMiddleware):
                         first_out = next(
                             (p.get("text", "") for p in output_parts if p.get("type") == "text"), ""
                         )
-                        span.set_attribute("a2a.output.text", first_out[:self._max_bytes])
+                        span.set_attribute("a2a.output.text", first_out[: self._max_bytes])
                     span.set_attribute("a2a.task.state", result.get("status", {}).get("state", ""))
             except (json.JSONDecodeError, AttributeError):
                 pass

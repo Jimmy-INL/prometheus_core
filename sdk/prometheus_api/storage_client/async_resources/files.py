@@ -10,10 +10,7 @@ class AsyncFilesResource(AsyncBaseResource):
     """Handles async operations related to file storage and retrieval."""
 
     async def upload(
-        self,
-        file_path: Path,
-        name: Optional[str] = None,
-        description: Optional[str] = None
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
     ) -> FileMetadata:
         """Upload a file to storage asynchronously."""
         if not file_path.exists():
@@ -29,10 +26,7 @@ class AsyncFilesResource(AsyncBaseResource):
                 data["description"] = description
 
             response = await self._client._request(
-                "POST",
-                f"{self._base_path}/files",
-                files=files,
-                data=data
+                "POST", f"{self._base_path}/files", files=files, data=data
             )
 
         return self._parse_file_metadata(response.json())
@@ -42,7 +36,7 @@ class AsyncFilesResource(AsyncBaseResource):
         file_path: Path,
         chunk_size: int = 5 * 1024 * 1024,
         name: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> FileMetadata:
         """Upload a large file in chunks asynchronously."""
         from ..utils.streaming import AsyncChunkedUploader
@@ -53,20 +47,14 @@ class AsyncFilesResource(AsyncBaseResource):
     async def get(self, file_id: int) -> FileMetadata:
         """Get file metadata by ID asynchronously."""
         # Files are retrieved via records endpoint (they're records with file attachments)
-        response = await self._client._request(
-            "GET",
-            f"{self._base_path}/records/{file_id}"
-        )
+        response = await self._client._request("GET", f"{self._base_path}/records/{file_id}")
 
         return self._parse_file_metadata(response.json())
 
     async def download(self, file_id: int, output_path: Path) -> None:
         """Download a file to local storage asynchronously."""
         # Download using the files endpoint with record ID
-        response = await self._client._request(
-            "GET",
-            f"{self._base_path}/files/{file_id}"
-        )
+        response = await self._client._request("GET", f"{self._base_path}/files/{file_id}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "wb") as f:
@@ -74,10 +62,7 @@ class AsyncFilesResource(AsyncBaseResource):
 
     async def delete(self, file_id: int) -> None:
         """Delete a file asynchronously."""
-        await self._client._request(
-            "DELETE",
-            f"{self._base_path}/files/{file_id}"
-        )
+        await self._client._request("DELETE", f"{self._base_path}/files/{file_id}")
 
     def _parse_file_metadata(self, data: dict) -> FileMetadata:
         """Parse API response data into FileMetadata model."""

@@ -10,6 +10,4 @@ class TagModel(BaseModel):
     id: Optional[int] = Field(None, description="Tag ID")
     name: str = Field(..., description="Tag name")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

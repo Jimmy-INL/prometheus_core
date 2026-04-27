@@ -34,15 +34,10 @@ class RelationshipsResource(BaseResource):
             "properties": relationship.properties,
         }
 
-        params = {
-            "dataSourceId": self._client._get_data_source_id()
-        }
+        params: Dict[str, Any] = {"dataSourceId": self._client._get_data_source_id()}
 
         response = self._client._request(
-            "POST",
-            f"{self._base_path}/edges",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/edges", json=payload, params=params
         )
 
         data = response.json()
@@ -65,10 +60,7 @@ class RelationshipsResource(BaseResource):
         Raises:
             ItemNotFoundError: If relationship doesn't exist
         """
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/edges/{relationship_id}"
-        )
+        response = self._client._request("GET", f"{self._base_path}/edges/{relationship_id}")
 
         data = response.json()
 
@@ -87,10 +79,7 @@ class RelationshipsResource(BaseResource):
         Raises:
             ItemNotFoundError: If relationship doesn't exist
         """
-        self._client._request(
-            "DELETE",
-            f"{self._base_path}/edges/{relationship_id}"
-        )
+        self._client._request("DELETE", f"{self._base_path}/edges/{relationship_id}")
 
     def bulk_create(self, relationships: List[RelationshipCreate]) -> List[Relationship]:
         """Create multiple relationships in a single request.
@@ -119,15 +108,10 @@ class RelationshipsResource(BaseResource):
             for rel in relationships
         ]
 
-        params = {
-            "dataSourceId": self._client._get_data_source_id()
-        }
+        params = {"dataSourceId": self._client._get_data_source_id()}
 
         response = self._client._request(
-            "POST",
-            f"{self._base_path}/edges/bulk",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/edges/bulk", json=payload, params=params
         )
 
         data = response.json()
@@ -141,9 +125,7 @@ class RelationshipsResource(BaseResource):
         return [self._parse_relationship(rel_data) for rel_data in edges]
 
     def get_item_relationships(
-        self,
-        item_id: int,
-        direction: Optional[str] = None
+        self, item_id: int, direction: Optional[str] = None
     ) -> List[Relationship]:
         """Get all relationships for an item.
 
@@ -169,7 +151,7 @@ class RelationshipsResource(BaseResource):
             incoming = self.get_item_relationships(item_id, "incoming")
             return outgoing + incoming
 
-        params = {
+        params: Dict[str, Any] = {
             "page": 1,
             "pageSize": 100,  # Maximum allowed by DeepLynx API
         }
@@ -183,9 +165,7 @@ class RelationshipsResource(BaseResource):
             params["isOrigin"] = "false"
 
         response = self._client._request(
-            "GET",
-            f"{self._base_path}/records/{item_id}/edges",
-            params=params
+            "GET", f"{self._base_path}/records/{item_id}/edges", params=params
         )
 
         data = response.json()
@@ -209,28 +189,26 @@ class RelationshipsResource(BaseResource):
                     from_id = rel_data.get("relatedRecordId")
                     to_id = item_id
 
-                relationships.append(Relationship(
-                    id=rel_data.get("id", 0),
-                    from_item_id=from_id,
-                    to_item_id=to_id,
-                    relationship_type=rel_data.get("name", ""),
-                    properties=rel_data.get("properties", {}),
-                    created_at=rel_data.get("createdAt"),
-                    updated_at=rel_data.get("lastUpdatedAt"),
-                    relationship_pair_id=rel_data.get("relationshipId"),
-                    data_source_id=rel_data.get("dataSourceId"),
-                ))
+                relationships.append(
+                    Relationship(
+                        id=rel_data.get("id", 0),
+                        from_item_id=from_id,
+                        to_item_id=to_id,
+                        relationship_type=rel_data.get("name", ""),
+                        properties=rel_data.get("properties", {}),
+                        created_at=rel_data.get("createdAt"),
+                        updated_at=rel_data.get("lastUpdatedAt"),
+                        relationship_pair_id=rel_data.get("relationshipId"),
+                        data_source_id=rel_data.get("dataSourceId"),
+                    )
+                )
             else:
                 # Full format: use standard parser
                 relationships.append(self._parse_relationship(rel_data))
 
         return relationships
 
-    def get_item_graph(
-        self,
-        item_id: int,
-        depth: int = 1
-    ) -> Dict[str, Any]:
+    def get_item_graph(self, item_id: int, depth: int = 1) -> Dict[str, Any]:
         """Get a graph of relationships starting from an item.
 
         Args:
@@ -246,12 +224,11 @@ class RelationshipsResource(BaseResource):
             ```
         """
         response = self._client._request(
-            "GET",
-            f"{self._base_path}/records/{item_id}/graph",
-            params={"depth": depth}
+            "GET", f"{self._base_path}/records/{item_id}/graph", params={"depth": depth}
         )
 
-        return response.json()
+        data = response.json()
+        return data if isinstance(data, dict) else {"result": data}
 
     def _parse_relationship(self, data: Dict[str, Any]) -> Relationship:
         """Parse API response data into a Relationship model.
@@ -277,8 +254,11 @@ class RelationshipsResource(BaseResource):
         if from_item_id is None or to_item_id is None:
             import json
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to parse relationship - missing node IDs. Response data: {json.dumps(data, indent=2)}")
+            logger.error(
+                f"Failed to parse relationship - missing node IDs. Response data: {json.dumps(data, indent=2)}"
+            )
             raise ValueError(
                 f"API response missing required node ID fields. "
                 f"Response keys: {list(data.keys())}. "

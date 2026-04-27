@@ -9,12 +9,7 @@ from .base import BaseResource
 class SearchResource(BaseResource):
     """Handles search and query operations."""
 
-    def query(
-        self,
-        query: str,
-        page: int = 1,
-        page_size: int = 100
-    ) -> Page[Item]:
+    def query(self, query: str, page: int = 1, page_size: int = 100) -> Page[Item]:
         """Perform a simple text search across items.
 
         Args:
@@ -40,7 +35,7 @@ class SearchResource(BaseResource):
         response = self._client._request(
             "GET",
             f"/organizations/{self._client.config.organization_id}/query/records",
-            params=params
+            params=params,
         )
 
         data = response.json()
@@ -54,10 +49,7 @@ class SearchResource(BaseResource):
         return self._parse_search_results(items, page, page_size)
 
     def advanced_query(
-        self,
-        filters: Dict[str, Any],
-        page: int = 1,
-        page_size: int = 100
+        self, filters: Dict[str, Any], page: int = 1, page_size: int = 100
     ) -> Page[Item]:
         """Perform an advanced search with structured filters.
 
@@ -86,17 +78,13 @@ class SearchResource(BaseResource):
         response = self._client._request(
             "POST",
             f"/organizations/{self._client.config.organization_id}/query/advanced",
-            json=payload
+            json=payload,
         )
 
         return self._parse_search_results(response.json(), page, page_size)
 
     def by_tags(
-        self,
-        tags: List[str],
-        match_all: bool = False,
-        page: int = 1,
-        page_size: int = 100
+        self, tags: List[str], match_all: bool = False, page: int = 1, page_size: int = 100
     ) -> Page[Item]:
         """Search for items by tags.
 
@@ -126,9 +114,7 @@ class SearchResource(BaseResource):
         }
 
         response = self._client._request(
-            "GET",
-            f"{self._base_path}/records/search/tags",
-            params=params
+            "GET", f"{self._base_path}/records/search/tags", params=params
         )
 
         return self._parse_search_results(response.json(), page, page_size)
@@ -153,11 +139,7 @@ class SearchResource(BaseResource):
             "sort_order": "desc",
         }
 
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/records",
-            params=params
-        )
+        response = self._client._request("GET", f"{self._base_path}/records", params=params)
 
         data = response.json()
 
@@ -169,12 +151,7 @@ class SearchResource(BaseResource):
 
         return [self._parse_item(item_data) for item_data in items]
 
-    def _parse_search_results(
-        self,
-        data: Any,
-        page: int,
-        page_size: int
-    ) -> Page[Item]:
+    def _parse_search_results(self, data: Any, page: int, page_size: int) -> Page[Item]:
         """Parse search results into a Page object.
 
         Args:
@@ -200,7 +177,7 @@ class SearchResource(BaseResource):
             page_size=page_size,
             total_count=total_count,
             has_next=page * page_size < total_count,
-            has_previous=page > 1
+            has_previous=page > 1,
         )
 
         return Page(items=items, page_info=page_info)
@@ -225,8 +202,8 @@ class SearchResource(BaseResource):
         timestamp_str = data.get("lastUpdatedAt")
         if timestamp_str:
             try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            except:
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            except ValueError:
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()
@@ -236,7 +213,7 @@ class SearchResource(BaseResource):
         if isinstance(properties, str):
             try:
                 properties = json_lib.loads(properties)
-            except:
+            except (TypeError, ValueError):
                 properties = {}
 
         # Parse tags (API returns as JSON string)
@@ -247,7 +224,7 @@ class SearchResource(BaseResource):
                 try:
                     tags_list = json_lib.loads(tags_data)
                     tags = [Tag(id=t.get("id"), name=t.get("name", "")) for t in tags_list]
-                except:
+                except (TypeError, ValueError):
                     tags = []
             elif isinstance(tags_data, list):
                 tags = [Tag(id=t.get("id"), name=t.get("name", "")) for t in tags_data]

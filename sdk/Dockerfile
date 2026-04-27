@@ -24,7 +24,7 @@ RUN python -m pip install --upgrade pip uv
 COPY . /src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system \
-    /src[agent,tracing]
+    /src[tracing]
 
 RUN rm -rf /src/.git
 CMD ["python"]

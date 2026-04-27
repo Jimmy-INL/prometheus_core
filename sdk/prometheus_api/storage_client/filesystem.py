@@ -11,7 +11,7 @@ import posixpath
 import time
 import warnings
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from fsspec import AbstractFileSystem
 from fsspec.callbacks import DEFAULT_CALLBACK
@@ -143,14 +143,14 @@ class DeepLynxFileSystem(AbstractFileSystem):
             self._client.__enter__()
 
     @classmethod
-    def _strip_protocol(cls, path):
+    def _strip_protocol(cls, path: Any) -> Any:
         """Strip ``deeplynx://`` and normalize to a POSIX key string."""
         if isinstance(path, (tuple, list, set)):
             return type(path)(cls._strip_protocol(p) for p in path)
         if path is None:
             return ""
 
-        value = os.fspath(path).replace("\\", "/")
+        value = os.fsdecode(path).replace("\\", "/")
         protocol_prefix = f"{cls.protocol}://"
         if value.startswith(protocol_prefix):
             value = value[len(protocol_prefix) :]
@@ -372,9 +372,9 @@ class DeepLynxFileSystem(AbstractFileSystem):
     # -----------------------------
     # Internal helpers
     # -----------------------------
-    def _normalize_key(self, path) -> str:
+    def _normalize_key(self, path: Any) -> str:
         """Normalize user path/URI input into a canonical object key."""
-        return self._strip_protocol(path)
+        return str(self._strip_protocol(path))
 
     def _join_keys(self, *parts: str) -> str:
         """Join non-empty path fragments into a normalized POSIX key."""
@@ -383,9 +383,9 @@ class DeepLynxFileSystem(AbstractFileSystem):
             return ""
         return posixpath.normpath("/".join(values))
 
-    def _path_endswith_sep(self, path) -> bool:
+    def _path_endswith_sep(self, path: Any) -> bool:
         """Return ``True`` for path-like inputs ending with a separator."""
-        value = os.fspath(path)
+        value = os.fsdecode(path)
         return value.endswith("/") or value.endswith("\\")
 
     def _resolve_target_file_key(self, local_file: Path, rpath) -> str:
@@ -422,7 +422,16 @@ class DeepLynxFileSystem(AbstractFileSystem):
                 self.META_VERSION_NS: time.time_ns(),
             }
         )
-        self._client.items.update(file_meta.id, ItemUpdate(properties=properties))
+        self._client.items.update(
+            file_meta.id,
+            ItemUpdate(
+                name=existing.name,
+                description=existing.description,
+                properties=properties,
+                class_id=existing.class_id,
+                original_id=existing.original_id,
+            ),
+        )
         self._full_scan_cache = None
 
     def _resolve_local_destination(self, lpath, remote_key: str) -> Path:
@@ -612,7 +621,7 @@ class DeepLynxFileSystem(AbstractFileSystem):
     def _search_exact_with_advanced(self, path: str) -> List[Item]:
         """Attempt exact-path lookup via advanced-query filter variants."""
         candidates: List[Item] = []
-        filters = [
+        filters: List[Dict[Any, Any]] = [
             {f"properties.{self.META_MANAGED}": True, f"properties.{self.META_PATH}": path},
             {"properties": {self.META_MANAGED: True, self.META_PATH: path}},
             {self.META_MANAGED: True, self.META_PATH: path},
@@ -628,7 +637,7 @@ class DeepLynxFileSystem(AbstractFileSystem):
         # Prefix filtering is applied client-side because advanced filter
         # support differs across DeepLynx deployments.
         _ = prefix
-        filters = [
+        filters: List[Dict[Any, Any]] = [
             {f"properties.{self.META_MANAGED}": True},
             {"properties": {self.META_MANAGED: True}},
             {self.META_MANAGED: True},
@@ -639,7 +648,7 @@ class DeepLynxFileSystem(AbstractFileSystem):
                 return items
         return []
 
-    def _search_advanced_items(self, filters: dict) -> List[Item]:
+    def _search_advanced_items(self, filters: Dict[Any, Any]) -> List[Item]:
         """Run paginated advanced search and return flattened item list."""
         items: List[Item] = []
         for page in range(1, self._search_max_pages + 1):

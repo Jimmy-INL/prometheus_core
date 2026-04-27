@@ -11,9 +11,7 @@ class Tag(BaseModel):
     id: Optional[int] = Field(None, description="Tag ID")
     name: str = Field(..., description="Tag name")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class ItemBase(BaseModel):
@@ -22,23 +20,19 @@ class ItemBase(BaseModel):
     name: str = Field(..., description="Item name")
     description: Optional[str] = Field(None, description="Item description")
     properties: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Custom properties/metadata for the item"
+        default_factory=dict, description="Custom properties/metadata for the item"
     )
     class_id: Optional[int] = Field(None, description="Class identifier for the item")
     original_id: Optional[str] = Field(None, description="Original identifier from source system")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class ItemCreate(ItemBase):
     """Model for creating a new item."""
 
     tags: Optional[List[str]] = Field(
-        default=None,
-        description="List of tag names to associate with the item"
+        default=None, description="List of tag names to associate with the item"
     )
 
 
@@ -51,9 +45,7 @@ class ItemUpdate(BaseModel):
     class_id: Optional[int] = Field(None, description="Class identifier")
     original_id: Optional[str] = Field(None, description="Original identifier")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class Item(ItemBase):
@@ -69,9 +61,7 @@ class Item(ItemBase):
     metatype_name: Optional[str] = Field(None, description="Internal metatype name")
     data_source_id: Optional[int] = Field(None, description="Source data identifier")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class BulkItemCreate(BaseModel):
@@ -79,6 +69,4 @@ class BulkItemCreate(BaseModel):
 
     items: List[ItemCreate] = Field(..., description="List of items to create")
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}

@@ -14,6 +14,7 @@ class StorageClientError(Exception):
 
 class AuthenticationError(StorageClientError):
     """Raised when authentication fails."""
+
     pass
 
 
@@ -28,6 +29,7 @@ class ItemNotFoundError(StorageClientError):
 
 class ValidationError(StorageClientError):
     """Raised when input validation fails."""
+
     pass
 
 
@@ -35,10 +37,7 @@ class APIError(StorageClientError):
     """Raised when the API returns an error response."""
 
     def __init__(
-        self,
-        message: str,
-        status_code: Optional[int] = None,
-        response_data: Optional[dict] = None
+        self, message: str, status_code: Optional[int] = None, response_data: Optional[dict] = None
     ):
         super().__init__(message, details=response_data)
         self.status_code = status_code

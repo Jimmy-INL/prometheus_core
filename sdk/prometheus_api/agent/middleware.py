@@ -7,6 +7,7 @@ communication using shared secrets.
 
 import os
 import logging
+from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -42,7 +43,7 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         - Returns 401 Unauthorized with JSON-RPC 2.0 error format on failure
     """
 
-    def __init__(self, app, secret: str = None, required: bool = True):
+    def __init__(self, app, secret: Optional[str] = None, required: bool = True):
         """
         Initialize the Bearer token middleware.
 
@@ -90,7 +91,7 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Extract Authorization header
-        auth_header = request.headers.get('authorization', '')
+        auth_header = request.headers.get("authorization", "")
 
         # Validate header exists and format is correct
         if not auth_header:
@@ -98,9 +99,11 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             return self._unauthorized_response("Missing Authorization header")
 
         parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != 'bearer':
+        if len(parts) != 2 or parts[0].lower() != "bearer":
             logger.warning(f"Request to {request.url.path} has invalid Authorization format")
-            return self._unauthorized_response("Invalid Authorization format (expected: Bearer <token>)")
+            return self._unauthorized_response(
+                "Invalid Authorization format (expected: Bearer <token>)"
+            )
 
         token = parts[1]
 
@@ -129,12 +132,12 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         return JSONResponse(
             status_code=401,
             content={
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32600,
-                    'message': 'Invalid Request - Authentication Failed',
-                    'data': {'reason': message}
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request - Authentication Failed",
+                    "data": {"reason": message},
                 },
-                'id': None
-            }
+                "id": None,
+            },
         )

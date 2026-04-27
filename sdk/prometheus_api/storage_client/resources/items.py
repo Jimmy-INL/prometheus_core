@@ -28,7 +28,7 @@ class ItemsResource(BaseResource):
             ```
         """
         # Prepare payload with snake_case field names for DeepLynx API
-        payload = {
+        payload: Dict[str, Any] = {
             "name": item.name,
             "description": item.description or "",  # Required field
             "properties": item.properties,  # Required field
@@ -39,15 +39,10 @@ class ItemsResource(BaseResource):
             payload["class_id"] = item.class_id
 
         # Create the item (dataSourceId query parameter required)
-        params = {
-            "dataSourceId": self._client._get_data_source_id()
-        }
+        params = {"dataSourceId": self._client._get_data_source_id()}
 
         response = self._client._request(
-            "POST",
-            f"{self._base_path}/records",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/records", json=payload, params=params
         )
 
         item_data = response.json()
@@ -73,10 +68,7 @@ class ItemsResource(BaseResource):
         Raises:
             ItemNotFoundError: If item doesn't exist
         """
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/records/{item_id}"
-        )
+        response = self._client._request("GET", f"{self._base_path}/records/{item_id}")
 
         return self._parse_item(response.json())
 
@@ -99,7 +91,7 @@ class ItemsResource(BaseResource):
             ```
         """
         # Build payload with only provided fields
-        payload = {}
+        payload: Dict[str, Any] = {}
 
         if update.name is not None:
             payload["name"] = update.name
@@ -114,9 +106,7 @@ class ItemsResource(BaseResource):
 
         # Use PUT for full update (PATCH tries to unarchive which can fail)
         response = self._client._request(
-            "PUT",
-            f"{self._base_path}/records/{item_id}",
-            json=payload
+            "PUT", f"{self._base_path}/records/{item_id}", json=payload
         )
 
         return self._parse_item(response.json())
@@ -130,16 +120,10 @@ class ItemsResource(BaseResource):
         Raises:
             ItemNotFoundError: If item doesn't exist
         """
-        self._client._request(
-            "DELETE",
-            f"{self._base_path}/records/{item_id}"
-        )
+        self._client._request("DELETE", f"{self._base_path}/records/{item_id}")
 
     def list(
-        self,
-        page: int = 1,
-        page_size: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, page: int = 1, page_size: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> Page[Item]:
         """List items with pagination.
 
@@ -166,11 +150,7 @@ class ItemsResource(BaseResource):
         if filters:
             params.update(filters)
 
-        response = self._client._request(
-            "GET",
-            f"{self._base_path}/records",
-            params=params
-        )
+        response = self._client._request("GET", f"{self._base_path}/records", params=params)
 
         data = response.json()
 
@@ -188,15 +168,13 @@ class ItemsResource(BaseResource):
             page_size=page_size,
             total_count=total_count,
             has_next=page * page_size < total_count,
-            has_previous=page > 1
+            has_previous=page > 1,
         )
 
         return Page(items=items, page_info=page_info)
 
     def iter_all(
-        self,
-        page_size: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, page_size: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> Iterator[Item]:
         """Iterate over all items with automatic pagination.
 
@@ -251,15 +229,10 @@ class ItemsResource(BaseResource):
             for i, item in enumerate(items)
         ]
 
-        params = {
-            "dataSourceId": self._client._get_data_source_id()
-        }
+        params = {"dataSourceId": self._client._get_data_source_id()}
 
         response = self._client._request(
-            "POST",
-            f"{self._base_path}/records/bulk",
-            json=payload,
-            params=params
+            "POST", f"{self._base_path}/records/bulk", json=payload, params=params
         )
 
         data = response.json()
@@ -340,7 +313,7 @@ class ItemsResource(BaseResource):
         if isinstance(properties, str):
             try:
                 properties = json_lib.loads(properties)
-            except:
+            except (TypeError, ValueError):
                 properties = {}
 
         # Parse timestamp
@@ -348,8 +321,8 @@ class ItemsResource(BaseResource):
         if timestamp_str:
             # Handle ISO format with optional microseconds
             try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            except:
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            except ValueError:
                 timestamp = datetime.now()
         else:
             timestamp = datetime.now()

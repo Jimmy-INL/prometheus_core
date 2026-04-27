@@ -21,6 +21,7 @@ __all__ = [
     # Clients
     "StorageClient",
     "AsyncStorageClient",
+    "__version__",
     # Configuration
     "ConnectionConfig",
     # Models
