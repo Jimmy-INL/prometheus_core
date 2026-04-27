@@ -51,7 +51,7 @@ def test_handle_final_response_renders_artifacts_from_artifacts_list(monkeypatch
 
     session = DummyUserSession()
 
-    async def _fake_render_artifacts(artifacts):
+    async def _fake_render_artifacts(artifacts, tmp_dir):
         return ["viewer"], "Artifact text"
 
     monkeypatch.setattr(handler.cl, "Message", DummyMessage)

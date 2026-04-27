@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 REDIS_URL = os.getenv("REDIS_URL")
 TIMEOUT_SECONDS = 900  # 15 minutes maximum
 

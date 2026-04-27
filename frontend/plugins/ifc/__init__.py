@@ -35,11 +35,11 @@ async def render_artifact(artifact: dict) -> Optional[Any]:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.get(uri)
             response.raise_for_status()
-        tmp_dir = Path(tempfile.mkdtemp(prefix="ifc-artifact-"))
-        tmp_path = tmp_dir / Path(name).name
-        tmp_path.write_bytes(response.content)
-        from components.ifc_integration import process_ifc_upload
-        dataset = await process_ifc_upload(tmp_path)
+        with tempfile.TemporaryDirectory(prefix="ifc-artifact-") as tmp_dir:
+            tmp_path = Path(tmp_dir) / Path(name).name
+            tmp_path.write_bytes(response.content)
+            from components.ifc_integration import process_ifc_upload
+            dataset = await process_ifc_upload(tmp_path)
         return dataset.to_chainlit_element()
 
     return None

@@ -2,50 +2,44 @@
 Artifact Debug Agent.
 
 Purpose:
-- Produce deterministic test artifacts so artifact plumbing can be exercised end-to-end.
-- Convert SVG artifacts into PNG artifacts without exposing raw file bytes to the LLM context.
+- Produce deterministic test artifacts backed by DeepLynx so the full artifact
+  plumbing — upload, deeplynx:// URI emission, frontend resolution — can be
+  exercised end-to-end.
+- Convert SVG artifacts into PNG artifacts by fetching from DeepLynx, converting
+  locally, and re-uploading.
 
 Primary users:
-- Orchestrator skill routing (`client-agent`) when testing artifact-aware tool calls.
-- Frontend developers validating artifact link rendering and session-scoped artifact catalogs.
+- Orchestrator skill routing (client-agent) when testing artifact-aware tool calls.
+- Frontend developers validating deeplynx:// artifact link rendering and resolution.
 """
 
 import os
 import re
+import tempfile
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import unquote, urlparse
 from xml.sax.saxutils import escape as xml_escape
 
 from PIL import Image, ImageDraw, ImageFont
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import Artifact, DataPart, FilePart, Part, TaskArtifactUpdateEvent
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
-from starlette.responses import FileResponse, JSONResponse
+from prometheus_api.storage_client.async_client import AsyncStorageClient
+from prometheus_api.storage_client.connection import ConnectionConfig
+
+
+def _try_storage_config() -> Optional[ConnectionConfig]:
+    """Return a ConnectionConfig from env, or None if credentials are missing."""
+    try:
+        return ConnectionConfig.from_env()
+    except ValueError:
+        return None
 
 
 class ArtifactDebugAgent(PrometheusAgent):
-    """Debug-only producer/converter for session-scoped artifact references."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.artifact_root = Path(os.getenv("SHARED_ARTIFACT_DIR", "/app/shared/artifact-debug"))
-        self.artifact_root.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def public_base_url(self) -> str:
-        """Base URL used when writing clickable artifact URIs for UI clients."""
-        explicit = (os.getenv("AGENT_PUBLIC_URL") or "").strip().rstrip("/")
-        if explicit:
-            return explicit
-
-        host = (os.getenv("AGENT_HOST") or "localhost").strip()
-        port = (os.getenv("AGENT_PORT") or "8000").strip()
-        return f"http://{host}:{port}".rstrip("/")
+    """Debug-only producer/converter for session-scoped artifact references backed by DeepLynx."""
 
     @staticmethod
     def _sanitize_stem(value: str, fallback: str = "artifact") -> str:
@@ -63,142 +57,6 @@ class ArtifactDebugAgent(PrometheusAgent):
             parsed = default_value
         return max(64, min(parsed, 4096))
 
-    def _conversation_dir(self, conversation_id: str) -> Path:
-        """Session-scoped storage so artifacts can be traced and reused per conversation."""
-        safe_conv = self._sanitize_stem(conversation_id, fallback=str(uuid.uuid4()))
-        conv_dir = self.artifact_root / safe_conv
-        conv_dir.mkdir(parents=True, exist_ok=True)
-        return conv_dir
-
-    @staticmethod
-    def _unique_path(directory: Path, desired_filename: str) -> Path:
-        """Return a non-colliding path by appending numeric suffixes when needed."""
-        target = directory / desired_filename
-        if not target.exists():
-            return target
-
-        stem = Path(desired_filename).stem
-        suffix = Path(desired_filename).suffix
-        for idx in range(2, 10000):
-            candidate = directory / f"{stem}_{idx}{suffix}"
-            if not candidate.exists():
-                return candidate
-        raise RuntimeError("Unable to allocate a unique artifact filename")
-
-    def _artifact_uri_for_path(self, artifact_path: Path) -> str:
-        """Build a UI-clickable URI for a file inside this agent's artifact store."""
-        relative = artifact_path.relative_to(self.artifact_root).as_posix()
-        return f"{self.public_base_url}/artifacts/{relative}"
-
-    def _artifact_event_metadata(self, reference: ArtifactReference) -> Dict[str, Any]:
-        """Build the native A2A artifact metadata envelope from a catalog entry."""
-        return {
-            "conversation_id": reference.conversation_id,
-            "producer_agent_id": reference.producer_agent_id or self._producer_agent_id,
-            "created_at": reference.created_at,
-            "tags": list(reference.tags),
-            "size_bytes": reference.size_bytes,
-            **dict(reference.metadata or {}),
-        }
-
-    async def _register_reference_for_conversation(
-        self,
-        *,
-        conversation_id: str,
-        name: str,
-        description: str,
-        uri: str,
-        context: RequestContext,
-        event_queue: EventQueue,
-        mime_type: Optional[str] = None,
-        size_bytes: Optional[int] = None,
-        tags: Optional[list[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> ArtifactReference:
-        """Register artifact metadata under the explicit request conversation_id.
-
-        Why this exists:
-        A2A `context_id` and user-level `conversation_id` can differ depending on caller.
-        This helper ensures references are keyed by the conversation used for follow-up
-        requests and artifact parameter resolution.
-        """
-        reference = ArtifactReference(
-            artifact_id=str(uuid.uuid4()),
-            conversation_id=conversation_id,
-            name=name,
-            description=description,
-            uri=uri,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            producer_agent_id=self.agent_name.lower().replace(" ", "-"),
-            tags=list(tags or []),
-            metadata=dict(metadata or {}),
-        )
-        registered = self.artifact_registry.register(reference)
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=registered.artifact_id,
-                    name=registered.name,
-                    description=registered.description,
-                    metadata=self._artifact_event_metadata(registered),
-                    parts=[
-                        Part(
-                            root=FilePart(
-                                file={
-                                    "uri": registered.uri,
-                                    "mimeType": registered.mime_type,
-                                    "name": registered.name,
-                                }
-                            )
-                        )
-                    ],
-                ),
-                append=False,
-                lastChunk=False,
-                metadata={"kind": "artifact_reference", **dict(metadata or {})},
-            )
-        )
-        return registered
-
-    def _resolve_local_path(self, reference: Dict[str, Any]) -> Optional[Path]:
-        """Resolve a registered artifact reference back to a local filesystem path.
-
-        Used by conversion workflows that accept `artifact_id` rather than raw content.
-        """
-        metadata = reference.get("metadata") if isinstance(reference, dict) else None
-        if isinstance(metadata, dict):
-            local_path = metadata.get("local_path")
-            if isinstance(local_path, str) and local_path.strip():
-                path = Path(local_path).expanduser().resolve()
-                if path.exists():
-                    return path
-
-        uri = str(reference.get("uri") or "").strip()
-        if not uri:
-            return None
-
-        if uri.startswith("file://"):
-            file_path = Path(uri[7:]).expanduser().resolve()
-            return file_path if file_path.exists() else None
-
-        parsed = urlparse(uri)
-        path = unquote(parsed.path or "")
-        marker = "/artifacts/"
-        if marker not in path:
-            return None
-
-        relative = path.split(marker, 1)[1]
-        candidate = (self.artifact_root / relative).resolve()
-        root = self.artifact_root.resolve()
-        if not str(candidate).startswith(f"{root}{os.sep}"):
-            return None
-        if candidate.exists():
-            return candidate
-        return None
-
     @staticmethod
     def _read_svg_payload(svg_path: Path) -> Dict[str, Any]:
         """Extract minimal rendering hints from SVG for fallback PNG conversion."""
@@ -209,7 +67,6 @@ class ArtifactDebugAgent(PrometheusAgent):
             "background": "#ffffff",
             "text_color": "#1f2937",
         }
-
         try:
             tree = ET.parse(svg_path)
             root = tree.getroot()
@@ -238,7 +95,6 @@ class ArtifactDebugAgent(PrometheusAgent):
                     break
         except Exception:
             pass
-
         return defaults
 
     @staticmethod
@@ -248,14 +104,12 @@ class ArtifactDebugAgent(PrometheusAgent):
         image = Image.new("RGB", (payload["width"], payload["height"]), color=payload["background"])
         drawer = ImageDraw.Draw(image)
         font = ImageFont.load_default()
-
         text = str(payload["text"])
         text_bbox = drawer.textbbox((0, 0), text, font=font)
         text_width = text_bbox[2] - text_bbox[0]
         text_height = text_bbox[3] - text_bbox[1]
         x = (payload["width"] - text_width) // 2
         y = (payload["height"] - text_height) // 2
-
         drawer.text((x, y), text, fill=payload["text_color"], font=font)
         image.save(target_png, format="PNG")
         return "pillow-fallback"
@@ -265,7 +119,6 @@ class ArtifactDebugAgent(PrometheusAgent):
         """Convert SVG to PNG, preferring CairoSVG and falling back to PIL for debug SVGs."""
         try:
             import cairosvg  # type: ignore
-
             cairosvg.svg2png(url=str(source_svg), write_to=str(target_png))
             return "cairosvg"
         except Exception:
@@ -278,7 +131,15 @@ class ArtifactDebugAgent(PrometheusAgent):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> Dict[str, Any]:
-        """Create an SVG artifact with a user-provided word and register its metadata."""
+        """Create an SVG artifact, upload to DeepLynx, and emit a deeplynx:// reference."""
+        storage_config = _try_storage_config()
+        if storage_config is None:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": "DEEPLYNX_* credentials not configured.",
+            }
+
         word = str(params.get("word") or params.get("text") or "").strip()
         if not word:
             return {
@@ -293,57 +154,57 @@ class ArtifactDebugAgent(PrometheusAgent):
         text_color = str(params.get("color") or params.get("text_color") or "#0f172a")
 
         requested_name = str(params.get("name") or "").strip()
-        if requested_name:
-            stem = self._sanitize_stem(Path(requested_name).stem, fallback="debug_svg")
-        else:
-            stem = self._sanitize_stem(word.lower(), fallback="debug_svg")
-
+        stem = self._sanitize_stem(
+            Path(requested_name).stem if requested_name else word.lower(),
+            fallback="debug_svg",
+        )
         file_name = f"{stem}.svg"
-        target_path = self._unique_path(self._conversation_dir(conversation_id), file_name)
+        description = str(params.get("description") or f"Debug SVG containing the word '{word}'.")
 
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            message=f"Creating SVG artifact '{target_path.name}'.",
+            message=f"Creating SVG artifact '{file_name}'.",
         )
 
         escaped_word = xml_escape(word)
         svg_content = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'  # noqa: E501
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"'
+            f' viewBox="0 0 {width} {height}">'
             f'<rect width="100%" height="100%" fill="{xml_escape(background)}" />'
-            f'<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" '
-            f'fill="{xml_escape(text_color)}" font-size="48" font-family="sans-serif">{escaped_word}</text>'
+            f'<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"'
+            f' fill="{xml_escape(text_color)}" font-size="48"'
+            f' font-family="sans-serif">{escaped_word}</text>'
             "</svg>"
         )
-        target_path.write_text(svg_content, encoding="utf-8")
 
-        description = str(params.get("description") or f"Debug SVG containing the word '{word}'.")
-        artifact_ref = await self._register_reference_for_conversation(
-            conversation_id=conversation_id,
-            name=target_path.name,
-            description=description,
-            uri=self._artifact_uri_for_path(target_path),
-            context=context,
-            event_queue=event_queue,
-            mime_type="image/svg+xml",
-            size_bytes=target_path.stat().st_size,
-            tags=["debug", "svg"],
-            metadata={
-                "local_path": str(target_path),
-                "word": word,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            svg_path = Path(tmp) / file_name
+            svg_path.write_text(svg_content, encoding="utf-8")
+
+            await self.send_status_update(
+                context=context,
+                event_queue=event_queue,
+                message="Uploading SVG to DeepLynx.",
+            )
+
+            artifact_ref = await self.send_deeplynx_artifact(
+                context=context,
+                event_queue=event_queue,
+                file_path=svg_path,
+                name=file_name,
+                description=description,
+                storage_config=storage_config,
+                mime_type="image/svg+xml",
+                json_type="prometheus.debug.svg.v1",
+                tags=["debug", "svg"],
+                metadata={"word": word},
+            )
 
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
             message=f"Created SVG artifact {artifact_ref.artifact_id}.",
-        )
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message="SVG artifact created successfully.",
         )
         await self.send_conversation_message(
             context=context,
@@ -369,10 +230,17 @@ class ArtifactDebugAgent(PrometheusAgent):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> Dict[str, Any]:
-        """Convert an existing SVG artifact reference into a new PNG artifact reference."""
+        """Fetch an SVG artifact from DeepLynx, convert to PNG, and upload the result."""
+        storage_config = _try_storage_config()
+        if storage_config is None:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": "DEEPLYNX_* credentials not configured.",
+            }
+
         artifact_id = str(params.get("artifact_id") or "").strip()
         if not artifact_id:
-            # Sequential workflow passes upstream skill results — try to extract from there
             upstream = params.get("upstream_results") or {}
             for skill_result in upstream.values():
                 if isinstance(skill_result, dict):
@@ -400,16 +268,7 @@ class ArtifactDebugAgent(PrometheusAgent):
             }
 
         source_dict = source_ref.to_dict()
-        source_path = self._resolve_local_path(source_dict)
-        if not source_path or not source_path.exists():
-            return {
-                "status": "error",
-                "conversation_id": conversation_id,
-                "message": "Source artifact URI is not a readable local file.",
-                "source_artifact": source_dict,
-            }
-
-        if source_path.suffix.lower() != ".svg":
+        if Path(source_ref.name).suffix.lower() != ".svg":
             return {
                 "status": "error",
                 "conversation_id": conversation_id,
@@ -417,52 +276,73 @@ class ArtifactDebugAgent(PrometheusAgent):
                 "source_artifact": source_dict,
             }
 
+        file_id = source_ref.metadata.get("deeplynx_file_id")
+        if not file_id:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": "Source artifact is missing 'deeplynx_file_id' metadata; cannot download.",
+                "source_artifact": source_dict,
+            }
+
         requested_name = str(params.get("name") or "").strip()
         base_stem = self._sanitize_stem(
-            Path(requested_name).stem if requested_name else source_path.stem,
+            Path(requested_name).stem if requested_name else Path(source_ref.name).stem,
             fallback="converted",
         )
-        target_path = self._unique_path(self._conversation_dir(conversation_id), f"{base_stem}.png")
+        description = str(
+            params.get("description")
+            or f"PNG converted from SVG artifact '{source_ref.name}'."
+        )
 
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            message=f"Converting artifact '{source_ref.name}' to PNG.",
+            message=f"Downloading SVG artifact '{source_ref.name}' from DeepLynx.",
         )
 
-        conversion_backend = self._convert_svg_to_png(source_path, target_path)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            svg_path = tmp_path / source_ref.name
+            png_name = f"{base_stem}.png"
+            png_path = tmp_path / png_name
 
-        description = str(
-            params.get("description")
-            or f"PNG converted from SVG artifact '{source_ref.name}' using {conversion_backend}."
-        )
-        output_ref = await self._register_reference_for_conversation(
-            conversation_id=conversation_id,
-            name=target_path.name,
-            description=description,
-            uri=self._artifact_uri_for_path(target_path),
-            context=context,
-            event_queue=event_queue,
-            mime_type="image/png",
-            size_bytes=target_path.stat().st_size,
-            tags=["debug", "png", "converted"],
-            metadata={
-                "local_path": str(target_path),
-                "source_artifact_id": source_ref.artifact_id,
-                "converted_at": datetime.now(timezone.utc).isoformat(),
-                "conversion_backend": conversion_backend,
-            },
-        )
+            async with AsyncStorageClient(storage_config) as client:
+                await client.files.download(int(file_id), svg_path)
+
+            await self.send_status_update(
+                context=context,
+                event_queue=event_queue,
+                message=f"Converting artifact '{source_ref.name}' to PNG.",
+            )
+
+            conversion_backend = self._convert_svg_to_png(svg_path, png_path)
+
+            await self.send_status_update(
+                context=context,
+                event_queue=event_queue,
+                message="Uploading PNG to DeepLynx.",
+            )
+
+            output_ref = await self.send_deeplynx_artifact(
+                context=context,
+                event_queue=event_queue,
+                file_path=png_path,
+                name=png_name,
+                description=description,
+                storage_config=storage_config,
+                mime_type="image/png",
+                tags=["debug", "png", "converted"],
+                metadata={
+                    "source_artifact_id": source_ref.artifact_id,
+                    "conversion_backend": conversion_backend,
+                },
+            )
 
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
             message=f"Created PNG artifact {output_ref.artifact_id}.",
-        )
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message="SVG artifact converted to PNG successfully.",
         )
         await self.send_conversation_message(
             context=context,
@@ -503,7 +383,6 @@ class ArtifactDebugAgent(PrometheusAgent):
             payload = {
                 "message": "Debug JSON artifact",
                 "requested_json_type": json_type,
-                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         if not isinstance(payload, dict):
             return {
@@ -513,10 +392,7 @@ class ArtifactDebugAgent(PrometheusAgent):
             }
 
         name = str(params.get("name") or "debug_json_artifact").strip() or "debug_json_artifact"
-        description = str(
-            params.get("description")
-            or f"Debug JSON artifact for '{json_type}'."
-        )
+        description = str(params.get("description") or f"Debug JSON artifact for '{json_type}'.")
 
         await self.send_status_update(
             context=context,
@@ -534,38 +410,19 @@ class ArtifactDebugAgent(PrometheusAgent):
                 json_type=json_type,
                 json_body=payload,
                 producer_agent_id=self._producer_agent_id,
-                metadata={
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "debug": True,
-                },
+                metadata={"debug": True},
             )
         )
         artifact_id = artifact_ref.artifact_id
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=artifact_id,
-                    name=name,
-                    description=description,
-                    metadata=self._artifact_event_metadata(artifact_ref),
-                    parts=[
-                        Part(
-                            root=DataPart(
-                                data=payload,
-                                metadata={
-                                    "mime_type": "application/json",
-                                    "json_type": json_type,
-                                },
-                            )
-                        )
-                    ],
-                ),
-                append=False,
-                lastChunk=False,
-                metadata={"debug": True, "json_type": json_type},
-            )
+        await self.send_json_artifact(
+            context=context,
+            event_queue=event_queue,
+            payload=payload,
+            name=name,
+            description=description,
+            json_type=json_type,
+            artifact_id=artifact_id,
+            metadata={"debug": True, "json_type": json_type},
         )
         await self.send_status_update(
             context=context,
@@ -625,26 +482,6 @@ class ArtifactDebugAgent(PrometheusAgent):
             context=context,
             event_queue=event_queue,
         )
-
-    def configure_app(self, app) -> None:
-        """Expose static artifact files for UI link rendering and manual debugging."""
-
-        async def fetch_artifact(request):
-            artifact_path = str(request.path_params.get("artifact_path") or "")
-            if not artifact_path:
-                return JSONResponse({"ok": False, "error": "Missing artifact path"}, status_code=400)
-
-            safe_relative = unquote(artifact_path).lstrip("/")
-            candidate = (self.artifact_root / safe_relative).resolve()
-            root = self.artifact_root.resolve()
-            if not str(candidate).startswith(f"{root}{os.sep}"):
-                return JSONResponse({"ok": False, "error": "Invalid artifact path"}, status_code=400)
-            if not candidate.exists() or not candidate.is_file():
-                return JSONResponse({"ok": False, "error": "Artifact not found"}, status_code=404)
-
-            return FileResponse(str(candidate))
-
-        app.add_route("/artifacts/{artifact_path:path}", fetch_artifact, methods=["GET"])
 
 
 if __name__ == "__main__":

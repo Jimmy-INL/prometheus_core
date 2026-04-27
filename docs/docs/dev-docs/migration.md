@@ -105,7 +105,7 @@ Model selection and API keys are now configured on the client-agent and speciali
 | `LITELLM_MASTER_KEY` | Client-agent + specialists | LiteLLM auth for agent discovery/registration |
 | `LITELLM_DB_PASSWORD` | LiteLLM Postgres | Persistent storage for LiteLLM agent registrations |
 | `LITELLM_LOCAL_PORT` | Docker Compose host mapping | Host port that exposes LiteLLM locally (default: `9977`) |
-| `MODEL_NAME` | All agents | LLM model selection (default: `claude-sonnet-4-20250514`) |
+| `MODEL_NAME` | All agents | LLM model selection (default: `claude-sonnet-4-6`) |
 | `CHAINLIT_AUTH_SECRET` | Frontend | Session encryption secret for Chainlit |
 
 ## Protocol change: HTTP REST to A2A JSON-RPC

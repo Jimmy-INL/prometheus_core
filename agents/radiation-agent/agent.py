@@ -11,11 +11,44 @@ from anthropic import Anthropic
 from prometheus_api.agent import MissingInput, PrometheusAgent
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 RADIATION_DAMAGE_JSON_TYPE = "prometheus.radiation_damage.result.v1"
+
+ANALYSIS_PROMPT_TEMPLATE = """\
+You are a nuclear reactor radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
+{context_str}
+Provide a comprehensive radiation damage analysis as a JSON object with this structure:
+{{
+    "total_fluence_n_cm2": <scientific notation as float>,
+    "dpa": <float, displacements per atom>,
+    "dbtt_shift_c": <float, ductile-to-brittle transition temperature shift in Celsius>,
+    "void_swelling_percent": <float>,
+    "helium_concentration_appm": <float, atomic parts per million>,
+    "hydrogen_concentration_appm": <float>,
+    "fluence_spectrum": {{
+        "thermal": <float>,
+        "epithermal": <float>,
+        "fast": <float>
+    }},
+    "damage_mechanisms": [<list of active damage mechanisms>],
+    "structural_integrity": "<acceptable/degraded/critical>",
+    "remaining_service_life_years": <float>,
+    "surveillance_capsule_data": {{
+        "capsules_remaining": <int>,
+        "next_withdrawal_date": "<ISO date>"
+    }},
+    "recommendations": [<list of specific recommendations>],
+    "regulatory_compliance": {{
+        "regulatory_limit_dbtt_c": 93.3,
+        "margin_to_limit_c": <float>,
+        "status": "<within_limits/approaching_limit/exceeds_limit>"
+    }},
+    "confidence": <float 0-1>
+}}
+
+Consider neutron embrittlement, void swelling, helium embrittlement, and transmutation effects. Follow 10 CFR 50.61 regulatory limits."""
 
 
 def _build_radiation_summary(material_id: str, analysis: Dict[str, Any]) -> str:
@@ -152,14 +185,7 @@ class RadiationDamageAgent(PrometheusAgent):
             }
 
         # Send status update
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working),
-            )
-        )
+        await self.send_status_update(context=context, event_queue=event_queue)
 
         operating_context = {
             "temperature_c": resolved.get("temperature_c"),
@@ -179,38 +205,7 @@ class RadiationDamageAgent(PrometheusAgent):
             if non_null.get("operating_hours"):
                 context_str += f"- Operating Hours: {non_null['operating_hours']}\n"
 
-        prompt = f"""You are a nuclear reactor radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
-{context_str}
-Provide a comprehensive radiation damage analysis as a JSON object with this structure:
-{{
-    "total_fluence_n_cm2": <scientific notation as float>,
-    "dpa": <float, displacements per atom>,
-    "dbtt_shift_c": <float, ductile-to-brittle transition temperature shift in Celsius>,
-    "void_swelling_percent": <float>,
-    "helium_concentration_appm": <float, atomic parts per million>,
-    "hydrogen_concentration_appm": <float>,
-    "fluence_spectrum": {{
-        "thermal": <float>,
-        "epithermal": <float>,
-        "fast": <float>
-    }},
-    "damage_mechanisms": [<list of active damage mechanisms>],
-    "structural_integrity": "<acceptable/degraded/critical>",
-    "remaining_service_life_years": <float>,
-    "surveillance_capsule_data": {{
-        "capsules_remaining": <int>,
-        "next_withdrawal_date": "<ISO date>"
-    }},
-    "recommendations": [<list of specific recommendations>],
-    "regulatory_compliance": {{
-        "regulatory_limit_dbtt_c": 93.3,
-        "margin_to_limit_c": <float>,
-        "status": "<within_limits/approaching_limit/exceeds_limit>"
-    }},
-    "confidence": <float 0-1>
-}}
-
-Consider neutron embrittlement, void swelling, helium embrittlement, and transmutation effects. Follow 10 CFR 50.61 regulatory limits."""
+        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)

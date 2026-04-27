@@ -1,5 +1,5 @@
-import json
 import logging
+import mimetypes
 import tempfile
 import uuid
 from pathlib import Path
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
 from utils.settings import settings
+from utils.uri_resolver import resolve_to_local_path
 
 
 def _format_status_history(history: List[str]) -> str:
@@ -324,32 +325,37 @@ async def _handle_final_response(response: ConversationResponse):
 
     if response.artifacts:
         cl.user_session.set("artifacts", response.artifacts)
-    if artifacts_to_render:
-        artifact_elements, artifact_text = await render_artifacts(artifacts_to_render)
-        elements.extend(artifact_elements)
-        if artifact_text:
-            text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
-    if response.recommended_materials:
-        materials = "\n".join(f"- {m}" for m in response.recommended_materials)
-        text += f"\n\n**Recommended Materials:**\n{materials}"
-
-    metadata = response.message_metadata or {}
-    suggestions = metadata.get("follow_up_suggestions", [])
-    if suggestions:
-        elements.append(
-            cl.CustomElement(
-                name="FollowUpSuggestions",
-                props={"suggestions": suggestions, "title": "What would you like to do next?"},
+    with tempfile.TemporaryDirectory() as render_tmp:
+        if artifacts_to_render:
+            artifact_elements, artifact_text = await render_artifacts(
+                artifacts_to_render, Path(render_tmp)
             )
-        )
+            elements.extend(artifact_elements)
+            if artifact_text:
+                text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
 
-    if text or elements:
-        await cl.Message(content=text, elements=elements).send()
+        if response.recommended_materials:
+            materials = "\n".join(f"- {m}" for m in response.recommended_materials)
+            text += f"\n\n**Recommended Materials:**\n{materials}"
+
+        metadata = response.message_metadata or {}
+        suggestions = metadata.get("follow_up_suggestions", [])
+        if suggestions:
+            elements.append(
+                cl.CustomElement(
+                    name="FollowUpSuggestions",
+                    props={"suggestions": suggestions, "title": "What would you like to do next?"},
+                )
+            )
+
+        if text or elements:
+            await cl.Message(content=text, elements=elements).send()
 
 
 async def render_artifacts(
     artifacts: List[Dict[str, Any]],
+    tmp_dir: Path,
 ) -> tuple[list, str]:
     """Render artifact references into Chainlit elements and inline text.
 
@@ -375,8 +381,28 @@ async def render_artifacts(
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
         description = artifact.get("description", "")
 
+        # Resolve deeplynx:// URIs to local files before plugin dispatch.
+        # Plugins expect file:// or http(s):// URIs; deeplynx:// must be downloaded first.
+        if uri.startswith("deeplynx://"):
+            resolved = await resolve_to_local_path(
+                uri,
+                cache_dir=tmp_dir,
+                artifact=artifact,
+                artifact_id=artifact.get("artifact_id"),
+            )
+            if resolved is not None:
+                artifact = dict(artifact)
+                artifact["uri"] = f"file://{resolved}"
+                uri = artifact["uri"]
+            else:
+                logger.warning("Could not resolve deeplynx:// artifact %r; falling back to text", name)
+
         # Try visualization plugin system first
-        element = await _plugins.render_artifact(artifact)
+        try:
+            element = await _plugins.render_artifact(artifact)
+        except Exception as e:
+            logger.warning("Plugin rendering failed for artifact %r: %s", name, e)
+            element = None
         if element is not None:
             elements.append(element)
             continue
@@ -385,7 +411,7 @@ async def render_artifacts(
         artifact_type = _classify_artifact(mime_type)
 
         if artifact_type == "pdf":
-            el = await _render_pdf_artifact(uri, name)
+            el = await _render_pdf_artifact(uri, name, tmp_dir)
             if el:
                 elements.append(el)
             else:
@@ -408,7 +434,7 @@ async def render_artifacts(
                     },
                 ))
             else:
-                el = await _render_remote_file_artifact(uri, name) if uri else None
+                el = await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
                 if el:
                     elements.append(el)
                     line = f"- **{name}**"
@@ -428,7 +454,7 @@ async def render_artifacts(
                 text_parts.append(f"- **{name}**: {description or uri}")
 
         elif artifact_type == "file":
-            el = await _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
             if el:
                 elements.append(el)
             else:
@@ -440,10 +466,10 @@ async def render_artifacts(
         else:
             # No plugin and no known text type — tell the user and offer a download
             label = json_type or mime_type or "unknown"
-            line = f"📎 **{name}** — no viewer available for `{label}`"
+            line = f"**{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = await _render_file_artifact(uri, name)
+            el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
             if el:
                 elements.append(el)
             else:
@@ -470,7 +496,6 @@ def _classify_artifact(mime_type: str) -> str:
 
     return "unknown"
 
-
 async def _fetch_json_body(uri: str) -> Optional[Any]:
     """Download a JSON artifact from a remote URI and return its parsed content."""
     try:
@@ -484,10 +509,7 @@ async def _fetch_json_body(uri: str) -> Optional[Any]:
         logger.warning("Unexpected error fetching JSON from %r: %s", uri, e)
     return None
 
-
-async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
-    if not uri:
-        return None
+async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     try:
         if uri.startswith("file://"):
             path = Path(uri[7:])
@@ -503,7 +525,7 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
             async with httpx.AsyncClient(timeout=60) as http:
                 resp = await http.get(uri)
                 resp.raise_for_status()
-            tmp = Path(tempfile.mkdtemp()) / (name or "document.pdf")
+            tmp = tmp_dir / (name or "document.pdf")
             tmp.write_bytes(resp.content)
             return cl.Pdf(name=name, display="inline", path=str(tmp))
     except Exception as e:
@@ -511,33 +533,33 @@ async def _render_pdf_artifact(uri: str, name: str) -> Optional[Any]:
     return None
 
 
-async def _render_remote_file_artifact(uri: str, name: str) -> Optional[Any]:
-    if not uri or not uri.startswith("http"):
+async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: str = "") -> Optional[Any]:
+    if not uri.startswith("http"):
         return None
     try:
         async with httpx.AsyncClient(timeout=60) as http:
             resp = await http.get(uri)
             resp.raise_for_status()
         filename = Path(name).name or "artifact"
-        tmp = Path(tempfile.mkdtemp()) / filename
+        tmp = tmp_dir / filename
         tmp.write_bytes(resp.content)
-        return cl.File(name=filename, path=str(tmp), display="inline")
+        effective_mime = mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        return cl.File(name=filename, path=str(tmp), display="inline", mime=effective_mime)
     except Exception as e:
         logger.warning("Failed to render remote file artifact %r: %s", uri, e)
         return None
 
 
-async def _render_file_artifact(uri: str, name: str) -> Optional[Any]:
-    if not uri:
-        return None
+async def _render_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: str = "") -> Optional[Any]:
     if uri.startswith("file://"):
         path = Path(uri[7:])
     elif uri.startswith("/"):
         path = Path(uri)
     else:
-        return await _render_remote_file_artifact(uri, name)
+        return await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
     if path.exists():
-        return cl.File(name=name, path=str(path), display="inline")
+        effective_mime = mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return cl.File(name=name, path=str(path), display="inline", mime=effective_mime)
     return None
 
 
