@@ -3,9 +3,9 @@ services:
     build:
       args:
         - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
-        - HTTP_PROXY=${HTTP_PROXY}
-        - HTTPS_PROXY=${HTTPS_PROXY}
-        - NO_PROXY=${NO_PROXY}
+        - HTTP_PROXY=${HTTP_PROXY-""}
+        - HTTPS_PROXY=${HTTPS_PROXY-""}
+        - NO_PROXY=${NO_PROXY-""}
     container_name: form-filler-agent
     networks:
       - agent-network
