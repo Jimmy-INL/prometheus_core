@@ -2,6 +2,7 @@ chat-intro: "Welcome to the Prometheus Platform."
 chat-suggestion-title: "What would you like to do today?"
 workflow-suggestions:
   - "Design a Rankine cycle based power generation system for a Sodium Fast Reactor. Core power rating is 390 MW, turbine output is 170.9 MW"
+  - "Create a single-loop PWR primary coolant system with an RPV, SG, and a Pump connected in a closed loop."
   - "Run FTL Safety Analysis"
   - "Design a nuclear system"
   - "Perform a thermal analysis of SS316 at 400C"

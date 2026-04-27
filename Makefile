@@ -3,28 +3,20 @@
 # Specialist agents live in agents/*/docker-compose.yml.
 # Any agent directory that contains a docker-compose.yml is included automatically.
 # To exclude an agent, remove its directory.
-CONTAINER_RUNTIME := $(if $(shell which podman-compose 2>/dev/null),podman-compose,docker compose)
+COMPOSE := docker compose
 
 UNAME := $(shell uname)
 
-COMPOSE_BASE    := docker-compose.yml
-COMPOSE_AGENTS  := docker-compose.agents.yml
-COMPOSE_AGENTS_PODMAN := docker-compose.agents.podman.yml
+COMPOSE_BASE   := docker-compose.yml
+COMPOSE_AGENTS := docker-compose.agents.yml
 
 # All per-agent compose files found on disk (checked-out submodules only).
 AGENT_COMPOSE_FILES := $(shell find agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
 
-# Pick the right agents compose file based on the container runtime.
-ifeq ($(CONTAINER_RUNTIME),podman-compose)
-ACTIVE_AGENTS_COMPOSE := $(COMPOSE_AGENTS_PODMAN)
-else
-ACTIVE_AGENTS_COMPOSE := $(COMPOSE_AGENTS)
-endif
-
-# Build the -f flags for $(CONTAINER_RUNTIME).
+# Build the -f flags for docker compose.
 COMPOSE_FILES := -f $(COMPOSE_BASE)
 ifneq ($(AGENT_COMPOSE_FILES),)
-COMPOSE_FILES += -f $(ACTIVE_AGENTS_COMPOSE)
+COMPOSE_FILES += -f $(COMPOSE_AGENTS)
 endif
 # Automatically include docker-compose.override.yml if present (local dev overrides).
 ifneq ($(wildcard docker-compose.override.yml),)
@@ -33,8 +25,8 @@ endif
 
 # No-generate compose flags: include agents compose only if it already exists on disk.
 COMPOSE_FILES_NG := -f $(COMPOSE_BASE)
-ifneq ($(wildcard $(ACTIVE_AGENTS_COMPOSE)),)
-COMPOSE_FILES_NG += -f $(ACTIVE_AGENTS_COMPOSE)
+ifneq ($(wildcard $(COMPOSE_AGENTS)),)
+COMPOSE_FILES_NG += -f $(COMPOSE_AGENTS)
 endif
 ifneq ($(wildcard docker-compose.override.yml),)
 COMPOSE_FILES_NG += -f docker-compose.override.yml
@@ -80,7 +72,7 @@ endif
 .PHONY: all up down build logs ps generate clean-generated restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg help
 
 ## Generate the agents compose file from discovered agent compose files.
-generate: $(ACTIVE_AGENTS_COMPOSE)
+generate: $(COMPOSE_AGENTS)
 
 # Generate a merged compose file with project-root-relative paths and shared
 # build args. Docker Compose YAML anchors do not cross included files.
@@ -108,61 +100,53 @@ test-infra: ##@ Run all infrastructure tests
 ##@ Compose
 ##@
 
-# podman-compose: produce a merged file with explicit build contexts and
-# project-root-relative paths (podman-compose does not resolve 'include:' paths
-# relative to the included file).
-$(COMPOSE_AGENTS_PODMAN): $(AGENT_COMPOSE_FILES) scripts/generate-agents-compose.sh
-	@./scripts/generate-agents-compose.sh $(AGENT_COMPOSE_FILES) > $@
-	@echo "Generated $(COMPOSE_AGENTS_PODMAN) with $(words $(AGENT_COMPOSE_FILES)) agent(s):"
-	@for f in $(AGENT_COMPOSE_FILES); do echo "  $$f"; done
-
 up: ##@ Build and start all services (detached)
 up: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up --build -d
+	$(COMPOSE) $(COMPOSE_FILES) up --build -d
 
 up-fg: ##@ Build and start all services (foreground)
 up-fg: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up --build
+	$(COMPOSE) $(COMPOSE_FILES) up --build
 
 restart: ##@ Restart all services without rebuilding.
 restart: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up -d
+	$(COMPOSE) $(COMPOSE_FILES) up -d
 
 restart-fg: ##@ Restart all services without rebuilding (foreground).
 restart-fg: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) up
+	$(COMPOSE) $(COMPOSE_FILES) up
 
 ng-up: ##@ Start all services without regenerating agents compose (uses existing file if present).
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up --build -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) up --build -d
 
 ng-up-fg: ##@ Start all services without regenerating (foreground).
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up --build
+	$(COMPOSE) $(COMPOSE_FILES_NG) up --build
 
 ng-restart: ##@ Restart without rebuilding or regenerating.
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) up -d
 
 ng-restart-fg: ##@ Restart without rebuilding or regenerating (foreground).
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES_NG) up
+	$(COMPOSE) $(COMPOSE_FILES_NG) up
 
 down: ##@ Stop all services
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) down
+	$(COMPOSE) $(COMPOSE_FILES) down
 
 down-v: ##@ Stop all services and remove volumes
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) down -v
+	$(COMPOSE) $(COMPOSE_FILES) down -v
 
 build: ##@ Build images without starting
 build: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) build
+	$(COMPOSE) $(COMPOSE_FILES) build
 
 build-plain: ##@ Build images with plain (verbose) progress output
 build-plain: generate
 	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) build --progress=plain
 
 logs: ##@ Tail logs for all services (SERVICE=<name> to filter)
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) logs -f $(SERVICE)
+	$(COMPOSE) $(COMPOSE_FILES) logs -f $(SERVICE)
 
 ps: ##@ Show running service status
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) ps
+	$(COMPOSE) $(COMPOSE_FILES) ps
 
 clean-generated: ##@ Remove the generated agents compose file.
-	rm -f $(COMPOSE_AGENTS) $(COMPOSE_AGENTS_PODMAN)
+	rm -f $(COMPOSE_AGENTS)

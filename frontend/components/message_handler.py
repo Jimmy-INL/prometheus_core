@@ -419,7 +419,10 @@ async def render_artifacts(
 
         elif artifact_type == "data":
             data_content = artifact.get("json_body")
-            if data_content:
+            # If json_body is absent, try fetching JSON from the URI
+            if not data_content and uri and uri.startswith("http"):
+                data_content = await _fetch_json_body(uri)
+            if data_content is not None:
                 elements.append(cl.CustomElement(
                     name="CollapsibleJson",
                     display="inline",
@@ -441,7 +444,7 @@ async def render_artifacts(
                         line += f": `{json_type}`"
                     text_parts.append(line)
                 else:
-                    text_parts.append(f"- **{name}**: {description or uri}")
+                    text_parts.append(f"- **{name}**: {description or uri or '(no URI)'}")
 
         elif artifact_type == "report":
             report_text = description
@@ -493,6 +496,18 @@ def _classify_artifact(mime_type: str) -> str:
 
     return "unknown"
 
+async def _fetch_json_body(uri: str) -> Optional[Any]:
+    """Download a JSON artifact from a remote URI and return its parsed content."""
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.get(uri)
+            resp.raise_for_status()
+            return resp.json()
+    except (httpx.HTTPError, json.JSONDecodeError) as e:
+        logger.warning("Failed to fetch JSON body from %r: %s", uri, e)
+    except Exception as e:
+        logger.warning("Unexpected error fetching JSON from %r: %s", uri, e)
+    return None
 
 async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     try:
