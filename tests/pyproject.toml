@@ -2,7 +2,7 @@
 name = "prometheus-infra-tests"
 version = "0.1.0"
 description = "Infrastructure tests for Prometheus Platform Docker services"
-requires-python = ">=3.13"
+requires-python = "~=3.12.0"
 dependencies = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.25.0",

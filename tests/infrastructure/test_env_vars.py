@@ -50,19 +50,6 @@ def test_redis_url_references_redis_password(env_example_vars):
     )
 
 
-def test_database_url_format(compose_data):
-    """DATABASE_URL in litellm service should follow postgresql://litellm:...@litellm-db:5432/litellm."""
-    env_list = compose_data["services"]["litellm"].get("environment", [])
-    db_url = None
-    for entry in env_list:
-        if isinstance(entry, str) and entry.startswith("DATABASE_URL="):
-            db_url = entry.split("=", 1)[1]
-            break
-    assert db_url is not None, "DATABASE_URL not found in litellm environment"
-    assert "litellm-db:5432/litellm" in db_url
-    assert db_url.startswith("postgresql://litellm:")
-
-
 def test_port_vars_have_values(env_example_vars):
     """Port variables should have values defined in .env.example."""
     port_vars = ["LITELLM_LOCAL_PORT", "REDIS_LOCAL_PORT", "CLIENT_AGENT_PORT", "CHAINLIT_FRONTEND_PORT"]

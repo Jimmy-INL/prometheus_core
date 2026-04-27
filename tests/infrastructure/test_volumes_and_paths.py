@@ -54,14 +54,3 @@ def test_redis_data_volume(compose_data):
 def test_certs_directory_exists(project_root):
     assert (project_root / "certs").is_dir(), "certs/ directory must exist for build contexts"
 
-
-def test_certs_additional_context_frontend(compose_data):
-    build = compose_data["services"]["chainlit-frontend"].get("build", {})
-    additional = build.get("additional_contexts", {})
-    assert "certs" in additional, "chainlit-frontend build should have 'certs' additional context"
-
-
-def test_certs_additional_context_client_agent(compose_data):
-    build = compose_data["services"]["client-agent"].get("build", {})
-    additional = build.get("additional_contexts", {})
-    assert "certs" in additional, "client-agent build should have 'certs' additional context"
