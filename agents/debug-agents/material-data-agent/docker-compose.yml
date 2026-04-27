@@ -1,15 +1,16 @@
 services:
-  thermal-agent:
+  data-agent:
     build:
       args:
+        - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
         - HTTP_PROXY=${HTTP_PROXY}
         - HTTPS_PROXY=${HTTPS_PROXY}
         - NO_PROXY=${NO_PROXY}
-    container_name: thermal-agent
+    container_name: data-agent
     networks:
       - agent-network
     environment:
-      AGENT_HOST: thermal-agent
+      AGENT_HOST: data-agent
       AGENT_PORT: 8000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-""}
       MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
@@ -27,6 +28,6 @@ services:
       litellm:
         condition: service_healthy
     volumes:
-      - ../../shared:/app/shared
-      - ${LOCAL_CERT_FILE:-../../certs/ca-bundle.pem}:${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+      - ../../../shared:/app/shared
+      - ${LOCAL_CERT_FILE:-../../../certs/ca-bundle.pem}:${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
     restart: unless-stopped
