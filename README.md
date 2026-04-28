@@ -45,9 +45,9 @@ cp .env.example .env
 
 ### 2. Provide CA certificates
 
-Place your INL CA bundle at `certs/ca-bundle.pem` (or override the host path via `LOCAL_CERT_FILE`). It is mounted into every container at the path set by `CERT_FILE`.
+Place your CA bundle at `certs/ca-bundle.pem`. It is mounted into every container at `/etc/ssl/certs/ca-bundle.pem`
 
-Follow the INL Service now knowledge base article - https://servicenow.inl.gov/ess?id=kb_article_view&sys_id=78a82f9293adba90c36eb7986cba1072
+If building for INL, follow the INL ServiceNow knowledge base article - https://servicenow.inl.gov/ess?id=kb_article_view&sys_id=78a82f9293adba90c36eb7986cba1072
 
 ### 3. Authenticate to the container registry
 

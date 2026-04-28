@@ -30,6 +30,7 @@ services:
       redis:
         condition: service_started
     volumes:
+      - ../../certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
       - ../../shared:/app/shared
       - osti-model-cache:/root/.cache/datalab
       - huggingface-cache:/root/.cache/huggingface

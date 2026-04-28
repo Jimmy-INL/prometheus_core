@@ -34,4 +34,6 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+    volumes:
+      - ../../../certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
     restart: unless-stopped

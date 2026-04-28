@@ -19,6 +19,7 @@ x-common-env: &common-env
   DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
 
 x-common-volumes: &common-volumes
+  - ./certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
   - ./shared:/app/shared
 
 x-build-args: &prometheus-api-build-args

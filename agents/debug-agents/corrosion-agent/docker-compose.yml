@@ -28,5 +28,6 @@ services:
       litellm:
         condition: service_healthy
     volumes:
+      - ../../../certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
       - ../../../shared:/app/shared
     restart: unless-stopped
