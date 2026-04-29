@@ -2,7 +2,7 @@ services:
   radiation-agent:
     build:
       args:
-        - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
+        - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH:-1a25aa7}
         - HTTP_PROXY=${HTTP_PROXY-""}
         - HTTPS_PROXY=${HTTPS_PROXY-""}
         - NO_PROXY=${NO_PROXY-""}
