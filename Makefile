@@ -14,6 +14,11 @@ UNAME := $(shell uname)
 COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
 
+# Bump this when a new prometheus_api base image is published.
+# Agent compose files have no hardcoded default and rely on this export.
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 1a25aa7
+export PROMETHEUS_API_BASE_IMAGE_HASH
+
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include
 # agents/debug-agents/*/docker-compose.yml (one extra directory level deep).
 # Default: false.
