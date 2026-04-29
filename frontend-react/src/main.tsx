@@ -1,11 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.tsx";
 import { RecoilRoot } from "recoil";
-import "./index.css";
 import { ChainlitAPI, ChainlitContext } from "@chainlit/react-client";
+import App from "./App";
+import "./index.css";
 
-const CHAINLIT_SERVER = "http://localhost:80/chainlit";
+const CHAINLIT_SERVER = "http://localhost:8500";
 
 const apiClient = new ChainlitAPI(CHAINLIT_SERVER, "webapp");
 

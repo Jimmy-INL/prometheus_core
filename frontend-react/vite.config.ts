@@ -9,4 +9,23 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    port: 5173,
+    proxy: {
+      "/chainlit": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+        ws: true,
+      },
+      "/ws": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+        ws: true,
+      },
+      "/user": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
+    },
+  },
 });
