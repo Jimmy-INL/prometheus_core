@@ -3,15 +3,17 @@ import React, { useState } from 'react';
 const COLLAPSED_ROWS = 10;
 const LINE_HEIGHT_PX = 20; // approximate px per line in the monospace block
 
-export default function CollapsibleJson() {
-  const data = props.data;
-  const name = props.name || 'JSON';
-  const description = props.description || '';
-  const jsonType = props.json_type || '';
+export default function CollapsibleJson(props) {
+  const data = props?.data;
+  const name = props?.name || 'JSON';
+  const description = props?.description || '';
+  const jsonType = props?.json_type || '';
 
   const formatted = React.useMemo(() => {
+    if (data == null) return '(no data)';
     try {
-      return JSON.stringify(typeof data === 'string' ? JSON.parse(data) : data, null, 2);
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      return JSON.stringify(parsed, null, 2);
     } catch {
       return String(data);
     }

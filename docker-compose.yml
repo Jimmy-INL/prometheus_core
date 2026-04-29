@@ -4,18 +4,29 @@
 
 x-common-env: &common-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-""}
-  MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-20250514}
+  MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
   AGENT_SECRET: ${AGENT_SECRET}
-  SSL_CERT_FILE: ${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
-  REQUESTS_CA_BUNDLE: ${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
-  NODE_EXTRA_CA_CERTS: ${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+  SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
+  NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.pem
   LITELLM_URL: http://litellm:4000
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
+  DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-https://deeplynx.inl.gov/api/v1}
+  DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
+  DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
+  DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
+  DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
 
 x-common-volumes: &common-volumes
+  - ./certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
   - ./shared:/app/shared
-  - ${LOCAL_CERT_FILE:-./certs/ca-bundle.pem}:${CERT_FILE:-/etc/ssl/certs/ca-bundle.pem}
+
+x-build-args: &prometheus-api-build-args
+  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
+  HTTP_PROXY: ${HTTP_PROXY:-""}
+  HTTPS_PROXY: ${HTTPS_PROXY:-""}
+  NO_PROXY: ${NO_PROXY:-""}
 
 networks:
   agent-network:
@@ -48,19 +59,17 @@ services:
 
   # LiteLLM proxy — A2A agent gateway and optional LLM proxy
   litellm:
-    image: ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
+    image: ghcr.io/berriai/litellm:v1.83.3-stable
     container_name: litellm-proxy
     ports:
       - "${LITELLM_LOCAL_PORT}:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
-      - ./litellm-db/schema.prism:/usr/lib/python3.13/site-packages/litellm_proxy_extras/schema.prisma
-      - ./litellm-db/migrations/20260319000000_restore_mcp_approval_fields:/usr/lib/python3.13/site-packages/litellm_proxy_extras/migrations/20260319000000_restore_mcp_approval_fields
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: True
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--telemetry", "false"]
     networks:
       - agent-network
     depends_on:
@@ -94,9 +103,7 @@ services:
     build:
       context: ./agents/client-agent
       args:
-        HTTP_PROXY: ${HTTP_PROXY}
-        HTTPS_PROXY: ${HTTPS_PROXY}
-        NO_PROXY: ${NO_PROXY}
+        <<: *prometheus-api-build-args
     container_name: client-agent
     ports:
       - "${CLIENT_AGENT_PORT:-8001}:8000"
@@ -121,9 +128,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        HTTP_PROXY: ${HTTP_PROXY}
-        HTTPS_PROXY: ${HTTPS_PROXY}
-        NO_PROXY: ${NO_PROXY}
+        <<: *prometheus-api-build-args
     container_name: chainlit-frontend
     ports:
       - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
@@ -147,4 +152,3 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-

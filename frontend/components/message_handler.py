@@ -1,4 +1,3 @@
-import json
 import logging
 import mimetypes
 import tempfile
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 import plugins as _plugins
 from utils.a2a_client import A2AClient, ConversationResponse
 from utils.settings import settings
+from utils.uri_resolver import resolve_to_local_path
 
 
 def _format_status_history(history: List[str]) -> str:
@@ -375,11 +375,27 @@ async def render_artifacts(
         if artifact.get("name") == "conversation_message":
             continue
 
-        uri = artifact.get("uri", "")
+        uri = artifact.get("uri") or ""
         name = artifact.get("name", "Artifact")
         mime_type = (artifact.get("mime_type") or "").lower()
         json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
         description = artifact.get("description", "")
+
+        # Resolve deeplynx:// URIs to local files before plugin dispatch.
+        # Plugins expect file:// or http(s):// URIs; deeplynx:// must be downloaded first.
+        if uri.startswith("deeplynx://"):
+            resolved = await resolve_to_local_path(
+                uri,
+                cache_dir=tmp_dir,
+                artifact=artifact,
+                artifact_id=artifact.get("artifact_id"),
+            )
+            if resolved is not None:
+                artifact = dict(artifact)
+                artifact["uri"] = f"file://{resolved}"
+                uri = artifact["uri"]
+            else:
+                logger.warning("Could not resolve deeplynx:// artifact %r; falling back to text", name)
 
         # Try visualization plugin system first
         try:
@@ -403,7 +419,10 @@ async def render_artifacts(
 
         elif artifact_type == "data":
             data_content = artifact.get("json_body")
-            if data_content:
+            # If json_body is absent, try fetching JSON from the URI
+            if not data_content and uri and uri.startswith("http"):
+                data_content = await _fetch_json_body(uri)
+            if data_content is not None:
                 elements.append(cl.CustomElement(
                     name="CollapsibleJson",
                     display="inline",
@@ -425,7 +444,7 @@ async def render_artifacts(
                         line += f": `{json_type}`"
                     text_parts.append(line)
                 else:
-                    text_parts.append(f"- **{name}**: {description or uri}")
+                    text_parts.append(f"- **{name}**: {description or uri or '(no URI)'}")
 
         elif artifact_type == "report":
             report_text = description
@@ -477,6 +496,18 @@ def _classify_artifact(mime_type: str) -> str:
 
     return "unknown"
 
+async def _fetch_json_body(uri: str) -> Optional[Any]:
+    """Download a JSON artifact from a remote URI and return its parsed content."""
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.get(uri)
+            resp.raise_for_status()
+            return resp.json()
+    except (httpx.HTTPError, json.JSONDecodeError) as e:
+        logger.warning("Failed to fetch JSON body from %r: %s", uri, e)
+    except Exception as e:
+        logger.warning("Unexpected error fetching JSON from %r: %s", uri, e)
+    return None
 
 async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     try:

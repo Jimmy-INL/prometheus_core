@@ -15,7 +15,7 @@ from a2a.server.events import EventQueue
 from prometheus_api.agent import PrometheusAgent
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear materials senior reviewer.

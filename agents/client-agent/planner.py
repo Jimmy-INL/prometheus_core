@@ -70,7 +70,7 @@ from param_schema import (
     set_nested_value,
 )
 
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
 SYSTEM_PROMPT = """\
 You are Prometheus, an AI orchestration system for designing, licensing, building, and \

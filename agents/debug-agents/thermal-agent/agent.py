@@ -11,10 +11,9 @@ from anthropic import Anthropic
 from prometheus_api.agent import MissingInput, PrometheusAgent
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 THERMAL_ANALYSIS_JSON_TYPE = "prometheus.thermal_analysis.result.v1"
 
 ANALYSIS_PROMPT_TEMPLATE = """\
@@ -235,14 +234,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
             }
 
         # Send status update
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                final=False,
-                status=TaskStatus(state=TaskState.working),
-            )
-        )
+        await self.send_status_update(context=context, event_queue=event_queue)
 
         context_str = ""
         if operating_context:

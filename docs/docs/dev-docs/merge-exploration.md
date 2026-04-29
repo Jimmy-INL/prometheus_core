@@ -829,7 +829,7 @@ AGENT_SECRET=my-secure-secret-12345
 REDIS_PASSWORD=redis-password-123
 REDIS_URL=redis://:redis-password-123@agent-redis:6379
 
-MODEL_NAME=claude-sonnet-4-20250514
+MODEL_NAME=claude-sonnet-4-6
 DISCOVERY_REFRESH_SECONDS=300
 
 # For OSTI agent
@@ -866,7 +866,7 @@ Each agent creates its own ChatAnthropic instance:
 
 ```python
 llm = ChatAnthropic(
-    model=os.getenv("MODEL_NAME", "claude-sonnet-4-20250514"),
+    model=os.getenv("MODEL_NAME", "claude-sonnet-4-6"),
     temperature=0,
     max_tokens=4096,
 )
@@ -898,7 +898,7 @@ litellm:
 model_list:
   - model_name: "claude-sonnet"
     litellm_params:
-      model: "anthropic/claude-sonnet-4-20250514"
+      model: "anthropic/claude-sonnet-4-6"
       api_key: "${ANTHROPIC_API_KEY}"
   - model_name: "claude-opus"
     litellm_params:

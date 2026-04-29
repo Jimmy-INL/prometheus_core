@@ -45,7 +45,7 @@ from workflow_library import execute_workflow, get_workflow_registry, match_work
 from conversation_store import get_conversation, store_conversation
 
 AGENT_PORT = int(os.getenv("AGENT_PORT", "8000"))
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-20250514")
+MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 DISCOVERY_REFRESH_SECONDS = int(os.getenv("DISCOVERY_REFRESH_SECONDS", "300"))
 ENABLE_WORKFLOW_LIBRARY = os.getenv("ENABLE_WORKFLOW_LIBRARY", "true").lower() in {"1", "true", "yes"}
 
