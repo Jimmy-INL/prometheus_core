@@ -111,7 +111,6 @@ services:
       - agent-network
     environment:
       <<: *common-env
-      AGENT_HOST: client-agent
       AGENT_PORT: 8000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
     volumes: *common-volumes

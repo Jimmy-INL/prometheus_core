@@ -18,8 +18,10 @@ logger = logging.getLogger(__name__)
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
-SELF_AGENT_ID = (os.getenv("AGENT_HOST") or "").strip()
-SELF_AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
+import socket as _socket
+
+_AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
+SELF_AGENT_URL = (os.getenv("EXTERNAL_AGENT_URL") or f"http://{_socket.gethostname()}:{_AGENT_PORT}").rstrip("/")
 StatusCallback = Callable[[str], Awaitable[None]]
 
 
@@ -179,22 +181,13 @@ async def _stream_a2a_agent(
 
 
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
-    """Return True when a discovered agent record points to this orchestrator.
-
-    agent_id here is the agent_name used in LiteLLM registration (e.g. 'client-agent'),
-    which matches AGENT_HOST for the self-check.
-    """
-    if SELF_AGENT_ID and (agent_id or "").strip() == SELF_AGENT_ID:
-        return True
-
-    # Fallback: direct URL match for the agent's own address
+    """Return True when a discovered agent record points to this orchestrator."""
     normalized_url = _normalize_url(agent_url)
     self_urls = {
-        _normalize_url(f"http://{SELF_AGENT_ID}:{SELF_AGENT_PORT}") if SELF_AGENT_ID else "",
-        _normalize_url(f"http://localhost:{SELF_AGENT_PORT}"),
-        _normalize_url(f"http://127.0.0.1:{SELF_AGENT_PORT}"),
+        _normalize_url(SELF_AGENT_URL),
+        _normalize_url(f"http://localhost:{_AGENT_PORT}"),
+        _normalize_url(f"http://127.0.0.1:{_AGENT_PORT}"),
     }
-    self_urls.discard("")
     return normalized_url in self_urls
 
 
