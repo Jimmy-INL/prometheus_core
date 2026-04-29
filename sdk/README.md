@@ -80,8 +80,8 @@ if __name__ == "__main__":
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AGENT_PORT` | Port to listen on | `8000` |
-| `AGENT_HOST` | Hostname for agent card URL | `localhost` |
+| `AGENT_PORT` | Port uvicorn binds to | `8000` |
+| `EXTERNAL_AGENT_URL` | Full URL advertised to the registry (e.g. `http://my-host:9002`). When absent, auto-derived from the container hostname and `AGENT_PORT`. | auto |
 | `AGENT_SECRET` | Shared secret for auth | - |
 | `REGISTRY_URL` | Registry service URL | - |
 

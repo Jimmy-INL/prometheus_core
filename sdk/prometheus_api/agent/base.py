@@ -656,10 +656,14 @@ class PrometheusAgent:
             logger.error(f"Invalid JSON in agent_card.json: {e}")
             raise
 
-        # Override URL with environment configuration
+        # EXTERNAL_AGENT_URL, if set, is the full URL the registry uses to reach
+        # this agent (use when the agent is port-mapped or on a different host).
+        # Otherwise derive from the container hostname (Docker sets this to the
+        # service name automatically) and AGENT_PORT.
+        import socket
+
         port = os.getenv("AGENT_PORT", "8000")
-        host = os.getenv("AGENT_HOST", "localhost")
-        agent_card_dict["url"] = f"http://{host}:{port}"
+        agent_card_dict["url"] = os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
 
         # Store the raw dict for registry registration
         self.agent_card_dict = agent_card_dict
