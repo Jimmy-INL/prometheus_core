@@ -22,6 +22,9 @@ import socket as _socket
 
 _AGENT_PORT = (os.getenv("AGENT_PORT") or "8000").strip()
 SELF_AGENT_URL = (os.getenv("EXTERNAL_AGENT_URL") or f"http://{_socket.gethostname()}:{_AGENT_PORT}").rstrip("/")
+# Docker Compose sets the container hostname to the service name; this is the
+# agent_name key used when the client-agent registers with LiteLLM.
+_SELF_AGENT_ID = _socket.gethostname()
 StatusCallback = Callable[[str], Awaitable[None]]
 
 
@@ -181,14 +184,15 @@ async def _stream_a2a_agent(
 
 
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
-    """Return True when a discovered agent record points to this orchestrator."""
-    normalized_url = _normalize_url(agent_url)
-    self_urls = {
-        _normalize_url(SELF_AGENT_URL),
-        _normalize_url(f"http://localhost:{_AGENT_PORT}"),
-        _normalize_url(f"http://127.0.0.1:{_AGENT_PORT}"),
-    }
-    return normalized_url in self_urls
+    """Return True when a discovered agent record points to this orchestrator.
+
+    Primary check: agent_id (the LiteLLM routing key) matches the container
+    hostname, which Docker Compose sets to the service name. URL comparison is
+    a fallback for cases where the hostname-derived URL is available.
+    """
+    if _SELF_AGENT_ID and (agent_id or "").strip() == _SELF_AGENT_ID:
+        return True
+    return _normalize_url(agent_url) == _normalize_url(SELF_AGENT_URL)
 
 
 async def discover_agents() -> List[Dict[str, Any]]:
