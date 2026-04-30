@@ -146,7 +146,7 @@ Unhandled exceptions from `_execute` are caught by the base class, which emits a
 }
 ```
 
-- The `url` field is overridden at startup by `AGENT_HOST` and `AGENT_PORT` env vars — set a placeholder in the file.
+- The `url` field is overridden at startup from `EXTERNAL_AGENT_URL` (if set) or auto-derived from the container hostname and `AGENT_PORT` — set a placeholder in the file.
 
 ### Routing multiple skills with `skill_id`
 
@@ -631,8 +631,8 @@ async def lifespan(self, app):
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENT_PORT` | `8000` | Port the agent listens on |
-| `AGENT_HOST` | `localhost` | Hostname used in the agent card URL (set to container name or `host.docker.internal` in Docker) |
+| `AGENT_PORT` | `8000` | Port uvicorn binds to (internal) |
+| `EXTERNAL_AGENT_URL` | auto | Full URL advertised to the registry. Auto-derived from the container hostname and `AGENT_PORT` when not set. Set explicitly for port-mapped or cross-host deployments (e.g. `http://my-host:9002`, where `9002` is the host-side port and `8000` is `AGENT_PORT` inside the container). |
 | `AGENT_SECRET` | — | Bearer token for inbound authentication |
 | `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header |
 | `LITELLM_URL` | — | LiteLLM gateway URL for registry registration |

@@ -37,8 +37,23 @@ Environment variables for `PrometheusAgent`:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `AGENT_PORT` | Port to listen on | `8000` | No |
-| `AGENT_HOST` | Hostname for agent card URL | `localhost` | No |
+| `AGENT_PORT` | Port uvicorn binds to (internal) | `8000` | No |
+| `EXTERNAL_AGENT_URL` | Full URL advertised to the registry. Set this when the agent is port-mapped or on a different host from the registry. When absent, the URL is derived automatically from the container hostname and `AGENT_PORT`. | auto | No |
+
+**How the two variables relate:**
+
+`AGENT_PORT` is always the port uvicorn listens on inside the container. `EXTERNAL_AGENT_URL` is what the registry (LiteLLM) uses to reach the agent. In the common case — where the agent and registry share a Docker network — you only need `AGENT_PORT`: Docker sets the container hostname to the service name, so the URL is derived automatically as `http://<service-name>:<AGENT_PORT>`.
+
+Set `EXTERNAL_AGENT_URL` only when the agent is accessed through a port mapping or is on a separate host:
+
+```yaml
+# docker-compose.yml — port-mapped / external agent
+ports:
+  - "9002:8000"   # 9002 is the external port; 8000 is what AGENT_PORT is set to
+environment:
+  AGENT_PORT: 8000                          # internal bind port (matches container side of the mapping)
+  EXTERNAL_AGENT_URL: http://my-host:9002   # external port (matches host side of the mapping)
+```
 
 ### Agent Authentication
 
@@ -58,7 +73,7 @@ Environment variables for `PrometheusAgent`:
 ```bash
 # Agent Server
 AGENT_PORT=8000
-AGENT_HOST=localhost
+# EXTERNAL_AGENT_URL=http://my-host:9002  # only needed for port-mapped / cross-host deployments
 
 # Authentication
 AGENT_SECRET=your-shared-secret-here
@@ -161,7 +176,7 @@ If using both StorageClient and PrometheusAgent, combine variables in one `.env`
 ```bash
 # ===== Agent Configuration =====
 AGENT_PORT=8000
-AGENT_HOST=localhost
+# EXTERNAL_AGENT_URL=http://my-host:9002  # only needed for port-mapped / cross-host deployments
 AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://registry:8000
@@ -447,7 +462,7 @@ jobs:
 
 | Component | Prefix | Key Variables |
 |-----------|--------|---------------|
-| PrometheusAgent | `AGENT_` | `AGENT_PORT`, `AGENT_HOST`, `AGENT_SECRET` |
+| PrometheusAgent | `AGENT_` | `AGENT_PORT`, `EXTERNAL_AGENT_URL`, `AGENT_SECRET` |
 | StorageClient | `DEEPLYNX_` | `DEEPLYNX_KEY`, `DEEPLYNX_SECRET`, `DEEPLYNX_ORG_ID` |
 
 Quick start:
