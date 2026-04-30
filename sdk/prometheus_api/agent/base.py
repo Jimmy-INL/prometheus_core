@@ -274,7 +274,7 @@ class PrometheusAgentExecutor(AgentExecutor):
 
         # Inject skill_id from message metadata so agents can dispatch on
         # which skill was invoked without needing an explicit 'action' param.
-        message = context.message
+        message = getattr(context, "message", None)
         if message and isinstance(message.metadata, dict):
             skill_id = message.metadata.get("skillId")
             if skill_id and "skill_id" not in params:

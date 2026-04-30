@@ -74,6 +74,17 @@ class TestPrometheusAgentExecutor:
 
         assert params == {"message": "Hello, this is plain text"}
 
+    def test_extract_params_without_message_context(self, executor):
+        """_extract_params should tolerate local/debug contexts without .message."""
+        class LocalLikeContext:
+            def get_user_input(self):
+                return '{"skill_id": "demo_skill", "message": "hello"}'
+
+        params = executor._extract_params(LocalLikeContext())
+
+        assert params == {"skill_id": "demo_skill", "message": "hello"}
+
+
     def test_execute_calls_enqueue_event(self, executor, mock_context, mock_event_queue):
         """Test that execute uses enqueue_event for status updates."""
 
