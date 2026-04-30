@@ -2,7 +2,7 @@ services:
   form-filler-agent:
     build:
       args:
-        - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH:-43dedaa}
+        - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH}
         - HTTP_PROXY=${HTTP_PROXY-""}
         - HTTPS_PROXY=${HTTPS_PROXY-""}
         - NO_PROXY=${NO_PROXY-""}
@@ -10,7 +10,6 @@ services:
     networks:
       - agent-network
     environment:
-      AGENT_HOST: form-filler-agent
       AGENT_PORT: 8000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-""}
       MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
