@@ -11,8 +11,12 @@ UNAME := $(shell uname)
 # DEBUG_AGENTS live alongside the rest of the project config.
 -include .env
 
+COMPOSE_PROJECT_NAME ?= $(notdir $(CURDIR))
+export COMPOSE_PROJECT_NAME
+
 COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
+CLEAR_COMPOSE_FILES ?= $(COMPOSE_FILES_NG)
 
 # Bump this when a new prometheus_api base image is published.
 # Agent compose files have no hardcoded default and rely on this export.
@@ -48,6 +52,8 @@ endif
 ifneq ($(wildcard docker-compose.override.yml),)
 COMPOSE_FILES_NG += -f docker-compose.override.yml
 endif
+
+LITELLM_DB_VOLUME := $(COMPOSE_PROJECT_NAME)_litellm-db-data
 
 ##@
 ##@ Help
@@ -86,7 +92,7 @@ else
 	@printf "\nmake help not supported on $(UNAME)\n"
 endif
 
-.PHONY: all up down build logs ps generate clean-generated restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg help
+.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg clear-litellm-db help
 
 ## Generate the agents compose file from discovered agent compose files.
 generate: $(COMPOSE_AGENTS)
@@ -121,33 +127,53 @@ test-infra: ##@ Run all infrastructure tests
 ##@ Compose
 ##@
 
-up: ##@ Build and start all services (detached)
+up: ##@ Clear LiteLLM DB, then build and start all services (detached)
 up: generate
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
 	$(COMPOSE) $(COMPOSE_FILES) up --build -d
 
-up-fg: ##@ Build and start all services (foreground)
+up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground)
 up-fg: generate
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
 	$(COMPOSE) $(COMPOSE_FILES) up --build
 
-restart: ##@ Restart all services without rebuilding.
+restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
 restart: generate
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
 	$(COMPOSE) $(COMPOSE_FILES) up -d
 
-restart-fg: ##@ Restart all services without rebuilding (foreground).
+restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
 restart-fg: generate
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
 	$(COMPOSE) $(COMPOSE_FILES) up
 
-ng-up: ##@ Start all services without regenerating agents compose (uses existing file if present).
+ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
+	$(MAKE) --no-print-directory clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) up --build -d
 
-ng-up-fg: ##@ Start all services without regenerating (foreground).
+ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
+	$(MAKE) --no-print-directory clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) up --build
 
-ng-restart: ##@ Restart without rebuilding or regenerating.
+ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
+	$(MAKE) --no-print-directory clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) up -d
 
-ng-restart-fg: ##@ Restart without rebuilding or regenerating (foreground).
+ng-restart-fg: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating (foreground).
+	$(MAKE) --no-print-directory clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) up
+
+clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
+	$(COMPOSE) $(CLEAR_COMPOSE_FILES) down --remove-orphans
+	@set -e; \
+	volume=$$(docker volume ls -q \
+		--filter "label=com.docker.compose.project=$(COMPOSE_PROJECT_NAME)" \
+		--filter "label=com.docker.compose.volume=litellm-db-data"); \
+	if [ -n "$$volume" ]; then \
+		docker volume rm -f $$volume; \
+	else \
+		printf "LiteLLM DB volume %s does not exist; nothing to remove.\n" "$(LITELLM_DB_VOLUME)"; \
+	fi
 
 down: ##@ Stop all services
 	$(COMPOSE) $(COMPOSE_FILES) down
@@ -174,4 +200,3 @@ clean-generated: ##@ Remove the generated agents compose file.
 
 regenerate: ##@ Regenerate the agents compose file
 regenerate: clean-generated generate
-
