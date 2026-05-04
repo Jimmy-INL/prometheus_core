@@ -1,76 +1,289 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
- 
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: dark --default, light --preferslight;
+  exclude: rootscrollgutter;
+}
+
+/* Light Theme */
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: "light";
+  font-family: "Roboto", sans-serif;
+
+  /* Define colors for the light theme */
+  --color-base-100: oklch(97% 0.02 210);
+  --color-base-200: oklch(93% 0.01 240);
+  --color-base-300: oklch(75% 0.05 210);
+  --color-base-content: oklch(5% 0.042 265.755);
+  --color-primary: #01529B;
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(0.7438 0.1464 233.28);
+  --color-secondary-content: oklch(0% 0 0);
+  --color-accent: oklch(0.2705 0.0672 272.86);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(0.9318 0.0011 17.18);
+  --color-neutral-content: oklch(0% 0 0);
+  --color-info: oklch(68.50% 0.150 232.0);
+  --color-info-content: oklch(0% 0 0);
+  --color-success: oklch(70.0% 0.200 145.0);
+  --color-success-content: oklch(0% 0 0);
+  --color-warning: oklch(85.0% 0.300 95.0);
+  --color-warning-content: oklch(0% 0 0);
+  --color-error: oklch(40.0% 0.300 25.0);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Dark Theme */
+@plugin "daisyui/theme" {
+  name: "dark";
+  default: false;
+  color-scheme: "dark";
+  font-family: "Roboto", sans-serif;
+
+  /* Define colors for the dark theme */
+  --color-base-100: oklch(20.768% 0.039 265.754);
+  --color-base-200: oklch(18.314% 0.037 265.754);
+  --color-base-300: oklch(14.86% 0.034 265.754);
+  --color-base-content: oklch(84.153% 0.007 265.754);
+  --color-primary: #01529B;
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(0.7438 0.1464 233.28);
+  --color-secondary-content: oklch(0% 0 0);
+  --color-accent: oklch(0.2705 0.0672 272.86);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(10% 0.0011 17.18);
+  --color-neutral-content: oklch(84.153% 0.007 265.754);
+  --color-info: oklch(68.50% 0.150 232.0);
+  --color-info-content: oklch(0% 0 0);
+  --color-success: oklch(70.0% 0.200 145.0);
+  --color-success-content: oklch(0% 0 0);
+  --color-warning: oklch(85.0% 0.300 95.0);
+  --color-warning-content: oklch(0% 0 0);
+  --color-error: oklch(40.0% 0.300 25.0);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
- 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
- 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
- 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
- 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
- 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
- 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
- 
-    --radius: 0.5rem;
+  body {
+    font-family: "Roboto", sans-serif;
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.5;
+    color: theme("colors.base-content");
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
- 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
- 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
- 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
- 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
- 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
- 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
- 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
- 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
- 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+
+  html, body, #root {
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Roboto", sans-serif;
+    font-weight: 600;
+    line-height: 1.2;
+    color: theme("colors.base-content");
+  }
+
+  h1 {
+    font-family: "Oswald", sans-serif;
+    font-size: 1.5rem; /* 24px */
+  }
+
+  h2 {
+    font-size: 1.25rem; /* 20px */
+  }
+
+  h3 {
+    font-size: 1.125rem; /* 18px */
+  }
+
+  h4 {
+    font-size: 1rem; /* 16px */
+  }
+
+  h5 {
+    font-size: 0.875rem; /* 14px */
+  }
+
+  h6 {
+    font-size: 0.75rem; /* 12px */
+  }
+
+  p, span, li {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  p {
+    margin-top: 0;
+    margin-bottom: 1rem; /* Add bottom margin for spacing */
+  }
+
+  ul, ol {
+    margin: 0;
+    padding: 0;
+    list-style: none; /* Reset list style */
+  }
+
+  a {
+    color: inherit; /* Use inherited color */
+    text-decoration: none; /* Remove default underline */
+  }
+
+  a:hover {
+    text-decoration: underline; /* Underline on hover */
+  }
+
+  .menu a:hover {
+    text-decoration: none;
+  }
+
+  button {
+    background: none; /* Reset background */
+    border: none; /* Reset border */
+    padding: 0; /* Reset padding */
+    cursor: pointer; /* Pointer cursor */
+  }
+
+  img {
+    max-width: 100%; /* Make images responsive */
+    height: auto; /* Maintain aspect ratio */
   }
 }
- 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+
+html {
+    scroll-behavior: smooth;
+}
+
+
+
+.active {
+  background-color: var(--menu-active-bg);
+}
+
+.card-title {
+  --cardtitle-fs: 1rem;
+}
+
+.tab {
+  --tab-bg: var(--color-base-200) !important;
+}
+
+.text-oswald {
+  font-family: "Oswald", sans-serif;
+}
+
+.text-roboto {
+  font-family: "Roboto", sans-serif;
+}
+
+.drawer-toggle:checked ~ .drawer-content {
+  margin-left: 256px; /* Adjust based on your sidebar width */
+  transition: margin-left 0.3s ease-in-out; /* Add transition */
+}
+
+.drawer-side {
+  width: 256px; /* Adjust based on your sidebar width */
+  transition: transform 0.3s ease-in-out; /* Update transition */
+}
+
+.drawer-toggle:not(:checked) ~ .drawer-side {
+  transform: translateX(-256px); /* Hide sidebar by default */
+}
+
+.drawer-toggle:checked ~ .drawer-side {
+  transform: translateX(0); /* Show sidebar when checked */
+}
+
+.horizontal-bg {
+  background-color: #f0f0f0;
+  margin: 10px 0;
+}
+
+/* Canvas elements should have some margin */
+canvas {
+  margin: 10px;
+}
+
+.responsive-canvas {
+  width: 100%;
+  height: auto;
+  margin:0
+}
+
+.table-of-contents {
+  position: sticky;
+  top: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.table-of-contents ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.table-of-contents ul li {
+  margin-bottom: 8px;
+}
+
+.table-of-contents ul li a {
+  text-decoration: none;
+  color: #007bff;
+}
+
+.table-of-contents ul li a:hover {
+  text-decoration: underline;
+}
+
+.table-of-contents ul ul {
+  margin-left: 16px;
+}
+
+.diagram-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.canvas-widget {
+  width: 100%;
+  height: 100%;
+}
+
+/* AG Grid */
+.ag-theme-quartz .ag-cell {
+
+
+}
+
+.ag-theme-quartz .ag-row:nth-child(even) {
+  background-color: var(--color-base-200); /* Lighter stripe for light mode */
 }

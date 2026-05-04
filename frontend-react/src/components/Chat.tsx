@@ -77,6 +77,7 @@ export function Chat() {
         >
           Send
         </button>
+        <button className="btn btn-xl btn-primary">Xlarge</button>
       </div>
     </div>
   );
