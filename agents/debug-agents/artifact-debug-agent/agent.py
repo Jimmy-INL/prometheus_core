@@ -17,12 +17,10 @@ import os
 import re
 import tempfile
 import uuid
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Optional
 from xml.sax.saxutils import escape as xml_escape
 
-from PIL import Image, ImageDraw, ImageFont
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
@@ -56,46 +54,6 @@ class ArtifactDebugAgent(PrometheusAgent):
         except Exception:
             parsed = default_value
         return max(64, min(parsed, 4096))
-
-    @staticmethod
-    def _read_svg_payload(svg_path: Path) -> Dict[str, Any]:
-        """Extract minimal rendering hints from SVG for fallback PNG conversion."""
-        defaults: Dict[str, Any] = {
-            "width": 512,
-            "height": 512,
-            "text": svg_path.stem,
-            "background": "#ffffff",
-            "text_color": "#1f2937",
-        }
-        try:
-            tree = ET.parse(svg_path)
-            root = tree.getroot()
-            width_raw = root.attrib.get("width", defaults["width"])
-            height_raw = root.attrib.get("height", defaults["height"])
-
-            def parse_dim(value: Any, fallback: int) -> int:
-                match = re.match(r"\s*(\d+(?:\.\d+)?)", str(value))
-                if not match:
-                    return fallback
-                return max(64, min(int(float(match.group(1))), 4096))
-
-            defaults["width"] = parse_dim(width_raw, defaults["width"])
-            defaults["height"] = parse_dim(height_raw, defaults["height"])
-
-            for element in root.iter():
-                tag = element.tag.split("}")[-1]
-                if tag == "rect" and element.attrib.get("fill"):
-                    defaults["background"] = element.attrib.get("fill")
-                if tag == "text":
-                    text_value = "".join(element.itertext()).strip()
-                    if text_value:
-                        defaults["text"] = text_value
-                    if element.attrib.get("fill"):
-                        defaults["text_color"] = element.attrib.get("fill")
-                    break
-        except Exception:
-            pass
-        return defaults
 
     def _resolve_artifact_from_payload(
         self,
@@ -136,31 +94,18 @@ class ArtifactDebugAgent(PrometheusAgent):
         return None
 
     @staticmethod
-    def _convert_svg_to_png_fallback(source_svg: Path, target_png: Path) -> str:
-        """Fallback converter for debug SVGs when dedicated SVG renderers are unavailable."""
-        payload = ArtifactDebugAgent._read_svg_payload(source_svg)
-        image = Image.new("RGB", (payload["width"], payload["height"]), color=payload["background"])
-        drawer = ImageDraw.Draw(image)
-        font = ImageFont.load_default()
-        text = str(payload["text"])
-        text_bbox = drawer.textbbox((0, 0), text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-        x = (payload["width"] - text_width) // 2
-        y = (payload["height"] - text_height) // 2
-        drawer.text((x, y), text, fill=payload["text_color"], font=font)
-        image.save(target_png, format="PNG")
-        return "pillow-fallback"
-
-    @staticmethod
     def _convert_svg_to_png(source_svg: Path, target_png: Path) -> str:
-        """Convert SVG to PNG, preferring CairoSVG and falling back to PIL for debug SVGs."""
+        """Convert SVG to PNG with CairoSVG."""
         try:
             import cairosvg  # type: ignore
+
             cairosvg.svg2png(url=str(source_svg), write_to=str(target_png))
-            return "cairosvg"
-        except Exception:
-            return ArtifactDebugAgent._convert_svg_to_png_fallback(source_svg, target_png)
+        except Exception as exc:
+            raise RuntimeError(f"CairoSVG failed to convert SVG to PNG: {exc}") from exc
+
+        if not target_png.exists() or target_png.stat().st_size == 0:
+            raise RuntimeError("CairoSVG did not produce a PNG file.")
+        return "cairosvg"
 
     async def _handle_create_svg(
         self,
@@ -358,7 +303,15 @@ class ArtifactDebugAgent(PrometheusAgent):
                 message=f"Converting artifact '{source_ref.name}' to PNG.",
             )
 
-            conversion_backend = self._convert_svg_to_png(svg_path, png_path)
+            try:
+                conversion_backend = self._convert_svg_to_png(svg_path, png_path)
+            except Exception as exc:
+                return {
+                    "status": "error",
+                    "conversation_id": conversation_id,
+                    "message": f"Failed to convert SVG artifact '{source_ref.name}' to PNG: {exc}",
+                    "source_artifact": source_dict,
+                }
 
             await self.send_status_update(
                 context=context,
