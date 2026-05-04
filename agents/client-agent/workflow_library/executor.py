@@ -64,6 +64,8 @@ async def _run_step(
         context=context,
         step_results=step_results,
     )
+    if "artifacts" not in payload and isinstance(context.get("artifacts"), list):
+        payload["artifacts"] = context["artifacts"]
     payload["conversation_id"] = conversation_id
 
     invoked = await invoke_skill(step.skill_id, payload, conversation_id)

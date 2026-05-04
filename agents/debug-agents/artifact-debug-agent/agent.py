@@ -97,6 +97,44 @@ class ArtifactDebugAgent(PrometheusAgent):
             pass
         return defaults
 
+    def _resolve_artifact_from_payload(
+        self,
+        conversation_id: str,
+        artifact_id: str,
+        params: Dict[str, Any],
+    ) -> Optional[ArtifactReference]:
+        """Resolve an artifact from local registry or orchestrator-provided catalog."""
+        source_ref = self.resolve_artifact_reference(conversation_id, artifact_id)
+        if source_ref:
+            return source_ref
+
+        for artifact in params.get("artifacts") or []:
+            if not isinstance(artifact, dict):
+                continue
+            candidate_id = str(
+                artifact.get("artifact_id")
+                or artifact.get("artifactId")
+                or artifact.get("id")
+                or ""
+            ).strip()
+            if candidate_id != artifact_id:
+                continue
+            try:
+                source_ref = ArtifactReference.from_any(
+                    artifact,
+                    conversation_id=conversation_id,
+                )
+            except Exception:
+                source_ref = None
+            if source_ref:
+                try:
+                    self.artifact_registry.register(source_ref)
+                except Exception as exc:
+                    print(f"[WARN] Failed to cache artifact reference {artifact_id}: {exc}")
+                return source_ref
+
+        return None
+
     @staticmethod
     def _convert_svg_to_png_fallback(source_svg: Path, target_png: Path) -> str:
         """Fallback converter for debug SVGs when dedicated SVG renderers are unavailable."""
@@ -259,7 +297,11 @@ class ArtifactDebugAgent(PrometheusAgent):
                 "message": "Parameter 'artifact_id' is required for SVG to PNG conversion.",
             }
 
-        source_ref = self.resolve_artifact_reference(conversation_id, artifact_id)
+        source_ref = self._resolve_artifact_from_payload(
+            conversation_id=conversation_id,
+            artifact_id=artifact_id,
+            params=params,
+        )
         if not source_ref:
             return {
                 "status": "error",

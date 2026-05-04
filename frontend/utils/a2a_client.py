@@ -4,7 +4,7 @@ A2A JSON-RPC client for communicating with the client-agent.
 import asyncio
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import httpx
@@ -44,6 +44,7 @@ class A2AClient:
         followup_answers: Optional[Dict] = None,
         plan_approved: Optional[bool] = False,
         workflow_id: Optional[str] = None,
+        uploaded_files: Optional[List[Dict]] = None,
         on_status: Optional[Callable[[str], Coroutine]] = None,
     ) -> ConversationResponse:
         """Send a message to the client-agent via A2A JSON-RPC.
@@ -69,6 +70,8 @@ class A2AClient:
             payload["plan_approved"] = True
         if workflow_id:
             payload["workflow_id"] = workflow_id
+        if uploaded_files:
+            payload["uploaded_files"] = uploaded_files
 
         # A2A JSON-RPC envelope
         message = {

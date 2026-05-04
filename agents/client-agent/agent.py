@@ -66,6 +66,9 @@ class ConversationRequest(BaseModel):
     workflow_id: Optional[str] = None            # Explicit workflow template selection
     workflow_version: Optional[str] = None       # Optional explicit workflow version
     selection_source: Optional[str] = None       # catalog|matcher|dynamic_router
+    uploaded_files: Optional[List[Dict[str, Any]]] = None  # Raw files attached by the user this turn
+    newly_uploaded_artifact_ids: Optional[List[str]] = None  # Set by _execute after upload; transient
+    received_files: Optional[List[Dict[str, Any]]] = None  # Uploaded files received but not stored this turn
 
 
 class ConversationResponse(BaseModel):
@@ -763,6 +766,19 @@ def collect_context_maps_from_history(
     return aggregated
 
 
+def attach_artifact_context(
+    params: Optional[Dict[str, Any]],
+    context: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Attach conversation artifact metadata to downstream skill invocations."""
+    merged = dict(params or {})
+    if "artifacts" not in merged:
+        artifacts = summarize_artifacts_for_context((context or {}).get("artifacts"))
+        if artifacts:
+            merged["artifacts"] = artifacts
+    return merged
+
+
 def derive_params_from_rules(
     query: str,
     params: Dict[str, Any],
@@ -1095,7 +1111,7 @@ async def invoke_skill(
         input_schema = capability.input_schema if capability else None
         invoke_params = normalize_params_for_input_schema(dict(single_params), input_schema=input_schema)
         invoke_params["conversation_id"] = conversation_id
-        if capability and capability.supports_streaming:
+        if capability and getattr(capability, "supports_streaming", False):
             async def _status_callback(message: str) -> None:
                 text = str(message or "").strip()
                 if text:
@@ -1648,7 +1664,10 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
     """
     routing_decision = state.get("routing_decision", {})
     selected_skills = order_skills_for_workflow(routing_decision)
-    params = routing_decision.get("extracted_params", {})
+    params = attach_artifact_context(
+        routing_decision.get("extracted_params", {}),
+        state.get("context", {}),
+    )
     workflow_type = routing_decision.get("workflow_type", "single")
     conversation_id = state.get("conversation_id", str(uuid.uuid4()))
 
@@ -2357,8 +2376,11 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
             ),
         )
 
-        input_params = dict(routing_decision.get("extracted_params", {}) or {})
         context_state = dict(state.get("context", {}) or {})
+        input_params = attach_artifact_context(
+            routing_decision.get("extracted_params", {}),
+            context_state,
+        )
         execution_result = await execute_workflow(
             workflow=compiled_workflow,
             input_params=input_params,
@@ -2620,7 +2642,10 @@ async def resume_pending_subagent_requests(
         return state
 
     routing_decision = dict(state.get("routing_decision", {}) or {})
-    base_params = dict(routing_decision.get("extracted_params", {}) or {})
+    base_params = attach_artifact_context(
+        routing_decision.get("extracted_params", {}),
+        state.get("context", {}),
+    )
     conversation_id = state.get("conversation_id", str(uuid.uuid4())) or str(uuid.uuid4())
 
     still_pending: List[Dict[str, Any]] = []
@@ -2983,6 +3008,11 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                 store_status_update(conv_id, "Refinement parameters applied.")
 
     previous_context = merge_artifacts_into_context(previous_context, request_artifacts)
+    # Inject transient per-turn upload IDs so planner and resolve_artifact_inputs can see them.
+    if request.newly_uploaded_artifact_ids:
+        previous_context["newly_uploaded_artifact_ids"] = list(request.newly_uploaded_artifact_ids)
+    if request.received_files:
+        previous_context["received_files"] = list(request.received_files)
 
     state: AgentState = {
         "messages": [],
@@ -3411,6 +3441,116 @@ class OrchestratorAgent(PrometheusAgent):
 
         return ingested
 
+    async def _handle_uploaded_files(
+        self,
+        request_payload: Dict[str, Any],
+        conversation_id: str,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> List[str]:
+        """Pre-process files attached by the user this turn.
+
+        Infers descriptions via a single LLM call, uploads all files to DeepLynx,
+        and returns the list of newly-created artifact IDs so the planner can treat
+        them as freshly-uploaded for this turn.  Always returns (possibly empty);
+        never raises.
+        """
+        from file_upload_handler import (
+            UploadedFile,
+            infer_file_descriptions,
+            mime_type_label,
+            upload_files_to_deeplynx,
+        )
+
+        raw_uploads = request_payload.pop("uploaded_files", None) or []
+        uploaded_files = []
+        for raw in raw_uploads:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                uploaded_files.append(UploadedFile.model_validate(raw))
+            except Exception as exc:
+                print(f"[WARN] Ignoring invalid uploaded file payload: {exc}")
+
+        if not uploaded_files:
+            return []
+
+        async def emit_upload_status(message: str) -> None:
+            try:
+                await self.send_status_update(
+                    context=context,
+                    event_queue=event_queue,
+                    message=message,
+                )
+            except Exception as exc:
+                print(f"[WARN] Failed to emit upload status update: {exc}")
+            store_status_update(conversation_id, message)
+
+        received_summaries = [
+            {
+                "name": f.name,
+                "mime_type": f.mime_type,
+                "size_bytes": f.size_bytes,
+            }
+            for f in uploaded_files
+        ]
+
+        try:
+            from prometheus_api.storage_client.connection import ConnectionConfig
+            storage_config = ConnectionConfig.from_env()
+        except Exception as exc:
+            print(f"[WARN] DeepLynx storage is unavailable; uploaded files will not be stored: {exc}")
+            request_payload["received_files"] = received_summaries
+            msg = f"Received {len(uploaded_files)} uploaded file(s), but DeepLynx storage is not configured."
+            await emit_upload_status(msg)
+            return []
+
+        await emit_upload_status(f"Analyzing {len(uploaded_files)} uploaded file(s).")
+
+        llm = create_llm()
+        try:
+            descriptions = await infer_file_descriptions(
+                request_payload.get("query") or "", uploaded_files, llm,
+            )
+        except Exception as exc:
+            print(f"[WARN] Failed to infer uploaded file descriptions; using fallbacks: {exc}")
+            descriptions = {
+                f.name: f"User-uploaded {mime_type_label(f.mime_type, f.name)}: {f.name}"
+                for f in uploaded_files
+            }
+
+        await emit_upload_status(f"Uploading {len(uploaded_files)} file(s) to DeepLynx.")
+
+        try:
+            refs = await upload_files_to_deeplynx(
+                self, uploaded_files, descriptions, context, event_queue, storage_config,
+            )
+        except Exception as exc:
+            print(f"[WARN] Uploaded file persistence failed: {exc}")
+            refs = []
+
+        if not refs:
+            request_payload["received_files"] = received_summaries
+            msg = f"{len(uploaded_files)} file(s) could not be saved to DeepLynx."
+            await emit_upload_status(msg)
+            return []
+
+        if len(refs) < len(uploaded_files):
+            uploaded_names = {str(getattr(ref, "name", "") or "") for ref in refs}
+            request_payload["received_files"] = [
+                item for item in received_summaries if item["name"] not in uploaded_names
+            ]
+            failed = len(uploaded_files) - len(refs)
+            msg = f"{failed} of {len(uploaded_files)} file(s) could not be saved to DeepLynx."
+            await emit_upload_status(msg)
+
+        new_dicts = [r.to_dict() for r in refs]
+        request_payload["artifacts"] = merge_artifact_catalogs(
+            new_dicts,
+            request_payload.get("artifacts") if isinstance(request_payload.get("artifacts"), list) else None,
+        )
+        return [r.artifact_id for r in refs]
+
     async def _execute(
         self,
         params: Dict[str, Any],
@@ -3428,6 +3568,16 @@ class OrchestratorAgent(PrometheusAgent):
                 or str(uuid.uuid4())
             )
         conversation_id = str(request_payload.get("conversation_id") or context.context_id or "")
+
+        # Snapshot artifact IDs before this turn so we can diff new_artifacts at the end.
+        # Must happen before _handle_uploaded_files so uploaded files appear in new_artifacts.
+        try:
+            artifact_ids_before_turn = {
+                ref.artifact_id
+                for ref in self.list_artifact_references(conversation_id, limit=50)
+            }
+        except Exception:
+            artifact_ids_before_turn = set()
 
         await self.send_status_update(
             context=context,
@@ -3463,6 +3613,13 @@ class OrchestratorAgent(PrometheusAgent):
                 request_payload.get("artifacts") if isinstance(request_payload.get("artifacts"), list) else None,
             )
 
+        # Infer descriptions and upload any files attached this turn before routing.
+        newly_uploaded_ids = await self._handle_uploaded_files(
+            request_payload, conversation_id, context, event_queue
+        )
+        if newly_uploaded_ids:
+            request_payload["newly_uploaded_artifact_ids"] = newly_uploaded_ids
+
         request_started_at = datetime.now(timezone.utc)
         status_forwarder_stop = asyncio.Event()
         status_forwarder_task = asyncio.create_task(
@@ -3489,14 +3646,6 @@ class OrchestratorAgent(PrometheusAgent):
                 except Exception:
                     pass
         response_payload = response.model_dump(exclude_none=True)
-        # Snapshot existing artifact IDs before ingestion so we can diff afterward
-        try:
-            existing_ids = {
-                ref.artifact_id
-                for ref in self.list_artifact_references(conversation_id, limit=50)
-            }
-        except Exception:
-            existing_ids = set()
         try:
             ingested = self._ingest_response_artifacts(conversation_id, response_payload)
             if ingested:
@@ -3508,10 +3657,10 @@ class OrchestratorAgent(PrometheusAgent):
                 ref.to_dict() for ref in self.list_artifact_references(conversation_id, limit=50)
             ]
             response_payload["artifacts"] = all_refs
-            # new_artifacts = refs that weren't present before ingestion
+            # new_artifacts = refs not present at the start of this turn
             response_payload["new_artifacts"] = [
                 r for r in all_refs
-                if (r.get("artifact_id") or r.get("id")) not in existing_ids
+                if (r.get("artifact_id") or r.get("id")) not in artifact_ids_before_turn
             ]
         except Exception as exc:
             print(f"[WARN] Failed to attach artifacts to response: {exc}")

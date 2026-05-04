@@ -50,6 +50,7 @@ def summarize_artifacts_for_context(
                 "producer_agent_id": artifact.get("producer_agent_id") or artifact.get("producerAgentId"),
                 "created_at": artifact.get("created_at") or artifact.get("createdAt"),
                 "tags": artifact.get("tags") or [],
+                "metadata": artifact.get("metadata") or {},
             }
         )
     return summary
@@ -61,6 +62,9 @@ def merge_artifacts_into_context(
 ) -> Dict[str, Any]:
     """Merge artifact catalogs into context without dropping prior entries."""
     merged = dict(existing_context or {})
+    # Drop transient per-turn keys — set fresh by _execute() each turn.
+    merged.pop("newly_uploaded_artifact_ids", None)
+    merged.pop("received_files", None)
     current_catalog = summarize_artifacts_for_context((existing_context or {}).get("artifacts"))
     next_catalog = summarize_artifacts_for_context(artifacts)
     existing_ids = {item["artifact_id"] for item in current_catalog}
@@ -192,15 +196,30 @@ def resolve_artifact_inputs(
             if normalized_name and normalized_name in q_normalized and artifact_id not in matched_ids:
                 matched_ids.append(artifact_id)
 
-    if not matched_ids:
-        return resolved
+    if matched_ids:
+        for path, mode in artifact_paths.items():
+            if get_nested_value(resolved, path) is not None:
+                continue
+            if mode == "multiple":
+                set_nested_value(resolved, path, list(matched_ids))
+            else:
+                set_nested_value(resolved, path, matched_ids[0])
 
-    for path, mode in artifact_paths.items():
-        if get_nested_value(resolved, path) is not None:
-            continue
-        if mode == "multiple":
-            set_nested_value(resolved, path, list(matched_ids))
-        else:
-            set_nested_value(resolved, path, matched_ids[0])
+    # Conservative auto-binding for newly-uploaded artifacts.
+    # Only bind when there is exactly 1 newly-uploaded artifact AND
+    # exactly 1 still-unfilled x_artifact_ref field.
+    newly_uploaded = list((context or {}).get("newly_uploaded_artifact_ids") or [])
+    if newly_uploaded:
+        unfilled_paths = [
+            path for path in artifact_paths if get_nested_value(resolved, path) is None
+        ]
+        valid_candidates = [aid for aid in newly_uploaded if aid in artifact_by_id]
+        if len(valid_candidates) == 1 and len(unfilled_paths) == 1:
+            path = unfilled_paths[0]
+            mode = artifact_paths[path]
+            if mode == "multiple":
+                set_nested_value(resolved, path, valid_candidates)
+            else:
+                set_nested_value(resolved, path, valid_candidates[0])
 
     return resolved
