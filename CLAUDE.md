@@ -18,6 +18,7 @@ make up-fg           # same, foreground
 make restart         # restart without rebuild (still re-runs generate)
 make ng-up           # skip the regenerate step (use existing docker-compose.agents.yml)
 make down            # stop services (add down-v to drop volumes)
+make clear-litellm-db # stop services + remove only LiteLLM's Postgres volume
 make logs SERVICE=client-agent
 make generate        # only (re)write docker-compose.agents.yml
 make clean-generated # delete the generated agents compose file
@@ -26,6 +27,8 @@ make test-static       # infra tests that don't need Docker
 make test-integration  # infra tests against running containers
 make test-infra        # both
 ```
+
+Launch and restart targets clear LiteLLM's Postgres volume before starting services so stale agent registrations do not survive across platform launches. Redis state is left intact.
 
 To temporarily exclude an agent, remove (or rename) its `agents/<name>/docker-compose.yml` and re-run `make generate`. `docker-compose.override.yml` is auto-included if present for local-only tweaks.
 
