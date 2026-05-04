@@ -4,6 +4,16 @@ FROM mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:${PROMETHEUS_AP
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        fonts-dejavu-core \
+        libcairo2 \
+        libgdk-pixbuf-2.0-0 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        shared-mime-info \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV UV_PROJECT_ENVIRONMENT="/usr/local" \
     UV_LINK_MODE=copy
 

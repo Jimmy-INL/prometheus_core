@@ -1,3 +1,5 @@
+import base64
+import json
 import logging
 import mimetypes
 import tempfile
@@ -10,10 +12,39 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-import plugins as _plugins
-from utils.a2a_client import A2AClient, ConversationResponse
-from utils.settings import settings
-from utils.uri_resolver import resolve_to_local_path
+import plugins as _plugins  # noqa: E402
+from utils.a2a_client import A2AClient, ConversationResponse  # noqa: E402
+from utils.settings import settings  # noqa: E402
+from utils.uri_resolver import resolve_to_local_path  # noqa: E402
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+async def _capture_uploaded_file(element: Any, file_path: Path) -> Optional[Dict[str, Any]]:
+    """Read one Chainlit upload into the payload shape expected by the agent."""
+    try:
+        size = file_path.stat().st_size
+        if size > MAX_UPLOAD_BYTES:
+            await cl.Message(
+                content=f"**{element.name}** exceeds the 20 MB upload limit and will not be stored."
+            ).send()
+            return None
+
+        mime = (
+            getattr(element, "mime", None)
+            or mimetypes.guess_type(element.name)[0]
+            or "application/octet-stream"
+        )
+        content_b64 = base64.b64encode(file_path.read_bytes()).decode()
+        return {
+            "name": element.name,
+            "mime_type": mime,
+            "size_bytes": size,
+            "content_b64": content_b64,
+        }
+    except Exception as exc:
+        logger.warning("Could not read %r for upload: %s", element.name, exc)
+        return None
 
 
 def _format_status_history(history: List[str]) -> str:
@@ -42,14 +73,16 @@ def _get_a2a_client() -> A2AClient:
 
 async def message_handler(message: cl.Message):
     # --- File upload handling ---
+    uploaded_files: List[Dict] = []
+
     if message.elements:
         for element in message.elements:
-            if not element.name:
+            if not element.name or not element.path:
                 continue
 
             file_path = Path(element.path)
 
-            # Try visualization plugins first
+            # Visualization plugins get first pick; they handle the element fully
             plugin = _plugins.find_plugin_for_upload(file_path)
             if plugin is not None:
                 try:
@@ -60,12 +93,8 @@ async def message_handler(message: cl.Message):
                     await cl.Message(
                         content=f"Failed to process **{element.name}**: {e}"
                     ).send()
-                if not message.content.strip():
-                    return
-                continue
-
-            # Fallback: PDF (Chainlit native element)
-            if file_path.suffix.lower() == ".pdf":
+            elif file_path.suffix.lower() == ".pdf":
+                # PDF: render inline as a Chainlit native element
                 try:
                     pdf_el = cl.Pdf(name=element.name, display="inline", path=element.path)
                     await cl.Message(
@@ -73,8 +102,20 @@ async def message_handler(message: cl.Message):
                     ).send()
                 except Exception as e:
                     await cl.Message(content=f"Failed to display PDF: {e}").send()
-                if not message.content.strip():
-                    return
+
+            # Capture every readable file for DeepLynx storage via the agent, including
+            # files already rendered locally by visualization plugins.
+            uploaded = await _capture_uploaded_file(element, file_path)
+            if uploaded is not None:
+                uploaded_files.append(uploaded)
+
+    # Build the query; when files are uploaded with no text, use a neutral default so
+    # the agent can still determine context and upload them.
+    query = message.content.strip()
+    if not query and uploaded_files:
+        query = "Please process the uploaded file(s)."
+    if not query:
+        return
 
     # --- Text query → A2A client-agent ---
     conversation_id = cl.user_session.get("conversation_id")
@@ -96,14 +137,15 @@ async def message_handler(message: cl.Message):
         await _update_status_step(status_step, status_history, "Sending request to agent...")
 
         response = await client.send(
-            query=message.content,
+            query=query,
             conversation_id=conversation_id,
             artifacts=artifacts_catalog,
+            uploaded_files=uploaded_files or None,
             on_status=_on_status,
         )
 
         await status_step.__aexit__(None, None, None)
-        await _handle_response(client, response, message.content, conversation_id)
+        await _handle_response(client, response, query, conversation_id)
 
     except Exception as e:
         await status_step.__aexit__(None, None, None)

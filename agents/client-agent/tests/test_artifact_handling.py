@@ -8,7 +8,7 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-from artifact_handling import merge_artifact_catalogs, resolve_artifact_inputs
+from artifact_handling import merge_artifact_catalogs, merge_artifacts_into_context, resolve_artifact_inputs
 
 
 def test_merge_artifact_catalogs_preserves_existing_and_incoming() -> None:
@@ -16,12 +16,33 @@ def test_merge_artifact_catalogs_preserves_existing_and_incoming() -> None:
         {"artifact_id": "a-1", "name": "Original CAD", "uri": "file:///tmp/original.step"},
     ]
     incoming = [
-        {"artifact_id": "a-2", "name": "New Mesh", "uri": "file:///tmp/new.msh"},
+        {
+            "artifact_id": "a-2",
+            "name": "New Mesh",
+            "uri": "file:///tmp/new.msh",
+            "metadata": {"deeplynx_file_id": 42},
+        },
     ]
 
     merged = merge_artifact_catalogs(existing, incoming)
 
     assert [item["artifact_id"] for item in merged] == ["a-1", "a-2"]
+    assert merged[1]["metadata"] == {"deeplynx_file_id": 42}
+
+
+def test_merge_artifacts_into_context_drops_transient_upload_keys() -> None:
+    merged = merge_artifacts_into_context(
+        {
+            "newly_uploaded_artifact_ids": ["upload-1"],
+            "received_files": [{"name": "stale.ifc"}],
+            "other": "keep",
+        },
+        [],
+    )
+
+    assert "newly_uploaded_artifact_ids" not in merged
+    assert "received_files" not in merged
+    assert merged["other"] == "keep"
 
 
 def test_resolve_artifact_inputs_uses_declared_schema_paths() -> None:

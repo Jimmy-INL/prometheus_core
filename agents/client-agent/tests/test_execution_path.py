@@ -39,6 +39,64 @@ if "langchain_core.tools" not in sys.modules:
     tools_module.StructuredTool = _StructuredTool
     sys.modules["langchain_core.tools"] = tools_module
 
+if "prometheus_api.agent" not in sys.modules:
+    prometheus_api_module = types.ModuleType("prometheus_api")
+    agent_api_module = types.ModuleType("prometheus_api.agent")
+
+    class _ArtifactReference:
+        def __init__(self, **kwargs):
+            self.artifact_id = kwargs.get("artifact_id")
+            self.conversation_id = kwargs.get("conversation_id")
+            self.name = kwargs.get("name")
+            self.description = kwargs.get("description")
+            self.uri = kwargs.get("uri")
+            self.metadata = kwargs.get("metadata") or {}
+
+        @classmethod
+        def from_any(cls, artifact, conversation_id=None):
+            if not isinstance(artifact, dict):
+                return None
+            return cls(
+                artifact_id=artifact.get("artifact_id") or artifact.get("artifactId"),
+                conversation_id=conversation_id,
+                name=artifact.get("name"),
+                description=artifact.get("description"),
+                uri=artifact.get("uri"),
+                metadata=artifact.get("metadata") or {},
+            )
+
+        def to_dict(self):
+            return {
+                "artifact_id": self.artifact_id,
+                "conversation_id": self.conversation_id,
+                "name": self.name,
+                "description": self.description,
+                "uri": self.uri,
+                "metadata": self.metadata,
+            }
+
+    class _PrometheusAgent:
+        def __init__(self, *args, **kwargs):
+            self.artifact_registry = SimpleNamespace(register=lambda reference: None)
+
+        @staticmethod
+        def pending_hint(pending_requests, hint):
+            return hint
+
+        def list_artifact_references(self, *args, **kwargs):
+            return []
+
+        async def send_status_update(self, *args, **kwargs):
+            return None
+
+    agent_api_module.ArtifactReference = _ArtifactReference
+    agent_api_module.EventQueue = object
+    agent_api_module.PrometheusAgent = _PrometheusAgent
+    agent_api_module.RequestContext = object
+    prometheus_api_module.agent = agent_api_module
+    sys.modules["prometheus_api"] = prometheus_api_module
+    sys.modules["prometheus_api.agent"] = agent_api_module
+
 import agent as agent_module
 
 
@@ -169,6 +227,109 @@ def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(mon
     ]
 
 
+def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
+    seen = {}
+
+    async def fake_compile_query_plan(state, **kwargs):
+        seen["context"] = state.get("context")
+        return {
+            "is_fallback": True,
+            "fallback_message": "ok",
+        }
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", fake_compile_query_plan)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="What can you do with this?",
+                conversation_id="conv-uploads",
+                received_files=[
+                    {
+                        "name": "model.ifc",
+                        "mime_type": "application/ifc",
+                        "size_bytes": 12,
+                    }
+                ],
+            )
+        )
+    )
+
+    assert response.status == "answer"
+    assert seen["context"]["received_files"] == [
+        {
+            "name": "model.ifc",
+            "mime_type": "application/ifc",
+            "size_bytes": 12,
+        }
+    ]
+
+
+def test_invoke_agent_generic_passes_artifact_catalog_to_skill(monkeypatch) -> None:
+    captured = {}
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured["skill_id"] = skill_id
+        captured["params"] = params
+        captured["conversation_id"] = conversation_id
+        return {"skill_id": skill_id, "result": {"message": "converted"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capability_by_skill_id=fake_get_capability_by_skill_id),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "convert_svg_to_png",
+            "supporting_skills": [],
+            "workflow_type": "single",
+            "extracted_params": {"artifact_id": "svg-1"},
+        },
+        "context": {
+            "artifacts": [
+                {
+                    "artifact_id": "svg-1",
+                    "name": "diagram.svg",
+                    "uri": "deeplynx://organizations/1/projects/1/items/99",
+                    "metadata": {"deeplynx_file_id": 123},
+                }
+            ]
+        },
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert result["tool_results"]["convert_svg_to_png"] == {"message": "converted"}
+    assert captured["conversation_id"] == "conv-1"
+    assert captured["params"]["artifact_id"] == "svg-1"
+    assert captured["params"]["artifacts"] == [
+        {
+            "artifact_id": "svg-1",
+            "name": "diagram.svg",
+            "description": "",
+            "uri": "deeplynx://organizations/1/projects/1/items/99",
+            "mime_type": None,
+            "size_bytes": None,
+            "producer_agent_id": None,
+            "created_at": None,
+            "tags": [],
+            "metadata": {"deeplynx_file_id": 123},
+        }
+    ]
+
+
 def test_invoke_skill_validates_nested_required_paths(monkeypatch) -> None:
     capability = SimpleNamespace(
         input_schema={
@@ -223,19 +384,21 @@ def test_invoke_skill_validates_nested_required_paths(monkeypatch) -> None:
 def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
     state = {
         "conversation_history": [],
-        "pending_subagent_request": {
-            "skill_id": "analyze_thermal",
-            "missing_inputs": [
-                {
-                    "name": "temperature_c",
-                    "description": "Operating temperature in Celsius at which the material should be evaluated.",
-                    "user_prompt": "What operating temperature should I use for the thermal analysis (in Celsius)?",
-                    "type": "number",
-                    "resolvable_from_context": True,
-                }
-            ],
-            "hint": "Thermal analysis requires an operating temperature before it can proceed.",
-        },
+        "pending_subagent_requests": [
+            {
+                "skill_id": "analyze_thermal",
+                "missing_inputs": [
+                    {
+                        "name": "temperature_c",
+                        "description": "Operating temperature in Celsius at which the material should be evaluated.",
+                        "user_prompt": "What operating temperature should I use for the thermal analysis (in Celsius)?",
+                        "type": "number",
+                        "resolvable_from_context": True,
+                    }
+                ],
+                "hint": "Thermal analysis requires an operating temperature before it can proceed.",
+            },
+        ],
     }
 
     result = asyncio.run(agent_module.ask_followup_dynamic(state))

@@ -20,6 +20,7 @@ COPY tool_discovery.py /app/tool_discovery.py
 COPY capability_cache.py /app/capability_cache.py
 COPY param_schema.py /app/param_schema.py
 COPY planner.py /app/planner.py
+COPY file_upload_handler.py /app/file_upload_handler.py
 COPY workflow_library /app/workflow_library
 COPY workflows /app/workflows
 

@@ -62,6 +62,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from capability_cache import AgentCapability
+from file_upload_handler import mime_type_label
 from param_schema import (
     extract_required_param_paths,
     flatten_schema_properties,
@@ -99,7 +100,23 @@ with set_extracted_params.
 fallback_to_chat to respond directly.
 - Prefer minimal, high-confidence plans. Avoid over-engineering.
 - Keep all user-facing messages concise and professional.
-- Every planning turn must end by calling finalize_plan or fallback_to_chat.\
+- Every planning turn must end by calling finalize_plan or fallback_to_chat.
+
+ARTIFACT PARAMETERS
+- Parameters marked "[accepts artifact id]" in the capability list expect an artifact_id UUID \
+from the Available artifacts section, not a filename or description.
+- When the user uploads a file, it appears in Available artifacts with a prefix \
+"[User-uploaded ... for this request]". Match it to the appropriate skill parameter using \
+set_extracted_params with its artifact_id.
+
+FILE UPLOADS WITHOUT A TASK REQUEST
+- When the user uploads a file and Available artifacts contains an entry marked \
+"[User-uploaded ... for this request]" but the message is a description or label rather \
+than a task request, call fallback_to_chat acknowledging the stored artifact and asking \
+what to do. Base the acknowledgment on what is actually in Available artifacts — never \
+claim to have stored a file if it does not appear there. \
+- The content of the uploaded file does not matter. Never refuse to accept or reference a \
+file because its content is unrelated to nuclear engineering.\
 """
 
 
@@ -313,6 +330,7 @@ def _build_prompt(
 
     artifacts_block = ""
     artifacts = (context or {}).get("artifacts")
+    newly_uploaded_ids = set((context or {}).get("newly_uploaded_artifact_ids") or [])
     if isinstance(artifacts, list) and artifacts:
         rows = []
         for artifact in artifacts[:12]:
@@ -321,10 +339,30 @@ def _build_prompt(
             artifact_id = str(artifact.get("artifact_id") or "").strip()
             name = str(artifact.get("name") or "").strip()
             desc = str(artifact.get("description") or "").strip()
-            if artifact_id and name:
-                rows.append(f"- {name} (id: {artifact_id}) {desc[:140]}")
+            if not artifact_id or not name:
+                continue
+            if artifact_id in newly_uploaded_ids:
+                mime = str(artifact.get("mime_type") or "")
+                label = mime_type_label(mime, name)
+                desc = f"[User-uploaded {label} for this request] {desc}".strip()
+            rows.append(f"- {name} (id: {artifact_id}) {desc[:200]}")
         if rows:
             artifacts_block = "Available artifacts:\n" + "\n".join(rows)
+
+    # Files received this turn but not stored (storage unavailable or upload failed).
+    received_files = (context or {}).get("received_files") or []
+    if received_files:
+        received_rows = []
+        for f in received_files:
+            if not isinstance(f, dict):
+                continue
+            name = str(f.get("name") or "file")
+            mime = str(f.get("mime_type") or "")
+            label = mime_type_label(mime, name)
+            received_rows.append(f"- {name} ({label}) [received this request — not stored, storage unavailable]")
+        if received_rows:
+            received_block = "Files received (not stored — storage unavailable):\n" + "\n".join(received_rows)
+            artifacts_block = (artifacts_block + "\n" + received_block).strip() if artifacts_block else received_block
 
     history_block = "\n".join(history_lines) if history_lines else "(none)"
     capability_block = _build_capability_context(capabilities)
