@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useRecoilValue } from "recoil";
 import { sessionState, useChatSession } from "@chainlit/react-client";
 import { Chat } from "./components/Chat";
+import { Login } from "./components/Login";
 
 const userEnv = {};
 
@@ -16,5 +17,6 @@ export default function App() {
     });
   }, [connect]);
 
-  return <Chat />;
+  // return <Chat />;
+  return <Login onSuccess={() => console.log("logged in")} />;
 }

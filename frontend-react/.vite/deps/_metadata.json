@@ -1,0 +1,49 @@
+{
+  "hash": "609bd4cb",
+  "configHash": "ef905545",
+  "lockfileHash": "5a455cbf",
+  "browserHash": "feba6b25",
+  "optimized": {
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "ac63a90c",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "cdfc1715",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "22d4be8e",
+      "needsInterop": true
+    },
+    "recoil": {
+      "src": "../../node_modules/recoil/es/index.js",
+      "file": "recoil.js",
+      "fileHash": "b95869d5",
+      "needsInterop": false
+    },
+    "@chainlit/react-client": {
+      "src": "../../node_modules/@chainlit/react-client/dist/index.mjs",
+      "file": "@chainlit_react-client.js",
+      "fileHash": "b5cdc638",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-ZUZCOHAI": {
+      "file": "chunk-ZUZCOHAI.js"
+    },
+    "chunk-YBFRUR3B": {
+      "file": "chunk-YBFRUR3B.js"
+    },
+    "chunk-JRE55LYH": {
+      "file": "chunk-JRE55LYH.js"
+    }
+  }
+}
