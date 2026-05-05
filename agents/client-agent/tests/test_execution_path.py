@@ -51,22 +51,43 @@ if "prometheus_api.agent" not in sys.modules:
             self.description = kwargs.get("description")
             self.uri = kwargs.get("uri")
             self.metadata = kwargs.get("metadata") or {}
+            self.json_type = kwargs.get("json_type")
+            self.json_body = kwargs.get("json_body")
 
         @classmethod
         def from_any(cls, artifact, conversation_id=None):
             if not isinstance(artifact, dict):
                 return None
+            metadata = dict(artifact.get("metadata") or {})
+            parts = artifact.get("parts") or []
+            uri = artifact.get("uri")
+            json_type = artifact.get("json_type")
+            json_body = artifact.get("json_body")
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                kind = str(part.get("kind") or "").strip().lower()
+                if kind == "file":
+                    file_payload = part.get("file") or {}
+                    uri = file_payload.get("uri") or uri
+                elif kind == "data":
+                    json_body = part.get("data")
+                    part_meta = dict(part.get("metadata") or {})
+                    json_type = part_meta.get("json_type") or json_type
+                    metadata = {**part_meta, **metadata}
             return cls(
                 artifact_id=artifact.get("artifact_id") or artifact.get("artifactId"),
-                conversation_id=conversation_id,
+                conversation_id=conversation_id or metadata.get("conversation_id"),
                 name=artifact.get("name"),
                 description=artifact.get("description"),
-                uri=artifact.get("uri"),
-                metadata=artifact.get("metadata") or {},
+                uri=uri,
+                metadata=metadata,
+                json_type=json_type,
+                json_body=json_body,
             )
 
         def to_dict(self):
-            return {
+            payload = {
                 "artifact_id": self.artifact_id,
                 "conversation_id": self.conversation_id,
                 "name": self.name,
@@ -74,6 +95,11 @@ if "prometheus_api.agent" not in sys.modules:
                 "uri": self.uri,
                 "metadata": self.metadata,
             }
+            if self.json_type is not None:
+                payload["json_type"] = self.json_type
+            if self.json_body is not None:
+                payload["json_body"] = self.json_body
+            return payload
 
     class _PrometheusAgent:
         def __init__(self, *args, **kwargs):
@@ -266,6 +292,163 @@ def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
             "size_bytes": 12,
         }
     ]
+
+
+def test_agents_slash_command_lists_registered_agents_without_planner(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    async def fake_discover_agents():
+        return [
+            {
+                "agent_id": "mesh-agent",
+                "name": "Mesh Agent",
+                "url": "http://mesh-agent:8000",
+                "agent_card_params": {
+                    "skills": [{"id": "inspect_mesh", "name": "Inspect Mesh"}],
+                },
+            }
+        ]
+
+    async def fake_get_capabilities():
+        return [
+            SimpleNamespace(
+                agent_id="mesh-agent",
+                agent_name="Mesh Agent",
+                agent_url="http://litellm:4000/a2a/mesh-agent",
+                skill_id="convert_mesh",
+                skill_name="Convert Mesh",
+            )
+        ]
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(agent_module, "discover_agents", fake_discover_agents)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(query="/agents", conversation_id="conv-debug")
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Registered agents (1)" in response.message
+    assert "Mesh Agent (mesh-agent)" in response.message
+    assert "inspect_mesh (Inspect Mesh)" in response.message
+    assert "convert_mesh (Convert Mesh)" in response.message
+    assert response.message_metadata["slash_command"] == "agents"
+
+
+def test_artifacts_slash_command_lists_conversation_artifacts_without_planner(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(
+        agent_module,
+        "get_conversation",
+        lambda conversation_id: {
+            "missing_info": ["context.temperature_c"],
+            "context": {
+                "artifacts": [
+                    {
+                        "artifact_id": "older-1",
+                        "name": "older-result.json",
+                        "description": "Earlier analysis output.",
+                        "json_body": {"ok": True},
+                    }
+                ]
+            },
+        },
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="/artifacts",
+                conversation_id="conv-debug",
+                artifacts=[
+                    {
+                        "artifact_id": "svg-1",
+                        "name": "diagram.svg",
+                        "description": "Uploaded SVG.",
+                        "uri": "deeplynx://container/file/123",
+                        "mime_type": "image/svg+xml",
+                        "metadata": {
+                            "source": "user-upload",
+                            "deeplynx_file_id": 123,
+                        },
+                    }
+                ],
+            )
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Conversation artifacts (2)" in response.message
+    assert "diagram.svg" in response.message
+    assert "deeplynx_file_id: 123" in response.message
+    assert "older-result.json" in response.message
+    assert [artifact["artifact_id"] for artifact in response.artifacts] == ["svg-1", "older-1"]
+
+
+def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> None:
+    async def should_not_refresh(*args, **kwargs):
+        raise AssertionError("Slash commands should not refresh tool caches before handling.")
+
+    async def should_not_upload(*args, **kwargs):
+        raise AssertionError("Slash commands should not process uploaded files.")
+
+    monkeypatch.setattr(agent_module, "_tools_cache", None)
+    monkeypatch.setattr(agent_module, "refresh_dynamic_components", should_not_refresh)
+    monkeypatch.setattr(agent_module.OrchestratorAgent, "_handle_uploaded_files", should_not_upload)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    artifact = SimpleNamespace(
+        artifact_id="artifact-1",
+        to_dict=lambda: {
+            "artifact_id": "artifact-1",
+            "conversation_id": "conv-debug",
+            "name": "diagram.svg",
+            "description": "Registered SVG.",
+            "uri": "deeplynx://container/file/123",
+            "mime_type": "image/svg+xml",
+        },
+    )
+    orchestrator = agent_module.OrchestratorAgent()
+    orchestrator.list_artifact_references = lambda *args, **kwargs: [artifact]
+
+    payload = asyncio.run(
+        orchestrator._execute(
+            {
+                "query": "/artifacts",
+                "conversation_id": "conv-debug",
+                "uploaded_files": [
+                    {
+                        "name": "ignored.svg",
+                        "mime_type": "image/svg+xml",
+                        "size_bytes": 12,
+                        "content_b64": "PHN2Zy8+",
+                    }
+                ],
+            },
+            SimpleNamespace(context_id="conv-debug"),
+            object(),
+        )
+    )
+
+    assert payload["status"] == "answer"
+    assert "diagram.svg" in payload["message"]
+    assert payload["artifacts"][0]["artifact_id"] == "artifact-1"
+    assert payload["new_artifacts"] == []
 
 
 def test_invoke_agent_generic_passes_artifact_catalog_to_skill(monkeypatch) -> None:

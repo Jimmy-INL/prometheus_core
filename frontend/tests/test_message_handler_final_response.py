@@ -15,6 +15,7 @@ if str(FRONTEND_DIR) not in sys.path:
 if "chainlit" not in sys.modules:
     chainlit = types.ModuleType("chainlit")
     chainlit.Message = object
+    chainlit.Pdf = object
     chainlit.CustomElement = object
     chainlit.AskElementMessage = object
     chainlit.AskActionMessage = object
@@ -78,3 +79,50 @@ def test_handle_final_response_renders_artifacts_from_artifacts_list(monkeypatch
     assert sent_messages[0].elements == ["viewer"]
     assert '"agent": "Alchemy Agent"' in sent_messages[0].content
     assert "Artifact text" in sent_messages[0].content
+
+
+def test_handle_final_response_does_not_render_artifacts_for_slash_commands(monkeypatch):
+    sent_messages = []
+
+    class DummyMessage:
+        def __init__(self, content="", elements=None):
+            self.content = content
+            self.elements = elements
+            sent_messages.append(self)
+
+        async def send(self):
+            return self
+
+    class DummyUserSession:
+        def __init__(self):
+            self._store = {}
+
+        def get(self, key, default=None):
+            return self._store.get(key, default)
+
+        def set(self, key, value):
+            self._store[key] = value
+
+    session = DummyUserSession()
+
+    async def _should_not_render_artifacts(artifacts, tmp_dir):
+        raise AssertionError("Slash-command artifact catalogs should be listed, not rendered.")
+
+    monkeypatch.setattr(handler.cl, "Message", DummyMessage)
+    monkeypatch.setattr(handler.cl, "user_session", session)
+    monkeypatch.setattr(handler, "render_artifacts", _should_not_render_artifacts)
+
+    response = ConversationResponse(
+        conversation_id="conv-1",
+        status="answer",
+        message="Conversation artifacts (1)\n- tiger.svg",
+        artifacts=[{"artifact_id": "svg-1", "name": "tiger.svg"}],
+        message_metadata={"slash_command": "artifacts"},
+    )
+
+    asyncio.run(handler._handle_final_response(response))
+
+    assert session.get("artifacts") == response.artifacts
+    assert len(sent_messages) == 1
+    assert sent_messages[0].elements == []
+    assert sent_messages[0].content == "Conversation artifacts (1)\n- tiger.svg"

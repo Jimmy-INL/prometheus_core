@@ -361,7 +361,9 @@ def _update_step_statuses(statuses: dict, steps: list, status_msg: str):
 
 
 async def _handle_final_response(response: ConversationResponse):
-    artifacts_to_render = response.new_artifacts or response.artifacts or []
+    metadata = response.message_metadata or {}
+    is_slash_command = bool(metadata.get("slash_command"))
+    artifacts_to_render = [] if is_slash_command else (response.new_artifacts or response.artifacts or [])
     text = _coerce_final_text(response, len(artifacts_to_render))
     elements = []
 
@@ -381,7 +383,6 @@ async def _handle_final_response(response: ConversationResponse):
             materials = "\n".join(f"- {m}" for m in response.recommended_materials)
             text += f"\n\n**Recommended Materials:**\n{materials}"
 
-        metadata = response.message_metadata or {}
         suggestions = metadata.get("follow_up_suggestions", [])
         if suggestions:
             elements.append(

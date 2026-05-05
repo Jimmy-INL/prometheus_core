@@ -40,11 +40,6 @@ async def on_message(message: cl.Message):
         await _handle_conversation_history()
         return
 
-    # Handle /artifacts command
-    if content.lower().startswith("/artifacts"):
-        await _handle_artifacts_list()
-        return
-
     await message_handler(message)
 
 
@@ -115,45 +110,6 @@ async def _handle_conversation_history():
             lines.append(f"> {query[:120]}{'...' if len(query) > 120 else ''}")
         if timestamp:
             lines.append(f"*{timestamp}*")
-        lines.append("")
-
-    await cl.Message(content="\n".join(lines)).send()
-
-
-# --- Artifacts list ---
-
-
-async def _handle_artifacts_list():
-    """Display artifacts from the current conversation."""
-    artifacts = cl.user_session.get("artifacts", [])
-    if not artifacts:
-        await cl.Message(content="No artifacts in the current conversation.").send()
-        return
-
-    lines = [f"**Artifacts ({len(artifacts)}):**\n"]
-    for a in artifacts:
-        name = a.get("name", "Unnamed")
-        mime = a.get("mime_type", "")
-        json_type = a.get("json_type", "")
-        uri = a.get("uri", "")
-        desc = a.get("description", "")
-        aid = a.get("artifact_id", "?")[:8]
-        tags = ", ".join(a.get("tags", []))
-
-        lines.append(f"**`{aid}`** — {name}")
-        if desc:
-            lines.append(f"> {desc[:200]}")
-        detail_parts = []
-        if mime:
-            detail_parts.append(f"Type: `{mime}`")
-        if json_type:
-            detail_parts.append(f"JSON: `{json_type}`")
-        if tags:
-            detail_parts.append(f"Tags: {tags}")
-        if uri:
-            detail_parts.append(f"URI: `{uri}`")
-        if detail_parts:
-            lines.append(f"*{' | '.join(detail_parts)}*")
         lines.append("")
 
     await cl.Message(content="\n".join(lines)).send()
