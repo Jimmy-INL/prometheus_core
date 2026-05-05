@@ -22,5 +22,5 @@ export default function App() {
 
   if (authed === null) return null;
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
-  return <Chat />;
+  return <Chat onLogout={() => setAuthed(false)} />;
 }

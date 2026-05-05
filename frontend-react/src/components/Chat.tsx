@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
+import { LogOut } from "lucide-react";
+
+interface Props {
+  onLogout: () => void;
+}
 
 function getMessages(messages: IStep[]): IStep[] {
   return messages.flatMap((m) => {
@@ -34,7 +39,7 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
   );
 }
 
-export function Chat() {
+export function Chat({ onLogout }: Props) {
   const [input, setInput] = useState("");
   const { messages } = useChatMessages();
   const { sendMessage } = useChatInteract();
@@ -49,6 +54,14 @@ export function Chat() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
+      <div className="flex justify-end p-3 border-b border-gray-800">
+        <button
+          className="text-gray-500 hover:text-gray-300"
+          onClick={onLogout}
+        >
+          <LogOut size={18} />
+        </button>
+      </div>
       {flat.length === 0 ? (
         <WelcomeScreen onSelect={(text) => handleSend(text)} />
       ) : (
@@ -77,7 +90,6 @@ export function Chat() {
         >
           Send
         </button>
-        <button className="btn btn-xl btn-primary">Xlarge</button>
       </div>
     </div>
   );
