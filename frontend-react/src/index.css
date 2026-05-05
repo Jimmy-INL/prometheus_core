@@ -41,6 +41,7 @@
   --border: 1px;
   --depth: 0;
   --noise: 0;
+  --input-color: var(--color-base-content);
 }
 
 /* Dark Theme */
@@ -79,6 +80,7 @@
   --border: 1px;
   --depth: 0;
   --noise: 0;
+  --color-base-content: oklch(70% 0.007 265.754);
 }
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
