@@ -20,7 +20,12 @@ export default function App() {
     }
   }, [authed, connect, session?.socket.connected]);
 
+  const handleLogout = async () => {
+    await fetch("/logout", { credentials: "include" });
+    setAuthed(false);
+  };
+
   if (authed === null) return null;
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
-  return <Chat onLogout={() => setAuthed(false)} />;
+  return <Chat onLogout={handleLogout} />;
 }
