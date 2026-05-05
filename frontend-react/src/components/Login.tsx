@@ -36,7 +36,7 @@ export function Login({ onSuccess }: Props) {
       <div>
         <div className="relative w-full max-w-lg px-6 space-y-8">
           <div className="grid justify-items-center -mt-6">
-            <img src="/public/logo_dark.png" alt="Prometheus" />
+            <img src="/logo_dark.png" alt="Prometheus" />
             <span className="text-lg text-base-content/50 -mt-6">AI orchestration for nuclear engineering</span>
           </div>
         </div>
