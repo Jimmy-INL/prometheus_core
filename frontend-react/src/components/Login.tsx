@@ -82,7 +82,7 @@ export function Login({ onSuccess }: Props) {
             {loading ? "Signing in..." : "Sign in"}
           </button>
 
-          <div className="divider divider-primary text-xs text-primary py-4">OR</div>
+          <div className="divider divider-neutral text-xs text-gray-600 py-4">OR</div>
 
           <a 
             href="/login/oauth/authorize"
