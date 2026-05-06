@@ -60,6 +60,7 @@ class ArtifactReference:
     mime_type: Optional[str] = None
     json_type: Optional[str] = None
     json_body: Optional[Any] = None
+    text_body: Optional[str] = None
     size_bytes: Optional[int] = None
     producer_agent_id: Optional[str] = None
     created_at: str = field(default_factory=_utc_now_iso)
@@ -85,6 +86,9 @@ class ArtifactReference:
             mime_type=payload.get("mime_type"),
             json_type=payload.get("json_type"),
             json_body=payload.get("json_body"),
+            text_body=(
+                str(payload.get("text_body")) if payload.get("text_body") is not None else None
+            ),
             size_bytes=_coerce_int(payload.get("size_bytes")),
             producer_agent_id=payload.get("producer_agent_id"),
             created_at=str(payload.get("created_at") or _utc_now_iso()),
@@ -166,6 +170,23 @@ class ArtifactReference:
                 metadata={**artifact_metadata, **part_metadata},
             )
 
+        if part_kind == "text":
+            mime_type = part_metadata.get("mime_type") or "text/plain"
+            return cls(
+                artifact_id=artifact_id,
+                conversation_id=normalized_conversation_id,
+                name=name or "artifact.txt",
+                description=description,
+                uri=None,
+                mime_type=mime_type,
+                text_body=str(primary_part.get("text") or ""),
+                size_bytes=size_bytes,
+                producer_agent_id=normalized_producer,
+                created_at=created_at,
+                tags=normalized_tags,
+                metadata={**artifact_metadata, **part_metadata},
+            )
+
         return None
 
     @classmethod
@@ -191,7 +212,11 @@ class ArtifactReference:
         if not isinstance(payload, dict):
             return None
 
-        if not (payload.get("uri") or payload.get("json_body") is not None):
+        if not (
+            payload.get("uri")
+            or payload.get("json_body") is not None
+            or payload.get("text_body") is not None
+        ):
             return None
 
         reference = cls.from_dict(payload)
@@ -306,8 +331,8 @@ class ArtifactRegistry:
         conversation_id = str(reference.conversation_id or "").strip()
         if not conversation_id:
             raise ValueError("conversation_id is required for artifact registration")
-        if not reference.uri and reference.json_body is None:
-            raise ValueError("artifact registration requires uri or json_body")
+        if not reference.uri and reference.json_body is None and reference.text_body is None:
+            raise ValueError("artifact registration requires uri, json_body, or text_body")
 
         artifact_id = str(reference.artifact_id or uuid.uuid4())
         reference.artifact_id = artifact_id

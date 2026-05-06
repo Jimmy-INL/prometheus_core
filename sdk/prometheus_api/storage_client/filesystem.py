@@ -227,6 +227,18 @@ class DeepLynxFileSystem(AbstractFileSystem):
         version and downloads that file.
         """
         remote_key = self._normalize_key(rpath)
+        item_id = self._parse_item_uri_key(remote_key)
+        if item_id is not None:
+            if recursive:
+                raise NotADirectoryError(
+                    f"DeepLynx item URI is a file, not a directory: {rpath}"
+                )
+            destination = self._resolve_local_destination(lpath, remote_key)
+            callback.set_size(None)
+            self._client.files.download(item_id, destination)
+            callback.relative_update(1)
+            return
+
         if recursive:
             self._get_recursive(remote_key, lpath)
             return
@@ -243,6 +255,10 @@ class DeepLynxFileSystem(AbstractFileSystem):
     def info(self, path, **kwargs):
         """Return file/directory metadata compatible with fsspec expectations."""
         key = self._normalize_key(path)
+        item_id = self._parse_item_uri_key(key)
+        if item_id is not None:
+            return {"name": key, "type": "file", "size": None}
+
         latest = self._resolve_latest_item(key)
         if latest is not None:
             return {"name": key, "type": "file", "size": None}
@@ -266,6 +282,8 @@ class DeepLynxFileSystem(AbstractFileSystem):
     def isfile(self, path):
         """Return ``True`` if the key resolves to a managed file."""
         key = self._normalize_key(path)
+        if self._parse_item_uri_key(key) is not None:
+            return True
         return self._resolve_latest_item(key) is not None
 
     def isdir(self, path):
@@ -375,6 +393,41 @@ class DeepLynxFileSystem(AbstractFileSystem):
     def _normalize_key(self, path: Any) -> str:
         """Normalize user path/URI input into a canonical object key."""
         return str(self._strip_protocol(path))
+
+    def _parse_item_uri_key(self, key: str) -> Optional[int]:
+        """Parse ``organizations/{org}/projects/{project}/items/{item}`` URIs.
+
+        ``send_deeplynx_artifact`` emits item-addressed URIs for durable
+        artifacts, while this filesystem also supports logical object keys used
+        by ``put``/``get``. Item URIs are validated against the current client
+        configuration so a configured project cannot accidentally read another
+        project's item through a copied URI.
+        """
+        parts = str(key or "").strip("/").split("/")
+        is_item_uri = (
+            len(parts) == 6
+            and parts[0] == "organizations"
+            and parts[2] == "projects"
+            and parts[4] == "items"
+        )
+        if not is_item_uri:
+            return None
+        try:
+            organization_id = int(parts[1])
+            project_id = int(parts[3])
+            item_id = int(parts[5])
+        except ValueError:
+            return None
+
+        config = getattr(self._client, "config", None)
+        if config is not None:
+            if organization_id != int(config.organization_id) or project_id != int(
+                config.project_id
+            ):
+                raise ValueError(
+                    "DeepLynx item URI does not match the configured organization/project"
+                )
+        return item_id
 
     def _join_keys(self, *parts: str) -> str:
         """Join non-empty path fragments into a normalized POSIX key."""

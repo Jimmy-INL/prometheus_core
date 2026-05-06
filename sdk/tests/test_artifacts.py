@@ -1,7 +1,10 @@
 """Tests for artifact reference management."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 from prometheus_api.agent.artifacts import ArtifactReference, ArtifactRegistry
@@ -251,3 +254,171 @@ def test_artifact_reference_preserves_data_part_metadata():
 
     assert reference is not None
     assert reference.metadata["kind"] == "conversation_message"
+
+
+def test_artifact_reference_from_a2a_text_part():
+    payload = {
+        "artifactId": "artifact-text",
+        "name": "analysis.log",
+        "parts": [
+            {
+                "kind": "text",
+                "text": "step 1\nstep 2\n",
+                "metadata": {"mime_type": "text/plain"},
+            }
+        ],
+        "metadata": {
+            "conversation_id": "conv-text",
+            "producer_agent_id": "analysis-agent",
+        },
+    }
+
+    reference = ArtifactReference.from_a2a_artifact(payload)
+
+    assert reference is not None
+    assert reference.artifact_id == "artifact-text"
+    assert reference.mime_type == "text/plain"
+    assert reference.text_body == "step 1\nstep 2\n"
+
+
+def test_get_artifact_file_path_materializes_inline_json(tmp_path):
+    agent = _DummyAgent(agent_name="Test Agent")
+    payload = {"b": 2, "a": 1}
+    agent.artifact_registry.register(
+        ArtifactReference(
+            artifact_id="json-1",
+            conversation_id="conv-json",
+            name="result",
+            description="Inline JSON",
+            mime_type="application/json",
+            json_body=payload,
+        )
+    )
+
+    path = asyncio.run(
+        agent.get_artifact_file_path(
+            "json-1",
+            conversation_id="conv-json",
+            cache_dir=tmp_path,
+        )
+    )
+
+    assert path.exists()
+    assert path.suffix == ".json"
+    assert json.loads(path.read_text()) == payload
+
+
+def test_get_artifact_file_path_materializes_inline_text_from_catalog(tmp_path):
+    agent = _DummyAgent(agent_name="Test Agent")
+    catalog = [
+        {
+            "artifact_id": "text-1",
+            "conversation_id": "conv-text",
+            "name": "notes",
+            "description": "Inline notes",
+            "mime_type": "text/plain",
+            "text_body": "hello\n",
+        }
+    ]
+
+    path = asyncio.run(
+        agent.get_artifact_file_path(
+            "text-1",
+            conversation_id="conv-text",
+            artifacts=catalog,
+            cache_dir=tmp_path,
+        )
+    )
+
+    assert path.exists()
+    assert path.suffix == ".txt"
+    assert path.read_text() == "hello\n"
+    assert agent.resolve_artifact_reference("conv-text", "text-1") is not None
+
+
+def test_get_artifact_file_path_allows_configured_local_file_root(tmp_path):
+    agent = _DummyAgent(agent_name="Test Agent")
+    source_dir = tmp_path / "allowed"
+    source_dir.mkdir()
+    source_file = source_dir / "mesh.e"
+    source_file.write_bytes(b"mesh")
+    agent.artifact_registry.register(
+        ArtifactReference(
+            artifact_id="file-1",
+            conversation_id="conv-file",
+            name="mesh.e",
+            description="Local mesh",
+            uri=f"file://{source_file}",
+            mime_type="application/octet-stream",
+            size_bytes=4,
+        )
+    )
+
+    path = asyncio.run(
+        agent.get_artifact_file_path(
+            "file-1",
+            conversation_id="conv-file",
+            cache_dir=tmp_path / "cache",
+            allowed_file_roots=[source_dir],
+        )
+    )
+
+    assert path == source_file.resolve()
+
+
+def test_get_artifact_file_path_rejects_local_file_outside_allowed_roots(tmp_path):
+    agent = _DummyAgent(agent_name="Test Agent")
+    source_file = tmp_path / "secret.txt"
+    source_file.write_text("secret")
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    agent.artifact_registry.register(
+        ArtifactReference(
+            artifact_id="file-2",
+            conversation_id="conv-file",
+            name="secret.txt",
+            description="Disallowed local file",
+            uri=f"file://{source_file}",
+        )
+    )
+
+    with pytest.raises(PermissionError):
+        asyncio.run(
+            agent.get_artifact_file_path(
+                "file-2",
+                conversation_id="conv-file",
+                cache_dir=tmp_path / "cache",
+                allowed_file_roots=[allowed],
+            )
+        )
+
+
+def test_get_artifact_file_path_downloads_fsspec_uri_to_cache(tmp_path):
+    import fsspec
+
+    fs = fsspec.filesystem("memory")
+    fs.pipe("source/result.txt", b"hello")
+
+    agent = _DummyAgent(agent_name="Test Agent")
+    agent.artifact_registry.register(
+        ArtifactReference(
+            artifact_id="remote-1",
+            conversation_id="conv-remote",
+            name="result.txt",
+            description="Remote text",
+            uri="memory://source/result.txt",
+            mime_type="text/plain",
+            size_bytes=5,
+        )
+    )
+
+    path = asyncio.run(
+        agent.get_artifact_file_path(
+            "remote-1",
+            conversation_id="conv-remote",
+            cache_dir=tmp_path,
+        )
+    )
+
+    assert path.exists()
+    assert path.read_bytes() == b"hello"

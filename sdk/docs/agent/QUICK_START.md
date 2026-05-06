@@ -122,6 +122,28 @@ The DeepLynx item's `properties` store `mime_type`, `json_type`, `file_id`, and 
 extra `metadata` keys, so the artifact is queryable in DeepLynx independently of
 the Prometheus catalog.
 
+## Use an existing artifact as a local file
+
+When a skill receives an `artifact_id`, use `get_artifact_file_path()` to turn it
+into a readable local file path. The helper resolves the conversation catalog,
+downloads URI-backed artifacts through `fsspec` into a cache, and materializes
+inline JSON/text artifacts as UTF-8 files in the same cache.
+
+```python
+source_path = await self.get_artifact_file_path(
+    params["artifact_id"],
+    context=context,
+    artifacts=params.get("artifacts"),  # optional catalog from an orchestrator
+)
+
+with open(source_path, "rb") as source:
+    data = source.read()
+```
+
+For `file://` artifacts, the helper validates the existing path instead of
+copying it. Set `PROMETHEUS_ARTIFACT_FILE_ALLOWED_ROOTS` to the directories an
+agent is allowed to read, separated by the platform path separator.
+
 ## `INPUT_REQUIRED` — requesting user input
 
 Save state **before** calling `send_input_required`, then **always** `return {}`.
