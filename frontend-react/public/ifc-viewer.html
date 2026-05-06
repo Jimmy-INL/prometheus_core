@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IFC Viewer</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      body[data-theme="dark"] {
+        background: #0f1117;
+        color: #f3f4f6;
+      }
+
+      body[data-theme="light"] {
+        background: #f5f6fb;
+        color: #111827;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+      }
+
+      #toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+      }
+
+      #title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      #status {
+        font-size: 12px;
+        opacity: 0.7;
+      }
+
+      #controls {
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid rgba(127, 127, 127, 0.25);
+        background: rgba(127, 127, 127, 0.08);
+        color: inherit;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(127, 127, 127, 0.14);
+      }
+
+      #viewer {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+      }
+
+      #canvas {
+        width: 100%;
+        height: 100%;
+      }
+
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+        font-size: 14px;
+        background: rgba(15, 17, 23, 0.22);
+        backdrop-filter: blur(1px);
+      }
+
+      body[data-theme="light"] #overlay {
+        background: rgba(245, 246, 251, 0.7);
+      }
+
+      #info {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.45);
+        color: #f9fafb;
+      }
+
+      body[data-theme="light"] #info {
+        background: rgba(255, 255, 255, 0.88);
+        color: #111827;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body data-theme="dark">
+    <div id="app">
+      <div id="toolbar">
+        <div>
+          <div id="title">IFC Viewer</div>
+          <div id="status">Initializing viewer…</div>
+        </div>
+        <div id="controls">
+          <button id="resetBtn" type="button">Reset View</button>
+          <button id="fullscreenBtn" type="button">Fullscreen</button>
+        </div>
+      </div>
+      <div id="viewer">
+        <div id="canvas"></div>
+        <div id="overlay">Loading ThatOpen components…</div>
+        <div id="info" class="hidden"></div>
+      </div>
+    </div>
+
+    <script src="/public/js/ifc/bundle.js"></script>
+    <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const fileUrl = params.get("fileUrl");
+        const filename = params.get("filename") || "model.ifc";
+        const theme = params.get("theme") || "dark";
+
+        document.body.dataset.theme = theme === "light" ? "light" : "dark";
+
+        const titleEl = document.getElementById("title");
+        const statusEl = document.getElementById("status");
+        const overlayEl = document.getElementById("overlay");
+        const infoEl = document.getElementById("info");
+        const canvasEl = document.getElementById("canvas");
+        const resetBtn = document.getElementById("resetBtn");
+        const fullscreenBtn = document.getElementById("fullscreenBtn");
+
+        titleEl.textContent = filename;
+
+        let viewerState = null;
+
+        function setStatus(text) {
+          statusEl.textContent = text;
+        }
+
+        function showOverlay(text) {
+          overlayEl.textContent = text;
+          overlayEl.classList.remove("hidden");
+        }
+
+        function hideOverlay() {
+          overlayEl.classList.add("hidden");
+        }
+
+        function setError(text) {
+          showOverlay(text);
+          setStatus("Viewer error");
+        }
+
+        function fitCamera() {
+          if (!viewerState || !viewerState.boundingBox || !viewerState.center) return;
+          const THREE = window.THREE;
+          const box = viewerState.boundingBox;
+          const center = viewerState.center;
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z) || 10;
+          const distance = maxDim * 2;
+
+          viewerState.camera.controls.setLookAt(
+            center.x + distance,
+            center.y + distance * 0.5,
+            center.z + distance,
+            center.x,
+            center.y,
+            center.z
+          );
+        }
+
+        resetBtn.addEventListener("click", () => fitCamera());
+
+        fullscreenBtn.addEventListener("click", async () => {
+          try {
+            if (!document.fullscreenElement) {
+              await document.documentElement.requestFullscreen();
+            } else {
+              await document.exitFullscreen();
+            }
+          } catch (error) {
+            console.error("Failed to toggle fullscreen", error);
+          }
+        });
+
+        async function init() {
+          if (!fileUrl) {
+            setError("No IFC file URL was provided.");
+            return;
+          }
+
+          if (!window.OBC || !window.THREE) {
+            setError("ThatOpen bundle did not load.");
+            return;
+          }
+
+          const OBC = window.OBC;
+          const THREE = window.THREE;
+
+          try {
+            setStatus("Creating viewer…");
+            showOverlay("Creating viewer…");
+
+            const components = new OBC.Components();
+            const worlds = components.get(OBC.Worlds);
+            const world = worlds.create();
+
+            world.scene = new OBC.SimpleScene(components);
+            world.scene.setup();
+            world.scene.three.background = new THREE.Color(
+              theme === "light" ? "#eef1f7" : "#10131a"
+            );
+
+            world.renderer = new OBC.SimpleRenderer(components, canvasEl);
+            world.camera = new OBC.SimpleCamera(components);
+            components.init();
+
+            world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            const directional = new THREE.DirectionalLight(0xffffff, 1.1);
+            directional.position.set(5, 10, 3);
+            world.scene.three.add(ambient);
+            world.scene.three.add(directional);
+
+            setStatus("Setting up IFC loader…");
+            showOverlay("Setting up IFC loader…");
+
+            const ifcLoader = components.get(OBC.IfcLoader);
+            components.get(OBC.FragmentsManager);
+
+            await ifcLoader.setup({
+              wasm: {
+                path: "https://unpkg.com/web-ifc@0.0.68/",
+                absolute: true,
+              },
+            });
+
+            setStatus("Downloading IFC file…");
+            showOverlay("Downloading IFC file…");
+
+            const response = await fetch(fileUrl);
+            if (!response.ok) {
+              throw new Error("Failed to fetch IFC file: HTTP " + response.status);
+            }
+
+            const buffer = await response.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+
+            setStatus("Processing IFC model…");
+            showOverlay("Processing IFC model…");
+
+            const model = await ifcLoader.load(bytes);
+            world.scene.three.add(model);
+
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+
+            viewerState = {
+              components,
+              world,
+              camera: world.camera,
+              model,
+              boundingBox: box,
+              center,
+            };
+
+            fitCamera();
+
+            infoEl.textContent = (buffer.byteLength / 1024 / 1024).toFixed(2) + " MB";
+            infoEl.classList.remove("hidden");
+
+            setStatus("Model loaded");
+            hideOverlay();
+
+            window.addEventListener("resize", () => {
+              window.dispatchEvent(new Event("resize"));
+            });
+          } catch (error) {
+            console.error("Failed to initialize standalone IFC viewer", error);
+            setError("Failed to load IFC: " + (error && error.message ? error.message : String(error)));
+          }
+        }
+
+        init();
+      })();
+    </script>
+  </body>
+</html>

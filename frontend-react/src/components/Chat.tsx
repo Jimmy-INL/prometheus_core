@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
+import { LogOut } from "lucide-react";
+
+interface Props {
+  onLogout: () => void;
+}
 
 function getMessages(messages: IStep[]): IStep[] {
   return messages.flatMap((m) => {
@@ -16,14 +21,14 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 px-6 gap-8">
       <div className="text-center space-y-2">
-        <h1 className="text-2xl font-semibold text-gray-100">{chatIntro}</h1>
-        <p className="text-gray-400 text-sm">{chatSuggestionTitle}</p>
+        <h1>{chatIntro}</h1>
+        <p className="text-base-content/60">{chatSuggestionTitle}</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
         {workflowSuggestions.map((suggestion) => (
           <button
             key={suggestion}
-            className="text-left px-4 py-3 rounded-xl border border-gray-700 bg-gray-900 hover:bg-gray-800 hover:border-indigo-500 text-sm text-gray-300 transition-colors"
+            className="card text-left px-4 py-3 bg-base-200 hover:bg-base-300 transition-colors cursor-pointer"
             onClick={() => onSelect(suggestion)}
           >
             {suggestion}
@@ -34,7 +39,7 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
   );
 }
 
-export function Chat() {
+export function Chat({ onLogout }: Props) {
   const [input, setInput] = useState("");
   const { messages } = useChatMessages();
   const { sendMessage } = useChatInteract();
@@ -48,36 +53,37 @@ export function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
+    <div className="flex flex-col h-screen bg-base-100 text-base-content">
+      <div className="flex justify-end p-3 border-b border-base-300">
+        <button className="btn btn-ghost btn-sm" onClick={onLogout}>
+          <LogOut size={18} />
+        </button>
+      </div>
       {flat.length === 0 ? (
         <WelcomeScreen onSelect={(text) => handleSend(text)} />
       ) : (
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
           {flat.map((m) => (
             <div key={m.id} className={`flex ${m.type === "user_message" ? "justify-end" : "justify-start"}`}>
-              <span className={`px-4 py-2 rounded-xl max-w-xl text-sm whitespace-pre-wrap ${m.type === "user_message" ? "bg-indigo-600" : "bg-gray-800"}`}>
+              <span className={`px-4 py-2 rounded-xl max-w-xl text-sm whitespace-pre-wrap ${m.type === "user_message" ? "bg-base-300 text-base-content" : "bg-base-200 text-base-content"}`}>
                 {m.output}
               </span>
             </div>
           ))}
         </div>
       )}
-      <div className="flex gap-2 p-4 border-t border-gray-800">
+      <div className="flex gap-2 p-4 border-t border-base-300">
         <input
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 outline-none"
+          className="input input-bordered flex-1"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Message..."
           autoFocus
         />
-        <button
-          className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg"
-          onClick={() => handleSend()}
-        >
+        <button className="btn btn-primary" onClick={() => handleSend()}>
           Send
         </button>
-        <button className="btn btn-xl btn-primary">Xlarge</button>
       </div>
     </div>
   );
