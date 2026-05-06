@@ -68,7 +68,7 @@ The system has two different identifier domains:
 - **Prometheus `artifact_id`**: the UUID stored in `ArtifactReference.artifact_id`.  This is the ID shown in the conversation artifact catalog and the ID that `x_artifact_ref` skill parameters must receive.
 - **DeepLynx identifiers**: DeepLynx item/file identifiers shown in DeepLynx UI fields such as "Original ID" or stored in artifact metadata such as `deeplynx_file_id`.  These are storage-layer identifiers and should not be passed as `x_artifact_ref` values.
 
-For follow-up turns, the frontend sends the current conversation artifact catalog back to the client-agent.  `artifact_handling.summarize_artifacts_for_context()` preserves the artifact metadata, including `deeplynx_file_id`, so a downstream skill can resolve the Prometheus `artifact_id` to the stored DeepLynx file.
+For follow-up turns, the frontend sends the current conversation artifact catalog back to the client-agent.  Downstream skills should pass the Prometheus `artifact_id` to `PrometheusAgent.get_artifact_file_path()`, along with any orchestrator-provided `params["artifacts"]` catalog, to receive a readable local file path.
 
 ## Ephemeral upload signal in the planner
 
@@ -104,9 +104,9 @@ This handles the common single-file upload case without overriding explicit matc
 
 Before invoking specialist agents, the client-agent calls `attach_artifact_context()` to add the conversation artifact catalog to the skill params when artifacts are available.  Workflow-template execution also carries `context["artifacts"]` into each step payload when the step does not set an explicit `artifacts` field.
 
-This is required because a specialist agent's local artifact registry may not contain a file that was uploaded by the client-agent.  Artifact-aware specialists should first use their local registry, then fall back to the orchestrator-provided `params["artifacts"]` catalog and cache the reference locally if needed.
+This is required because a specialist agent's local artifact registry may not contain a file that was uploaded by the client-agent.  Artifact-aware specialists should use `get_artifact_file_path()`; the helper checks the local registry, falls back to the orchestrator-provided `params["artifacts"]` catalog, caches the reference when possible, and returns a local file path.
 
-Example: `artifact-debug-agent`'s SVG-to-PNG converter receives `artifact_id=<Prometheus artifact_id>` and `artifacts=[...]`, resolves the catalog entry, reads `metadata["deeplynx_file_id"]`, downloads the SVG from DeepLynx, and converts it with CairoSVG.  It should not use the DeepLynx "Original ID" as the skill input.
+Example: `artifact-debug-agent`'s SVG-to-PNG converter receives `artifact_id=<Prometheus artifact_id>` and `artifacts=[...]`, calls `get_artifact_file_path()`, and converts the returned SVG path with CairoSVG.  It should not use the DeepLynx "Original ID" as the skill input.
 
 ## Multi-artifact turns
 

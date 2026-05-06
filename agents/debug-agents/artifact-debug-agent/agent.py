@@ -24,7 +24,6 @@ from xml.sax.saxutils import escape as xml_escape
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
-from prometheus_api.storage_client.async_client import AsyncStorageClient
 from prometheus_api.storage_client.connection import ConnectionConfig
 
 
@@ -54,44 +53,6 @@ class ArtifactDebugAgent(PrometheusAgent):
         except Exception:
             parsed = default_value
         return max(64, min(parsed, 4096))
-
-    def _resolve_artifact_from_payload(
-        self,
-        conversation_id: str,
-        artifact_id: str,
-        params: Dict[str, Any],
-    ) -> Optional[ArtifactReference]:
-        """Resolve an artifact from local registry or orchestrator-provided catalog."""
-        source_ref = self.resolve_artifact_reference(conversation_id, artifact_id)
-        if source_ref:
-            return source_ref
-
-        for artifact in params.get("artifacts") or []:
-            if not isinstance(artifact, dict):
-                continue
-            candidate_id = str(
-                artifact.get("artifact_id")
-                or artifact.get("artifactId")
-                or artifact.get("id")
-                or ""
-            ).strip()
-            if candidate_id != artifact_id:
-                continue
-            try:
-                source_ref = ArtifactReference.from_any(
-                    artifact,
-                    conversation_id=conversation_id,
-                )
-            except Exception:
-                source_ref = None
-            if source_ref:
-                try:
-                    self.artifact_registry.register(source_ref)
-                except Exception as exc:
-                    print(f"[WARN] Failed to cache artifact reference {artifact_id}: {exc}")
-                return source_ref
-
-        return None
 
     @staticmethod
     def _convert_svg_to_png(source_svg: Path, target_png: Path) -> str:
@@ -242,11 +203,30 @@ class ArtifactDebugAgent(PrometheusAgent):
                 "message": "Parameter 'artifact_id' is required for SVG to PNG conversion.",
             }
 
-        source_ref = self._resolve_artifact_from_payload(
-            conversation_id=conversation_id,
-            artifact_id=artifact_id,
-            params=params,
+        artifact_catalog = (
+            params.get("artifacts") if isinstance(params.get("artifacts"), list) else None
         )
+        try:
+            source_svg = await self.get_artifact_file_path(
+                artifact_id,
+                context=context,
+                conversation_id=conversation_id,
+                artifacts=artifact_catalog,
+            )
+        except FileNotFoundError:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": f"Artifact '{artifact_id}' was not found in this conversation.",
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "conversation_id": conversation_id,
+                "message": f"Failed to retrieve artifact '{artifact_id}' as a local file: {exc}",
+            }
+
+        source_ref = self.resolve_artifact_reference(conversation_id, artifact_id)
         if not source_ref:
             return {
                 "status": "error",
@@ -263,15 +243,6 @@ class ArtifactDebugAgent(PrometheusAgent):
                 "source_artifact": source_dict,
             }
 
-        file_id = source_ref.metadata.get("deeplynx_file_id")
-        if not file_id:
-            return {
-                "status": "error",
-                "conversation_id": conversation_id,
-                "message": "Source artifact is missing 'deeplynx_file_id' metadata; cannot download.",
-                "source_artifact": source_dict,
-            }
-
         requested_name = str(params.get("name") or "").strip()
         base_stem = self._sanitize_stem(
             Path(requested_name).stem if requested_name else Path(source_ref.name).stem,
@@ -285,17 +256,13 @@ class ArtifactDebugAgent(PrometheusAgent):
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            message=f"Downloading SVG artifact '{source_ref.name}' from DeepLynx.",
+            message=f"Resolving SVG artifact '{source_ref.name}' as a local file.",
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            svg_path = tmp_path / source_ref.name
             png_name = f"{base_stem}.png"
             png_path = tmp_path / png_name
-
-            async with AsyncStorageClient(storage_config) as client:
-                await client.files.download(int(file_id), svg_path)
 
             await self.send_status_update(
                 context=context,
@@ -304,7 +271,7 @@ class ArtifactDebugAgent(PrometheusAgent):
             )
 
             try:
-                conversion_backend = self._convert_svg_to_png(svg_path, png_path)
+                conversion_backend = self._convert_svg_to_png(source_svg, png_path)
             except Exception as exc:
                 return {
                     "status": "error",

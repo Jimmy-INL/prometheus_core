@@ -13,8 +13,11 @@ class ArtifactReference:
     conversation_id: str        # Conversation scope
     name: str                   # Display name
     description: str            # What this artifact contains
-    uri: str                    # Location (file://, http://, etc.)
+    uri: Optional[str]          # Location (deeplynx://, file://, http://, etc.)
     mime_type: Optional[str]    # Content type
+    json_type: Optional[str]    # Semantic type for JSON artifacts
+    json_body: Optional[Any]    # Inline structured content
+    text_body: Optional[str]    # Inline text content
     size_bytes: Optional[int]
     producer_agent_id: Optional[str]
     created_at: str             # ISO 8601
@@ -22,7 +25,7 @@ class ArtifactReference:
     metadata: Dict[str, Any]    # Arbitrary key-value pairs
 ```
 
-Artifact references are stored in Redis (conversation-scoped hashes) with in-memory fallback when Redis is unavailable.
+Artifact references are stored in Redis (conversation-scoped hashes) with in-memory fallback when Redis is unavailable. Prometheus catalog payloads use snake_case field names such as `artifact_id`; camelCase names such as `artifactId` are only part of external A2A wire payloads and should be normalized at the boundary.
 
 ## Supported artifact types
 
@@ -87,6 +90,31 @@ async def process_analysis(self, params, context, event_queue):
 
     return {"status": "model_generated", "path": output_path}
 ```
+
+### Retrieving artifacts as files
+
+Downstream agents should consume reusable artifacts through the shared
+`PrometheusAgent.get_artifact_file_path()` helper:
+
+```python
+source_path = await self.get_artifact_file_path(
+    params["artifact_id"],
+    context=context,
+    artifacts=params.get("artifacts"),  # optional catalog from the client-agent
+)
+```
+
+The helper returns a readable local `Path` for every reusable artifact shape:
+
+- URI-backed artifacts (`deeplynx://`, `http://`, `https://`, S3-style fsspec protocols, etc.) are downloaded into a deterministic cache directory.
+- Inline JSON artifacts are written as formatted UTF-8 `.json` files in the cache.
+- Inline text artifacts are written as UTF-8 `.txt` files in the cache.
+- `file://` artifacts are not copied; the existing path is resolved, checked for readability, and allowed only under configured local roots.
+
+Configuration:
+
+- `PROMETHEUS_ARTIFACT_CACHE_DIR` sets the cache directory. Default: `/tmp/prometheus-artifact-cache`.
+- `PROMETHEUS_ARTIFACT_FILE_ALLOWED_ROOTS` sets the local directories that `file://` artifacts may read, separated by the platform path separator (`:` on Linux/macOS).
 
 ### Status updates during long operations
 
