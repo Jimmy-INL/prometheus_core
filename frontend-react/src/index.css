@@ -55,7 +55,7 @@
   --color-base-100: oklch(20.768% 0.039 265.754);
   --color-base-200: oklch(18.314% 0.037 265.754);
   --color-base-300: oklch(14.86% 0.034 265.754);
-  --color-base-content: oklch(84.153% 0.007 265.754);
+  --color-base-content: oklch(92.8% 0.007 265.754);
   --color-primary: #4f46e5;
   --color-primary-content: oklch(100% 0 0);
   --color-secondary: oklch(0.7438 0.1464 233.28);
@@ -80,7 +80,6 @@
   --border: 1px;
   --depth: 0;
   --noise: 0;
-  --color-base-content: oklch(70% 0.007 265.754);
 }
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
