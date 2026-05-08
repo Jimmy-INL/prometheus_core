@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp } from "lucide-react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
 import { SettingsPanel } from "./SettingsPanel";
@@ -45,15 +46,30 @@ export function Chat({ onLogout }: Props) {
   const [input, setInput] = useState("");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { messages } = useChatMessages();
   const { sendMessage } = useChatInteract();
 
   const flat = getMessages(messages);
 
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, [input]);
+
   const handleSend = (content = input.trim()) => {
     if (!content) return;
     sendMessage({ name: "user", type: "user_message" as const, output: content }, []);
     setInput("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   return (
@@ -75,20 +91,29 @@ export function Chat({ onLogout }: Props) {
               ))}
             </div>
           )}
-          <div className="flex gap-2 p-4 border-t border-base-300">
-            <input
-              className="input input-bordered flex-1"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Message..."
-              autoFocus
-            />
-            <button className="btn btn-primary" onClick={() => handleSend()}>
-              Send
-            </button>
+          <div className="px-4 pt-3 pb-2">
+            <div className="relative flex items-end rounded-3xl border border-base-300 bg-base-200 shadow-sm focus-within:border-primary/60 focus-within:shadow-md transition-all">
+              <textarea
+                ref={textareaRef}
+                className="flex-1 bg-transparent resize-none outline-none px-5 py-4 pr-14 text-base leading-6 placeholder:text-base-content/50 max-h-50"
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message..."
+                autoFocus
+              />
+              <button
+                className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
+                onClick={() => handleSend()}
+                disabled={!input.trim()}
+                aria-label="Send message"
+              >
+                <ArrowUp size={18} />
+              </button>
+            </div>
           </div>
-          <p className="text-center text-xs text-base-content/70">LLMs can make mistakes. Check important info.</p>
+          <p className="text-center text-xs text-base-content/70 pb-2">LLMs can make mistakes. Check important info.</p>
         </main>
         <aside
           className={`${rightOpen ? "w-64 border-l bg-base-200 border-base-300" : "w-0"} transition-[width] duration-200 overflow-hidden flex flex-col`}

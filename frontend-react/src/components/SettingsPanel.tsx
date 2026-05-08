@@ -37,6 +37,7 @@ export function SettingsPanel({ onClose }: Props) {
   const handleConfirm = () => {
     setSavedModel(model);
     setSavedApprovalType(approvalType);
+    onClose();
   };
 
   return (

@@ -1,14 +1,31 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-function readTheme(): string {
-  return document.documentElement.getAttribute("data-theme") ?? "dark";
+export type Theme = "light" | "dark";
+
+function getSystemTheme(): Theme {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
-export function useTheme(): string {
-  const [theme, setTheme] = useState(readTheme);
+function readTheme(): Theme {
+  const attr = document.documentElement.getAttribute("data-theme");
+  return attr === "light" ? "light" : attr === "dark" ? "dark" : getSystemTheme();
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+export function useTheme(): [Theme, (theme: Theme) => void] {
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const initial = readTheme();
+    if (!document.documentElement.hasAttribute("data-theme")) {
+      applyTheme(initial);
+    }
+    return initial;
+  });
 
   useEffect(() => {
-    const observer = new MutationObserver(() => setTheme(readTheme()));
+    const observer = new MutationObserver(() => setThemeState(readTheme()));
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -16,5 +33,9 @@ export function useTheme(): string {
     return () => observer.disconnect();
   }, []);
 
-  return theme;
+  const setTheme = useCallback((next: Theme) => {
+    applyTheme(next);
+  }, []);
+
+  return [theme, setTheme];
 }
