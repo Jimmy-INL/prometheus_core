@@ -298,6 +298,34 @@ await self.send_conversation_message(
 )
 ```
 
+### Retrieve any artifact as a local file
+
+Use when a downstream skill receives an `artifact_id` and needs to read the
+artifact contents. The helper returns a readable local `Path` for URI-backed,
+inline JSON, and inline text artifacts:
+
+```python
+source_path = await self.get_artifact_file_path(
+    params["artifact_id"],
+    context=context,
+    artifacts=params.get("artifacts"),  # optional orchestrator-provided catalog
+)
+
+contents = source_path.read_bytes()
+```
+
+Behavior:
+
+- `deeplynx://`, `http://`, `https://`, and other fsspec-supported URI schemes are downloaded into a deterministic artifact cache.
+- Inline JSON artifacts are written as formatted UTF-8 `.json` files in the cache.
+- Inline text artifacts are written as UTF-8 `.txt` files in the cache.
+- `file://` artifacts are validated in place and are only allowed under configured local roots.
+
+Configuration:
+
+- `PROMETHEUS_ARTIFACT_CACHE_DIR` sets the cache root. Default: `/tmp/prometheus-artifact-cache`.
+- `PROMETHEUS_ARTIFACT_FILE_ALLOWED_ROOTS` sets which local directories `file://` artifacts may read, separated by the platform path separator (`:` on Linux/macOS).
+
 ---
 
 ## `INPUT_REQUIRED` — Requesting User Input
@@ -808,6 +836,12 @@ Resolve one artifact by ID.
 ### `resolve_artifact_by_name(conversation_id, name_or_alias) → Optional[ArtifactReference]`
 
 Resolve one artifact by name (case-insensitive).
+
+### `get_artifact_file_path(artifact_id, *, context=None, conversation_id=None, artifacts=None, cache_dir=None, allowed_file_roots=None, force_download=False) → Path`
+
+Resolve a catalog artifact to a readable local file path. URI-backed artifacts are
+downloaded through fsspec, inline JSON/text artifacts are written to the cache,
+and `file://` artifacts are validated against allowed local roots.
 
 ---
 

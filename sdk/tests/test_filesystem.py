@@ -207,6 +207,37 @@ def test_get_selects_latest_valid_version_and_ignores_invalid(tmp_path):
     assert files.download.call_args.args[1] == output_dir / "file.txt"
 
 
+def test_get_supports_deeplynx_item_uri(tmp_path):
+    """Item-addressed deeplynx:// URIs should download the backing file record."""
+    files = Mock()
+    items = Mock()
+    search = Mock()
+    config = SimpleNamespace(organization_id=1, project_id=2)
+    client = SimpleNamespace(files=files, items=items, search=search, config=config)
+    fs = DeepLynxFileSystem(client=client)
+    output = tmp_path / "artifact.svg"
+
+    fs.get("deeplynx://organizations/1/projects/2/items/42", str(output))
+
+    files.download.assert_called_once_with(42, output)
+    search.advanced_query.assert_not_called()
+
+
+def test_get_rejects_deeplynx_item_uri_for_other_project(tmp_path):
+    """Item URI org/project must match the configured DeepLynx client."""
+    files = Mock()
+    items = Mock()
+    search = Mock()
+    config = SimpleNamespace(organization_id=1, project_id=2)
+    client = SimpleNamespace(files=files, items=items, search=search, config=config)
+    fs = DeepLynxFileSystem(client=client)
+
+    with pytest.raises(ValueError, match="organization/project"):
+        fs.get("deeplynx://organizations/1/projects/999/items/42", str(tmp_path / "out"))
+
+    files.download.assert_not_called()
+
+
 def test_rm_file_deletes_all_versions_for_exact_path():
     """rm(file) should delete every version mapped to the exact logical key."""
     v1 = make_item(
