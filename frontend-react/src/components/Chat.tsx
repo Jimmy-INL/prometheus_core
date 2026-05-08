@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
 import { SettingsPanel } from "./SettingsPanel";
@@ -47,10 +47,12 @@ export function Chat({ onLogout }: Props) {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [awaitingResponse, setAwaitingResponse] = useState(false);
   const { messages } = useChatMessages();
-  const { sendMessage } = useChatInteract();
+  const { sendMessage, stopTask } = useChatInteract();
 
   const flat = getMessages(messages);
+  const lastMessage = flat[flat.length - 1];
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -59,10 +61,22 @@ export function Chat({ onLogout }: Props) {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
 
+  useEffect(() => {
+    if (lastMessage?.type === "assistant_message") {
+      setAwaitingResponse(false);
+    }
+  }, [lastMessage?.id, lastMessage?.type]);
+
   const handleSend = (content = input.trim()) => {
     if (!content) return;
     sendMessage({ name: "user", type: "user_message" as const, output: content }, []);
     setInput("");
+    setAwaitingResponse(true);
+  };
+
+  const handleStop = () => {
+    stopTask();
+    setAwaitingResponse(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -105,11 +119,11 @@ export function Chat({ onLogout }: Props) {
               />
               <button
                 className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
-                onClick={() => handleSend()}
-                disabled={!input.trim()}
-                aria-label="Send message"
+                onClick={() => (awaitingResponse ? handleStop() : handleSend())}
+                disabled={!awaitingResponse && !input.trim()}
+                aria-label={awaitingResponse ? "Stop response" : "Send message"}
               >
-                <ArrowUp size={18} />
+                {awaitingResponse ? <Square size={14} fill="currentColor" /> : <ArrowUp size={18} />}
               </button>
             </div>
           </div>
