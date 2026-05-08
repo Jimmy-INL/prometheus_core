@@ -29,12 +29,7 @@ def summarize_artifacts_for_context(
     for artifact in artifacts or []:
         if not isinstance(artifact, dict):
             continue
-        artifact_id = str(
-            artifact.get("artifact_id")
-            or artifact.get("artifactId")
-            or artifact.get("id")
-            or ""
-        ).strip()
+        artifact_id = str(artifact.get("artifact_id") or "").strip()
         name = str(artifact.get("name") or "").strip()
         if not artifact_id or not name or artifact_id in seen_ids:
             continue
@@ -45,10 +40,10 @@ def summarize_artifacts_for_context(
                 "name": name,
                 "description": str(artifact.get("description") or "")[:280],
                 "uri": str(artifact.get("uri") or ""),
-                "mime_type": artifact.get("mime_type") or artifact.get("mimeType"),
-                "size_bytes": artifact.get("size_bytes") or artifact.get("sizeBytes"),
-                "producer_agent_id": artifact.get("producer_agent_id") or artifact.get("producerAgentId"),
-                "created_at": artifact.get("created_at") or artifact.get("createdAt"),
+                "mime_type": artifact.get("mime_type"),
+                "size_bytes": artifact.get("size_bytes"),
+                "producer_agent_id": artifact.get("producer_agent_id"),
+                "created_at": artifact.get("created_at"),
                 "tags": artifact.get("tags") or [],
                 "metadata": artifact.get("metadata") or {},
             }
