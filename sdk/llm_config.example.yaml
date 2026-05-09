@@ -1,0 +1,59 @@
+# LiteLLM fallback configuration for local Prometheus API development.
+#
+# Copy this file before editing local values:
+#
+#   cp llm_config.example.yaml llm_config.yaml
+#
+# Then set:
+#
+#   LLM_CONFIG_FILE=./llm_config.yaml
+#
+# This file is used only by prometheus_api.llm_client when the LiteLLM proxy
+# configured by LITELLM_URL cannot be reached, or when LITELLM_URL is not set.
+# If the proxy is reachable but rejects a model or request, the client does not
+# fall back to this file. That keeps proxy policy and routing errors visible.
+#
+# Keep real provider keys in your shell or .env file. Do not paste API keys into
+# this YAML file. LiteLLM resolves os.environ/NAME values at call time.
+#
+# Alias contract used by LLMClient:
+# - default: used by LLMClient() and llm.chat(..., model=None)
+# - small: fast/low-cost chat
+# - medium: general analysis chat
+# - large: deeper analysis chat
+# - vision: multimodal chat when the selected provider model supports it
+# - embedding: vector embeddings
+#
+# Model IDs below are examples. Replace them with models available in your
+# provider account or in your organization's LiteLLM configuration.
+
+model_list:
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: small
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: medium
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: large
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: vision
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: embedding
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY

@@ -1,6 +1,7 @@
 # Environment Variable Setup Guide
 
-This guide covers environment configuration for both the StorageClient and PrometheusAgent components.
+This guide covers environment configuration for the StorageClient, PrometheusAgent, and
+LLMClient components.
 
 ## Quick Setup
 
@@ -25,6 +26,11 @@ config = ConnectionConfig.from_env()
 # PrometheusAgent
 from prometheus_api.agent import PrometheusAgent
 # Reads env vars automatically via run()
+
+# LLMClient
+from prometheus_api.llm_client import LLMClient
+# Reads LLM_* and LITELLM_URL automatically
+llm = LLMClient()
 ```
 
 ---
@@ -100,6 +106,103 @@ if __name__ == "__main__":
     agent = MyAgent(agent_name="My Agent")
     agent.run()  # Reads AGENT_* env vars automatically
 ```
+
+---
+
+## LLMClient Configuration
+
+`LLMClient` and `AsyncLLMClient` load `LLMConfig.from_env()` automatically unless you pass
+an explicit config.
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `LITELLM_URL` | LiteLLM proxy URL for the primary path. Aliases are discovered from `/v1/models`, and calls are sent through `/v1/chat/completions` or `/v1/embeddings`. | - | Recommended |
+| `LLM_CONFIG_FILE` | LiteLLM YAML fallback config. Used only when the proxy cannot be reached. | - | No |
+| `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` and `llm.chat(..., model=None)`. | `default` | No |
+| `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |
+
+### Example LLMClient .env
+
+```bash
+LITELLM_URL=http://litellm:4000
+LLM_CONFIG_FILE=./llm_config.yaml
+LLM_DEFAULT_MODEL=default
+LLM_DEBUG_LOG_MESSAGES=false
+```
+
+Create the local fallback YAML from the tracked example:
+
+```bash
+cp llm_config.example.yaml llm_config.yaml
+```
+
+`llm_config.yaml` is gitignored so developers can edit provider models for their own
+machine without committing local configuration.
+
+### Fallback LiteLLM YAML
+
+The repository includes a fully commented local development template at
+`llm_config.example.yaml`. The minimal shape is:
+
+```yaml
+model_list:
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: small
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: large
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: embedding
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY
+```
+
+### LLMClient Usage
+
+```python
+from prometheus_api.llm_client import LLMClient
+
+llm = LLMClient()
+response = llm("Summarize this result.")
+print(response.text)
+
+large_response = llm.large([
+    {"role": "system", "content": "You are an engineering analyst."},
+    {"role": "user", "content": "Find possible failure modes in this trend."},
+])
+
+embedding_response = llm.embedding("bearing temperature rising")
+vector = embedding_response.embeddings[0]
+```
+
+Agents should prefer structured A2A input for transient LLM keys:
+
+```python
+from prometheus_api.agent import PrometheusAgent
+from prometheus_api.llm_client import AsyncLLMClient
+
+class AnalysisAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        async with AsyncLLMClient.from_a2a_context(context) as llm:
+            response = await llm.medium(params["query"])
+        return {"status": "completed", "answer": response.text}
+```
+
+`from_a2a_context()` reads `llm_api_key` only from structured `DataPart` /
+`provided_inputs`; it does not parse keys out of visible text JSON payloads.
+
+See `examples/llm_client_usage.py` for sync chat and embedding usage, and
+`examples/llm_agent_usage.py` for A2A agent usage with `AsyncLLMClient`.
 
 ---
 
@@ -180,6 +283,12 @@ AGENT_PORT=8000
 AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://registry:8000
+
+# ===== LLMClient Configuration =====
+LITELLM_URL=http://litellm:4000
+LLM_CONFIG_FILE=./llm_config.yaml
+LLM_DEFAULT_MODEL=default
+LLM_DEBUG_LOG_MESSAGES=false
 
 # ===== StorageClient Configuration =====
 DEEPLYNX_KEY=your-api-key

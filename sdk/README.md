@@ -8,6 +8,7 @@ A Python toolkit for building data-driven applications with storage operations a
 |-----------|-------------|---------------|
 | **StorageClient** | Full-featured client for storage operations with sync/async APIs | [Guide](docs/storage-client/GUIDE.md) \| [Quick Start](docs/storage-client/QUICK_START.md) |
 | **PrometheusAgent** | Base class for building A2A-enabled agents with minimal boilerplate | [Guide](docs/agent/GUIDE.md) \| [Quick Start](docs/agent/QUICK_START.md) |
+| **LLMClient** | Provider-agnostic LiteLLM chat and embedding client with sync/async APIs | [Environment Setup](docs/ENV_SETUP.md#llmclient-configuration) |
 
 ## Installation
 
@@ -62,6 +63,30 @@ if __name__ == "__main__":
 
 **[Full PrometheusAgent Guide](docs/agent/GUIDE.md)** | **[Quick Reference](docs/agent/QUICK_START.md)**
 
+## Quick Start - LLMClient
+
+```python
+from prometheus_api.llm_client import LLMClient
+
+llm = LLMClient()
+response = llm("Summarize this DeepLynx record.")
+print(response.text)
+
+vector_response = llm.embedding("bearing temperature rising")
+print(vector_response.embeddings[0])
+```
+
+```python
+from prometheus_api.agent import PrometheusAgent
+from prometheus_api.llm_client import AsyncLLMClient
+
+class AnalysisAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        async with AsyncLLMClient.from_a2a_context(context) as llm:
+            response = await llm.medium(params["query"])
+        return {"status": "completed", "answer": response.text}
+```
+
 ## Environment Variables
 
 ### StorageClient
@@ -84,6 +109,15 @@ if __name__ == "__main__":
 | `EXTERNAL_AGENT_URL` | Full URL advertised to the registry (e.g. `http://my-host:9002`). When absent, auto-derived from the container hostname and `AGENT_PORT`. | auto |
 | `AGENT_SECRET` | Shared secret for auth | - |
 | `REGISTRY_URL` | Registry service URL | - |
+
+### LLMClient
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LITELLM_URL` | LiteLLM proxy URL used for primary alias discovery and calls | - |
+| `LLM_CONFIG_FILE` | LiteLLM YAML fallback config used only when the proxy is unreachable | - |
+| `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` | `default` |
+| `LLM_DEBUG_LOG_MESSAGES` | Include redacted prompt/embedding content in debug logs | `false` |
 
 **[Full Environment Setup Guide](docs/ENV_SETUP.md)**
 
@@ -125,6 +159,13 @@ if __name__ == "__main__":
 - Per-agent context-state persistence keyed by `contextId`
 - 95% reduction in boilerplate code
 
+### LLMClient
+- Sync and async chat calls with generic aliases (`default`, `small`, `medium`, `large`, `vision`)
+- Embeddings through the `embedding` alias
+- LiteLLM proxy primary path with LiteLLM YAML fallback when the proxy is unreachable
+- Prompt-safe debug logging with opt-in redacted content logging
+- A2A `llm_api_key` extraction from structured `DataPart` / `provided_inputs`
+
 ## Examples
 
 See the `examples/` directory for working code:
@@ -133,6 +174,8 @@ See the `examples/` directory for working code:
 - `file_operations.py` - File upload/download
 - `bulk_operations.py` - Bulk operations
 - `agent_patterns.py` - PrometheusAgent status, artifacts, input requests, and stateful resume
+- `llm_client_usage.py` - Provider-agnostic LLMClient chat and embedding calls
+- `llm_agent_usage.py` - PrometheusAgent using AsyncLLMClient from A2A context
 - `env_config_usage.py` - Loading `ConnectionConfig` from `.env`
 - `list_datasources.py` - Print available DeepLynx data source IDs for your project
 - `verify_connection.py` - Manual DeepLynx connection smoke test
