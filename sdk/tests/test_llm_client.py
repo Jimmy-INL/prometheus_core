@@ -63,7 +63,7 @@ def _proxy_models(*aliases: str) -> dict:
 def test_config_from_env(monkeypatch, tmp_path):
     config_path = tmp_path / "llm.yaml"
     env = {
-        "LITELLM_URL": " http://litellm:4000 ",
+        "REGISTRY_URL": " http://registry:4000 ",
         "LLM_CONFIG_FILE": str(config_path),
         "LLM_DEFAULT_MODEL": "medium",
         "LLM_DEBUG_LOG_MESSAGES": "true",
@@ -71,7 +71,7 @@ def test_config_from_env(monkeypatch, tmp_path):
 
     config = LLMConfig.from_env(env)
 
-    assert config.proxy_url == "http://litellm:4000"
+    assert config.proxy_url == "http://registry:4000"
     assert config.config_file == config_path
     assert config.default_model == "medium"
     assert config.debug_log_messages is True
@@ -82,10 +82,10 @@ def test_config_from_env(monkeypatch, tmp_path):
 
 def test_config_from_env_loads_default_dotenv(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LITELLM_URL", raising=False)
+    monkeypatch.delenv("REGISTRY_URL", raising=False)
     monkeypatch.delenv("LLM_DEFAULT_MODEL", raising=False)
     (tmp_path / ".env").write_text(
-        "LITELLM_URL=http://from-dotenv:4000\nLLM_DEFAULT_MODEL=large\n",
+        "REGISTRY_URL=http://from-dotenv:4000\nLLM_DEFAULT_MODEL=large\n",
         encoding="utf-8",
     )
 

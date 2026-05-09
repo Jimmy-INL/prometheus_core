@@ -6,7 +6,7 @@ llm_api_key only from structured A2A DataPart / provided_inputs payloads.
 
 Run locally with the same LLM setup as examples/llm_client_usage.py:
 
-    LITELLM_URL=http://localhost:4000 uv run python examples/llm_agent_usage.py
+    REGISTRY_URL=http://localhost:4000 uv run python examples/llm_agent_usage.py
 """
 
 from __future__ import annotations

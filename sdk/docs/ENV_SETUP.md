@@ -29,7 +29,7 @@ from prometheus_api.agent import PrometheusAgent
 
 # LLMClient
 from prometheus_api.llm_client import LLMClient
-# Reads LLM_* and LITELLM_URL automatically
+# Reads LLM_* and REGISTRY_URL automatically
 llm = LLMClient()
 ```
 
@@ -72,7 +72,7 @@ environment:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `REGISTRY_URL` | Registry service URL for auto-registration | - | No |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | - | No |
 
 ### Example Agent .env
 
@@ -116,7 +116,7 @@ an explicit config.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `LITELLM_URL` | LiteLLM proxy URL for the primary path. Aliases are discovered from `/v1/models`, and calls are sent through `/v1/chat/completions` or `/v1/embeddings`. | - | Recommended |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for the primary path. Aliases are discovered from `/v1/models`, and calls are sent through `/v1/chat/completions` or `/v1/embeddings`. | - | Recommended |
 | `LLM_CONFIG_FILE` | LiteLLM YAML fallback config. Used only when the proxy cannot be reached. | - | No |
 | `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` and `llm.chat(..., model=None)`. | `default` | No |
 | `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |
@@ -124,7 +124,7 @@ an explicit config.
 ### Example LLMClient .env
 
 ```bash
-LITELLM_URL=http://litellm:4000
+REGISTRY_URL=http://registry:8000
 LLM_CONFIG_FILE=./llm_config.yaml
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
@@ -150,22 +150,31 @@ model_list:
     litellm_params:
       model: openai/gpt-5-mini
       api_key: os.environ/OPENAI_API_KEY
+      # Optional: override the fallback provider endpoint
+      # api_base: http://localhost:8000/v1
 
   - model_name: small
     litellm_params:
       model: openai/gpt-5-mini
       api_key: os.environ/OPENAI_API_KEY
+      # api_base: http://localhost:8000/v1
 
   - model_name: large
     litellm_params:
       model: anthropic/claude-sonnet-4-5-20250929
       api_key: os.environ/ANTHROPIC_API_KEY
+      # api_base: https://api.anthropic.com
 
   - model_name: embedding
     litellm_params:
       model: openai/text-embedding-3-large
       api_key: os.environ/OPENAI_API_KEY
+      # api_base: http://localhost:8000/v1
 ```
+
+`api_base` is optional and applies only to fallback SDK calls made from
+`LLM_CONFIG_FILE`. It is useful for local OpenAI-compatible servers or private
+provider gateways. Proxy calls continue to use `REGISTRY_URL`.
 
 ### LLMClient Usage
 
@@ -285,7 +294,7 @@ AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://registry:8000
 
 # ===== LLMClient Configuration =====
-LITELLM_URL=http://litellm:4000
+# REGISTRY_URL is also used by LLMClient for chat, vision, and embedding calls.
 LLM_CONFIG_FILE=./llm_config.yaml
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false

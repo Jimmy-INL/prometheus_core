@@ -1031,9 +1031,9 @@ class PrometheusAgent:
         this agent and expose the full raw agent card for discovery and
         routing metadata.
         """
-        litellm_url = os.getenv("LITELLM_URL")
-        if not litellm_url:
-            logger.info("LITELLM_URL not set - skipping agent registration")
+        registry_url = os.getenv("REGISTRY_URL")
+        if not registry_url:
+            logger.info("REGISTRY_URL not set - skipping agent registration")
             return
 
         master_key = os.getenv("LITELLM_MASTER_KEY", "")
@@ -1052,11 +1052,11 @@ class PrometheusAgent:
             with httpx.Client(timeout=15.0, headers=headers) as client:
                 # Delete any existing registration so re-registrations always
                 # pick up the latest agent card (LiteLLM returns 400 on duplicates).
-                existing = client.get(f"{litellm_url}/v1/agents")
+                existing = client.get(f"{registry_url}/v1/agents")
                 if existing.status_code == 200:
                     for entry in existing.json() if isinstance(existing.json(), list) else []:
                         if entry.get("agent_name") == agent_name:
-                            client.delete(f"{litellm_url}/v1/agents/{entry['agent_id']}")
+                            client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
                             logger.debug(f"Removed stale registration for '{agent_name}'")
                             break
                 registration_payload = {
@@ -1070,11 +1070,11 @@ class PrometheusAgent:
                     }
                 logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
                 response = client.post(
-                    f"{litellm_url}/v1/agents",
+                    f"{registry_url}/v1/agents",
                     json=registration_payload,
                 )
                 response.raise_for_status()
-                logger.info(f"Registered '{agent_name}' with LiteLLM at {litellm_url}")
+                logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
         except Exception as e:
             logger.error(f"Failed to register with LiteLLM: {e}")
             logger.warning("Continuing without registration")

@@ -657,13 +657,16 @@ async def lifespan(self, app):
 
 ## Environment Variables
 
+For migrating existing agents from direct provider SDKs or hard-coded LLM
+utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).
+
 | Variable | Default | Description |
 |---|---|---|
 | `AGENT_PORT` | `8000` | Port uvicorn binds to (internal) |
 | `EXTERNAL_AGENT_URL` | auto | Full URL advertised to the registry. Auto-derived from the container hostname and `AGENT_PORT` when not set. Set explicitly for port-mapped or cross-host deployments (e.g. `http://my-host:9002`, where `9002` is the host-side port and `8000` is `AGENT_PORT` inside the container). |
 | `AGENT_SECRET` | — | Bearer token for inbound authentication |
 | `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header |
-| `LITELLM_URL` | — | LiteLLM gateway URL for registry registration |
+| `REGISTRY_URL` | — | LiteLLM gateway URL for registry registration |
 | `LITELLM_MASTER_KEY` | — | LiteLLM admin key |
 | `ANTHROPIC_API_KEY` | — | If the agent calls Claude directly |
 | `REDIS_URL` | `redis://localhost:6379` | Redis for artifact catalog and context state |
@@ -696,7 +699,7 @@ my-agent/
 ├── agent_card.json       # Skill definitions, capabilities, tags
 ├── Dockerfile
 ├── docker-compose.yml
-└── .env                  # AGENT_PORT, LITELLM_URL, AGENT_SECRET, etc.
+└── .env                  # AGENT_PORT, REGISTRY_URL, AGENT_SECRET, etc.
 ```
 
 Minimal `agent.py`:

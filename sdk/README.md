@@ -108,13 +108,13 @@ class AnalysisAgent(PrometheusAgent):
 | `AGENT_PORT` | Port uvicorn binds to | `8000` |
 | `EXTERNAL_AGENT_URL` | Full URL advertised to the registry (e.g. `http://my-host:9002`). When absent, auto-derived from the container hostname and `AGENT_PORT`. | auto |
 | `AGENT_SECRET` | Shared secret for auth | - |
-| `REGISTRY_URL` | Registry service URL | - |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL used for agent registration | - |
 
 ### LLMClient
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LITELLM_URL` | LiteLLM proxy URL used for primary alias discovery and calls | - |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL used for primary alias discovery and calls | - |
 | `LLM_CONFIG_FILE` | LiteLLM YAML fallback config used only when the proxy is unreachable | - |
 | `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` | `default` |
 | `LLM_DEBUG_LOG_MESSAGES` | Include redacted prompt/embedding content in debug logs | `false` |
@@ -129,6 +129,7 @@ class AnalysisAgent(PrometheusAgent):
 | [StorageClient Quick Start](docs/storage-client/QUICK_START.md) | Condensed reference and examples |
 | [PrometheusAgent Guide](docs/agent/GUIDE.md) | Complete PrometheusAgent documentation |
 | [PrometheusAgent Quick Start](docs/agent/QUICK_START.md) | Minimal agent setup guide |
+| [LLMClient Migration Guide](docs/agent/LLM_CLIENT_MIGRATION.md) | Move agents from vendor-specific LLM code to `LLMClient` |
 | [Environment Setup](docs/ENV_SETUP.md) | Environment variables for both components |
 | [Testing Guide](docs/TESTING.md) | Running and writing tests |
 | [Installation Guide](INSTALL.md) | Detailed installation options |

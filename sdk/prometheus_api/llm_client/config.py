@@ -71,7 +71,7 @@ class LLMConfig:
         config_file = lookup("LLM_CONFIG_FILE").strip()
         default_model = lookup("LLM_DEFAULT_MODEL", "default").strip()
         return cls(
-            proxy_url=lookup("LITELLM_URL").strip() or None,
+            proxy_url=lookup("REGISTRY_URL").strip() or None,
             config_file=Path(config_file).expanduser() if config_file else None,
             default_model=default_model or "default",
             debug_log_messages=_env_flag(lookup("LLM_DEBUG_LOG_MESSAGES")),

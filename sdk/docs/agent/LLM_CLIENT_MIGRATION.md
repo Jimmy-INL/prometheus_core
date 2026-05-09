@@ -1,0 +1,360 @@
+# LLM Client Migration Guide
+
+Use this guide when moving an agent from hard-coded, vendor-specific LLM code to
+`prometheus_api.llm_client`.
+
+The goal is that agent code depends on generic model aliases and Prometheus
+configuration, not on provider SDKs, provider-specific model names, or ad hoc
+API key handling.
+
+## Target Pattern
+
+Inside Prometheus agents, use the async client:
+
+```python
+from prometheus_api.llm_client import AsyncLLMClient
+
+
+async with AsyncLLMClient.from_a2a_context(context) as llm:
+    response = await llm.medium(params["query"])
+
+return {
+    "status": "completed",
+    "answer": response.text,
+    "model_alias": response.model_alias,
+    "provider_model": response.provider_model,
+    "usage": response.usage,
+}
+```
+
+For non-agent scripts and local tools, use the sync client:
+
+```python
+from prometheus_api.llm_client import LLMClient
+
+
+llm = LLMClient()
+response = llm("Summarize this result.")
+print(response.text)
+```
+
+## What Changes
+
+Replace these agent-local patterns:
+
+- Direct `openai`, `anthropic`, Azure OpenAI, or other provider SDK calls
+- Hard-coded provider model names in agent logic
+- Agent-specific wrappers such as `call_openai()`, `claude_complete()`, or `make_embedding()`
+- API keys read from request text or visible JSON payloads
+- Prompt logging that can expose secrets or user content by default
+
+With these shared utilities:
+
+- `AsyncLLMClient.from_a2a_context(context)` in agents
+- `LLMClient()` in sync scripts
+- Generic aliases: `default`, `small`, `medium`, `large`, `vision`, `embedding`
+- `REGISTRY_URL` for the LiteLLM registry/proxy path
+- `LLM_CONFIG_FILE` for local fallback LiteLLM YAML
+- `response.text`, `response.embeddings`, `response.usage`, and `response.provider_model`
+
+## Configuration
+
+Use the LiteLLM registry/proxy as the primary path:
+
+```bash
+REGISTRY_URL=http://registry:8000
+LLM_DEFAULT_MODEL=default
+LLM_DEBUG_LOG_MESSAGES=false
+```
+
+For local development without a reachable registry/proxy, copy the fallback
+template:
+
+```bash
+cp llm_config.example.yaml llm_config.yaml
+export LLM_CONFIG_FILE=./llm_config.yaml
+```
+
+Provider keys remain environment variables referenced from YAML:
+
+```yaml
+model_list:
+  - model_name: medium
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+      # Optional for local OpenAI-compatible endpoints or private gateways:
+      # api_base: http://localhost:8000/v1
+```
+
+Fallback is used only when the registry/proxy cannot be reached. If the
+registry/proxy is reachable but rejects a request or alias, the client surfaces
+that error instead of silently bypassing the proxy.
+
+## Migration Checklist
+
+1. Find direct provider usage.
+
+   Search for imports and model names:
+
+   ```bash
+   rg "openai|anthropic|AzureOpenAI|ChatCompletion|messages.create|embeddings.create|api_key|model="
+   ```
+
+2. Remove provider clients from agent constructors.
+
+   Agents should not store `OpenAI(...)`, `AsyncOpenAI(...)`, or
+   `Anthropic(...)` clients as instance state unless there is a non-LLM reason.
+
+3. Replace provider calls with `AsyncLLMClient.from_a2a_context(context)`.
+
+   Use `small`, `medium`, `large`, or `vision` based on intent, not provider
+   model names.
+
+4. Replace provider response parsing.
+
+   Use:
+
+   - `response.text` for chat text
+   - `response.embeddings` for embedding vectors
+   - `response.model_alias` for the requested alias
+   - `response.provider_model` for the resolved provider model, when available
+   - `response.usage` for token usage, when available
+
+5. Move model selection to configuration.
+
+   If the old code selected `gpt-4o`, `claude-*`, or deployment names directly,
+   map that choice into LiteLLM aliases in the registry/proxy or
+   `llm_config.yaml`.
+
+6. Remove visible key plumbing.
+
+   Do not accept `llm_api_key` in plain text prompts or visible request JSON.
+   `from_a2a_context()` reads it only from structured A2A `DataPart` /
+   `provided_inputs`.
+
+7. Update tests.
+
+   Mock `prometheus_api.llm_client.AsyncLLMClient` or configure an `LLMConfig`
+   with mocked HTTP/LiteLLM behavior. Tests must not call real providers.
+
+8. Update docs and examples.
+
+   If the agent README or card mentions a provider-specific model, replace it
+   with alias-based language such as "uses the configured `medium` LLM alias."
+
+## Before And After: OpenAI Chat
+
+Before:
+
+```python
+from openai import AsyncOpenAI
+
+
+class AnalysisAgent(PrometheusAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.openai = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+    async def _execute(self, params, context, event_queue):
+        result = await self.openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an engineering analyst."},
+                {"role": "user", "content": params["query"]},
+            ],
+        )
+        return {"answer": result.choices[0].message.content}
+```
+
+After:
+
+```python
+from prometheus_api.llm_client import AsyncLLMClient
+
+
+class AnalysisAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        async with AsyncLLMClient.from_a2a_context(context) as llm:
+            response = await llm.medium(
+                [
+                    {"role": "system", "content": "You are an engineering analyst."},
+                    {"role": "user", "content": params["query"]},
+                ],
+                temperature=0,
+            )
+        return {
+            "answer": response.text,
+            "model_alias": response.model_alias,
+            "provider_model": response.provider_model,
+            "usage": response.usage,
+        }
+```
+
+## Before And After: Anthropic Chat
+
+Before:
+
+```python
+import anthropic
+
+
+client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+message = await client.messages.create(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    system="You are concise.",
+    messages=[{"role": "user", "content": prompt}],
+)
+answer = message.content[0].text
+```
+
+After:
+
+```python
+from prometheus_api.llm_client import AsyncLLMClient
+
+
+async with AsyncLLMClient.from_a2a_context(context) as llm:
+    response = await llm.large(
+        [
+            {"role": "system", "content": "You are concise."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=1024,
+    )
+answer = response.text
+```
+
+Configure `large` in LiteLLM instead of in agent code:
+
+```yaml
+model_list:
+  - model_name: large
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+```
+
+## Before And After: Embeddings
+
+Before:
+
+```python
+embedding = await client.embeddings.create(
+    model="text-embedding-3-large",
+    input=["pressure spike", "temperature drift"],
+)
+vectors = [item.embedding for item in embedding.data]
+```
+
+After:
+
+```python
+async with AsyncLLMClient.from_a2a_context(context) as llm:
+    response = await llm.embedding(["pressure spike", "temperature drift"])
+vectors = response.embeddings
+```
+
+## Input Conversion
+
+Chat methods accept either a raw string or OpenAI-style messages:
+
+```python
+await llm.medium("Summarize this result.")
+
+await llm.medium([
+    {"role": "system", "content": "You are concise."},
+    {"role": "user", "content": "Summarize this result."},
+])
+```
+
+Do not pass provider-native message structures unless they are compatible with
+OpenAI-style `role` and `content` dictionaries.
+
+Embedding methods accept one string or a list of strings:
+
+```python
+await llm.embedding("bearing temperature rising")
+await llm.embedding(["pressure spike", "temperature drift"])
+```
+
+## Error Handling
+
+Let LLM errors fail the task unless the agent has a clear fallback behavior.
+The base executor will emit a failed task status.
+
+Use explicit alias errors for configuration feedback:
+
+```python
+from prometheus_api.llm_client import LLMAliasError
+
+
+try:
+    async with AsyncLLMClient.from_a2a_context(context) as llm:
+        response = await llm.large(params["query"])
+except LLMAliasError as exc:
+    return {
+        "status": "failed",
+        "message": str(exc),
+    }
+```
+
+Avoid catching broad provider exceptions from old SDKs after migration. The
+provider should be hidden behind LiteLLM and `LLMClient`.
+
+## Logging And Security
+
+Use the package logger:
+
+```python
+logging.getLogger("prometheus_api.llm_client")
+```
+
+By default, prompt and embedding content is not logged. If
+`LLM_DEBUG_LOG_MESSAGES=true`, normalized messages and embedding inputs are
+logged after secret redaction.
+
+Do not add agent-local logs that print prompts, raw request payloads, API keys,
+authorization headers, or provider responses containing sensitive content.
+
+## Guidance For AI Coding Assistants
+
+When asked to migrate an agent:
+
+1. Read the whole agent file before editing.
+2. Identify all provider SDK imports, constructors, helper functions, and
+   response parsing.
+3. Replace LLM calls with `AsyncLLMClient.from_a2a_context(context)` inside
+   `_execute`.
+4. Preserve prompts, system instructions, temperatures, `max_tokens`, and other
+   provider-neutral kwargs where possible.
+5. Replace provider model names with aliases:
+   - cheap or quick work -> `small`
+   - normal analysis -> `medium`
+   - deep analysis -> `large`
+   - image/multimodal work -> `vision`
+   - embeddings -> `embedding`
+6. Move provider-specific model names, keys, and `api_base` into LiteLLM config.
+7. Return `response.text`, `response.model_alias`, `response.provider_model`,
+   and `response.usage` when useful.
+8. Remove direct API key extraction from text or JSON payloads.
+9. Update tests to mock the shared client instead of provider SDKs.
+10. Update local docs if public behavior, env vars, or examples changed.
+
+Do not leave unused provider dependencies, imports, or environment variables in
+the agent after migration.
+
+## Migration Review Checklist
+
+Before merging, verify:
+
+- Agent code imports `AsyncLLMClient` instead of provider SDK clients
+- No hard-coded provider model names remain in agent logic
+- No API keys are parsed from visible text JSON
+- Prompt content is not logged by the agent
+- `REGISTRY_URL` and optional `LLM_CONFIG_FILE` are documented for the agent
+- Tests pass without real network calls or provider credentials
+- Any agent-specific examples use aliases, not vendor names
+

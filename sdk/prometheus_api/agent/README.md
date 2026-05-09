@@ -45,6 +45,7 @@ To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}
 
 - **[PrometheusAgent Guide](../../docs/agent/GUIDE.md)**: full API reference, patterns, and examples
 - **[Quick Start](../../docs/agent/QUICK_START.md)**: minimal setup plus common agent actions
+- **[LLM Client Migration Guide](../../docs/agent/LLM_CLIENT_MIGRATION.md)**: replace vendor-specific LLM utilities with `llm_client`
 - **[Environment Setup](../../docs/ENV_SETUP.md)**: environment variables
 - **[Reference Example](../../examples/agent_patterns.py)**: one example agent showing status, artifacts, input requests, and stateful resume
 

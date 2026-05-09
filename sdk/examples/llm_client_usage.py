@@ -2,7 +2,7 @@
 
 Run with either a LiteLLM proxy:
 
-    LITELLM_URL=http://localhost:4000 uv run python examples/llm_client_usage.py
+    REGISTRY_URL=http://localhost:4000 uv run python examples/llm_client_usage.py
 
 Or a local fallback config:
 
@@ -19,7 +19,7 @@ def print_setup_help() -> None:
     """Print local configuration guidance."""
     print("\nLocal setup:")
     print("  1. Prefer a LiteLLM proxy:")
-    print("     export LITELLM_URL=http://localhost:4000")
+    print("     export REGISTRY_URL=http://localhost:4000")
     print("  2. Or use a fallback config:")
     print("     cp llm_config.example.yaml llm_config.yaml")
     print("     export LLM_CONFIG_FILE=./llm_config.yaml")
@@ -83,7 +83,7 @@ def main() -> None:
     print("=" * 60)
 
     config = LLMConfig.from_env()
-    print(f"LITELLM_URL: {config.proxy_url or '(not set)'}")
+    print(f"REGISTRY_URL: {config.proxy_url or '(not set)'}")
     print(f"LLM_CONFIG_FILE: {config.config_file or '(not set)'}")
     print(f"LLM_DEFAULT_MODEL: {config.default_model}")
 
