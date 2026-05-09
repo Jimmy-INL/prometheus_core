@@ -436,6 +436,16 @@ class PrometheusAgent:
                 provided.update(data)
         return provided
 
+    def llm_client(self, context: RequestContext, **kwargs: Any) -> Any:
+        """Create an AsyncLLMClient that inherits this agent's name for tracing."""
+        from ..llm_client import AsyncLLMClient
+
+        return AsyncLLMClient.from_a2a_context(
+            context,
+            app_name=self.agent_name,
+            **kwargs,
+        )
+
     @staticmethod
     def pending_hint(
         pending_subagent_requests: Optional[Any],

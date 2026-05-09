@@ -78,11 +78,10 @@ print(vector_response.embeddings[0])
 
 ```python
 from prometheus_api.agent import PrometheusAgent
-from prometheus_api.llm_client import AsyncLLMClient
 
 class AnalysisAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
-        async with AsyncLLMClient.from_a2a_context(context) as llm:
+        async with self.llm_client(context) as llm:
             response = await llm.medium(params["query"])
         return {"status": "completed", "answer": response.text}
 ```
@@ -118,6 +117,11 @@ class AnalysisAgent(PrometheusAgent):
 | `LLM_CONFIG_FILE` | LiteLLM YAML fallback config used only when the proxy is unreachable | - |
 | `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` | `default` |
 | `LLM_DEBUG_LOG_MESSAGES` | Include redacted prompt/embedding content in debug logs | `false` |
+| `ENABLE_MLFLOW_TRACING` | Enable optional MLflow tracing for LLM chat calls | `false` |
+
+When `ENABLE_MLFLOW_TRACING=true`, install `mlflow` in the runtime environment
+and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
+`AM_SC_API_KEY` is forwarded as `X-Api-Key` on MLflow REST calls when present.
 
 **[Full Environment Setup Guide](docs/ENV_SETUP.md)**
 
@@ -164,6 +168,7 @@ class AnalysisAgent(PrometheusAgent):
 - Sync and async chat calls with generic aliases (`default`, `small`, `medium`, `large`, `vision`)
 - Embeddings through the `embedding` alias
 - LiteLLM proxy primary path with LiteLLM YAML fallback when the proxy is unreachable
+- Optional MLflow tracing for sync and async chat calls
 - Prompt-safe debug logging with opt-in redacted content logging
 - A2A `llm_api_key` extraction from structured `DataPart` / `provided_inputs`
 

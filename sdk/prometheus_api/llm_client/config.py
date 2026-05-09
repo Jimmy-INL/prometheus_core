@@ -42,6 +42,9 @@ class LLMConfig:
     config_file: Path | None = None
     default_model: str = "default"
     debug_log_messages: bool = False
+    enable_mlflow_tracing: bool = False
+    app_name: str | None = None
+    mlflow_trace_tags: dict[str, str] = field(default_factory=dict)
     api_key: str | None = None
     timeout: float = 30.0
     _fallback_models_cache: dict[str, FallbackModelConfig] | None = field(
@@ -75,6 +78,7 @@ class LLMConfig:
             config_file=Path(config_file).expanduser() if config_file else None,
             default_model=default_model or "default",
             debug_log_messages=_env_flag(lookup("LLM_DEBUG_LOG_MESSAGES")),
+            enable_mlflow_tracing=_env_flag(lookup("ENABLE_MLFLOW_TRACING")),
         )
 
     def with_api_key(self, api_key: str | None) -> "LLMConfig":
@@ -84,7 +88,36 @@ class LLMConfig:
             config_file=self.config_file,
             default_model=self.default_model,
             debug_log_messages=self.debug_log_messages,
+            enable_mlflow_tracing=self.enable_mlflow_tracing,
+            app_name=self.app_name,
+            mlflow_trace_tags=dict(self.mlflow_trace_tags),
             api_key=str(api_key).strip() if api_key else None,
+            timeout=self.timeout,
+        )
+        clone._fallback_models_cache = self._fallback_models_cache
+        return clone
+
+    def with_trace_options(
+        self,
+        *,
+        app_name: str | None = None,
+        trace_tags: Mapping[str, Any] | None = None,
+    ) -> "LLMConfig":
+        """Return a shallow copy with additional MLflow trace metadata."""
+        tags = dict(self.mlflow_trace_tags)
+        if trace_tags:
+            tags.update(
+                {str(key): str(value) for key, value in trace_tags.items() if value is not None}
+            )
+        clone = LLMConfig(
+            proxy_url=self.proxy_url,
+            config_file=self.config_file,
+            default_model=self.default_model,
+            debug_log_messages=self.debug_log_messages,
+            enable_mlflow_tracing=self.enable_mlflow_tracing,
+            app_name=str(app_name).strip() if app_name else self.app_name,
+            mlflow_trace_tags=tags,
+            api_key=self.api_key,
             timeout=self.timeout,
         )
         clone._fallback_models_cache = self._fallback_models_cache

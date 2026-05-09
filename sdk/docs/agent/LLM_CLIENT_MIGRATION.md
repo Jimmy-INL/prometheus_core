@@ -12,10 +12,7 @@ API key handling.
 Inside Prometheus agents, use the async client:
 
 ```python
-from prometheus_api.llm_client import AsyncLLMClient
-
-
-async with AsyncLLMClient.from_a2a_context(context) as llm:
+async with self.llm_client(context) as llm:
     response = await llm.medium(params["query"])
 
 return {
@@ -50,7 +47,9 @@ Replace these agent-local patterns:
 
 With these shared utilities:
 
-- `AsyncLLMClient.from_a2a_context(context)` in agents
+- `self.llm_client(context)` in `PrometheusAgent` subclasses
+- `AsyncLLMClient.from_a2a_context(context, app_name=...)` when a caller is not
+  inside a `PrometheusAgent` subclass
 - `LLMClient()` in sync scripts
 - Generic aliases: `default`, `small`, `medium`, `large`, `vision`, `embedding`
 - `REGISTRY_URL` for the LiteLLM registry/proxy path
@@ -65,6 +64,7 @@ Use the LiteLLM registry/proxy as the primary path:
 REGISTRY_URL=http://registry:8000
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
+ENABLE_MLFLOW_TRACING=false
 ```
 
 For local development without a reachable registry/proxy, copy the fallback
@@ -106,7 +106,7 @@ that error instead of silently bypassing the proxy.
    Agents should not store `OpenAI(...)`, `AsyncOpenAI(...)`, or
    `Anthropic(...)` clients as instance state unless there is a non-LLM reason.
 
-3. Replace provider calls with `AsyncLLMClient.from_a2a_context(context)`.
+3. Replace provider calls with `self.llm_client(context)`.
 
    Use `small`, `medium`, `large`, or `vision` based on intent, not provider
    model names.
@@ -170,12 +170,9 @@ class AnalysisAgent(PrometheusAgent):
 After:
 
 ```python
-from prometheus_api.llm_client import AsyncLLMClient
-
-
 class AnalysisAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
-        async with AsyncLLMClient.from_a2a_context(context) as llm:
+        async with self.llm_client(context) as llm:
             response = await llm.medium(
                 [
                     {"role": "system", "content": "You are an engineering analyst."},
@@ -213,10 +210,7 @@ answer = message.content[0].text
 After:
 
 ```python
-from prometheus_api.llm_client import AsyncLLMClient
-
-
-async with AsyncLLMClient.from_a2a_context(context) as llm:
+async with self.llm_client(context) as llm:
     response = await llm.large(
         [
             {"role": "system", "content": "You are concise."},
@@ -252,7 +246,7 @@ vectors = [item.embedding for item in embedding.data]
 After:
 
 ```python
-async with AsyncLLMClient.from_a2a_context(context) as llm:
+async with self.llm_client(context) as llm:
     response = await llm.embedding(["pressure spike", "temperature drift"])
 vectors = response.embeddings
 ```
@@ -292,7 +286,7 @@ from prometheus_api.llm_client import LLMAliasError
 
 
 try:
-    async with AsyncLLMClient.from_a2a_context(context) as llm:
+    async with self.llm_client(context) as llm:
         response = await llm.large(params["query"])
 except LLMAliasError as exc:
     return {
@@ -326,8 +320,7 @@ When asked to migrate an agent:
 1. Read the whole agent file before editing.
 2. Identify all provider SDK imports, constructors, helper functions, and
    response parsing.
-3. Replace LLM calls with `AsyncLLMClient.from_a2a_context(context)` inside
-   `_execute`.
+3. Replace LLM calls with `self.llm_client(context)` inside `_execute`.
 4. Preserve prompts, system instructions, temperatures, `max_tokens`, and other
    provider-neutral kwargs where possible.
 5. Replace provider model names with aliases:
@@ -357,4 +350,3 @@ Before merging, verify:
 - `REGISTRY_URL` and optional `LLM_CONFIG_FILE` are documented for the agent
 - Tests pass without real network calls or provider credentials
 - Any agent-specific examples use aliases, not vendor names
-

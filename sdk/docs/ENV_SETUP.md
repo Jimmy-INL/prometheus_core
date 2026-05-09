@@ -120,6 +120,7 @@ an explicit config.
 | `LLM_CONFIG_FILE` | LiteLLM YAML fallback config. Used only when the proxy cannot be reached. | - | No |
 | `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` and `llm.chat(..., model=None)`. | `default` | No |
 | `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |
+| `ENABLE_MLFLOW_TRACING` | Enable optional MLflow tracing for sync and async LLM chat calls. | `false` | No |
 
 ### Example LLMClient .env
 
@@ -128,7 +129,30 @@ REGISTRY_URL=http://registry:8000
 LLM_CONFIG_FILE=./llm_config.yaml
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
+ENABLE_MLFLOW_TRACING=false
 ```
+
+### Optional MLflow Tracing
+
+Set `ENABLE_MLFLOW_TRACING=true` to trace `LLMClient.chat` and
+`AsyncLLMClient.chat` calls. MLflow is imported only when tracing is enabled.
+Install `mlflow` in the runtime environment before enabling this setting.
+Configure the tracking server with standard MLflow variables:
+
+```bash
+ENABLE_MLFLOW_TRACING=true
+MLFLOW_TRACKING_URI=https://mlflow.example.org
+MLFLOW_EXPERIMENT_NAME=prometheus-llm
+AM_SC_API_KEY=your-amsc-api-key
+```
+
+When `AM_SC_API_KEY` is present, the client injects it into MLflow REST calls as
+`X-Api-Key`. If it is absent, the client logs a warning and continues.
+
+Each chat trace includes protected `app_name`, `base_url`, and `model` tags.
+Agents should use `self.llm_client(context)` so `app_name` inherits the agent
+name. Additional tags can be set when constructing `LLMConfig`, creating the
+client, or calling `chat(..., trace_tags={...})`; protected tags always win.
 
 Create the local fallback YAML from the tracked example:
 
@@ -198,11 +222,10 @@ Agents should prefer structured A2A input for transient LLM keys:
 
 ```python
 from prometheus_api.agent import PrometheusAgent
-from prometheus_api.llm_client import AsyncLLMClient
 
 class AnalysisAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
-        async with AsyncLLMClient.from_a2a_context(context) as llm:
+        async with self.llm_client(context) as llm:
             response = await llm.medium(params["query"])
         return {"status": "completed", "answer": response.text}
 ```
@@ -298,6 +321,10 @@ REGISTRY_URL=http://registry:8000
 LLM_CONFIG_FILE=./llm_config.yaml
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
+ENABLE_MLFLOW_TRACING=false
+# MLFLOW_TRACKING_URI=https://mlflow.example.org
+# MLFLOW_EXPERIMENT_NAME=prometheus-llm
+# AM_SC_API_KEY=your-amsc-api-key
 
 # ===== StorageClient Configuration =====
 DEEPLYNX_KEY=your-api-key

@@ -1,8 +1,8 @@
-"""PrometheusAgent example using AsyncLLMClient.
+"""PrometheusAgent example using the shared async LLM client.
 
 This agent reads LLM configuration from environment variables and uses
-AsyncLLMClient.from_a2a_context(context), which can consume a transient
-llm_api_key only from structured A2A DataPart / provided_inputs payloads.
+self.llm_client(context), which can consume a transient llm_api_key only from
+structured A2A DataPart / provided_inputs payloads.
 
 Run locally with the same LLM setup as examples/llm_client_usage.py:
 
@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from prometheus_api.agent import EventQueue, MissingInput, PrometheusAgent, RequestContext
-from prometheus_api.llm_client import AsyncLLMClient
 
 
 class LLMAnalysisAgent(PrometheusAgent):
@@ -49,7 +48,7 @@ class LLMAnalysisAgent(PrometheusAgent):
             message="Calling the configured LLM alias.",
         )
 
-        async with AsyncLLMClient.from_a2a_context(context) as llm:
+        async with self.llm_client(context) as llm:
             response = await llm.medium(
                 [
                     {

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
@@ -23,6 +24,7 @@ from prometheus_api.llm_client import (
     normalize_messages,
     redact_secrets,
 )
+from prometheus_api.llm_client.tracing import AMSC_API_KEY_ENV, enable_amsc_x_api_key
 
 
 def _fallback_yaml(tmp_path):
@@ -60,6 +62,89 @@ def _proxy_models(*aliases: str) -> dict:
     return {"data": [{"id": alias} for alias in aliases]}
 
 
+class _FakeMlflowContext:
+    def __init__(self, value=None):
+        self.value = value
+
+    def __enter__(self):
+        return self.value
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _FakeMlflowSpan:
+    def __init__(self, name, span_type, attributes):
+        self.name = name
+        self.span_type = span_type
+        self.attributes = attributes
+        self.inputs = None
+        self.outputs = None
+
+    def set_inputs(self, inputs):
+        self.inputs = inputs
+
+    def set_outputs(self, outputs):
+        self.outputs = outputs
+
+
+def _install_fake_mlflow(monkeypatch):
+    from prometheus_api.llm_client import tracing as tracing_module
+
+    monkeypatch.setattr(tracing_module, "_MLFLOW_SETUP_DONE", False)
+    state = SimpleNamespace(
+        autolog_calls=0,
+        experiments=[],
+        http_request_kwargs=[],
+        rest_utils=None,
+        spans=[],
+        trace_tags=[],
+    )
+
+    mlflow = ModuleType("mlflow")
+    mlflow.__path__ = []
+    mlflow_litellm = ModuleType("mlflow.litellm")
+    mlflow_entities = ModuleType("mlflow.entities")
+    mlflow_utils = ModuleType("mlflow.utils")
+    mlflow_utils.__path__ = []
+    rest_utils = ModuleType("mlflow.utils.rest_utils")
+    state.rest_utils = rest_utils
+
+    def autolog():
+        state.autolog_calls += 1
+
+    def set_experiment(name):
+        state.experiments.append(name)
+
+    def tracing_context(*, tags):
+        state.trace_tags.append(dict(tags))
+        return _FakeMlflowContext()
+
+    def start_span(*, name, span_type, attributes):
+        span = _FakeMlflowSpan(name, span_type, dict(attributes))
+        state.spans.append(span)
+        return _FakeMlflowContext(span)
+
+    def http_request(host_creds, endpoint, method, *args, **kwargs):
+        state.http_request_kwargs.append(dict(kwargs))
+        return {"endpoint": endpoint, "method": method, "kwargs": kwargs}
+
+    mlflow_litellm.autolog = autolog
+    mlflow_entities.SpanType = SimpleNamespace(CHAIN="CHAIN")
+    mlflow.tracing = SimpleNamespace(context=tracing_context)
+    mlflow.start_span = start_span
+    mlflow.set_experiment = set_experiment
+    mlflow.litellm = mlflow_litellm
+    rest_utils.http_request = http_request
+
+    monkeypatch.setitem(sys.modules, "mlflow", mlflow)
+    monkeypatch.setitem(sys.modules, "mlflow.litellm", mlflow_litellm)
+    monkeypatch.setitem(sys.modules, "mlflow.entities", mlflow_entities)
+    monkeypatch.setitem(sys.modules, "mlflow.utils", mlflow_utils)
+    monkeypatch.setitem(sys.modules, "mlflow.utils.rest_utils", rest_utils)
+    return state
+
+
 def test_config_from_env(monkeypatch, tmp_path):
     config_path = tmp_path / "llm.yaml"
     env = {
@@ -67,6 +152,7 @@ def test_config_from_env(monkeypatch, tmp_path):
         "LLM_CONFIG_FILE": str(config_path),
         "LLM_DEFAULT_MODEL": "medium",
         "LLM_DEBUG_LOG_MESSAGES": "true",
+        "ENABLE_MLFLOW_TRACING": "true",
     }
 
     config = LLMConfig.from_env(env)
@@ -75,6 +161,7 @@ def test_config_from_env(monkeypatch, tmp_path):
     assert config.config_file == config_path
     assert config.default_model == "medium"
     assert config.debug_log_messages is True
+    assert config.enable_mlflow_tracing is True
 
     monkeypatch.delenv("LLM_DEFAULT_MODEL", raising=False)
     assert LLMConfig.from_env({}).default_model == "default"
@@ -85,7 +172,9 @@ def test_config_from_env_loads_default_dotenv(monkeypatch, tmp_path):
     monkeypatch.delenv("REGISTRY_URL", raising=False)
     monkeypatch.delenv("LLM_DEFAULT_MODEL", raising=False)
     (tmp_path / ".env").write_text(
-        "REGISTRY_URL=http://from-dotenv:4000\nLLM_DEFAULT_MODEL=large\n",
+        "REGISTRY_URL=http://from-dotenv:4000\n"
+        "LLM_DEFAULT_MODEL=large\n"
+        "ENABLE_MLFLOW_TRACING=true\n",
         encoding="utf-8",
     )
 
@@ -93,6 +182,7 @@ def test_config_from_env_loads_default_dotenv(monkeypatch, tmp_path):
 
     assert config.proxy_url == "http://from-dotenv:4000"
     assert config.default_model == "large"
+    assert config.enable_mlflow_tracing is True
 
 
 def test_fallback_yaml_parsing_resolves_env_refs(monkeypatch, tmp_path):
@@ -246,6 +336,134 @@ def test_sync_chat_method_uses_proxy():
     assert posted[0]["temperature"] == 0
 
 
+def test_disabled_mlflow_tracing_does_not_import_mlflow(monkeypatch):
+    from prometheus_api.llm_client import tracing as tracing_module
+
+    monkeypatch.setattr(tracing_module, "_MLFLOW_SETUP_DONE", False)
+    for module_name in [
+        "mlflow",
+        "mlflow.litellm",
+        "mlflow.entities",
+        "mlflow.utils",
+        "mlflow.utils.rest_utils",
+    ]:
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return _proxy_response(request, _proxy_models("default"))
+        return _proxy_response(request, {"choices": [{"message": {"content": "ok"}}]})
+
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    response = client("hello")
+
+    assert response.text == "ok"
+    assert "mlflow" not in sys.modules
+
+
+def test_mlflow_tracing_sync_chat_records_span_and_protected_tags(monkeypatch, tmp_path):
+    state = _install_fake_mlflow(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", "prometheus-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return _proxy_response(request, _proxy_models("default"))
+        return _proxy_response(
+            request,
+            {
+                "model": "resolved-default",
+                "choices": [{"message": {"content": "traced answer"}}],
+                "usage": {"total_tokens": 7},
+            },
+        )
+
+    client = LLMClient(
+        config=LLMConfig(
+            proxy_url="http://proxy",
+            enable_mlflow_tracing=True,
+            app_name="Configured Agent",
+            mlflow_trace_tags={
+                "review_status": "unreviewed",
+                "app_name": "bad",
+                "base_url": "bad",
+                "model": "bad",
+            },
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        trace_tags={"environment": "test"},
+    )
+
+    response = client("hello", trace_tags={"model": "bad-call", "use_case": "chat"})
+    client("hello again")
+
+    assert response.text == "traced answer"
+    assert state.autolog_calls == 1
+    assert state.experiments == ["prometheus-test"]
+    assert state.trace_tags[0] == {
+        "review_status": "unreviewed",
+        "app_name": "Configured Agent",
+        "base_url": "http://proxy",
+        "model": "default",
+        "environment": "test",
+        "use_case": "chat",
+    }
+    assert state.spans[0].name == "llm_client.chat"
+    assert state.spans[0].span_type == "CHAIN"
+    assert state.spans[0].attributes == {
+        "model_alias": "default",
+        "provider_model": "default",
+        "path": "proxy",
+        "client": "sync",
+    }
+    assert state.spans[0].inputs == {"messages": [{"role": "user", "content": "hello"}]}
+    assert state.spans[0].outputs == {
+        "text": "traced answer",
+        "model_alias": "default",
+        "provider_model": "resolved-default",
+        "usage": {"total_tokens": 7},
+    }
+
+
+def test_enable_amsc_x_api_key_injects_header(monkeypatch):
+    state = _install_fake_mlflow(monkeypatch)
+    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+
+    enable_amsc_x_api_key()
+    result = state.rest_utils.http_request(
+        object(),
+        "/api/2.0/mlflow/runs/log-batch",
+        "POST",
+        extra_headers={"Existing": "yes"},
+    )
+
+    assert result["kwargs"]["extra_headers"] == {
+        "Existing": "yes",
+        "X-Api-Key": "amsc-secret",
+    }
+
+
+def test_enable_amsc_x_api_key_logs_when_missing(monkeypatch, caplog):
+    state = _install_fake_mlflow(monkeypatch)
+    monkeypatch.delenv(AMSC_API_KEY_ENV, raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="prometheus_api.llm_client"):
+        enable_amsc_x_api_key()
+
+    state.rest_utils.http_request(object(), "/api", "GET", headers={"Existing": "yes"})
+
+    assert f"Warning: {AMSC_API_KEY_ENV} not found in environment." in caplog.text
+    assert state.http_request_kwargs[0]["headers"] == {
+        "Existing": "yes",
+        "X-Api-Key": None,
+    }
+
+
 @pytest.mark.asyncio
 async def test_async_chat_method_uses_proxy():
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -271,6 +489,43 @@ async def test_async_chat_method_uses_proxy():
     assert response.model_alias == "medium"
     assert response.provider_model == "resolved-medium"
     assert response.usage == {"total_tokens": 3}
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_mlflow_tracing_async_chat_records_span(monkeypatch, tmp_path):
+    state = _install_fake_mlflow(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+    monkeypatch.delenv("MLFLOW_EXPERIMENT_NAME", raising=False)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return _proxy_response(request, _proxy_models("medium"))
+        return _proxy_response(
+            request,
+            {
+                "model": "resolved-medium",
+                "choices": [{"message": {"content": "async traced"}}],
+            },
+        )
+
+    client = AsyncLLMClient(
+        config=LLMConfig(proxy_url="http://proxy", enable_mlflow_tracing=True),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        app_name="Async Agent",
+    )
+
+    response = await client.medium("Analyze.", trace_tags={"environment": "test"})
+
+    assert response.text == "async traced"
+    assert state.autolog_calls == 1
+    assert state.trace_tags[0]["app_name"] == "Async Agent"
+    assert state.trace_tags[0]["base_url"] == "http://proxy"
+    assert state.trace_tags[0]["model"] == "medium"
+    assert state.trace_tags[0]["environment"] == "test"
+    assert state.spans[0].attributes["client"] == "async"
+    assert state.spans[0].outputs["text"] == "async traced"
     await client.aclose()
 
 

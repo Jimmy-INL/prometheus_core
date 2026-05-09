@@ -153,6 +153,79 @@ class _ClientMixin:
             params["api_key"] = self.config.api_key
         return params
 
+    def _backend_base_url(
+        self,
+        *,
+        mode: _Mode,
+        fallback_model: FallbackModelConfig | None,
+        call_kwargs: dict[str, Any],
+    ) -> str:
+        if mode == "proxy":
+            return str(self.config.proxy_url or "unknown")
+
+        base_url = call_kwargs.get("api_base") or call_kwargs.get("base_url")
+        if not base_url and fallback_model is not None:
+            base_url = fallback_model.litellm_params.get(
+                "api_base"
+            ) or fallback_model.litellm_params.get("base_url")
+        return str(base_url).strip() if base_url else "litellm-provider-default"
+
+    def _chat_trace_context(
+        self,
+        *,
+        alias: str,
+        mode: _Mode,
+        provider_model: str,
+        fallback_model: FallbackModelConfig | None,
+        messages: list[dict[str, Any]],
+        call_kwargs: dict[str, Any],
+        trace_tags: Mapping[str, Any] | None,
+        client_kind: str,
+    ) -> Any:
+        from .tracing import chat_trace
+
+        tags = dict(self.config.mlflow_trace_tags)
+        if trace_tags:
+            tags.update(
+                {str(key): str(value) for key, value in trace_tags.items() if value is not None}
+            )
+
+        selected_model = alias if mode == "proxy" else provider_model
+        protected_tags = {
+            "app_name": self.config.app_name or "prometheus_api",
+            "base_url": self._backend_base_url(
+                mode=mode,
+                fallback_model=fallback_model,
+                call_kwargs=call_kwargs,
+            ),
+            "model": selected_model,
+        }
+        tags.update(protected_tags)
+
+        return chat_trace(
+            enabled=self.config.enable_mlflow_tracing,
+            tags=tags,
+            attributes={
+                "model_alias": alias,
+                "provider_model": provider_model,
+                "path": mode,
+                "client": client_kind,
+            },
+            inputs={"messages": messages},
+        )
+
+    def _set_chat_trace_outputs(self, span: Any | None, response: ChatResponse) -> None:
+        if span is None:
+            return
+        span.set_outputs(
+            {
+                "text": response.text,
+                "model_alias": response.model_alias,
+                "provider_model": response.provider_model,
+                "usage": response.usage,
+            }
+        )
+
     def _log_chat_request(
         self,
         *,
@@ -218,8 +291,18 @@ class _ClientMixin:
 class LLMClient(_ClientMixin):
     """Synchronous provider-agnostic LLM client."""
 
-    def __init__(self, config: LLMConfig | None = None, http_client: httpx.Client | None = None):
-        self.config = config or LLMConfig.from_env()
+    def __init__(
+        self,
+        config: LLMConfig | None = None,
+        http_client: httpx.Client | None = None,
+        *,
+        app_name: str | None = None,
+        trace_tags: Mapping[str, Any] | None = None,
+    ):
+        self.config = (config or LLMConfig.from_env()).with_trace_options(
+            app_name=app_name,
+            trace_tags=trace_tags,
+        )
         self._http_client = http_client
         self._owns_http_client = http_client is None
         self._proxy_aliases_cache: list[str] | None = None
@@ -261,6 +344,7 @@ class LLMClient(_ClientMixin):
         self,
         text_or_messages: ChatInput,
         model: str | None = None,
+        trace_tags: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
@@ -271,32 +355,60 @@ class LLMClient(_ClientMixin):
         self._log_chat_request(alias=alias, mode=mode, messages=messages)
 
         try:
-            if mode == "proxy":
-                raw = self._proxy_chat(alias, messages, kwargs)
-            else:
-                raw = self._fallback_chat(fallback_model, messages, kwargs)
+            with self._chat_trace_context(
+                alias=alias,
+                mode=mode,
+                provider_model=provider_model,
+                fallback_model=fallback_model,
+                messages=messages,
+                call_kwargs=kwargs,
+                trace_tags=trace_tags,
+                client_kind="sync",
+            ) as span:
+                if mode == "proxy":
+                    raw = self._proxy_chat(alias, messages, kwargs)
+                else:
+                    raw = self._fallback_chat(fallback_model, messages, kwargs)
+                response = ChatResponse(
+                    text=_chat_text(raw),
+                    model_alias=alias,
+                    provider_model=_provider_model(raw, provider_model),
+                    usage=_usage(raw),
+                    raw=raw,
+                )
+                self._set_chat_trace_outputs(span, response)
         except _ProxyUnavailableError:
             mode, provider_model, fallback_model = self._select_fallback(alias)
             self._log_chat_request(alias=alias, mode=mode, messages=messages)
-            raw = self._fallback_chat(fallback_model, messages, kwargs)
+            with self._chat_trace_context(
+                alias=alias,
+                mode=mode,
+                provider_model=provider_model,
+                fallback_model=fallback_model,
+                messages=messages,
+                call_kwargs=kwargs,
+                trace_tags=trace_tags,
+                client_kind="sync",
+            ) as span:
+                raw = self._fallback_chat(fallback_model, messages, kwargs)
+                response = ChatResponse(
+                    text=_chat_text(raw),
+                    model_alias=alias,
+                    provider_model=_provider_model(raw, provider_model),
+                    usage=_usage(raw),
+                    raw=raw,
+                )
+                self._set_chat_trace_outputs(span, response)
 
-        usage = _usage(raw)
-        resolved_model = _provider_model(raw, provider_model)
         self._log_response(
             operation="chat",
             alias=alias,
             mode=mode,
-            provider_model=resolved_model,
-            usage=usage,
+            provider_model=response.provider_model,
+            usage=response.usage,
             latency_seconds=time.perf_counter() - start,
         )
-        return ChatResponse(
-            text=_chat_text(raw),
-            model_alias=alias,
-            provider_model=resolved_model,
-            usage=usage,
-            raw=raw,
-        )
+        return response
 
     def small(self, text_or_messages: ChatInput, **kwargs: Any) -> ChatResponse:
         return self.chat(text_or_messages, model="small", **kwargs)
@@ -459,8 +571,14 @@ class AsyncLLMClient(_ClientMixin):
         self,
         config: LLMConfig | None = None,
         http_client: httpx.AsyncClient | None = None,
+        *,
+        app_name: str | None = None,
+        trace_tags: Mapping[str, Any] | None = None,
     ):
-        self.config = config or LLMConfig.from_env()
+        self.config = (config or LLMConfig.from_env()).with_trace_options(
+            app_name=app_name,
+            trace_tags=trace_tags,
+        )
         self._http_client = http_client
         self._owns_http_client = http_client is None
         self._proxy_aliases_cache: list[str] | None = None
@@ -502,6 +620,7 @@ class AsyncLLMClient(_ClientMixin):
         self,
         text_or_messages: ChatInput,
         model: str | None = None,
+        trace_tags: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
@@ -512,32 +631,60 @@ class AsyncLLMClient(_ClientMixin):
         self._log_chat_request(alias=alias, mode=mode, messages=messages)
 
         try:
-            if mode == "proxy":
-                raw = await self._proxy_chat(alias, messages, kwargs)
-            else:
-                raw = await self._fallback_chat(fallback_model, messages, kwargs)
+            with self._chat_trace_context(
+                alias=alias,
+                mode=mode,
+                provider_model=provider_model,
+                fallback_model=fallback_model,
+                messages=messages,
+                call_kwargs=kwargs,
+                trace_tags=trace_tags,
+                client_kind="async",
+            ) as span:
+                if mode == "proxy":
+                    raw = await self._proxy_chat(alias, messages, kwargs)
+                else:
+                    raw = await self._fallback_chat(fallback_model, messages, kwargs)
+                response = ChatResponse(
+                    text=_chat_text(raw),
+                    model_alias=alias,
+                    provider_model=_provider_model(raw, provider_model),
+                    usage=_usage(raw),
+                    raw=raw,
+                )
+                self._set_chat_trace_outputs(span, response)
         except _ProxyUnavailableError:
             mode, provider_model, fallback_model = self._select_fallback(alias)
             self._log_chat_request(alias=alias, mode=mode, messages=messages)
-            raw = await self._fallback_chat(fallback_model, messages, kwargs)
+            with self._chat_trace_context(
+                alias=alias,
+                mode=mode,
+                provider_model=provider_model,
+                fallback_model=fallback_model,
+                messages=messages,
+                call_kwargs=kwargs,
+                trace_tags=trace_tags,
+                client_kind="async",
+            ) as span:
+                raw = await self._fallback_chat(fallback_model, messages, kwargs)
+                response = ChatResponse(
+                    text=_chat_text(raw),
+                    model_alias=alias,
+                    provider_model=_provider_model(raw, provider_model),
+                    usage=_usage(raw),
+                    raw=raw,
+                )
+                self._set_chat_trace_outputs(span, response)
 
-        usage = _usage(raw)
-        resolved_model = _provider_model(raw, provider_model)
         self._log_response(
             operation="chat",
             alias=alias,
             mode=mode,
-            provider_model=resolved_model,
-            usage=usage,
+            provider_model=response.provider_model,
+            usage=response.usage,
             latency_seconds=time.perf_counter() - start,
         )
-        return ChatResponse(
-            text=_chat_text(raw),
-            model_alias=alias,
-            provider_model=resolved_model,
-            usage=usage,
-            raw=raw,
-        )
+        return response
 
     async def small(self, text_or_messages: ChatInput, **kwargs: Any) -> ChatResponse:
         return await self.chat(text_or_messages, model="small", **kwargs)
