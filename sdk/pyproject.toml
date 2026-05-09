@@ -33,14 +33,6 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
 ]
 
-[project.optional-dependencies]
-tracing = [
-    "opentelemetry-api>=1.39.1",
-    "opentelemetry-exporter-otlp>=1.39.1",
-    "opentelemetry-instrumentation>=0.60b1",
-    "opentelemetry-instrumentation-starlette>=0.60b1",
-]
-
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",
@@ -101,8 +93,6 @@ exclude = ["examples"]
 module = [
     "fsspec",
     "fsspec.*",
-    "opentelemetry",
-    "opentelemetry.*",
     "redis",
 ]
 ignore_missing_imports = true

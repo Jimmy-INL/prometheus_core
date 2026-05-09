@@ -44,12 +44,6 @@ To pin to a specific branch, tag, or commit:
 pip install git+https://github.inl.gov/genesis/prometheus_api.git@<ref>
 ```
 
-To opt into OpenTelemetry tracing, install the `[tracing]` extra:
-
-```bash
-pip install "git+https://github.inl.gov/genesis/prometheus_api.git#egg=prometheus-api[tracing]"
-```
-
 After installing, sanity-check the import:
 
 ```bash

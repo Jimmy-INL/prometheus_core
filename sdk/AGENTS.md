@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, tracing, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
+`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
 
 `tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 

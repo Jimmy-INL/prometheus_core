@@ -63,4 +63,4 @@ To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}
 pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
-The agent stack is part of the base package. Install the `[tracing]` extra only for OpenTelemetry/MLflow tracing support.
+The agent stack is part of the base package.

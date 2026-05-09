@@ -983,7 +983,9 @@ class PrometheusAgent:
         import socket
 
         port = os.getenv("AGENT_PORT", "8000")
-        agent_card_dict["url"] = os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
+        agent_card_dict["url"] = (
+            os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
+        )
 
         # Store the raw dict for registry registration
         self.agent_card_dict = agent_card_dict
@@ -1750,18 +1752,6 @@ class PrometheusAgent:
         # Start HTTP server
         if port is None:
             port = int(os.getenv("AGENT_PORT", "8000"))
-
-        # Configure tracing if tracing is enabled
-        tracing = os.getenv("ENABLE_MLFLOW_TRACING", "False").lower() in ("true", "1", "yes")
-        if tracing:
-            logger.info("MLFlow Tracing enabled")
-            from prometheus_api.agent.mlflow_tracing import (
-                MLFlowTracingMiddleware,
-                A2APayloadTracingMiddleware,
-            )
-
-            app.add_middleware(A2APayloadTracingMiddleware, max_body_bytes=8192)
-            app.add_middleware(MLFlowTracingMiddleware, agent_name=self.agent_name)
 
         logger.info(f"Starting HTTP server on {host}:{port}")
         uvicorn.run(app, host=host, port=port)

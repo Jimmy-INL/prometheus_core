@@ -8,7 +8,7 @@ Subclass `PrometheusAgent`, implement `_execute`, return a dict. The base class 
 pip install git+https://github.inl.gov/genesis/prometheus_api.git
 ```
 
-The agent stack is included in the base package. Use the `[tracing]` extra only when you need OpenTelemetry/MLflow tracing.
+The agent stack is included in the base package.
 
 Migrating an existing agent from direct provider SDK calls? See
 [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).

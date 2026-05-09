@@ -9,7 +9,7 @@ Architecture, conventions, and the day-to-day commands for working on `prometheu
 1. **`prometheus_api.storage_client`** — Pydantic-typed sync (`StorageClient`) and async (`AsyncStorageClient`) HTTP clients for items, files (incl. chunked uploads), relationships, search, tags, timeseries. Also registers a `deeplynx://` fsspec filesystem (`DeepLynxFileSystem`) via the `fsspec.specs` entry point.
 2. **`prometheus_api.agent`** — `PrometheusAgent` base class for A2A-protocol agents (built on `a2a-sdk` + Starlette/uvicorn). Subclasses override `async _execute(params, context, event_queue)` and the base handles agent-card loading, bearer-token auth, registry registration, status/artifact emission, and per-`contextId` state persistence.
 
-The agent component depends on the storage client (used internally for `ContextStateStore` and artifact persistence). The A2A server stack is part of the base dependencies — there is no `[agent]` extra. The only optional extra is `[tracing]`, which adds OpenTelemetry instrumentation.
+The agent component depends on the storage client (used internally for `ContextStateStore` and artifact persistence). The A2A server stack is part of the base dependencies — there is no `[agent]` extra.
 
 ## Common commands
 
@@ -101,4 +101,4 @@ Artifact metadata produced by helpers always carries `conversation_id`, `produce
 - **Python ≥ 3.12** is hard-required (`requires-python` and `target-version` in ruff/mypy).
 - Line length is **100** (ruff). `examples/` is excluded from ruff and mypy.
 - Use the Makefile targets rather than running `pytest`/`ruff`/`mypy` directly, so dev tooling stays in sync with `uv.lock`.
-- Container images target both `linux/amd64` and `linux/arm64`; the Dockerfile installs the package with the `[tracing]` extra and concatenates any `certs/*.pem` into the system CA bundle.
+- Container images target both `linux/amd64` and `linux/arm64`; the Dockerfile installs the base package and concatenates any `certs/*.pem` into the system CA bundle.

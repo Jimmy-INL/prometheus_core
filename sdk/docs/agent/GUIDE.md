@@ -672,7 +672,6 @@ utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).
 | `REDIS_URL` | `redis://localhost:6379` | Redis for artifact catalog and context state |
 | `REDIS_PASSWORD` | — | Redis auth password |
 | `AGENT_CONTEXT_TTL_SECONDS` | `86400` | TTL for per-context persisted state (24 h) |
-| `ENABLE_MLFLOW_TRACING` | `false` | Enable MLflow tracing middleware |
 
 ---
 
