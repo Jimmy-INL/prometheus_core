@@ -27,6 +27,8 @@ For targeted tests, use `uv run pytest tests/test_agent.py::TestPrometheusAgentE
 
 This project targets Python 3.12+. Ruff uses a 100-character line length and excludes `examples/`. Prefer typed Pydantic models for API payloads, explicit resource classes for endpoints, and clear async/sync parity between `storage_client/resources/` and `storage_client/async_resources/`. Keep `llm_client` sync and async behavior aligned when changing aliases, fallback behavior, logging, or response objects. Use `snake_case` for modules, functions, variables, and test functions; use `PascalCase` for classes.
 
+Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized.
+
 ## Testing Guidelines
 
 Pytest configuration lives in `pyproject.toml`. Test files, classes, and functions should follow `test_*.py`, `Test*`, and `test_*`. Async tests are supported through `asyncio_mode = "auto"`. Run unit tests with `uv run pytest -m "not integration"`. Integration tests require a configured `.env` based on `.env.example` with valid `DEEPLYNX_*` credentials.

@@ -386,6 +386,11 @@ class PrometheusAgent:
         ```
     """
 
+    @staticmethod
+    def registry_url() -> str:
+        """Return the configured LiteLLM registry URL with the agent default applied."""
+        return (os.getenv("REGISTRY_URL") or "http://litellm:4000").strip()
+
     def __init__(self, agent_name: str = "Agent", agent_card_path: Optional[str] = None):
         """
         Initialize the Prometheus agent.
@@ -1043,7 +1048,7 @@ class PrometheusAgent:
         this agent and expose the full raw agent card for discovery and
         routing metadata.
         """
-        registry_url = os.getenv("REGISTRY_URL")
+        registry_url = self.registry_url()
         if not registry_url:
             logger.info("REGISTRY_URL not set - skipping agent registration")
             return

@@ -225,7 +225,7 @@ def _sync_computation(self, params):
 AGENT_PORT=8000
 # EXTERNAL_AGENT_URL=http://my-host:9002  # set only for port-mapped / cross-host deployments
 AGENT_SECRET=my-secret
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 LITELLM_MASTER_KEY=sk-...
 ```
 

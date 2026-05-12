@@ -86,7 +86,7 @@ AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
 
 # Registry (optional)
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 ```
 
 ### Agent Usage
@@ -125,7 +125,7 @@ an explicit config.
 ### Example LLMClient .env
 
 ```bash
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 LLM_CONFIG_FILE=./llm_config.yaml
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
@@ -314,7 +314,7 @@ AGENT_PORT=8000
 # EXTERNAL_AGENT_URL=http://my-host:9002  # only needed for port-mapped / cross-host deployments
 AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 
 # ===== LLMClient Configuration =====
 # REGISTRY_URL is also used by LLMClient for chat, vision, and embedding calls.

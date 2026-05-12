@@ -61,7 +61,7 @@ With these shared utilities:
 Use the LiteLLM registry/proxy as the primary path:
 
 ```bash
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 LLM_DEFAULT_MODEL=default
 LLM_DEBUG_LOG_MESSAGES=false
 ENABLE_MLFLOW_TRACING=false

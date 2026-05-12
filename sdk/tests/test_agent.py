@@ -252,6 +252,14 @@ class TestPrometheusAgent:
 
         assert agent.agent_card_path == "/custom/path/card.json"
 
+    def test_registry_url_defaults_and_strips_env(self, monkeypatch):
+        """Test registry URL helper centralizes env lookup and the default value."""
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        assert PrometheusAgent.registry_url() == "http://litellm:4000"
+
+        monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
+        assert PrometheusAgent.registry_url() == "http://registry:4000"
+
     def test_get_raw_agent_card_returns_loaded_dict(self):
         agent = PrometheusAgent(agent_name="MyAgent")
         agent.agent_card_dict = {
