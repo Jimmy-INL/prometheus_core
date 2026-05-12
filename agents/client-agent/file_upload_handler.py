@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from prometheus_api.agent import ArtifactReference, EventQueue, RequestContext
     from prometheus_api.storage_client.connection import ConnectionConfig
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 class UploadedFile(BaseModel):

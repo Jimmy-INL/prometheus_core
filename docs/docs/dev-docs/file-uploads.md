@@ -24,7 +24,7 @@ User attaches file(s) in Chainlit
 
 `frontend/components/message_handler.py` reads each attached file, base64-encodes its content, and includes it in the `uploaded_files` payload sent to the client-agent.  Files handled by a visualization plugin (e.g. IFC, Exodus, image, or SVG viewers) are processed locally for immediate rendering and **also** captured for DeepLynx upload.  The plugin path must not `continue` before `_capture_uploaded_file()` runs.
 
-The payload is capped at `MAX_UPLOAD_BYTES` (20 MB) per file.  Files are passed as:
+The payload is capped at `MAX_UPLOAD_BYTES` (100 MB) per file.  The client-agent also raises the A2A JSON-RPC `max_content_length` to 150 MiB by default because base64 expands a 100 MiB file to about 133 MiB before JSON envelope overhead.  Override this with `A2A_MAX_CONTENT_LENGTH_BYTES` if the upload cap changes.  Files are passed as:
 
 ```json
 {

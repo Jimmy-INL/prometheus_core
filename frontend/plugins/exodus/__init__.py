@@ -3,8 +3,6 @@
 from pathlib import Path
 from typing import Any, Optional
 
-import chainlit as cl
-
 MIMETYPES = ["application/x-exodus", "application/exodus"]
 UPLOAD_EXTENSIONS = [".exo", ".e"]
 COMPONENT_NAME = "ExodusViewer"

@@ -11,6 +11,7 @@ import pytest
 if "chainlit" not in sys.modules:
     chainlit = types.ModuleType("chainlit")
     chainlit.Message = object
+    chainlit.File = object
     chainlit.Pdf = object
     chainlit.CustomElement = object
     chainlit.AskElementMessage = object
@@ -47,6 +48,27 @@ def test_guess_upload_mime_normalizes_step_extensions() -> None:
     assert handler._guess_upload_mime("bracket.stp") == "model/step"
     assert handler._guess_upload_mime("bracket.step") == "model/step"
     assert handler._guess_upload_mime("bracket.stp", "application/octet-stream") == "model/step"
+
+
+def test_upload_limit_is_100_mb() -> None:
+    assert handler.MAX_UPLOAD_BYTES == 100 * 1024 * 1024
+    assert handler.MAX_UPLOAD_MB == 100
+
+
+@pytest.mark.asyncio
+async def test_capture_uploaded_file_rejects_files_over_limit(monkeypatch, tmp_path):
+    sent_messages = _install_message_spy(monkeypatch)
+    monkeypatch.setattr(handler, "MAX_UPLOAD_BYTES", 4)
+    monkeypatch.setattr(handler, "MAX_UPLOAD_MB", 100)
+
+    upload_path = tmp_path / "large.step"
+    upload_path.write_bytes(b"12345")
+    element = SimpleNamespace(name="large.step", path=str(upload_path), mime="model/step")
+
+    result = await handler._capture_uploaded_file(element, upload_path)
+
+    assert result is None
+    assert sent_messages[0].content == "**large.step** exceeds the 100 MB upload limit and will not be stored."
 
 
 class DummyUserSession:
@@ -89,6 +111,18 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
     monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", find_plugin)
     monkeypatch.setattr(handler._plugins, "process_upload", process_upload)
 
+    created_files = []
+
+    class DummyFile:
+        def __init__(self, *, name: str, path: str, display: str, mime: str = ""):
+            self.name = name
+            self.path = path
+            self.display = display
+            self.mime = mime
+            created_files.append(self)
+
+    monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
+
     response = ConversationResponse(
         conversation_id="conv-123",
         status="completed",
@@ -112,7 +146,10 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
     process_upload.assert_awaited_once_with(upload_path)
     assert sent_messages[0].content == "Processing **model.ifc**…"
     assert sent_messages[1].content == "Upload rendered"
-    assert sent_messages[1].elements == ["viewer"]
+    assert sent_messages[1].elements == ["viewer", created_files[0]]
+    assert created_files[0].name == "model.ifc"
+    assert created_files[0].path == str(upload_path)
+    assert created_files[0].mime == "application/ifc"
     client.send.assert_awaited_once()
     kwargs = client.send.await_args.kwargs
     assert kwargs["query"] == "Please process the uploaded file(s)."
@@ -153,6 +190,7 @@ async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch
     monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", MagicMock(return_value=None))
 
     created_pdfs = []
+    created_files = []
 
     class DummyPdf:
         def __init__(self, name, display, path):
@@ -161,7 +199,16 @@ async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch
             self.path = path
             created_pdfs.append(self)
 
+    class DummyFile:
+        def __init__(self, *, name: str, path: str, display: str, mime: str = ""):
+            self.name = name
+            self.path = path
+            self.display = display
+            self.mime = mime
+            created_files.append(self)
+
     monkeypatch.setattr(handler.cl, "Pdf", DummyPdf)
+    monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
 
     message = SimpleNamespace(
         content="",
@@ -174,8 +221,11 @@ async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch
     assert created_pdfs[0].name == "report.pdf"
     assert created_pdfs[0].display == "inline"
     assert created_pdfs[0].path == "/tmp/report.pdf"
+    assert created_files[0].name == "report.pdf"
+    assert created_files[0].path == "/tmp/report.pdf"
+    assert created_files[0].mime == "application/pdf"
     assert sent_messages[0].content == "**PDF loaded:** report.pdf"
-    assert sent_messages[0].elements == [created_pdfs[0]]
+    assert sent_messages[0].elements == [created_pdfs[0], created_files[0]]
 
 
 @pytest.mark.asyncio

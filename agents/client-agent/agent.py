@@ -6,6 +6,7 @@ stable executable/import surface for Docker, tests, and external callers that
 import ``agent`` directly.
 """
 import sys
+import os
 from typing import Any, Dict, Optional
 
 # Add shared module to path for the container layout.
@@ -48,6 +49,7 @@ AGENT_PORT = _runtime.AGENT_PORT
 MODEL_NAME = _runtime.MODEL_NAME
 DISCOVERY_REFRESH_SECONDS = _runtime.DISCOVERY_REFRESH_SECONDS
 ENABLE_WORKFLOW_LIBRARY = _runtime.ENABLE_WORKFLOW_LIBRARY
+A2A_MAX_CONTENT_LENGTH_BYTES = 150 * 1024 * 1024  # Covers one 100 MiB upload after base64 expansion.
 _tools_cache = _runtime._tools_cache
 _refresh_task = _runtime._refresh_task
 _refresh_lock = _runtime._refresh_lock
@@ -338,7 +340,50 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
     return result
 
 
+def _a2a_max_content_length_bytes() -> int:
+    raw_value = os.getenv("A2A_MAX_CONTENT_LENGTH_BYTES", "").strip()
+    if not raw_value:
+        return A2A_MAX_CONTENT_LENGTH_BYTES
+    try:
+        value = int(raw_value)
+    except ValueError:
+        print(
+            f"[WARN] Invalid A2A_MAX_CONTENT_LENGTH_BYTES={raw_value!r}; "
+            f"using {A2A_MAX_CONTENT_LENGTH_BYTES}"
+        )
+        return A2A_MAX_CONTENT_LENGTH_BYTES
+    return value if value > 0 else A2A_MAX_CONTENT_LENGTH_BYTES
+
+
+def _install_a2a_content_length_override() -> None:
+    """Raise the A2A JSON-RPC body limit for base64-encoded file uploads."""
+    try:
+        run_method = getattr(PrometheusAgent, "run", None)
+        run_globals = getattr(run_method, "__globals__", {})
+        app_cls = run_globals.get("A2AStarletteApplication")
+        if app_cls is None or getattr(app_cls, "_prometheus_upload_limit_wrapper", False):
+            return
+
+        max_content_length = _a2a_max_content_length_bytes()
+
+        class UploadAwareA2AStarletteApplication(app_cls):
+            _prometheus_upload_limit_wrapper = True
+
+            def __init__(self, *args, **kwargs):
+                kwargs.setdefault("max_content_length", max_content_length)
+                super().__init__(*args, **kwargs)
+
+        run_globals["A2AStarletteApplication"] = UploadAwareA2AStarletteApplication
+        print(f"A2A JSON-RPC max content length set to {max_content_length} bytes")
+    except Exception as exc:
+        print(f"[WARN] Failed to raise A2A content length limit: {exc}")
+
+
 class OrchestratorAgent(_service.OrchestratorAgent):
+    def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
+        _install_a2a_content_length_override()
+        return super().run(host=host, port=port)
+
     async def _on_startup(self) -> None:
         _sync_compat()
         await super()._on_startup()

@@ -113,6 +113,9 @@ if "prometheus_api.agent" not in sys.modules:
         def registry_url() -> str:
             return "http://litellm:4000"
 
+        def run(self, *args, **kwargs):
+            return None
+
         def list_artifact_references(self, *args, **kwargs):
             return []
 
@@ -128,6 +131,39 @@ if "prometheus_api.agent" not in sys.modules:
     sys.modules["prometheus_api.agent"] = agent_api_module
 
 import agent as agent_module
+
+
+def test_a2a_content_length_default_covers_100_mib_upload(monkeypatch) -> None:
+    monkeypatch.delenv("A2A_MAX_CONTENT_LENGTH_BYTES", raising=False)
+
+    limit = agent_module._a2a_max_content_length_bytes()
+
+    assert limit == 150 * 1024 * 1024
+    assert limit > (100 * 1024 * 1024 * 4) // 3
+
+
+def test_a2a_content_length_override_wraps_a2a_application(monkeypatch) -> None:
+    class DummyA2AStarletteApplication:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    monkeypatch.setenv("A2A_MAX_CONTENT_LENGTH_BYTES", "12345")
+    run_globals = agent_module.PrometheusAgent.run.__globals__
+    monkeypatch.setitem(run_globals, "A2AStarletteApplication", DummyA2AStarletteApplication)
+
+    agent_module._install_a2a_content_length_override()
+    wrapped_cls = run_globals["A2AStarletteApplication"]
+
+    app = wrapped_cls(agent_card="card", http_handler="handler")
+    explicit_app = wrapped_cls(
+        agent_card="card",
+        http_handler="handler",
+        max_content_length=99,
+    )
+
+    assert app.kwargs["max_content_length"] == 12345
+    assert explicit_app.kwargs["max_content_length"] == 99
 
 
 def test_execute_current_plan_routes_templates_through_workflow_engine(monkeypatch) -> None:

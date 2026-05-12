@@ -189,6 +189,7 @@ function getStyles(isDark) {
         shadow: "0 4px 24px rgba(0,0,0,0.3)",
         dropdownArrow: "%23888",
         vtkBg: [0.08, 0.08, 0.12],
+        meshEdge: [0.72, 0.76, 0.84],
       }
     : {
         // Light theme colors
@@ -218,6 +219,7 @@ function getStyles(isDark) {
         shadow: "0 4px 24px rgba(0,0,0,0.08)",
         dropdownArrow: "%23666",
         vtkBg: [0.91, 0.91, 0.94],
+        meshEdge: [0.08, 0.1, 0.14],
       };
 
   return {
@@ -575,9 +577,15 @@ export default function ExodusViewer() {
   useEffect(() => {
     if (vtkState.current?.renderer) {
       vtkState.current.renderer.setBackground(styles.colors.vtkBg);
+      if (vtkState.current.actor) {
+        const actorProperty = vtkState.current.actor.getProperty();
+        if (actorProperty.setEdgeColor) {
+          actorProperty.setEdgeColor(...styles.colors.meshEdge);
+        }
+      }
       vtkState.current.renderWindow.render();
     }
-  }, [isDark, styles.colors.vtkBg]);
+  }, [isDark, styles.colors.vtkBg, styles.colors.meshEdge]);
 
   // Fullscreen handling
   const toggleFullscreen = useCallback(() => {
@@ -647,8 +655,18 @@ export default function ExodusViewer() {
 
       const actor = vtk.Rendering.Core.vtkActor.newInstance();
       actor.setMapper(mapper);
-      actor.getProperty().setEdgeVisibility(false);
-      actor.getProperty().setLighting(true);
+      const actorProperty = actor.getProperty();
+      actorProperty.setEdgeVisibility(true);
+      if (actorProperty.setEdgeColor) {
+        actorProperty.setEdgeColor(...styles.colors.meshEdge);
+      }
+      if (actorProperty.setLineWidth) {
+        actorProperty.setLineWidth(1);
+      }
+      actorProperty.setLighting(true);
+      if (actorProperty.setInterpolationToFlat) {
+        actorProperty.setInterpolationToFlat();
+      }
 
       const picker = vtk.Rendering.Core.vtkCellPicker.newInstance();
       picker.setPickFromList(1);
