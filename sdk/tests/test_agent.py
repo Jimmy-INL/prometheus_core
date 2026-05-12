@@ -17,6 +17,7 @@ from prometheus_api.agent import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
 )
+from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
 from a2a.types import Artifact, DataPart, TextPart
 
 
@@ -251,6 +252,14 @@ class TestPrometheusAgent:
 
         assert agent.agent_card_path == "/custom/path/card.json"
 
+    def test_registry_url_defaults_and_strips_env(self, monkeypatch):
+        """Test registry URL helper centralizes env lookup and the default value."""
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        assert PrometheusAgent.registry_url() == "http://litellm:4000"
+
+        monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
+        assert PrometheusAgent.registry_url() == "http://registry:4000"
+
     def test_get_raw_agent_card_returns_loaded_dict(self):
         agent = PrometheusAgent(agent_name="MyAgent")
         agent.agent_card_dict = {
@@ -264,6 +273,19 @@ class TestPrometheusAgent:
         }
 
         assert agent.get_raw_agent_card()["skills"][0]["inputSchema"]["required"] == ["material_id"]
+
+    def test_llm_client_helper_inherits_agent_name_and_context_key(self):
+        agent = PrometheusAgent(agent_name="Trace Agent")
+        context = MagicMock(spec=RequestContext)
+        part = MagicMock()
+        part.root = DataPart(data={"provided_inputs": {"llm_api_key": "structured-key"}})
+        context.message.parts = [part]
+
+        client = agent.llm_client(context, config=LLMConfig(proxy_url="http://proxy"))
+
+        assert isinstance(client, AsyncLLMClient)
+        assert client.config.app_name == "Trace Agent"
+        assert client.config.api_key == "structured-key"
 
     def test_default_lifespan_is_a_no_op(self):
         agent = PrometheusAgent(agent_name="MyAgent")

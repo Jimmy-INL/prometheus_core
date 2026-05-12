@@ -1,6 +1,7 @@
 # Environment Variable Setup Guide
 
-This guide covers environment configuration for both the StorageClient and PrometheusAgent components.
+This guide covers environment configuration for the StorageClient, PrometheusAgent, and
+LLMClient components.
 
 ## Quick Setup
 
@@ -25,6 +26,11 @@ config = ConnectionConfig.from_env()
 # PrometheusAgent
 from prometheus_api.agent import PrometheusAgent
 # Reads env vars automatically via run()
+
+# LLMClient
+from prometheus_api.llm_client import LLMClient
+# Reads LLM_* and REGISTRY_URL automatically
+llm = LLMClient()
 ```
 
 ---
@@ -66,7 +72,7 @@ environment:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `REGISTRY_URL` | Registry service URL for auto-registration | - | No |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | - | No |
 
 ### Example Agent .env
 
@@ -80,7 +86,7 @@ AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
 
 # Registry (optional)
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
 ```
 
 ### Agent Usage
@@ -100,6 +106,135 @@ if __name__ == "__main__":
     agent = MyAgent(agent_name="My Agent")
     agent.run()  # Reads AGENT_* env vars automatically
 ```
+
+---
+
+## LLMClient Configuration
+
+`LLMClient` and `AsyncLLMClient` load `LLMConfig.from_env()` automatically unless you pass
+an explicit config.
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for the primary path. Aliases are discovered from `/v1/models`, and calls are sent through `/v1/chat/completions` or `/v1/embeddings`. | - | Recommended |
+| `LLM_CONFIG_FILE` | LiteLLM YAML fallback config. Used only when the proxy cannot be reached. | - | No |
+| `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` and `llm.chat(..., model=None)`. | `default` | No |
+| `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |
+| `ENABLE_MLFLOW_TRACING` | Enable optional MLflow tracing for sync and async LLM chat calls. | `false` | No |
+
+### Example LLMClient .env
+
+```bash
+REGISTRY_URL=http://litellm:4000
+LLM_CONFIG_FILE=./llm_config.yaml
+LLM_DEFAULT_MODEL=default
+LLM_DEBUG_LOG_MESSAGES=false
+ENABLE_MLFLOW_TRACING=false
+```
+
+### Optional MLflow Tracing
+
+Set `ENABLE_MLFLOW_TRACING=true` to trace `LLMClient.chat` and
+`AsyncLLMClient.chat` calls. MLflow is imported only when tracing is enabled.
+Install `mlflow` in the runtime environment before enabling this setting.
+Configure the tracking server with standard MLflow variables:
+
+```bash
+ENABLE_MLFLOW_TRACING=true
+MLFLOW_TRACKING_URI=https://mlflow.example.org
+MLFLOW_EXPERIMENT_NAME=prometheus-llm
+AM_SC_API_KEY=your-amsc-api-key
+```
+
+When `AM_SC_API_KEY` is present, the client injects it into MLflow REST calls as
+`X-Api-Key`. If it is absent, the client logs a warning and continues.
+
+Each chat trace includes protected `app_name`, `base_url`, and `model` tags.
+Agents should use `self.llm_client(context)` so `app_name` inherits the agent
+name. Additional tags can be set when constructing `LLMConfig`, creating the
+client, or calling `chat(..., trace_tags={...})`; protected tags always win.
+
+Create the local fallback YAML from the tracked example:
+
+```bash
+cp llm_config.example.yaml llm_config.yaml
+```
+
+`llm_config.yaml` is gitignored so developers can edit provider models for their own
+machine without committing local configuration.
+
+### Fallback LiteLLM YAML
+
+The repository includes a fully commented local development template at
+`llm_config.example.yaml`. The minimal shape is:
+
+```yaml
+model_list:
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+      # Optional: override the fallback provider endpoint
+      # api_base: http://localhost:8000/v1
+
+  - model_name: small
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+      # api_base: http://localhost:8000/v1
+
+  - model_name: large
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+      # api_base: https://api.anthropic.com
+
+  - model_name: embedding
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY
+      # api_base: http://localhost:8000/v1
+```
+
+`api_base` is optional and applies only to fallback SDK calls made from
+`LLM_CONFIG_FILE`. It is useful for local OpenAI-compatible servers or private
+provider gateways. Proxy calls continue to use `REGISTRY_URL`.
+
+### LLMClient Usage
+
+```python
+from prometheus_api.llm_client import LLMClient
+
+llm = LLMClient()
+response = llm("Summarize this result.")
+print(response.text)
+
+large_response = llm.large([
+    {"role": "system", "content": "You are an engineering analyst."},
+    {"role": "user", "content": "Find possible failure modes in this trend."},
+])
+
+embedding_response = llm.embedding("bearing temperature rising")
+vector = embedding_response.embeddings[0]
+```
+
+Agents should prefer structured A2A input for transient LLM keys:
+
+```python
+from prometheus_api.agent import PrometheusAgent
+
+class AnalysisAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        async with self.llm_client(context) as llm:
+            response = await llm.medium(params["query"])
+        return {"status": "completed", "answer": response.text}
+```
+
+`from_a2a_context()` reads `llm_api_key` only from structured `DataPart` /
+`provided_inputs`; it does not parse keys out of visible text JSON payloads.
+
+See `examples/llm_client_usage.py` for sync chat and embedding usage, and
+`examples/llm_agent_usage.py` for A2A agent usage with `AsyncLLMClient`.
 
 ---
 
@@ -179,7 +314,17 @@ AGENT_PORT=8000
 # EXTERNAL_AGENT_URL=http://my-host:9002  # only needed for port-mapped / cross-host deployments
 AGENT_SECRET=your-shared-secret-here
 AGENT_SECRET_REQUIRED=true
-REGISTRY_URL=http://registry:8000
+REGISTRY_URL=http://litellm:4000
+
+# ===== LLMClient Configuration =====
+# REGISTRY_URL is also used by LLMClient for chat, vision, and embedding calls.
+LLM_CONFIG_FILE=./llm_config.yaml
+LLM_DEFAULT_MODEL=default
+LLM_DEBUG_LOG_MESSAGES=false
+ENABLE_MLFLOW_TRACING=false
+# MLFLOW_TRACKING_URI=https://mlflow.example.org
+# MLFLOW_EXPERIMENT_NAME=prometheus-llm
+# AM_SC_API_KEY=your-amsc-api-key
 
 # ===== StorageClient Configuration =====
 DEEPLYNX_KEY=your-api-key

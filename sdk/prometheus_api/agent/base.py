@@ -386,6 +386,11 @@ class PrometheusAgent:
         ```
     """
 
+    @staticmethod
+    def registry_url() -> str:
+        """Return the configured LiteLLM registry URL with the agent default applied."""
+        return (os.getenv("REGISTRY_URL") or "http://litellm:4000").strip()
+
     def __init__(self, agent_name: str = "Agent", agent_card_path: Optional[str] = None):
         """
         Initialize the Prometheus agent.
@@ -435,6 +440,16 @@ class PrometheusAgent:
             else:
                 provided.update(data)
         return provided
+
+    def llm_client(self, context: RequestContext, **kwargs: Any) -> Any:
+        """Create an AsyncLLMClient that inherits this agent's name for tracing."""
+        from ..llm_client import AsyncLLMClient
+
+        return AsyncLLMClient.from_a2a_context(
+            context,
+            app_name=self.agent_name,
+            **kwargs,
+        )
 
     @staticmethod
     def pending_hint(
@@ -983,7 +998,9 @@ class PrometheusAgent:
         import socket
 
         port = os.getenv("AGENT_PORT", "8000")
-        agent_card_dict["url"] = os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
+        agent_card_dict["url"] = (
+            os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
+        )
 
         # Store the raw dict for registry registration
         self.agent_card_dict = agent_card_dict
@@ -1031,9 +1048,9 @@ class PrometheusAgent:
         this agent and expose the full raw agent card for discovery and
         routing metadata.
         """
-        litellm_url = os.getenv("LITELLM_URL")
-        if not litellm_url:
-            logger.info("LITELLM_URL not set - skipping agent registration")
+        registry_url = self.registry_url()
+        if not registry_url:
+            logger.info("REGISTRY_URL not set - skipping agent registration")
             return
 
         master_key = os.getenv("LITELLM_MASTER_KEY", "")
@@ -1052,11 +1069,11 @@ class PrometheusAgent:
             with httpx.Client(timeout=15.0, headers=headers) as client:
                 # Delete any existing registration so re-registrations always
                 # pick up the latest agent card (LiteLLM returns 400 on duplicates).
-                existing = client.get(f"{litellm_url}/v1/agents")
+                existing = client.get(f"{registry_url}/v1/agents")
                 if existing.status_code == 200:
                     for entry in existing.json() if isinstance(existing.json(), list) else []:
                         if entry.get("agent_name") == agent_name:
-                            client.delete(f"{litellm_url}/v1/agents/{entry['agent_id']}")
+                            client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
                             logger.debug(f"Removed stale registration for '{agent_name}'")
                             break
                 registration_payload = {
@@ -1070,11 +1087,11 @@ class PrometheusAgent:
                     }
                 logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
                 response = client.post(
-                    f"{litellm_url}/v1/agents",
+                    f"{registry_url}/v1/agents",
                     json=registration_payload,
                 )
                 response.raise_for_status()
-                logger.info(f"Registered '{agent_name}' with LiteLLM at {litellm_url}")
+                logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
         except Exception as e:
             logger.error(f"Failed to register with LiteLLM: {e}")
             logger.warning("Continuing without registration")
@@ -1750,18 +1767,6 @@ class PrometheusAgent:
         # Start HTTP server
         if port is None:
             port = int(os.getenv("AGENT_PORT", "8000"))
-
-        # Configure tracing if tracing is enabled
-        tracing = os.getenv("ENABLE_MLFLOW_TRACING", "False").lower() in ("true", "1", "yes")
-        if tracing:
-            logger.info("MLFlow Tracing enabled")
-            from prometheus_api.agent.mlflow_tracing import (
-                MLFlowTracingMiddleware,
-                A2APayloadTracingMiddleware,
-            )
-
-            app.add_middleware(A2APayloadTracingMiddleware, max_body_bytes=8192)
-            app.add_middleware(MLFlowTracingMiddleware, agent_name=self.agent_name)
 
         logger.info(f"Starting HTTP server on {host}:{port}")
         uvicorn.run(app, host=host, port=port)
