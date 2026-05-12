@@ -30,6 +30,9 @@ export default defineConfig({
       "/login": {
         target: "http://localhost:8500",
         changeOrigin: true,
+        bypass(req) {
+          if (req.method === "GET") return req.url;
+        },
       },
       "/logout": {
         target: "http://localhost:8500",
