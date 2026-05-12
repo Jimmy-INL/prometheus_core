@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
 import { SettingsPanel } from "./SettingsPanel";
 import { Header } from "./Header";
@@ -91,18 +93,29 @@ export function Chat({ onLogout }: Props) {
       <Header onLogout={onLogout} onToggleSettings={() => setRightOpen((v) => !v)} />
       <div className="flex flex-1 overflow-hidden">
         <LeftPanel isOpen={leftOpen} onToggle={() => setLeftOpen((v) => !v)} />
-        <main className="flex flex-col flex-1 w-full max-w-3xl mx-auto overflow-hidden">
+        <main className="flex flex-col flex-1 w-full max-w-4xl mx-auto overflow-hidden">
           {flat.length === 0 ? (
             <WelcomeScreen onSelect={(text) => handleSend(text)} />
           ) : (
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
               {flat.map((m) => (
                 <div key={m.id} className={`flex ${m.type === "user_message" ? "justify-end" : "justify-start"}`}>
-                  <span className={`px-4 py-2 rounded-xl max-w-xl text-sm whitespace-pre-wrap ${m.type === "user_message" ? "bg-base-300 text-base-content" : "bg-base-200 text-base-content"}`}>
-                    {m.output}
-                  </span>
+                  {m.type === "user_message" ? (
+                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                      {m.output}
+                    </span>
+                  ) : (
+                    <div className="w-full text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_span]:text-[length:inherit] [&_li]:text-[length:inherit] [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-base-300 [&_pre]:bg-base-300 [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-2 [&_pre]:overflow-x-auto [&_a]:underline">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.output}</ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               ))}
+              {awaitingResponse && lastMessage?.type === "user_message" && (
+                <div className="flex justify-start" aria-live="polite" aria-label="Assistant is thinking">
+                  <span className="loading loading-dots loading-md text-base-content" />
+                </div>
+              )}
             </div>
           )}
           <div className="px-4 pt-3 pb-2">

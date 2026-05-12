@@ -13,7 +13,7 @@
   font-family: "Roboto", sans-serif;
 
   /* Define colors for the light theme */
-  --color-base-100: oklch(97% 0.02 210);
+  --color-base-100: oklch(98% 0.003 247.858);
   --color-base-200: oklch(93% 0.01 240);
   --color-base-300: oklch(75% 0.05 210);
   --color-base-content: oklch(5% 0.042 265.755);
