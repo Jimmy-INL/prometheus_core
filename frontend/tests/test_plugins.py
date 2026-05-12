@@ -21,3 +21,22 @@ def test_find_plugin_for_typed_thermal_analysis_json_artifact() -> None:
 
     assert plugin is not None
     assert plugin.COMPONENT_NAME == "ThermalAnalysisViewer"
+
+
+def test_find_plugin_for_upload_uses_mime_type_for_temp_paths() -> None:
+    plugin = plugins.find_plugin_for_upload(
+        Path("/tmp/chainlit-upload"),
+        mime_type="application/x-exodus",
+    )
+
+    assert plugin is not None
+    assert plugin.COMPONENT_NAME == "ExodusViewer"
+
+
+def test_find_plugin_for_upload_does_not_dispatch_generic_mime_by_filename() -> None:
+    plugin = plugins.find_plugin_for_upload(
+        Path("/tmp/cahnhilliard_out.e"),
+        mime_type="application/octet-stream",
+    )
+
+    assert plugin is None

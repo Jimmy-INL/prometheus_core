@@ -142,8 +142,12 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
 
     await handler.message_handler(message)
 
-    find_plugin.assert_called_once_with(upload_path)
-    process_upload.assert_awaited_once_with(upload_path)
+    find_plugin.assert_called_once_with(upload_path, mime_type="application/ifc")
+    process_upload.assert_awaited_once_with(
+        upload_path,
+        mime_type="application/ifc",
+        display_name="model.ifc",
+    )
     assert sent_messages[0].content == "Processing **model.ifc**…"
     assert sent_messages[1].content == "Upload rendered"
     assert sent_messages[1].elements == ["viewer", created_files[0]]
@@ -182,6 +186,55 @@ async def test_message_handler_plugin_upload_failure_is_reported(monkeypatch):
 
     assert sent_messages[0].content == "Processing **model.ifc**…"
     assert "Failed to process **model.ifc**: boom" in sent_messages[1].content
+
+
+@pytest.mark.asyncio
+async def test_message_handler_plugin_upload_uses_detected_mime_for_suffixless_path(monkeypatch, tmp_path):
+    _install_message_spy(monkeypatch)
+    session = DummyUserSession(initial={"artifacts": []})
+    monkeypatch.setattr(handler.cl, "user_session", session)
+    monkeypatch.setattr(handler.cl, "Step", DummyStep)
+    monkeypatch.setattr(handler.uuid, "uuid4", lambda: "conv-123")
+
+    plugin = object()
+    find_plugin = MagicMock(return_value=plugin)
+    process_upload = AsyncMock(return_value=("Upload rendered", ["viewer"]))
+    detect_upload_mime = AsyncMock(return_value="application/x-exodus")
+    monkeypatch.setattr(handler._plugins, "detect_upload_mime", detect_upload_mime)
+    monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", find_plugin)
+    monkeypatch.setattr(handler._plugins, "process_upload", process_upload)
+
+    class DummyFile:
+        def __init__(self, *, name: str, path: str, display: str, mime: str = ""):
+            self.name = name
+            self.path = path
+            self.display = display
+            self.mime = mime
+
+    monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
+
+    response = ConversationResponse(conversation_id="conv-123", status="completed", message="ok")
+    client = SimpleNamespace(send=AsyncMock(return_value=response))
+    monkeypatch.setattr(handler, "_get_a2a_client", lambda: client)
+    monkeypatch.setattr(handler, "_handle_response", AsyncMock())
+
+    upload_path = tmp_path / "chainlit-upload"
+    upload_path.write_bytes(b"exodus data")
+
+    await handler.message_handler(
+        SimpleNamespace(
+            content="",
+            elements=[SimpleNamespace(name="cahnhilliard_out.e", path=str(upload_path), mime="application/octet-stream")],
+        )
+    )
+
+    detect_upload_mime.assert_awaited_once_with(upload_path, "application/octet-stream")
+    find_plugin.assert_called_once_with(upload_path, mime_type="application/x-exodus")
+    process_upload.assert_awaited_once_with(
+        upload_path,
+        mime_type="application/x-exodus",
+        display_name="cahnhilliard_out.e",
+    )
 
 
 @pytest.mark.asyncio

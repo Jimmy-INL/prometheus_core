@@ -4,7 +4,7 @@ Auto-discovers plugin subdirectories, copies each plugin's JSX component to
 public/elements/ (where Chainlit serves custom elements), and provides dispatch
 functions for artifact rendering and file upload handling.
 
-Plugin contract — each plugins/<name>/__init__.py must provide:
+Plugin contract - each plugins/<name>/__init__.py must provide:
     MIMETYPES: list[str]        MIME types this plugin handles
     JSON_TYPES: list[str]       artifact.json_type values this plugin handles
     COMPONENT_NAME: str         name of the JSX CustomElement component
@@ -13,12 +13,15 @@ Plugin contract — each plugins/<name>/__init__.py must provide:
         Render an agent-produced artifact. Return None to fall through.
 
 Optional:
-    UPLOAD_EXTENSIONS: list[str]
-    async def process_upload(file_path: Path) -> tuple[str, list[cl.Element]]
+    UPLOAD_EXTENSIONS: list[str]  Legacy metadata for UI allowlists, not dispatch.
+    async def detect_upload_mime(file_path: Path, mime_type: str) -> str | None
+        Return a plugin MIME type after inspecting generic binary uploads.
+    async def process_upload(file_path: Path, ...) -> tuple[str, list[cl.Element]]
         Handle a user-uploaded file. Returns (description_markdown, elements).
 """
 
 import importlib
+import inspect
 import logging
 import shutil
 from pathlib import Path
@@ -31,7 +34,9 @@ ELEMENTS_DIR = PLUGINS_DIR.parent / "public" / "elements"
 
 _mimetype_registry: dict[str, Any] = {}
 _json_type_registry: dict[str, Any] = {}
-_upload_extension_registry: dict[str, Any] = {}
+_upload_detectors: list[Any] = []
+
+GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
 
 def _install_jsx(plugin_dir: Path) -> None:
@@ -58,8 +63,8 @@ def _load_plugins() -> None:
             _mimetype_registry[mime.lower()] = module
         for json_type in getattr(module, "JSON_TYPES", []):
             _json_type_registry[json_type] = module
-        for ext in getattr(module, "UPLOAD_EXTENSIONS", []):
-            _upload_extension_registry[ext.lower()] = module
+        if hasattr(module, "detect_upload_mime"):
+            _upload_detectors.append(module)
 
         _install_jsx(plugin_dir)
         logger.info("Loaded visualization plugin: %s", plugin_dir.name)
@@ -78,9 +83,40 @@ def find_plugin_for_artifact(artifact: dict) -> Any | None:
     return None
 
 
-def find_plugin_for_upload(file_path: Path) -> Any | None:
-    """Return the plugin module that handles a given uploaded file, or None."""
-    return _upload_extension_registry.get(file_path.suffix.lower())
+def normalize_mime_type(mime_type: str | None) -> str:
+    """Normalize a MIME value for registry lookup."""
+    return (mime_type or "").split(";", 1)[0].strip().lower()
+
+
+async def detect_upload_mime(file_path: Path, mime_type: str | None = None) -> str:
+    """Return the best MIME type available for an uploaded file.
+
+    Plugin dispatch remains MIME based. Detectors are only consulted when the
+    browser provided a generic binary MIME type.
+    """
+    normalized = normalize_mime_type(mime_type)
+    if normalized not in GENERIC_UPLOAD_MIMETYPES:
+        return normalized
+
+    for plugin in _upload_detectors:
+        detector = plugin.detect_upload_mime
+        try:
+            detected = detector(file_path, normalized)
+            if inspect.isawaitable(detected):
+                detected = await detected
+        except Exception as exc:
+            logger.debug("Upload MIME detector failed for %s: %s", plugin.__name__, exc)
+            continue
+        detected = normalize_mime_type(detected)
+        if detected and detected in _mimetype_registry:
+            return detected
+
+    return normalized or "application/octet-stream"
+
+
+def find_plugin_for_upload(file_path: Path, *, mime_type: str | None = None) -> Any | None:
+    """Return the plugin module that handles an uploaded MIME type, or None."""
+    return _mimetype_registry.get(normalize_mime_type(mime_type))
 
 
 async def render_artifact(artifact: dict):
@@ -91,13 +127,25 @@ async def render_artifact(artifact: dict):
     return None
 
 
-async def process_upload(file_path: Path):
+async def process_upload(
+    file_path: Path,
+    *,
+    mime_type: str | None = None,
+    display_name: str | None = None,
+):
     """Process a file upload using the appropriate plugin.
     Returns (description_text, elements_list), or None if no plugin handles it.
     """
-    plugin = find_plugin_for_upload(file_path)
+    plugin = find_plugin_for_upload(file_path, mime_type=mime_type)
     if plugin and hasattr(plugin, "process_upload"):
-        return await plugin.process_upload(file_path)
+        process = plugin.process_upload
+        params = inspect.signature(process).parameters
+        kwargs: dict[str, Any] = {}
+        if "mime_type" in params:
+            kwargs["mime_type"] = normalize_mime_type(mime_type)
+        if "display_name" in params:
+            kwargs["display_name"] = display_name
+        return await process(file_path, **kwargs)
     return None
 
 

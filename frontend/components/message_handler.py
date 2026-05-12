@@ -35,26 +35,49 @@ CAD_FILE_MIMETYPES = {
     "application/step+zip",
 }
 
+GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
-def _upload_download_element(element: Any, file_path: Path) -> Any:
+
+def _normalize_mime_type(mime_type: Optional[str]) -> str:
+    return (mime_type or "").split(";", 1)[0].strip().lower()
+
+
+def _upload_download_element(element: Any, file_path: Path, mime_type: str = "") -> Any:
     """Create a downloadable Chainlit file element for an uploaded file."""
     return cl.File(
         name=element.name,
         path=str(file_path),
         display="inline",
-        mime=_guess_upload_mime(element.name, getattr(element, "mime", None)),
+        mime=mime_type or _guess_upload_mime(element.name, getattr(element, "mime", None)),
     )
 
 
 def _guess_upload_mime(filename: str, element_mime: Optional[str] = None) -> str:
     """Return a stable MIME type for uploaded files, including CAD extensions."""
+    mime = _normalize_mime_type(element_mime)
+    if mime and mime not in GENERIC_UPLOAD_MIMETYPES:
+        return mime
+
     suffix = Path(filename).suffix.lower()
     if suffix in CAD_EXTENSION_MIMETYPES:
         return CAD_EXTENSION_MIMETYPES[suffix]
-    return element_mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return mimetypes.guess_type(filename)[0] or mime or "application/octet-stream"
 
 
-async def _capture_uploaded_file(element: Any, file_path: Path) -> Optional[Dict[str, Any]]:
+async def _resolve_upload_mime(element: Any, file_path: Path) -> str:
+    """Resolve the MIME used for storage and plugin dispatch."""
+    element_mime = _normalize_mime_type(getattr(element, "mime", None))
+    detected_mime = await _plugins.detect_upload_mime(file_path, element_mime)
+    if detected_mime and detected_mime not in GENERIC_UPLOAD_MIMETYPES:
+        return detected_mime
+    return _guess_upload_mime(element.name, element_mime)
+
+
+async def _capture_uploaded_file(
+    element: Any,
+    file_path: Path,
+    mime_type: str = "",
+) -> Optional[Dict[str, Any]]:
     """Read one Chainlit upload into the payload shape expected by the agent."""
     try:
         size = file_path.stat().st_size
@@ -64,7 +87,7 @@ async def _capture_uploaded_file(element: Any, file_path: Path) -> Optional[Dict
             ).send()
             return None
 
-        mime = _guess_upload_mime(element.name, getattr(element, "mime", None))
+        mime = mime_type or await _resolve_upload_mime(element, file_path)
         content_b64 = base64.b64encode(file_path.read_bytes()).decode()
         return {
             "name": element.name,
@@ -111,25 +134,31 @@ async def message_handler(message: cl.Message):
                 continue
 
             file_path = Path(element.path)
+            display_name = element.name
+            upload_mime = await _resolve_upload_mime(element, file_path)
 
-            # Visualization plugins get first pick; they handle the element fully
-            plugin = _plugins.find_plugin_for_upload(file_path)
+            # Visualization plugins get first pick based on the resolved MIME type.
+            plugin = _plugins.find_plugin_for_upload(file_path, mime_type=upload_mime)
             if plugin is not None:
                 try:
                     await cl.Message(content=f"Processing **{element.name}**…").send()
-                    description, viewer_elements = await _plugins.process_upload(file_path)
+                    description, viewer_elements = await _plugins.process_upload(
+                        file_path,
+                        mime_type=upload_mime,
+                        display_name=display_name,
+                    )
                     elements = list(viewer_elements or [])
-                    elements.append(_upload_download_element(element, file_path))
+                    elements.append(_upload_download_element(element, file_path, upload_mime))
                     await cl.Message(content=description, elements=elements).send()
                 except Exception as e:
                     await cl.Message(
                         content=f"Failed to process **{element.name}**: {e}"
                     ).send()
-            elif file_path.suffix.lower() == ".pdf":
+            elif upload_mime == "application/pdf":
                 # PDF: render inline as a Chainlit native element
                 try:
                     pdf_el = cl.Pdf(name=element.name, display="inline", path=element.path)
-                    download_el = _upload_download_element(element, file_path)
+                    download_el = _upload_download_element(element, file_path, upload_mime)
                     await cl.Message(
                         content=f"**PDF loaded:** {element.name}", elements=[pdf_el, download_el]
                     ).send()
@@ -138,7 +167,7 @@ async def message_handler(message: cl.Message):
 
             # Capture every readable file for DeepLynx storage via the agent, including
             # files already rendered locally by visualization plugins.
-            uploaded = await _capture_uploaded_file(element, file_path)
+            uploaded = await _capture_uploaded_file(element, file_path, upload_mime)
             if uploaded is not None:
                 uploaded_files.append(uploaded)
 

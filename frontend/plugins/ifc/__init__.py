@@ -9,6 +9,7 @@ import httpx
 MIMETYPES = ["model/ifc", "application/ifc"]
 UPLOAD_EXTENSIONS = [".ifc"]
 COMPONENT_NAME = "IFCViewer"
+GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
 
 def _resolve_path(uri: str) -> Optional[Path]:
@@ -18,6 +19,30 @@ def _resolve_path(uri: str) -> Optional[Path]:
         p = Path(uri)
         if p.exists():
             return p
+    return None
+
+
+def _normalize_mime_type(mime_type: str | None) -> str:
+    return (mime_type or "").split(";", 1)[0].strip().lower()
+
+
+async def detect_upload_mime(file_path: Path, mime_type: str | None = None) -> str | None:
+    """Identify IFC STEP physical files from their contents when MIME is generic."""
+    normalized = _normalize_mime_type(mime_type)
+    if normalized in MIMETYPES:
+        return normalized
+    if normalized not in GENERIC_UPLOAD_MIMETYPES:
+        return None
+
+    try:
+        with file_path.open("rb") as stream:
+            sample = stream.read(65536)
+    except Exception:
+        return None
+
+    text = sample.decode("latin-1", errors="ignore").upper()
+    if "ISO-10303-21" in text and "FILE_SCHEMA" in text and "IFC" in text:
+        return MIMETYPES[0]
     return None
 
 
