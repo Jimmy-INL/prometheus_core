@@ -3,7 +3,7 @@ import { useTheme } from "../lib/useTheme";
 
 interface Props {
   onLogout: () => void;
-  onToggleSettings: () => void;
+  onToggleSettings?: () => void;
 }
 
 export function Header({ onLogout, onToggleSettings }: Props) {
@@ -15,9 +15,11 @@ export function Header({ onLogout, onToggleSettings }: Props) {
     <div className="flex justify-between items-center gap-1 p-3 bg-base-300 border-b border-base-300">
       <img src={logoSrc} alt="Prometheus" className="h-8" />
       <div className="flex">
-        <button className="btn btn-ghost btn-sm" onClick={onToggleSettings}>
-          <Settings size={18} />
-        </button>
+        {onToggleSettings && (
+          <button className="btn btn-ghost btn-sm" onClick={onToggleSettings}>
+            <Settings size={18} />
+          </button>
+        )}
         <button
           className="btn btn-ghost btn-sm"
           onClick={() => setTheme(nextTheme)}
