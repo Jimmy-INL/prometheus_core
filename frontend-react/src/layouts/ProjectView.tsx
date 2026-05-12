@@ -1,14 +1,24 @@
 import { useState } from "react";
-import { Chat } from "@/components/Chat";
-import { SettingsPanel } from "@/components/SettingsPanel";
-import { Header } from "@/components/Header";
-import { LeftPanel } from "@/components/LeftPanel";
+import { Chat } from "../components/Chat";
+import { SettingsPanel } from "../components/SettingsPanel";
+import { Header } from "../components/Header";
+import { LeftPanel } from "../components/LeftPanel";
+
+type TabId = "chat" | "dashboard" | "artifacts" | "agents";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "chat",      label: "Chat" },
+  { id: "dashboard", label: "Dashboard" },
+  { id: "artifacts", label: "Artifacts" },
+  { id: "agents",    label: "Agents" },
+];
 
 interface Props {
   onLogout: () => void;
 }
 
 export function ProjectView({ onLogout }: Props) {
+  const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
 
@@ -17,9 +27,42 @@ export function ProjectView({ onLogout }: Props) {
       <Header onLogout={onLogout} onToggleSettings={() => setRightOpen((v) => !v)} />
       <div className="flex flex-1 overflow-hidden">
         <LeftPanel isOpen={leftOpen} onToggle={() => setLeftOpen((v) => !v)} />
-        <main className="flex flex-col flex-1 w-full max-w-3xl mx-auto overflow-hidden">
-          <Chat />
+
+        <main className="flex flex-col flex-1 overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex gap-2 px-4 pt-3 pb-0 border-b border-base-300">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={activeTab === tab.id ? "font-semibold" : ""}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className={`flex flex-col flex-1 overflow-hidden ${activeTab === "chat" ? "" : "hidden"}`}>
+            <Chat />
+          </div>
+          {activeTab === "dashboard" && (
+            <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">
+              Dashboard coming soon
+            </div>
+          )}
+          {activeTab === "artifacts" && (
+            <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">
+              Artifacts coming soon
+            </div>
+          )}
+          {activeTab === "agents" && (
+            <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">
+              Agents coming soon
+            </div>
+          )}
         </main>
+
         <aside
           className={`${rightOpen ? "w-64 border-l bg-base-200 border-base-300" : "w-0"} transition-[width] duration-200 overflow-hidden flex flex-col`}
         >
