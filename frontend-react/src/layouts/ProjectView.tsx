@@ -18,7 +18,7 @@ export function ProjectView({ onLogout }: Props) {
       <div className="flex flex-1 overflow-hidden">
         <LeftPanel isOpen={leftOpen} onToggle={() => setLeftOpen((v) => !v)} />
         <main className="flex flex-col flex-1 w-full max-w-3xl mx-auto overflow-hidden">
-          <Chat onLogout={onLogout} />
+          <Chat />
         </main>
         <aside
           className={`${rightOpen ? "w-64 border-l bg-base-200 border-base-300" : "w-0"} transition-[width] duration-200 overflow-hidden flex flex-col`}
