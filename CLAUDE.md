@@ -80,7 +80,7 @@ The frontend uses **blocking A2A** (`configuration.blocking: true`); during long
 
 LiteLLM plays two roles simultaneously:
 1. **Agent gateway / registry**: each specialist registers at startup; the client-agent reads `/v1/agents` and forwards A2A traffic via `/a2a/{agent}`. Registrations persist in `litellm-db` (Postgres) so a LiteLLM restart doesn't lose them.
-2. **LLM proxy**: agents make Anthropic calls through LiteLLM (`LITELLM_URL=http://litellm:4000`) so model config is centralized.
+2. **LLM proxy**: agents make Anthropic calls through LiteLLM (`REGISTRY_URL=http://litellm:4000`) so model config is centralized.
 
 The client-agent still falls back to each agent's `/.well-known/agent.json` for full per-skill metadata because LiteLLM's listing can be a lossy summary. If you change capability metadata, verify both paths.
 

@@ -9,7 +9,7 @@ x-common-env: &common-env
   SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
   REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
   NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.pem
-  LITELLM_URL: http://litellm:4000
+  REGISTRY_URL: ${REGISTRY_URL:-}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
   DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-https://deeplynx.inl.gov/api/v1}

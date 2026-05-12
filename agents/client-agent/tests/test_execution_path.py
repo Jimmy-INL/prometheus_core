@@ -109,6 +109,10 @@ if "prometheus_api.agent" not in sys.modules:
         def pending_hint(pending_requests, hint):
             return hint
 
+        @staticmethod
+        def registry_url() -> str:
+            return "http://litellm:4000"
+
         def list_artifact_references(self, *args, **kwargs):
             return []
 
