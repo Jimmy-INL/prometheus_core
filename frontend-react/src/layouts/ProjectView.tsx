@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LayoutDashboard, MessageSquare, FolderOpen, Bot } from "lucide-react";
 import { Chat } from "../components/Chat";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
@@ -6,11 +7,11 @@ import { LeftPanel } from "../components/LeftPanel";
 
 type TabId = "chat" | "dashboard" | "artifacts" | "agents";
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "chat",      label: "Chat" },
-  { id: "dashboard", label: "Dashboard" },
-  { id: "artifacts", label: "Artifacts" },
-  { id: "agents",    label: "Agents" },
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: "chat",      label: "Chat",      icon: <MessageSquare size={15} /> },
+  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
+  { id: "artifacts", label: "Artifacts", icon: <FolderOpen size={15} /> },
+  { id: "agents",    label: "Agents",    icon: <Bot size={15} /> },
 ];
 
 interface Props {
@@ -30,16 +31,29 @@ export function ProjectView({ onLogout }: Props) {
 
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Tab bar */}
-          <div className="flex gap-2 px-4 pt-3 pb-0 border-b border-base-300">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={activeTab === tab.id ? "font-semibold" : ""}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="px-4 pt-3 pb-3">
+            <div className="inline-flex items-center gap-1 bg-base-200 rounded-xl p-1">
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`
+                      flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                      transition-all duration-150 cursor-pointer
+                      ${isActive
+                        ? "bg-primary text-primary-content shadow-sm"
+                        : "text-base-content/60 hover:text-base-content hover:bg-base-300"
+                      }
+                    `}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Tab content */}
