@@ -846,7 +846,7 @@ services:
       - "8000:8000"
     environment:
       - AGENT_PORT=8000
-      - REGISTRY_URL=http://registry:8000
+      - REGISTRY_URL=http://litellm:4000
       - MODEL_NAME=claude-opus-4-6
       - AGENT_SECRET=${AGENT_SECRET}  # Shared secret
 
@@ -855,7 +855,7 @@ services:
     ports:
       - "8500:8500"
     environment:
-      - AGENT_URL=http://client-agent:8000
+      - AGENT_URL=http://client-agent:4000
       - AGENT_SECRET=${AGENT_SECRET}
 ```
 

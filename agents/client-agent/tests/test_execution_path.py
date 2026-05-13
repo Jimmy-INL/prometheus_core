@@ -109,6 +109,10 @@ if "prometheus_api.agent" not in sys.modules:
         def pending_hint(pending_requests, hint):
             return hint
 
+        @staticmethod
+        def registry_url() -> str:
+            return "http://litellm:4000"
+
         def list_artifact_references(self, *args, **kwargs):
             return []
 
@@ -511,6 +515,21 @@ def test_invoke_agent_generic_passes_artifact_catalog_to_skill(monkeypatch) -> N
             "metadata": {"deeplynx_file_id": 123},
         }
     ]
+
+
+def test_find_tool_for_skill_uses_runtime_tool_cache(monkeypatch) -> None:
+    tool = SimpleNamespace(name="create_svg_artifact")
+
+    monkeypatch.setattr(agent_module._runtime, "_tools_cache", [tool])
+
+    result = asyncio.run(
+        agent_module.find_tool_for_skill(
+            "create_svg_artifact",
+            refresh_on_miss=False,
+        )
+    )
+
+    assert result is tool
 
 
 def test_invoke_skill_validates_nested_required_paths(monkeypatch) -> None:

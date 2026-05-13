@@ -805,7 +805,7 @@ services:
     ports: ["8501:8501"]
     environment:
       - CLIENT_AGENT_URL=http://client-agent:8000
-      - REGISTRY_URL=http://registry:8000
+      - REGISTRY_URL=http://litellm:4000
       - REDIS_URL=redis://agent-redis:6379
     depends_on: [registry, client-agent, redis]
 

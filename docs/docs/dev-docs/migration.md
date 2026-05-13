@@ -101,7 +101,7 @@ Model selection and API keys are now configured on the client-agent and speciali
 | `ANTHROPIC_API_KEY` | Client-agent + specialists | LLM API access |
 | `REDIS_URL` | Client-agent + frontend | Conversation state, status polling, and history browser |
 | `REDIS_PASSWORD` | Redis container | Redis auth |
-| `LITELLM_URL` | All agents | LiteLLM base URL for A2A routing and discovery |
+| `REGISTRY_URL` | All agents | LiteLLM base URL for A2A routing and discovery |
 | `LITELLM_MASTER_KEY` | Client-agent + specialists | LiteLLM auth for agent discovery/registration |
 | `LITELLM_DB_PASSWORD` | LiteLLM Postgres | Persistent storage for LiteLLM agent registrations |
 | `LITELLM_LOCAL_PORT` | Docker Compose host mapping | Host port that exposes LiteLLM locally (default: `9977`) |

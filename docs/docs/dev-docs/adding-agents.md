@@ -114,7 +114,7 @@ AGENT_PORT=8000
 AGENT_HOST=localhost
 AGENT_SECRET=your-shared-secret
 AGENT_SECRET_REQUIRED=true
-LITELLM_URL=http://localhost:4000
+REGISTRY_URL=http://localhost:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
 ANTHROPIC_API_KEY=your-api-key
 MODEL_NAME=claude-sonnet-4-6
@@ -140,7 +140,7 @@ docker build -t my-analysis-agent .
 docker run -p 8000:8000 --env-file .env my-analysis-agent
 ```
 
-The agent starts a uvicorn server and registers with LiteLLM (if `LITELLM_URL` is set).
+The agent starts a uvicorn server and registers with LiteLLM (if `REGISTRY_URL` is set).
 Keep `AGENT_SECRET_REQUIRED=true` for local runs as well.
 
 Custom CA certificates should be placed in the repo-local [`certs`](/Users/schwd/Programs/prometheus/prometheus_platform/certs) directory as `*.pem` files only. The Docker build context for certificates is intentionally limited to that directory.
@@ -164,7 +164,7 @@ my-analysis-agent:
   environment:
     - AGENT_HOST=my-analysis-agent
     - AGENT_PORT=8000
-    - LITELLM_URL=http://litellm:4000
+    - REGISTRY_URL=${REGISTRY_URL:-}
     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - REDIS_URL=${REDIS_URL}
     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}

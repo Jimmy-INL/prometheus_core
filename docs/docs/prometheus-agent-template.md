@@ -179,7 +179,7 @@ class MyAgent(PrometheusAgent):
 | `AGENT_HOST` | No | localhost | Hostname for agent card URL |
 | `AGENT_SECRET` | Prod | -- | Shared secret for Bearer token auth |
 | `AGENT_SECRET_REQUIRED` | No | true | Enforce authentication. Do not disable this in normal development or deployment. |
-| `LITELLM_URL` | No | -- | LiteLLM base URL used for agent registration and A2A routing |
+| `REGISTRY_URL` | No | -- | LiteLLM base URL used for agent registration and A2A routing |
 | `LITELLM_MASTER_KEY` | No | -- | LiteLLM master key used when registering the agent |
 | `DEEPLYNX_KEY` | If using storage | -- | API key for DeepLynx |
 | `DEEPLYNX_SECRET` | If using storage | -- | API secret for DeepLynx |

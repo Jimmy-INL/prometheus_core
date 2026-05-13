@@ -104,6 +104,28 @@ if "prometheus_api.agent" not in sys.modules:
             return payload
 
     agent_module.ArtifactReference = _ArtifactReference
+
+    class _PrometheusAgent:
+        def __init__(self, *args, **kwargs):
+            self.artifact_registry = types.SimpleNamespace(register=lambda reference: None)
+
+        @staticmethod
+        def registry_url() -> str:
+            return "http://litellm:4000"
+
+        @staticmethod
+        def pending_hint(pending_requests, hint):
+            return hint
+
+        def list_artifact_references(self, *args, **kwargs):
+            return []
+
+        async def send_status_update(self, *args, **kwargs):
+            return None
+
+    agent_module.EventQueue = object
+    agent_module.PrometheusAgent = _PrometheusAgent
+    agent_module.RequestContext = object
     prometheus_api_module.agent = agent_module
     sys.modules["prometheus_api"] = prometheus_api_module
     sys.modules["prometheus_api.agent"] = agent_module
