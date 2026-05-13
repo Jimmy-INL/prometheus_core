@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import redis
 
-from tool_discovery import LITELLM_URL, discover_agents, get_agent_card, is_self_agent
+from tool_discovery import REGISTRY_URL, discover_agents, get_agent_card, is_self_agent
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ class CapabilityCache:
                         continue
 
                     # Route all calls through LiteLLM: /a2a/{agent_name}
-                    agent_url = f"{LITELLM_URL}/a2a/{agent_id}"
+                    agent_url = f"{REGISTRY_URL}/a2a/{agent_id}"
 
                     # LiteLLM's /v1/agents payload is a lossy summary and may omit
                     # per-skill inputSchema/approval metadata. Always fetch the

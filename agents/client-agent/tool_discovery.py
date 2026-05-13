@@ -12,11 +12,11 @@ from typing import Any, Dict, List, Optional
 import httpx
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, create_model
-from prometheus_api.agent import ArtifactReference
+from prometheus_api.agent import ArtifactReference, PrometheusAgent
 
 logger = logging.getLogger(__name__)
 
-LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
+REGISTRY_URL = PrometheusAgent.registry_url()
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 import socket as _socket
 
@@ -206,7 +206,7 @@ async def discover_agents() -> List[Dict[str, Any]]:
       agent_card_params – full card dict including skills + inputSchema
     """
     async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
-        response = await client.get(f"{LITELLM_URL}/v1/agents")
+        response = await client.get(f"{REGISTRY_URL}/v1/agents")
         response.raise_for_status()
         raw = response.json()
 
@@ -247,7 +247,7 @@ async def get_agent_card(agent_id: str, direct_url: Optional[str] = None) -> Dic
 
     try:
         async with httpx.AsyncClient(timeout=10.0, headers=_litellm_headers()) as client:
-            response = await client.get(f"{LITELLM_URL}/a2a/{agent_id}")
+            response = await client.get(f"{REGISTRY_URL}/a2a/{agent_id}")
             if response.status_code == 200:
                 return response.json()
     except Exception:
@@ -501,7 +501,7 @@ async def call_a2a_agent(
     if kwargs.get("_a2a_task_id"):
         message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 
-    # Route through LiteLLM: agent_url is {LITELLM_URL}/a2a/{agent_name}
+    # Route through LiteLLM: agent_url is {REGISTRY_URL}/a2a/{agent_name}
     # LiteLLM's A2A endpoint requires the method in the URL path.
     endpoint = agent_url.rstrip("/") + "/message/send"
     headers = {"Content-Type": "application/json"}
@@ -671,7 +671,7 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
                 continue
 
             # Route all calls through LiteLLM rather than directly to the agent.
-            litellm_url = f"{LITELLM_URL}/a2a/{agent_id}"
+            agent_url = f"{REGISTRY_URL}/a2a/{agent_id}"
 
             # LiteLLM's /v1/agents payload can omit full per-skill metadata.
             # Fetch the full card so tool schemas stay authoritative.
@@ -683,7 +683,7 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
             # Create one tool per skill
             for skill in agent_card.get("skills", []):
                 tool = await create_tool_from_skill(
-                    litellm_url,
+                    agent_url,
                     skill,
                     supports_streaming=supports_streaming,
                 )
