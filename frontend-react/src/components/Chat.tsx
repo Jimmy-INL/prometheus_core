@@ -88,9 +88,9 @@ export function Chat() {
           {flat.map((m) => (
             <div key={m.id} className={`flex ${m.type === "user_message" ? "justify-end" : "justify-start"}`}>
                   {m.type === "user_message" ? (
-                <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                  {m.output}
-                </span>
+                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                      {m.output}
+                    </span>
                   ) : (
                     <div className="w-full text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_span]:text-[length:inherit] [&_li]:text-[length:inherit] [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-base-300 [&_pre]:bg-base-300 [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-2 [&_pre]:overflow-x-auto [&_a]:underline">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.output}</ReactMarkdown>
