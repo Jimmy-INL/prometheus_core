@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRecoilValue } from "recoil";
 import { sessionState, useChatSession } from "@chainlit/react-client";
-import { Chat } from "./components/Chat";
-import { Login } from "./components/Login";
+import { ProjectView } from "@/layouts/ProjectView";
+import { Login } from "@/components/Login";
 
 export default function App() {
   const { connect } = useChatSession();
@@ -27,5 +27,5 @@ export default function App() {
 
   if (authed === null) return null;
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
-  return <Chat onLogout={handleLogout} />;
+  return <ProjectView onLogout={handleLogout} />;
 }
