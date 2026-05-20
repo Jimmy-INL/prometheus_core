@@ -14,7 +14,7 @@ A Python toolkit for building data-driven applications with storage operations a
 
 See [INSTALL.md](INSTALL.md) for full options. Quick paths:
 
-- **Runtime:** `docker pull mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest`
+- **Runtime:** `docker pull containers.github.inl.gov/prometheus_api/prometheus_api-py312:latest`
 - **As a library:** `pip install git+https://github.inl.gov/genesis/prometheus_api.git`
 - **For development:** `git clone … && cd prometheus_api && uv sync` (then `make check`, `make test`)
 

@@ -12,20 +12,20 @@ There are three supported ways to use `prometheus-api`, in order of preference:
 
 ## Container (recommended)
 
-Multi-arch images (`linux/amd64`, `linux/arm64`) are published to INL's MooseHarbor registry:
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to INL's GitHub [registry](https://github.inl.gov/orgs/genesis/packages):
 
 ```bash
-docker pull mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest
+docker pull containers.github.inl.gov/genesis/prometheus_api:latest
 ```
 
-You can substitute `latest` with a specific git short-SHA tag (see `make build-push` output, or browse MooseHarbor) for reproducible builds.
+You can substitute `latest` with a specific git short-SHA tag (see `make build-push` output, or browse [GitHub](https://github.inl.gov/orgs/genesis/packages)) for reproducible builds.
 
 Run the image, mounting a `.env` based on `.env.example` so DeepLynx credentials are available:
 
 ```bash
 docker run -it --rm \
   --env-file .env \
-  mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest /bin/bash
+  containers.github.inl.gov/genesis/prometheus_api:latest /bin/bash
 ```
 
 ---

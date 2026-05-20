@@ -61,7 +61,7 @@ uv run pre-commit run --all-files --hook-stage pre-push
 make version                                       # prints version (uv version --short)
 make bump-patch | bump-minor | bump-major          # uv version --bump <part>
 make build-image IMAGE_TAG=<tag>                   # local amd64+arm64 builds
-make build-push IMAGE_REPO=<repo> [IMAGE_TAG=<tag>] # multi-arch buildx push (default repo: mooseharbor.hpc.inl.gov/...)
+make build-push IMAGE_REPO=<repo> [PUSH_LATEST=true] # multi-arch buildx push (default repo: containers.github.inl.gov/...)
 ```
 
 Default `IMAGE_TAG` is `git rev-parse --short HEAD`.
