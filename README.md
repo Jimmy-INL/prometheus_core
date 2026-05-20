@@ -25,7 +25,7 @@ graph TD
 ## Prerequisites
 
 - Docker and Docker Compose
-- INL HPC credentials for `mooseharbor.hpc.inl.gov` (to pull the `prometheus_api` base image)
+- [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image)
 - INL CA bundle PEM file (for HTTPS to internal services)
 - [uv](https://docs.astral.sh/uv/) and Python — only required if you run components outside Docker:
   - Frontend pins **Python 3.12** (`>=3.12,<3.13`)
@@ -51,12 +51,13 @@ If building for INL, follow the INL ServiceNow knowledge base article - https://
 
 ### 3. Authenticate to the container registry
 
-The `prometheus_api` base image is pulled from INL's HPC harbor:
+The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
 
 ```bash
-docker login mooseharbor.hpc.inl.gov
-# Username: HPC username
-# Password: HPC password
+export GITHUB_PAT=<your-token>
+echo $GITHUB_PAT | docker login github.inl.gov \
+  --username <your-github-username> \
+  --password-stdin
 ```
 
 ### 4. Start the stack
