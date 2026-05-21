@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import {
   useChatMessages,
   useChatInteract,
@@ -21,6 +21,60 @@ import {
   isAskForm,
   isAskPlain,
 } from "../lib/chainlit/chainlit";
+
+// ---------------------------------------------------------------------------
+// Markdown renderers
+// ---------------------------------------------------------------------------
+
+function CodeBlock({ children, className }: { children?: React.ReactNode; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const code = String(children).replace(/\n$/, "");
+  const isBlock = code.includes("\n");
+
+  if (!isBlock) {
+    return (
+      <code className={`px-1 py-0.5 rounded bg-base-300 text-sm ${className ?? ""}`}>
+        {children}
+      </code>
+    );
+  }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="relative group my-2">
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-base-100/50 hover:bg-base-100 text-base-content/50 hover:text-base-content"
+        aria-label="Copy code"
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+      <pre className="bg-base-300 rounded p-3 overflow-x-auto text-sm leading-5">
+        <code className={className}>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+const markdownComponents = {
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+    <CodeBlock className={className}>{children}</CodeBlock>
+  ),
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="table table-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => (
+    <thead className="bg-base-300">{children}</thead>
+  ),
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -341,8 +395,8 @@ export function Chat() {
                 ) : (
                   <>
                     <AssistantAvatar />
-                    <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_span]:text-[length:inherit] [&_li]:text-[length:inherit] [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-base-300 [&_pre]:bg-base-300 [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-2 [&_pre]:overflow-x-auto [&_a]:underline">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                         {m.output}
                       </ReactMarkdown>
                     </div>
