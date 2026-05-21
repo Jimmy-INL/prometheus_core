@@ -53,9 +53,11 @@ If building for INL, follow the INL ServiceNow knowledge base article - https://
 
 The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
 
+The PAT (Personal Access Token) requires `read:packages` permissions.
+
 ```bash
 export GITHUB_PAT=<your-token>
-echo $GITHUB_PAT | docker login github.inl.gov \
+echo $GITHUB_PAT | docker login containers.github.inl.gov \
   --username <your-github-username> \
   --password-stdin
 ```
