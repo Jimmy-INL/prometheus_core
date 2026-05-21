@@ -58,6 +58,8 @@ def test_upload_limit_is_100_mb() -> None:
 @pytest.mark.asyncio
 async def test_capture_uploaded_file_rejects_files_over_limit(monkeypatch, tmp_path):
     sent_messages = _install_message_spy(monkeypatch)
+    # MAX_UPLOAD_MB is patched independently to verify the error message reads from it,
+    # not from MAX_UPLOAD_BYTES, so the two can stay in sync without arithmetic coupling.
     monkeypatch.setattr(handler, "MAX_UPLOAD_BYTES", 4)
     monkeypatch.setattr(handler, "MAX_UPLOAD_MB", 100)
 

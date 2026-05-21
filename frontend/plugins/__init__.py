@@ -35,6 +35,7 @@ ELEMENTS_DIR = PLUGINS_DIR.parent / "public" / "elements"
 _mimetype_registry: dict[str, Any] = {}
 _json_type_registry: dict[str, Any] = {}
 _upload_detectors: list[Any] = []
+_upload_process_params: dict[str, frozenset[str]] = {}
 
 GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
@@ -139,7 +140,10 @@ async def process_upload(
     plugin = find_plugin_for_upload(file_path, mime_type=mime_type)
     if plugin and hasattr(plugin, "process_upload"):
         process = plugin.process_upload
-        params = inspect.signature(process).parameters
+        module_name = getattr(plugin, "__name__", "")
+        if module_name not in _upload_process_params:
+            _upload_process_params[module_name] = frozenset(inspect.signature(process).parameters)
+        params = _upload_process_params[module_name]
         kwargs: dict[str, Any] = {}
         if "mime_type" in params:
             kwargs["mime_type"] = normalize_mime_type(mime_type)

@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 import plugins as _plugins  # noqa: E402
 from utils.a2a_client import A2AClient, ConversationResponse  # noqa: E402
+_normalize_mime_type = _plugins.normalize_mime_type
+GENERIC_UPLOAD_MIMETYPES = _plugins.GENERIC_UPLOAD_MIMETYPES
 from utils.settings import settings  # noqa: E402
 from utils.uri_resolver import resolve_to_local_path  # noqa: E402
 
@@ -35,20 +37,13 @@ CAD_FILE_MIMETYPES = {
     "application/step+zip",
 }
 
-GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
-
-
-def _normalize_mime_type(mime_type: Optional[str]) -> str:
-    return (mime_type or "").split(";", 1)[0].strip().lower()
-
-
-def _upload_download_element(element: Any, file_path: Path, mime_type: str = "") -> Any:
+def _upload_download_element(name: str, file_path: Path, mime_type: str = "") -> Any:
     """Create a downloadable Chainlit file element for an uploaded file."""
     return cl.File(
-        name=element.name,
+        name=name,
         path=str(file_path),
         display="inline",
-        mime=mime_type or _guess_upload_mime(element.name, getattr(element, "mime", None)),
+        mime=mime_type or _guess_upload_mime(name),
     )
 
 
@@ -148,7 +143,7 @@ async def message_handler(message: cl.Message):
                         display_name=display_name,
                     )
                     elements = list(viewer_elements or [])
-                    elements.append(_upload_download_element(element, file_path, upload_mime))
+                    elements.append(_upload_download_element(element.name, file_path, upload_mime))
                     await cl.Message(content=description, elements=elements).send()
                 except Exception as e:
                     await cl.Message(
@@ -158,7 +153,7 @@ async def message_handler(message: cl.Message):
                 # PDF: render inline as a Chainlit native element
                 try:
                     pdf_el = cl.Pdf(name=element.name, display="inline", path=element.path)
-                    download_el = _upload_download_element(element, file_path, upload_mime)
+                    download_el = _upload_download_element(element.name, file_path, upload_mime)
                     await cl.Message(
                         content=f"**PDF loaded:** {element.name}", elements=[pdf_el, download_el]
                     ).send()
@@ -713,7 +708,7 @@ def _artifact_download_payload(
 ) -> Optional[tuple[bytes, str, str]]:
     """Serialize inline artifact content so it can still be downloaded."""
     if "json_body" in artifact and artifact["json_body"] is not None:
-        content = json.dumps(artifact["json_body"], indent=2, sort_keys=True).encode("utf-8")
+        content = json.dumps(artifact["json_body"], indent=2).encode("utf-8")
         return content + b"\n", ".json", "application/json"
 
     for key in ("content", "text", "description"):

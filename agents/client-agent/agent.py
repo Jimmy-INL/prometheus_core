@@ -361,7 +361,14 @@ def _install_a2a_content_length_override() -> None:
         run_method = getattr(PrometheusAgent, "run", None)
         run_globals = getattr(run_method, "__globals__", {})
         app_cls = run_globals.get("A2AStarletteApplication")
-        if app_cls is None or getattr(app_cls, "_prometheus_upload_limit_wrapper", False):
+        if app_cls is None:
+            print(
+                f"[WARN] A2AStarletteApplication not found in PrometheusAgent.run globals; "
+                f"A2A body limit NOT raised (target: {_a2a_max_content_length_bytes()} bytes — "
+                f"uploads larger than the SDK default will be rejected)"
+            )
+            return
+        if getattr(app_cls, "_prometheus_upload_limit_wrapper", False):
             return
 
         max_content_length = _a2a_max_content_length_bytes()

@@ -3,10 +3,11 @@
 from pathlib import Path
 from typing import Any, Optional
 
+from plugins import GENERIC_UPLOAD_MIMETYPES, normalize_mime_type as _normalize_mime_type
+
 MIMETYPES = ["application/x-exodus", "application/exodus"]
 UPLOAD_EXTENSIONS = [".exo", ".e"]
 COMPONENT_NAME = "ExodusViewer"
-GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 _EXODUS_CONTAINER_SIGNATURES = (b"CDF\x01", b"CDF\x02", b"\x89HDF\r\n\x1a\n")
 
 
@@ -18,10 +19,6 @@ def _resolve_path(uri: str) -> Optional[Path]:
         if p.exists():
             return p
     return None
-
-
-def _normalize_mime_type(mime_type: str | None) -> str:
-    return (mime_type or "").split(";", 1)[0].strip().lower()
 
 
 def _has_exodus_container_signature(file_path: Path) -> bool:

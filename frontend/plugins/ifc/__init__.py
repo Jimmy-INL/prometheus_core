@@ -6,10 +6,11 @@ from typing import Any, Optional
 
 import httpx
 
+from plugins import GENERIC_UPLOAD_MIMETYPES, normalize_mime_type as _normalize_mime_type
+
 MIMETYPES = ["model/ifc", "application/ifc"]
 UPLOAD_EXTENSIONS = [".ifc"]
 COMPONENT_NAME = "IFCViewer"
-GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
 
 def _resolve_path(uri: str) -> Optional[Path]:
@@ -22,10 +23,6 @@ def _resolve_path(uri: str) -> Optional[Path]:
     return None
 
 
-def _normalize_mime_type(mime_type: str | None) -> str:
-    return (mime_type or "").split(";", 1)[0].strip().lower()
-
-
 async def detect_upload_mime(file_path: Path, mime_type: str | None = None) -> str | None:
     """Identify IFC STEP physical files from their contents when MIME is generic."""
     normalized = _normalize_mime_type(mime_type)
@@ -36,7 +33,7 @@ async def detect_upload_mime(file_path: Path, mime_type: str | None = None) -> s
 
     try:
         with file_path.open("rb") as stream:
-            sample = stream.read(65536)
+            sample = stream.read(512)  # ISO-10303-21 header always appears within the first few lines
     except Exception:
         return None
 
