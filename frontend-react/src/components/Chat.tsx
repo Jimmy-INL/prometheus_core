@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { useChatMessages, useChatInteract, IStep } from "@chainlit/react-client";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
 
 function getMessages(messages: IStep[]): IStep[] {
@@ -12,6 +14,14 @@ function getMessages(messages: IStep[]): IStep[] {
     return children;
   });
 }
+
+const AssistantAvatar = () => (
+  <img
+    src="/images/Prometheus_mark_white.png"
+    alt="Prometheus"
+    className="w-6 h-6 rounded-full shrink-0 bg-neutral object-contain p-1"
+  />
+);
 
 function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
   return (
@@ -38,12 +48,27 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
 export function Chat() {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastUserMessageRef = useRef<HTMLDivElement>(null);
+  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
+  const loadingDotsRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const prevUserCountRef = useRef(0);
+  const programmaticScrollUntilRef = useRef(0);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const { messages } = useChatMessages();
   const { sendMessage, stopTask } = useChatInteract();
 
   const flat = getMessages(messages);
   const lastMessage = flat[flat.length - 1];
+  let lastUserIdx = -1;
+  let lastAssistantIdx = -1;
+  for (let i = flat.length - 1; i >= 0; i--) {
+    if (lastUserIdx === -1 && flat[i].type === "user_message") lastUserIdx = i;
+    if (lastAssistantIdx === -1 && flat[i].type === "assistant_message") lastAssistantIdx = i;
+    if (lastUserIdx !== -1 && lastAssistantIdx !== -1) break;
+  }
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -57,6 +82,81 @@ export function Chat() {
       setAwaitingResponse(false);
     }
   }, [lastMessage?.id, lastMessage?.type]);
+
+  // Size the bottom spacer just large enough to let the last user message reach the top of
+  // the viewport — and no larger. Shrinks to 0 once the assistant reply is long enough on its own.
+  const updateSpacer = useCallback(() => {
+    const el = scrollRef.current;
+    const userMsg = lastUserMessageRef.current;
+    const spacer = spacerRef.current;
+    if (!spacer) return;
+    if (!el || !userMsg) {
+      spacer.style.minHeight = "0px";
+      return;
+    }
+    const tail =
+      awaitingResponse && lastMessage?.type === "user_message"
+        ? loadingDotsRef.current
+        : lastAssistantMessageRef.current ?? userMsg;
+    if (!tail) {
+      spacer.style.minHeight = "0px";
+      return;
+    }
+    spacer.style.minHeight = "0px";
+    const tailBottom = tail.offsetTop + tail.offsetHeight;
+    const needed = Math.max(0, el.clientHeight - (tailBottom - userMsg.offsetTop) - 16);
+    spacer.style.minHeight = `${needed}px`;
+  }, [awaitingResponse, lastMessage?.type]);
+
+  useLayoutEffect(() => {
+    updateSpacer();
+  }, [updateSpacer, lastMessage?.output, lastMessage?.id, flat.length, awaitingResponse]);
+
+  useEffect(() => {
+    window.addEventListener("resize", updateSpacer);
+    return () => window.removeEventListener("resize", updateSpacer);
+  }, [updateSpacer]);
+
+  // When a new user message is sent: pin it to the top of the viewport and re-enable auto-scroll.
+  useEffect(() => {
+    const userCount = flat.filter((m) => m.type === "user_message").length;
+    if (userCount > prevUserCountRef.current) {
+      autoScrollRef.current = true;
+      requestAnimationFrame(() => {
+        const target = lastUserMessageRef.current;
+        const el = scrollRef.current;
+        if (!target || !el) return;
+        programmaticScrollUntilRef.current = Date.now() + 800;
+        el.scrollTo({ top: target.offsetTop - el.offsetTop - 16, behavior: "smooth" });
+      });
+    }
+    prevUserCountRef.current = userCount;
+  }, [flat]);
+
+  // Follow the bottom of the assistant reply — but only if its bottom is below the viewport.
+  // Never scroll past the actual content (the bottom spacer would otherwise overshoot).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !autoScrollRef.current) return;
+    const target =
+      awaitingResponse && lastMessage?.type === "user_message"
+        ? loadingDotsRef.current
+        : lastAssistantMessageRef.current;
+    if (!target) return;
+    const targetBottom = target.offsetTop - el.offsetTop + target.offsetHeight;
+    const desired = targetBottom - el.clientHeight + 24;
+    if (desired > el.scrollTop) {
+      programmaticScrollUntilRef.current = Date.now() + 400;
+      el.scrollTop = desired;
+    }
+  }, [lastMessage?.output, lastMessage?.type, lastMessage?.id, awaitingResponse, flat.length]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (Date.now() < programmaticScrollUntilRef.current) return;
+    const el = e.currentTarget;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    autoScrollRef.current = nearBottom;
+  };
 
   const handleSend = (content = input.trim()) => {
     if (!content) return;
@@ -78,18 +178,44 @@ export function Chat() {
   };
 
   return (
-    <div className="flex flex-col flex-1 w-full max-w-3xl mx-auto overflow-hidden">
+    <div className="flex flex-col flex-1 w-full max-w-4xl mx-auto overflow-hidden">
       {flat.length === 0 ? (
         <WelcomeScreen onSelect={(text) => handleSend(text)} />
       ) : (
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {flat.map((m) => (
-            <div key={m.id} className={`flex ${m.type === "user_message" ? "justify-end" : "justify-start"}`}>
-              <span className={`px-4 py-2 rounded-xl max-w-xl text-sm whitespace-pre-wrap ${m.type === "user_message" ? "bg-base-300 text-base-content" : "bg-base-200 text-base-content"}`}>
-                {m.output}
-              </span>
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-5 space-y-5">
+          {flat.map((m, i) => (
+            <div
+              key={m.id}
+              ref={
+                i === lastUserIdx
+                  ? lastUserMessageRef
+                  : i === lastAssistantIdx
+                  ? lastAssistantMessageRef
+                  : undefined
+              }
+              className={`flex gap-2 ${m.type === "user_message" ? "justify-end" : "justify-start"}`}
+            >
+                  {m.type === "user_message" ? (
+                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                      {m.output}
+                    </span>
+                  ) : (
+                    <>
+                      <AssistantAvatar />
+                      <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_span]:text-[length:inherit] [&_li]:text-[length:inherit] [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-base-300 [&_pre]:bg-base-300 [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-2 [&_pre]:overflow-x-auto [&_a]:underline">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.output}</ReactMarkdown>
+                      </div>
+                    </>
+                  )}
             </div>
           ))}
+              {awaitingResponse && lastMessage?.type === "user_message" && (
+                <div ref={loadingDotsRef} className="flex gap-2 justify-start" aria-live="polite" aria-label="Assistant is thinking">
+                  <AssistantAvatar />
+                  <span className="loading loading-dots loading-md text-base-content self-center" />
+                </div>
+              )}
+              <div ref={spacerRef} aria-hidden />
         </div>
       )}
       <div className="px-4 pt-3 pb-2">

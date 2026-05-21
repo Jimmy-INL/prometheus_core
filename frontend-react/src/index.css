@@ -1,19 +1,19 @@
 @import "tailwindcss";
 
 @plugin "daisyui" {
-  themes: dark --default, light --preferslight;
+  themes: dark --default, light;
   exclude: rootscrollgutter;
 }
 
 /* Light Theme */
 @plugin "daisyui/theme" {
   name: "light";
-  default: true;
+  default: false;
   color-scheme: "light";
   font-family: "Roboto", sans-serif;
 
   /* Define colors for the light theme */
-  --color-base-100: oklch(97% 0.02 210);
+  --color-base-100: oklch(98% 0.003 247.858);
   --color-base-200: oklch(93% 0.01 240);
   --color-base-300: oklch(75% 0.05 210);
   --color-base-content: oklch(5% 0.042 265.755);
@@ -39,7 +39,7 @@
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
-  --depth: 0;
+  --depth: 1;
   --noise: 0;
   --input-color: var(--color-base-content);
 }
@@ -47,7 +47,8 @@
 /* Dark Theme */
 @plugin "daisyui/theme" {
   name: "dark";
-  default: false;
+  default: true;
+  prefersdark: true;
   color-scheme: "dark";
   font-family: "Roboto", sans-serif;
 
@@ -78,7 +79,7 @@
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
-  --depth: 0;
+  --depth: 1;
   --noise: 0;
 }
 
