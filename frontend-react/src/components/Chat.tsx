@@ -62,6 +62,11 @@ function CodeBlock({ children, className }: { children?: React.ReactNode; classN
   );
 }
 
+// TODO: Syntax highlighting for code blocks
+// Add react-syntax-highlighter or shiki when the time comes.
+// When implemented, detect language from className (e.g. "language-python") and
+// only apply highlighting when a language is explicitly tagged — untagged blocks
+// (ASCII diagrams, plain text) should render as-is without highlighting attempts.
 const markdownComponents = {
   code: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
     <CodeBlock className={className}>{children}</CodeBlock>
