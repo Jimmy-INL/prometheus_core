@@ -74,6 +74,16 @@ const markdownComponents = {
   thead: ({ children }: { children?: React.ReactNode }) => (
     <thead className="bg-base-300">{children}</thead>
   ),
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h1 className="text-xl font-bold mt-4 mb-2">{children}</h1>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h2 className="text-lg font-semibold mt-3 mb-1">{children}</h2>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>
+  ),
+  hr: () => <hr className="border-base-300 my-3" />,
 };
 
 // ---------------------------------------------------------------------------
