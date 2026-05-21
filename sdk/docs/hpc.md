@@ -18,7 +18,7 @@ podman run -it --rm \
   --env NODE_EXTRA_CA_CERTS="$CA_BUNDLE" \
   --volume "$CA_BUNDLE_DIR:$CA_BUNDLE_DIR:ro" \
   --env-file .env \
-  mooseharbor.hpc.inl.gov/prometheus_api/prometheus_api-py312:latest /bin/bash
+  docker pull containers.github.inl.gov/genesis/prometheus_api:latest /bin/bash
 ```
 
 Add the `--env-file .env` (or individual `--env` flags) to inject DeepLynx credentials.
