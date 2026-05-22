@@ -10,11 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@chainlit/react-client": "0.2.2",
-    "@radix-ui/react-slot": "^1.0.2",
+    "@chainlit/react-client": "^0.4.2",
     "@tailwindcss/vite": "^4.2.2",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.0.0",
     "daisyui": "^5.5.19",
     "lucide-react": "^0.292.0",
     "react": "^18.3.1",
@@ -22,8 +19,6 @@
     "react-markdown": "^10.1.0",
     "recoil": "^0.7.7",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^2.0.0",
-    "tailwindcss-animate": "^1.0.7",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
