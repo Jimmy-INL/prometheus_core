@@ -11,6 +11,7 @@ import { useRecoilValue } from "recoil";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { chatIntro, chatSuggestionTitle, workflowSuggestions } from "../config";
+import { useChatType } from "@/lib/useChatType";
 import {
   flattenMessages,
   FlatItem,
@@ -186,23 +187,27 @@ function ActionButtons({
 // Rare in current backend but should be handled before considering chat complete.
 
 function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
+  const [chatType] = useChatType();
+  const showSuggestions = chatType === "Beginner";
   return (
     <div className="flex flex-col items-center justify-center flex-1 px-6 gap-8">
       <div className="text-center space-y-2">
         <h1>{chatIntro}</h1>
-        <p className="text-base-content">{chatSuggestionTitle}</p>
+        {showSuggestions && <p className="text-base-content">{chatSuggestionTitle}</p>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
-        {workflowSuggestions.map((suggestion) => (
-          <button
-            key={suggestion}
-            className="card text-left px-4 py-3 bg-base-200 hover:bg-base-300 transition-colors cursor-pointer"
-            onClick={() => onSelect(suggestion)}
-          >
-            {suggestion}
-          </button>
-        ))}
-      </div>
+      {showSuggestions && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
+          {workflowSuggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              className="card text-left px-4 py-3 bg-base-200 hover:bg-base-300 transition-colors cursor-pointer"
+              onClick={() => onSelect(suggestion)}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

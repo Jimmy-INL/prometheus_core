@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useChatType } from "@/lib/useChatType";
+import { ChatTypeSelect } from "@/components/chat/ChatTypeSelect";
 
 const MODELS = [
   "None",
@@ -20,6 +22,7 @@ interface Props {
 export function SettingsPanel({ onClose }: Props) {
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [approvalType, setApprovalType] = useState(DEFAULT_APPROVAL_TYPE);
+  const [chatType, setChatType] = useChatType();
   const [savedModel, setSavedModel] = useState(DEFAULT_MODEL);
   const [savedApprovalType, setSavedApprovalType] = useState(DEFAULT_APPROVAL_TYPE);
 
@@ -75,6 +78,12 @@ export function SettingsPanel({ onClose }: Props) {
               </option>
             ))}
           </select>
+        </div>
+        <div className="form-control">
+          <label className="label pb-1">
+            <span className="label-text">Chat Type</span>
+          </label>
+          <ChatTypeSelect value={chatType} onChange={setChatType} />
         </div>
       </div>
       <div className="flex justify-between gap-2 p-3 border-t border-base-300">
