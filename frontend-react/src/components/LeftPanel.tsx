@@ -23,7 +23,7 @@ export function LeftPanel({ isOpen, onToggle, onNewChat }: Props) {
         <button
           className={`btn btn-sm ${
             isOpen
-              ? "btn-primary w-full justify-start gap-2 px-3"
+              ? "btn-accent w-full justify-start gap-2 px-3"
               : "btn-ghost btn-square"
           }`}
           onClick={onNewChat}
