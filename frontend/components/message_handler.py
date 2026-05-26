@@ -1,9 +1,9 @@
-import base64
 import json
 import logging
 import mimetypes
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -47,6 +47,14 @@ def _upload_download_element(name: str, file_path: Path, mime_type: str = "") ->
     )
 
 
+def _upload_limit_message(name: str) -> str:
+    return f"**{name}** exceeds the {MAX_UPLOAD_MB} MB upload limit and will not be stored."
+
+
+async def _send_upload_limit_message(name: str) -> None:
+    await cl.Message(content=_upload_limit_message(name)).send()
+
+
 def _guess_upload_mime(filename: str, element_mime: Optional[str] = None) -> str:
     """Return a stable MIME type for uploaded files, including CAD extensions."""
     mime = _normalize_mime_type(element_mime)
@@ -59,39 +67,50 @@ def _guess_upload_mime(filename: str, element_mime: Optional[str] = None) -> str
     return mimetypes.guess_type(filename)[0] or mime or "application/octet-stream"
 
 
-async def _resolve_upload_mime(element: Any, file_path: Path) -> str:
-    """Resolve the MIME used for storage and plugin dispatch."""
-    element_mime = _normalize_mime_type(getattr(element, "mime", None))
-    detected_mime = await _plugins.detect_upload_mime(file_path, element_mime)
-    if detected_mime and detected_mime not in GENERIC_UPLOAD_MIMETYPES:
-        return detected_mime
-    return _guess_upload_mime(element.name, element_mime)
+def _build_upload_context(element: Any, file_path: Path, size_bytes: int) -> _plugins.UploadContext:
+    """Create the upload context used by plugin inspection and staging."""
+    return _plugins.UploadContext(
+        file_path=file_path,
+        display_name=element.name,
+        mime_type=_guess_upload_mime(element.name, getattr(element, "mime", None)),
+        size_bytes=size_bytes,
+    )
 
 
 async def _capture_uploaded_file(
     element: Any,
     file_path: Path,
+    client: A2AClient,
+    conversation_id: str,
     mime_type: str = "",
+    size_bytes: int | None = None,
 ) -> Optional[Dict[str, Any]]:
-    """Read one Chainlit upload into the payload shape expected by the agent."""
+    """Stage one Chainlit upload and return metadata expected by the agent."""
     try:
-        size = file_path.stat().st_size
+        size = size_bytes if size_bytes is not None else file_path.stat().st_size
         if size > MAX_UPLOAD_BYTES:
-            await cl.Message(
-                content=f"**{element.name}** exceeds the {MAX_UPLOAD_MB} MB upload limit and will not be stored."
-            ).send()
+            await _send_upload_limit_message(element.name)
             return None
 
-        mime = mime_type or await _resolve_upload_mime(element, file_path)
-        content_b64 = base64.b64encode(file_path.read_bytes()).decode()
+        mime = mime_type or _guess_upload_mime(element.name, getattr(element, "mime", None))
+        staged = await client.stage_upload(
+            file_path,
+            name=element.name,
+            mime_type=mime,
+            conversation_id=conversation_id,
+        )
+        upload_id = staged.get("upload_id")
+        if not upload_id:
+            raise ValueError("Upload staging response did not include upload_id")
         return {
-            "name": element.name,
-            "mime_type": mime,
-            "size_bytes": size,
-            "content_b64": content_b64,
+            "name": staged.get("name") or element.name,
+            "mime_type": staged.get("mime_type") or mime,
+            "size_bytes": staged.get("size_bytes", size),
+            "upload_id": upload_id,
         }
     except Exception as exc:
-        logger.warning("Could not read %r for upload: %s", element.name, exc)
+        logger.warning("Could not stage %r for upload: %s", element.name, exc)
+        await cl.Message(content=f"Failed to upload **{element.name}** for storage: {exc}").send()
         return None
 
 
@@ -122,6 +141,15 @@ def _get_a2a_client() -> A2AClient:
 async def message_handler(message: cl.Message):
     # --- File upload handling ---
     uploaded_files: List[Dict] = []
+    raw_content = message.content or ""
+    if not raw_content.strip() and not message.elements:
+        return
+
+    conversation_id = cl.user_session.get("conversation_id")
+    if not conversation_id:
+        conversation_id = str(uuid.uuid4())
+        cl.user_session.set("conversation_id", conversation_id)
+    client = _get_a2a_client()
 
     if message.elements:
         for element in message.elements:
@@ -129,22 +157,35 @@ async def message_handler(message: cl.Message):
                 continue
 
             file_path = Path(element.path)
-            display_name = element.name
-            upload_mime = await _resolve_upload_mime(element, file_path)
+            try:
+                size_bytes = file_path.stat().st_size
+                if size_bytes > MAX_UPLOAD_BYTES:
+                    await _send_upload_limit_message(element.name)
+                    continue
+            except Exception as exc:
+                logger.warning("Could not stat %r for upload: %s", element.name, exc)
+                continue
 
-            # Visualization plugins get first pick based on the resolved MIME type.
-            plugin = _plugins.find_plugin_for_upload(file_path, mime_type=upload_mime)
-            if plugin is not None:
+            upload_context = _build_upload_context(element, file_path, size_bytes)
+            upload_match = await _plugins.inspect_upload(upload_context)
+            if upload_match is not None:
+                upload_context = replace(upload_context, mime_type=upload_match.mime_type)
+            upload_mime = upload_context.mime_type
+
+            # Visualization plugins get a local preview first, but every readable
+            # upload is staged for DeepLynx afterward.
+            if upload_match is not None:
                 try:
                     await cl.Message(content=f"Processing **{element.name}**…").send()
-                    description, viewer_elements = await _plugins.process_upload(
-                        file_path,
-                        mime_type=upload_mime,
-                        display_name=display_name,
+                    result = await _plugins.process_upload(
+                        upload_context,
+                        match=upload_match,
                     )
-                    elements = list(viewer_elements or [])
-                    elements.append(_upload_download_element(element.name, file_path, upload_mime))
-                    await cl.Message(content=description, elements=elements).send()
+                    if result is not None:
+                        elements = list(result.elements or [])
+                        if result.add_download:
+                            elements.append(_upload_download_element(element.name, file_path, upload_mime))
+                        await cl.Message(content=result.description, elements=elements).send()
                 except Exception as e:
                     await cl.Message(
                         content=f"Failed to process **{element.name}**: {e}"
@@ -162,26 +203,27 @@ async def message_handler(message: cl.Message):
 
             # Capture every readable file for DeepLynx storage via the agent, including
             # files already rendered locally by visualization plugins.
-            uploaded = await _capture_uploaded_file(element, file_path, upload_mime)
+            uploaded = await _capture_uploaded_file(
+                element,
+                file_path,
+                client,
+                conversation_id,
+                upload_mime,
+                size_bytes=size_bytes,
+            )
             if uploaded is not None:
                 uploaded_files.append(uploaded)
 
     # Build the query; when files are uploaded with no text, use a neutral default so
     # the agent can still determine context and upload them.
-    query = message.content.strip()
+    query = raw_content.strip()
     if not query and uploaded_files:
         query = "Please process the uploaded file(s)."
     if not query:
         return
 
     # --- Text query → A2A client-agent ---
-    conversation_id = cl.user_session.get("conversation_id")
-    if not conversation_id:
-        conversation_id = str(uuid.uuid4())
-        cl.user_session.set("conversation_id", conversation_id)
-
     artifacts_catalog = cl.user_session.get("artifacts", [])
-    client = _get_a2a_client()
 
     status_history: List[str] = []
     status_step = cl.Step(name="Sending request to agent...", type="tool")

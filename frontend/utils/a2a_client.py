@@ -5,6 +5,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import httpx
@@ -35,6 +36,48 @@ class A2AClient:
         self.agent_url = agent_url.rstrip("/")
         self.agent_secret = agent_secret
         self.timeout = timeout
+
+    async def stage_upload(
+        self,
+        file_path: Path,
+        *,
+        name: str,
+        mime_type: str,
+        conversation_id: str,
+    ) -> Dict[str, Any]:
+        """Stream upload bytes to the client-agent and return a staged upload token."""
+        path = Path(file_path)
+        headers = {
+            "Content-Type": mime_type or "application/octet-stream",
+            "Content-Length": str(path.stat().st_size),
+            "Authorization": f"Bearer {self.agent_secret}",
+        }
+        params = {
+            "name": name,
+            "mime_type": mime_type or "application/octet-stream",
+            "conversation_id": conversation_id,
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{self.agent_url}/uploads/stage",
+                params=params,
+                headers=headers,
+                content=self._file_chunks(path),
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict) or not payload.get("upload_id"):
+            raise ValueError("Upload staging response did not include upload_id")
+        return payload
+
+    async def _file_chunks(self, file_path: Path, chunk_size: int = 1024 * 1024):
+        with Path(file_path).open("rb") as stream:
+            while True:
+                chunk = await asyncio.to_thread(stream.read, chunk_size)
+                if not chunk:
+                    break
+                yield chunk
 
     async def send(
         self,

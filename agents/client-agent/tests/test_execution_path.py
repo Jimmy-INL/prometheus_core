@@ -131,39 +131,109 @@ if "prometheus_api.agent" not in sys.modules:
     sys.modules["prometheus_api.agent"] = agent_api_module
 
 import agent as agent_module
+import file_upload_handler
 
 
-def test_a2a_content_length_default_covers_100_mib_upload(monkeypatch) -> None:
-    monkeypatch.delenv("A2A_MAX_CONTENT_LENGTH_BYTES", raising=False)
+def test_upload_files_to_deeplynx_consumes_staged_upload(monkeypatch, tmp_path) -> None:
+    stage_dir = tmp_path / "staged"
+    monkeypatch.setenv("PROMETHEUS_STAGED_UPLOAD_DIR", str(stage_dir))
 
-    limit = agent_module._a2a_max_content_length_bytes()
+    upload_id = file_upload_handler.new_staged_upload_id()
+    data_path, meta_path = file_upload_handler.staged_upload_paths(upload_id)
+    data_path.parent.mkdir(parents=True)
+    data_path.write_bytes(b"exodus bytes")
+    file_upload_handler.write_staged_upload_metadata(
+        upload_id,
+        {
+            "upload_id": upload_id,
+            "name": "mesh.e",
+            "mime_type": "application/x-exodus",
+            "size_bytes": 12,
+        },
+    )
+    captured = {}
 
-    assert limit == 150 * 1024 * 1024
-    assert limit > (100 * 1024 * 1024 * 4) // 3
+    class _Agent:
+        async def send_deeplynx_artifact(self, **kwargs):
+            captured.update(kwargs)
+            captured["bytes"] = Path(kwargs["file_path"]).read_bytes()
+            return agent_module.ArtifactReference(
+                artifact_id="artifact-1",
+                conversation_id="conv-1",
+                name=kwargs["name"],
+                description=kwargs["description"],
+                uri="deeplynx://file/1",
+                metadata={},
+            )
 
-
-def test_a2a_content_length_override_wraps_a2a_application(monkeypatch) -> None:
-    class DummyA2AStarletteApplication:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    monkeypatch.setenv("A2A_MAX_CONTENT_LENGTH_BYTES", "12345")
-    run_globals = agent_module.PrometheusAgent.run.__globals__
-    monkeypatch.setitem(run_globals, "A2AStarletteApplication", DummyA2AStarletteApplication)
-
-    agent_module._install_a2a_content_length_override()
-    wrapped_cls = run_globals["A2AStarletteApplication"]
-
-    app = wrapped_cls(agent_card="card", http_handler="handler")
-    explicit_app = wrapped_cls(
-        agent_card="card",
-        http_handler="handler",
-        max_content_length=99,
+    refs = asyncio.run(
+        file_upload_handler.upload_files_to_deeplynx(
+            _Agent(),
+            [
+                file_upload_handler.UploadedFile(
+                    name="mesh.e",
+                    mime_type="application/x-exodus",
+                    size_bytes=12,
+                    upload_id=upload_id,
+                )
+            ],
+            {"mesh.e": "Uploaded Exodus mesh."},
+            context=object(),
+            event_queue=object(),
+            storage_config=object(),
+        )
     )
 
-    assert app.kwargs["max_content_length"] == 12345
-    assert explicit_app.kwargs["max_content_length"] == 99
+    assert refs[0].artifact_id == "artifact-1"
+    assert captured["bytes"] == b"exodus bytes"
+    assert captured["name"] == "mesh.e"
+    assert not data_path.exists()
+    assert not meta_path.exists()
+
+
+def test_upload_files_to_deeplynx_rejects_staged_upload_size_mismatch(monkeypatch, tmp_path) -> None:
+    stage_dir = tmp_path / "staged"
+    monkeypatch.setenv("PROMETHEUS_STAGED_UPLOAD_DIR", str(stage_dir))
+
+    upload_id = file_upload_handler.new_staged_upload_id()
+    data_path, meta_path = file_upload_handler.staged_upload_paths(upload_id)
+    data_path.parent.mkdir(parents=True)
+    data_path.write_bytes(b"abc")
+    file_upload_handler.write_staged_upload_metadata(
+        upload_id,
+        {
+            "upload_id": upload_id,
+            "name": "mesh.e",
+            "mime_type": "application/x-exodus",
+            "size_bytes": 3,
+        },
+    )
+
+    class _Agent:
+        async def send_deeplynx_artifact(self, **kwargs):
+            raise AssertionError("Mismatched staged upload metadata must not be persisted.")
+
+    refs = asyncio.run(
+        file_upload_handler.upload_files_to_deeplynx(
+            _Agent(),
+            [
+                file_upload_handler.UploadedFile(
+                    name="mesh.e",
+                    mime_type="application/x-exodus",
+                    size_bytes=4,
+                    upload_id=upload_id,
+                )
+            ],
+            {"mesh.e": "Uploaded Exodus mesh."},
+            context=object(),
+            event_queue=object(),
+            storage_config=object(),
+        )
+    )
+
+    assert refs == []
+    assert not data_path.exists()
+    assert not meta_path.exists()
 
 
 def test_execute_current_plan_routes_templates_through_workflow_engine(monkeypatch) -> None:
@@ -476,7 +546,7 @@ def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> Non
                         "name": "ignored.svg",
                         "mime_type": "image/svg+xml",
                         "size_bytes": 12,
-                        "content_b64": "PHN2Zy8+",
+                        "upload_id": "0" * 32,
                     }
                 ],
             },

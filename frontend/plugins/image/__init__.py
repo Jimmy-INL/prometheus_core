@@ -11,9 +11,18 @@ from typing import Any, Optional
 import chainlit as cl
 import httpx
 
+from plugins import UploadContext, UploadMatch, UploadRenderResult, normalize_mime_type
+
 MIMETYPES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]
 UPLOAD_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
 COMPONENT_NAME = None  # uses cl.Image, not a CustomElement
+_EXTENSION_MIMETYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 def _resolve_local(uri: str, metadata: dict) -> Optional[Path]:
@@ -67,6 +76,19 @@ async def render_artifact(artifact: dict) -> Optional[Any]:
     return cl.Image(name=name, path=str(local_path), display="inline")
 
 
-async def process_upload(file_path: Path) -> tuple[str, list]:
-    element = cl.Image(name=file_path.name, path=str(file_path), display="inline")
-    return f"**Image loaded:** {file_path.name}", [element]
+async def inspect_upload(context: UploadContext) -> UploadMatch | None:
+    mime = normalize_mime_type(context.mime_type)
+    if mime in MIMETYPES:
+        return UploadMatch(mime_type=mime, confidence=90, reason="declared image MIME")
+    if context.suffix in _EXTENSION_MIMETYPES:
+        return UploadMatch(
+            mime_type=_EXTENSION_MIMETYPES[context.suffix],
+            confidence=60,
+            reason="image file extension",
+        )
+    return None
+
+
+async def process_upload(context: UploadContext) -> UploadRenderResult:
+    element = cl.Image(name=context.display_name, path=str(context.file_path), display="inline")
+    return UploadRenderResult(f"**Image loaded:** {context.display_name}", [element])

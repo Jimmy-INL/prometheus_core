@@ -113,7 +113,6 @@ services:
       <<: *common-env
       AGENT_PORT: 8000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      A2A_MAX_CONTENT_LENGTH_BYTES: ${A2A_MAX_CONTENT_LENGTH_BYTES:-157286400}
     volumes: *common-volumes
     depends_on:
       litellm:

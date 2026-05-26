@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import types
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -67,7 +67,9 @@ async def test_capture_uploaded_file_rejects_files_over_limit(monkeypatch, tmp_p
     upload_path.write_bytes(b"12345")
     element = SimpleNamespace(name="large.step", path=str(upload_path), mime="model/step")
 
-    result = await handler._capture_uploaded_file(element, upload_path)
+    client = SimpleNamespace(stage_upload=AsyncMock())
+
+    result = await handler._capture_uploaded_file(element, upload_path, client, "conv-1")
 
     assert result is None
     assert sent_messages[0].content == "**large.step** exceeds the 100 MB upload limit and will not be stored."
@@ -108,9 +110,16 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
     monkeypatch.setattr(handler.cl, "Step", DummyStep)
     monkeypatch.setattr(handler.uuid, "uuid4", lambda: "conv-123")
 
-    find_plugin = MagicMock(return_value=object())
-    process_upload = AsyncMock(return_value=("Upload rendered", ["viewer"]))
-    monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", find_plugin)
+    upload_match = handler._plugins.UploadMatch(
+        mime_type="application/ifc",
+        confidence=90,
+        plugin=object(),
+    )
+    inspect_upload = AsyncMock(return_value=upload_match)
+    process_upload = AsyncMock(
+        return_value=handler._plugins.UploadRenderResult("Upload rendered", ["viewer"])
+    )
+    monkeypatch.setattr(handler._plugins, "inspect_upload", inspect_upload)
     monkeypatch.setattr(handler._plugins, "process_upload", process_upload)
 
     created_files = []
@@ -130,7 +139,17 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
         status="completed",
         message="ok",
     )
-    client = SimpleNamespace(send=AsyncMock(return_value=response))
+    client = SimpleNamespace(
+        send=AsyncMock(return_value=response),
+        stage_upload=AsyncMock(
+            return_value={
+                "upload_id": "upload-1",
+                "name": "model.ifc",
+                "mime_type": "application/ifc",
+                "size_bytes": 8,
+            }
+        ),
+    )
     handle_response = AsyncMock()
     monkeypatch.setattr(handler, "_get_a2a_client", lambda: client)
     monkeypatch.setattr(handler, "_handle_response", handle_response)
@@ -144,18 +163,30 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
 
     await handler.message_handler(message)
 
-    find_plugin.assert_called_once_with(upload_path, mime_type="application/ifc")
-    process_upload.assert_awaited_once_with(
-        upload_path,
-        mime_type="application/ifc",
-        display_name="model.ifc",
-    )
+    inspect_upload.assert_awaited_once()
+    inspected_context = inspect_upload.await_args.args[0]
+    assert inspected_context.file_path == upload_path
+    assert inspected_context.display_name == "model.ifc"
+    assert inspected_context.mime_type == "application/ifc"
+    assert inspected_context.size_bytes == 8
+    process_upload.assert_awaited_once()
+    processed_context = process_upload.await_args.args[0]
+    assert processed_context.file_path == upload_path
+    assert processed_context.display_name == "model.ifc"
+    assert processed_context.mime_type == "application/ifc"
+    assert process_upload.await_args.kwargs == {"match": upload_match}
     assert sent_messages[0].content == "Processing **model.ifc**…"
     assert sent_messages[1].content == "Upload rendered"
     assert sent_messages[1].elements == ["viewer", created_files[0]]
     assert created_files[0].name == "model.ifc"
     assert created_files[0].path == str(upload_path)
     assert created_files[0].mime == "application/ifc"
+    client.stage_upload.assert_awaited_once_with(
+        upload_path,
+        name="model.ifc",
+        mime_type="application/ifc",
+        conversation_id="conv-123",
+    )
     client.send.assert_awaited_once()
     kwargs = client.send.await_args.kwargs
     assert kwargs["query"] == "Please process the uploaded file(s)."
@@ -165,7 +196,7 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
             "name": "model.ifc",
             "mime_type": "application/ifc",
             "size_bytes": 8,
-            "content_b64": "SUZDIGRhdGE=",
+            "upload_id": "upload-1",
         }
     ]
     assert callable(kwargs["on_status"])
@@ -173,15 +204,28 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
 
 
 @pytest.mark.asyncio
-async def test_message_handler_plugin_upload_failure_is_reported(monkeypatch):
+async def test_message_handler_plugin_upload_failure_is_reported(monkeypatch, tmp_path):
     sent_messages = _install_message_spy(monkeypatch)
 
-    monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", MagicMock(return_value=object()))
+    monkeypatch.setattr(
+        handler._plugins,
+        "inspect_upload",
+        AsyncMock(
+            return_value=handler._plugins.UploadMatch(
+                mime_type="application/ifc",
+                confidence=90,
+                plugin=object(),
+            )
+        ),
+    )
     monkeypatch.setattr(handler._plugins, "process_upload", AsyncMock(side_effect=RuntimeError("boom")))
+    monkeypatch.setattr(handler, "_capture_uploaded_file", AsyncMock(return_value=None))
 
+    upload_path = tmp_path / "model.ifc"
+    upload_path.write_bytes(b"IFC data")
     message = SimpleNamespace(
         content="",
-        elements=[SimpleNamespace(name="model.ifc", path="/tmp/model.ifc")],
+        elements=[SimpleNamespace(name="model.ifc", path=str(upload_path))],
     )
 
     await handler.message_handler(message)
@@ -191,7 +235,7 @@ async def test_message_handler_plugin_upload_failure_is_reported(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_message_handler_plugin_upload_uses_detected_mime_for_suffixless_path(monkeypatch, tmp_path):
+async def test_message_handler_plugin_upload_uses_inspected_mime_for_suffixless_path(monkeypatch, tmp_path):
     _install_message_spy(monkeypatch)
     session = DummyUserSession(initial={"artifacts": []})
     monkeypatch.setattr(handler.cl, "user_session", session)
@@ -199,11 +243,16 @@ async def test_message_handler_plugin_upload_uses_detected_mime_for_suffixless_p
     monkeypatch.setattr(handler.uuid, "uuid4", lambda: "conv-123")
 
     plugin = object()
-    find_plugin = MagicMock(return_value=plugin)
-    process_upload = AsyncMock(return_value=("Upload rendered", ["viewer"]))
-    detect_upload_mime = AsyncMock(return_value="application/x-exodus")
-    monkeypatch.setattr(handler._plugins, "detect_upload_mime", detect_upload_mime)
-    monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", find_plugin)
+    upload_match = handler._plugins.UploadMatch(
+        mime_type="application/x-exodus",
+        confidence=80,
+        plugin=plugin,
+    )
+    inspect_upload = AsyncMock(return_value=upload_match)
+    process_upload = AsyncMock(
+        return_value=handler._plugins.UploadRenderResult("Upload rendered", ["viewer"])
+    )
+    monkeypatch.setattr(handler._plugins, "inspect_upload", inspect_upload)
     monkeypatch.setattr(handler._plugins, "process_upload", process_upload)
 
     class DummyFile:
@@ -216,7 +265,17 @@ async def test_message_handler_plugin_upload_uses_detected_mime_for_suffixless_p
     monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
 
     response = ConversationResponse(conversation_id="conv-123", status="completed", message="ok")
-    client = SimpleNamespace(send=AsyncMock(return_value=response))
+    client = SimpleNamespace(
+        send=AsyncMock(return_value=response),
+        stage_upload=AsyncMock(
+            return_value={
+                "upload_id": "upload-1",
+                "name": "cahnhilliard_out.e",
+                "mime_type": "application/x-exodus",
+                "size_bytes": 11,
+            }
+        ),
+    )
     monkeypatch.setattr(handler, "_get_a2a_client", lambda: client)
     monkeypatch.setattr(handler, "_handle_response", AsyncMock())
 
@@ -230,19 +289,24 @@ async def test_message_handler_plugin_upload_uses_detected_mime_for_suffixless_p
         )
     )
 
-    detect_upload_mime.assert_awaited_once_with(upload_path, "application/octet-stream")
-    find_plugin.assert_called_once_with(upload_path, mime_type="application/x-exodus")
-    process_upload.assert_awaited_once_with(
-        upload_path,
-        mime_type="application/x-exodus",
-        display_name="cahnhilliard_out.e",
-    )
+    inspect_upload.assert_awaited_once()
+    inspected_context = inspect_upload.await_args.args[0]
+    assert inspected_context.file_path == upload_path
+    assert inspected_context.display_name == "cahnhilliard_out.e"
+    assert inspected_context.mime_type == "application/octet-stream"
+    process_upload.assert_awaited_once()
+    processed_context = process_upload.await_args.args[0]
+    assert processed_context.file_path == upload_path
+    assert processed_context.display_name == "cahnhilliard_out.e"
+    assert processed_context.mime_type == "application/x-exodus"
+    assert process_upload.await_args.kwargs == {"match": upload_match}
 
 
 @pytest.mark.asyncio
-async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch):
+async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch, tmp_path):
     sent_messages = _install_message_spy(monkeypatch)
-    monkeypatch.setattr(handler._plugins, "find_plugin_for_upload", MagicMock(return_value=None))
+    monkeypatch.setattr(handler._plugins, "inspect_upload", AsyncMock(return_value=None))
+    monkeypatch.setattr(handler, "_capture_uploaded_file", AsyncMock(return_value=None))
 
     created_pdfs = []
     created_files = []
@@ -265,9 +329,11 @@ async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch
     monkeypatch.setattr(handler.cl, "Pdf", DummyPdf)
     monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
 
+    upload_path = tmp_path / "report.pdf"
+    upload_path.write_bytes(b"%PDF-1.4\n")
     message = SimpleNamespace(
         content="",
-        elements=[SimpleNamespace(name="report.pdf", path="/tmp/report.pdf")],
+        elements=[SimpleNamespace(name="report.pdf", path=str(upload_path))],
     )
 
     await handler.message_handler(message)
@@ -275,9 +341,9 @@ async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch
     assert len(created_pdfs) == 1
     assert created_pdfs[0].name == "report.pdf"
     assert created_pdfs[0].display == "inline"
-    assert created_pdfs[0].path == "/tmp/report.pdf"
+    assert created_pdfs[0].path == str(upload_path)
     assert created_files[0].name == "report.pdf"
-    assert created_files[0].path == "/tmp/report.pdf"
+    assert created_files[0].path == str(upload_path)
     assert created_files[0].mime == "application/pdf"
     assert sent_messages[0].content == "**PDF loaded:** report.pdf"
     assert sent_messages[0].elements == [created_pdfs[0], created_files[0]]

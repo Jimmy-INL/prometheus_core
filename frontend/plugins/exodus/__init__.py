@@ -3,12 +3,19 @@
 from pathlib import Path
 from typing import Any, Optional
 
-from plugins import GENERIC_UPLOAD_MIMETYPES, normalize_mime_type as _normalize_mime_type
+from plugins import (
+    GENERIC_UPLOAD_MIMETYPES,
+    UploadContext,
+    UploadMatch,
+    UploadRenderResult,
+    normalize_mime_type,
+)
 
 MIMETYPES = ["application/x-exodus", "application/exodus"]
 UPLOAD_EXTENSIONS = [".exo", ".e"]
 COMPONENT_NAME = "ExodusViewer"
 _EXODUS_CONTAINER_SIGNATURES = (b"CDF\x01", b"CDF\x02", b"\x89HDF\r\n\x1a\n")
+_EXODUS_CONTAINER_MIMETYPES = {"application/x-hdf5", "application/x-netcdf", "application/netcdf"}
 
 
 def _resolve_path(uri: str) -> Optional[Path]:
@@ -30,23 +37,37 @@ def _has_exodus_container_signature(file_path: Path) -> bool:
     return any(header.startswith(signature) for signature in _EXODUS_CONTAINER_SIGNATURES)
 
 
-async def detect_upload_mime(file_path: Path, mime_type: str | None = None) -> str | None:
-    """Identify Exodus uploads from file contents when the browser MIME is generic."""
-    normalized = _normalize_mime_type(mime_type)
+async def inspect_upload(context: UploadContext) -> UploadMatch | None:
+    """Identify Exodus uploads from MIME, extension, and NetCDF/HDF5 contents."""
+    normalized = normalize_mime_type(context.mime_type)
     if normalized in MIMETYPES:
-        return normalized
-    if normalized not in GENERIC_UPLOAD_MIMETYPES:
+        return UploadMatch(mime_type=normalized, confidence=90, reason="declared Exodus MIME")
+
+    should_inspect = (
+        normalized in GENERIC_UPLOAD_MIMETYPES
+        or normalized in _EXODUS_CONTAINER_MIMETYPES
+        or context.suffix in UPLOAD_EXTENSIONS
+    )
+    if not should_inspect:
         return None
-    if not _has_exodus_container_signature(file_path):
+    if not _has_exodus_container_signature(context.file_path):
         return None
 
     try:
         from components.exodus_integration import inspect_exodus_file_async
 
-        await inspect_exodus_file_async(file_path)
+        await inspect_exodus_file_async(context.file_path)
     except Exception:
         return None
-    return MIMETYPES[0]
+
+    confidence = 80 if normalized in _EXODUS_CONTAINER_MIMETYPES else 70
+    if context.suffix in UPLOAD_EXTENSIONS:
+        confidence += 10
+    return UploadMatch(
+        mime_type=MIMETYPES[0],
+        confidence=min(confidence, 95),
+        reason="Exodus container inspection",
+    )
 
 
 async def render_artifact(artifact: dict) -> Optional[Any]:
@@ -58,11 +79,11 @@ async def render_artifact(artifact: dict) -> Optional[Any]:
     return dataset.to_chainlit_element()
 
 
-async def process_upload(file_path: Path, display_name: str | None = None) -> tuple[str, list]:
+async def process_upload(context: UploadContext) -> UploadRenderResult:
     from components.exodus_integration import process_exodus_upload
-    dataset = await process_exodus_upload(file_path)
+    dataset = await process_exodus_upload(context.file_path)
     meta = dataset.metadata or {}
-    name = display_name or file_path.name
+    name = context.display_name
     lines = [f"**Exodus mesh loaded:** `{name}`"]
     if meta.get("num_timesteps"):
         lines.append(f"- Timesteps: {meta['num_timesteps']}")
@@ -75,4 +96,4 @@ async def process_upload(file_path: Path, display_name: str | None = None) -> tu
         lines.append(
             f"- Variables: {', '.join(all_vars[:5])}{'...' if len(all_vars) > 5 else ''}"
         )
-    return "\n".join(lines), [dataset.to_chainlit_element()]
+    return UploadRenderResult("\n".join(lines), [dataset.to_chainlit_element()])
