@@ -14,7 +14,6 @@ Set the following token scopes:
 |--------|---------------|
 | Pull packages | `read:packages` |
 | Push packages | `write:packages` |
-| Delete packages | `delete:packages` |
 
 ![Example of PAT creation screen](./images/pat_scope.png)
 
