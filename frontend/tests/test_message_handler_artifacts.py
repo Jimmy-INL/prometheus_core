@@ -5,26 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import types
 from pathlib import Path
 from types import SimpleNamespace
 
 FRONTEND_DIR = Path(__file__).resolve().parents[1]
 if str(FRONTEND_DIR) not in sys.path:
     sys.path.insert(0, str(FRONTEND_DIR))
-
-if "chainlit" not in sys.modules:
-    chainlit = types.ModuleType("chainlit")
-    chainlit.File = object
-    chainlit.Pdf = object
-    chainlit.CustomElement = object
-    chainlit.Message = object
-    chainlit.AskElementMessage = object
-    chainlit.AskActionMessage = object
-    chainlit.Action = object
-    chainlit.Step = object
-    chainlit.user_session = SimpleNamespace(get=lambda *args, **kwargs: None, set=lambda *args, **kwargs: None)
-    sys.modules["chainlit"] = chainlit
 
 from components import message_handler as handler
 

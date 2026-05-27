@@ -1,25 +1,10 @@
 """Tests for components/message_handler.py."""
 
 from pathlib import Path
-import sys
-import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-if "chainlit" not in sys.modules:
-    chainlit = types.ModuleType("chainlit")
-    chainlit.Message = object
-    chainlit.File = object
-    chainlit.Pdf = object
-    chainlit.CustomElement = object
-    chainlit.AskElementMessage = object
-    chainlit.AskActionMessage = object
-    chainlit.Action = object
-    chainlit.Step = object
-    chainlit.user_session = SimpleNamespace(get=lambda *args, **kwargs: None, set=lambda *args, **kwargs: None)
-    sys.modules["chainlit"] = chainlit
 
 from components import message_handler as handler
 from utils.a2a_client import ConversationResponse
@@ -206,6 +191,7 @@ async def test_message_handler_plugin_upload_sends_processed_elements_and_forwar
 @pytest.mark.asyncio
 async def test_message_handler_plugin_upload_failure_is_reported(monkeypatch, tmp_path):
     sent_messages = _install_message_spy(monkeypatch)
+    monkeypatch.setattr(handler.cl, "user_session", DummyUserSession())
 
     monkeypatch.setattr(
         handler._plugins,
@@ -305,6 +291,7 @@ async def test_message_handler_plugin_upload_uses_inspected_mime_for_suffixless_
 @pytest.mark.asyncio
 async def test_message_handler_pdf_upload_falls_back_to_chainlit_pdf(monkeypatch, tmp_path):
     sent_messages = _install_message_spy(monkeypatch)
+    monkeypatch.setattr(handler.cl, "user_session", DummyUserSession())
     monkeypatch.setattr(handler._plugins, "inspect_upload", AsyncMock(return_value=None))
     monkeypatch.setattr(handler, "_capture_uploaded_file", AsyncMock(return_value=None))
 

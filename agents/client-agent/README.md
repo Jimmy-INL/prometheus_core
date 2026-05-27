@@ -466,19 +466,20 @@ Run client-agent tests from this directory:
 
 ```bash
 cd agents/client-agent
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -p pytest_asyncio.plugin tests
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests
 ```
 
 The plugin-autoload-disabled form avoids unrelated pytest plugins from the ambient
-Python environment.
+Python environment. Use `python -m pytest` so pytest runs under this agent's uv
+environment instead of an ambient executable on PATH.
 
 Useful focused runs:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -p pytest_asyncio.plugin tests/test_execution_path.py
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -p pytest_asyncio.plugin tests/test_tool_discovery.py
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -p pytest_asyncio.plugin tests/test_workflow_library.py
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -p pytest_asyncio.plugin tests/test_artifact_handling.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_execution_path.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_tool_discovery.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_workflow_library.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_artifact_handling.py
 ```
 
 Compile-check the split modules:

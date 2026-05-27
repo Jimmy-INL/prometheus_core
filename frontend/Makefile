@@ -67,7 +67,7 @@ typecheck: ##@ Run mypy type checker
 	uv run mypy main.py components/ utils/
 
 test: ##@ Run unit tests
-	uv run pytest
+	uv run python -m pytest
 
 fix: ##@ Auto-fix ruff lint issues and format
 	uv run ruff check --fix .
