@@ -5,9 +5,7 @@ import { ChainlitAPI, ChainlitContext } from "@chainlit/react-client";
 import App from "./App";
 import "./index.css";
 
-const CHAINLIT_SERVER = "http://localhost:8500";
-
-const apiClient = new ChainlitAPI(CHAINLIT_SERVER, "webapp");
+const apiClient = new ChainlitAPI(window.location.origin, "webapp");
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

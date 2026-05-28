@@ -38,6 +38,26 @@ export default defineConfig({
         target: "http://localhost:8500",
         changeOrigin: true,
       },
+      "/project": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
+      "/feedback": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
+      "/mcp": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
+      "/set-session-cookie": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
+      },
     },
   },
 });

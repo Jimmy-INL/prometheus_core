@@ -7,6 +7,7 @@ import {
   sessionState,
   elementState,
   actionState,
+  askUserState,
   IAction,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
@@ -222,6 +223,7 @@ export function Chat() {
   const session = useRecoilValue(sessionState);
   const globalElements = useRecoilValue(elementState);
   const globalActions = useRecoilValue(actionState);
+  const askUser = useRecoilValue(askUserState);
 
   const flat = flattenMessages(messages);
 
@@ -332,6 +334,10 @@ export function Chat() {
   };
 
   const handleAction = async (action: IAction) => {
+    if (askUser?.spec.type === "action") {
+      askUser.callback(action);
+      return;
+    }
     if (!apiClient || !session?.socket.id) return;
     await apiClient.callAction(action, session.socket.id);
   };
