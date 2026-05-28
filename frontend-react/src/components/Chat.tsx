@@ -359,10 +359,30 @@ export function Chat() {
           {flat.map((item: FlatItem, i: number) => {
             const { step: m } = item;
 
-            if (isToolStep(item) || isAskForm(item) || isAskPlain(item)) {
+            if (isToolStep(item) || isAskPlain(item)) {
               return (
                 <div key={m.id} className="space-y-2">
                   <ToolStep item={item} />
+                </div>
+              );
+            }
+
+            if (isAskForm(item)) {
+              const askElements = [
+                ...((m.elements as AnyElement[] | undefined) ?? []),
+                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+              ];
+              return (
+                <div key={m.id} className="flex gap-2 justify-start">
+                  <AssistantAvatar />
+                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                    {m.output && (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {m.output}
+                      </ReactMarkdown>
+                    )}
+                    <ElementList elements={askElements} onSend={handleSend} />
+                  </div>
                 </div>
               );
             }
