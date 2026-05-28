@@ -1,10 +1,8 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import {
   useChatMessages,
   useChatInteract,
-  ChainlitContext,
-  sessionState,
   elementState,
   actionState,
   askUserState,
@@ -219,8 +217,6 @@ export function Chat() {
 
   const { messages } = useChatMessages();
   const { sendMessage, stopTask } = useChatInteract();
-  const apiClient = useContext(ChainlitContext);
-  const session = useRecoilValue(sessionState);
   const globalElements = useRecoilValue(elementState);
   const globalActions = useRecoilValue(actionState);
   const askUser = useRecoilValue(askUserState);
@@ -333,13 +329,12 @@ export function Chat() {
     setAwaitingResponse(false);
   };
 
-  const handleAction = async (action: IAction) => {
+  const handleAction = (action: IAction) => {
     if (askUser?.spec.type === "action") {
       askUser.callback(action);
-      return;
+    } else {
+      console.warn("Action ask is no longer active (timed out or cleared).");
     }
-    if (!apiClient || !session?.socket.id) return;
-    await apiClient.callAction(action, session.socket.id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

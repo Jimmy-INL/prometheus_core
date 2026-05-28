@@ -55,6 +55,8 @@ function NoViewerFallback({ element }: { element: AnyElement }) {
   const name = element.name ?? "Attachment";
   const url  = element.url;
 
+  if (!url) return null;
+
   return (
     <div className="flex items-center gap-3 bg-base-200 border border-base-300 rounded-lg px-3 py-2.5 my-2 max-w-sm">
       <div className="flex-1 min-w-0">
