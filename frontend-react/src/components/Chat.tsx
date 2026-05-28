@@ -221,6 +221,15 @@ export function Chat() {
   const globalActions = useRecoilValue(actionState);
   const askUser = useRecoilValue(askUserState);
 
+  useEffect(() => {
+    console.log(
+      `[askUser ${new Date().toISOString().slice(11, 23)}]`,
+      askUser
+        ? { type: askUser.spec.type, parentId: askUser.parentId, spec: askUser.spec }
+        : null,
+    );
+  }, [askUser]);
+
   const flat = flattenMessages(messages);
 
   let lastUserIdx = -1;
