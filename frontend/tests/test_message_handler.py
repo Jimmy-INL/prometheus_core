@@ -1,5 +1,6 @@
 """Tests for components/message_handler.py."""
 
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -35,9 +36,9 @@ def test_guess_upload_mime_normalizes_step_extensions() -> None:
     assert handler._guess_upload_mime("bracket.stp", "application/octet-stream") == "model/step"
 
 
-def test_upload_limit_is_100_mb() -> None:
-    assert handler.MAX_UPLOAD_BYTES == 100 * 1024 * 1024
-    assert handler.MAX_UPLOAD_MB == 100
+def test_upload_limit_uses_configured_setting() -> None:
+    assert handler.MAX_UPLOAD_BYTES == handler.settings.max_upload_bytes
+    assert handler.MAX_UPLOAD_MB == max(1, math.ceil(handler.MAX_UPLOAD_BYTES / (1024 * 1024)))
 
 
 @pytest.mark.asyncio

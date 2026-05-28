@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import types
 
+import pytest
+
 CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
@@ -132,6 +134,22 @@ if "prometheus_api.agent" not in sys.modules:
 
 import agent as agent_module
 import file_upload_handler
+
+
+def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
+    monkeypatch.delenv("PROMETHEUS_MAX_UPLOAD_BYTES", raising=False)
+    assert file_upload_handler.configured_max_upload_bytes() == file_upload_handler.DEFAULT_MAX_UPLOAD_BYTES
+
+
+def test_configured_max_upload_bytes_uses_env(monkeypatch) -> None:
+    monkeypatch.setenv("PROMETHEUS_MAX_UPLOAD_BYTES", "4096")
+    assert file_upload_handler.configured_max_upload_bytes() == 4096
+
+
+def test_configured_max_upload_bytes_rejects_invalid_env(monkeypatch) -> None:
+    monkeypatch.setenv("PROMETHEUS_MAX_UPLOAD_BYTES", "-1")
+    with pytest.raises(ValueError, match="PROMETHEUS_MAX_UPLOAD_BYTES must be positive"):
+        file_upload_handler.configured_max_upload_bytes()
 
 
 def test_upload_files_to_deeplynx_consumes_staged_upload(monkeypatch, tmp_path) -> None:

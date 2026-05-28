@@ -28,7 +28,24 @@ if TYPE_CHECKING:
     from prometheus_api.agent import ArtifactReference, EventQueue, RequestContext
     from prometheus_api.storage_client.connection import ConnectionConfig
 
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+MAX_UPLOAD_BYTES_ENV = "PROMETHEUS_MAX_UPLOAD_BYTES"
+DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+def configured_max_upload_bytes() -> int:
+    raw_value = os.getenv(MAX_UPLOAD_BYTES_ENV)
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_MAX_UPLOAD_BYTES
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{MAX_UPLOAD_BYTES_ENV} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{MAX_UPLOAD_BYTES_ENV} must be positive")
+    return value
+
+
+MAX_UPLOAD_BYTES = configured_max_upload_bytes()
 STAGED_UPLOAD_TTL_SECONDS = 24 * 60 * 60
 _UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 

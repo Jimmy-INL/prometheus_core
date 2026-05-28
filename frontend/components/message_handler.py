@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import mimetypes
 import tempfile
 import uuid
@@ -19,8 +20,8 @@ GENERIC_UPLOAD_MIMETYPES = _plugins.GENERIC_UPLOAD_MIMETYPES
 from utils.settings import settings  # noqa: E402
 from utils.uri_resolver import resolve_to_local_path  # noqa: E402
 
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
-MAX_UPLOAD_MB = MAX_UPLOAD_BYTES // (1024 * 1024)
+MAX_UPLOAD_BYTES = settings.max_upload_bytes
+MAX_UPLOAD_MB = max(1, math.ceil(MAX_UPLOAD_BYTES / (1024 * 1024)))
 
 CAD_EXTENSION_MIMETYPES = {
     ".stp": "model/step",

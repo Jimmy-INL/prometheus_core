@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.settings import read_config
+from utils.settings import DEFAULT_MAX_UPLOAD_BYTES, get_max_upload_bytes, read_config
 
 
 def test_read_config_valid_yaml(sample_config_yaml: Path):
@@ -35,3 +35,24 @@ def test_read_config_empty_file(tmp_path: Path):
     empty.write_text("")
     result = read_config(str(empty))
     assert result == {}
+
+
+def test_get_max_upload_bytes_defaults_to_100_mb(monkeypatch):
+    monkeypatch.delenv("PROMETHEUS_MAX_UPLOAD_BYTES", raising=False)
+    assert get_max_upload_bytes({}) == DEFAULT_MAX_UPLOAD_BYTES
+
+
+def test_get_max_upload_bytes_reads_config(monkeypatch):
+    monkeypatch.delenv("PROMETHEUS_MAX_UPLOAD_BYTES", raising=False)
+    assert get_max_upload_bytes({"max-upload-bytes": 2048}) == 2048
+
+
+def test_get_max_upload_bytes_env_overrides_config(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_MAX_UPLOAD_BYTES", "4096")
+    assert get_max_upload_bytes({"max-upload-bytes": 2048}) == 4096
+
+
+def test_get_max_upload_bytes_rejects_invalid_values(monkeypatch):
+    monkeypatch.setenv("PROMETHEUS_MAX_UPLOAD_BYTES", "0")
+    with pytest.raises(ValueError, match="PROMETHEUS_MAX_UPLOAD_BYTES must be positive"):
+        get_max_upload_bytes({})
