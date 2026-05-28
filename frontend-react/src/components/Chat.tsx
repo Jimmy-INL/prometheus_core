@@ -6,6 +6,7 @@ import {
   ChainlitContext,
   sessionState,
   elementState,
+  actionState,
   IAction,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
@@ -220,6 +221,7 @@ export function Chat() {
   const apiClient = useContext(ChainlitContext);
   const session = useRecoilValue(sessionState);
   const globalElements = useRecoilValue(elementState);
+  const globalActions = useRecoilValue(actionState);
 
   const flat = flattenMessages(messages);
 
@@ -359,15 +361,25 @@ export function Chat() {
           {flat.map((item: FlatItem, i: number) => {
             const { step: m } = item;
 
-            if (isToolStep(item) || isAskPlain(item)) {
+            const joinedActions = item.actions.length
+              ? item.actions
+              : globalActions.filter((a) => a.forId === m.id);
+            const effective: FlatItem =
+              joinedActions.length && item.kind !== "ask_action"
+                ? { ...item, actions: joinedActions, kind: "ask_action" }
+                : joinedActions.length !== item.actions.length
+                ? { ...item, actions: joinedActions }
+                : item;
+
+            if (isToolStep(effective) || isAskPlain(effective)) {
               return (
                 <div key={m.id} className="space-y-2">
-                  <ToolStep item={item} />
+                  <ToolStep item={effective} />
                 </div>
               );
             }
 
-            if (isAskForm(item)) {
+            if (isAskForm(effective)) {
               const askElements = [
                 ...((m.elements as AnyElement[] | undefined) ?? []),
                 ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
@@ -387,11 +399,23 @@ export function Chat() {
               );
             }
 
-            if (isAskAction(item)) {
+            if (isAskAction(effective)) {
+              const askElements = [
+                ...((m.elements as AnyElement[] | undefined) ?? []),
+                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+              ];
               return (
-                <div key={m.id} className="space-y-2">
-                  <ToolStep item={item} />
-                  <ActionButtons item={item} onAction={handleAction} />
+                <div key={m.id} className="flex gap-2 justify-start">
+                  <AssistantAvatar />
+                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                    {m.output && (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {m.output}
+                      </ReactMarkdown>
+                    )}
+                    <ElementList elements={askElements} onSend={handleSend} />
+                    <ActionButtons item={effective} onAction={handleAction} />
+                  </div>
                 </div>
               );
             }
