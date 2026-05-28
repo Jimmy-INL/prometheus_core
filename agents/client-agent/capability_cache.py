@@ -93,7 +93,7 @@ class CapabilityCache:
     - TTL: 5 minutes (balances freshness vs. registry load)
     """
 
-    TTL_SECONDS = 300  # 5 minutes
+    TTL_SECONDS = 60  # 1 minute
     CACHE_KEY = "capability_cache:v3:capabilities"
     TIMESTAMP_KEY = "capability_cache:v3:last_refresh"
 
