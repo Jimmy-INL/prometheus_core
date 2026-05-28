@@ -15,6 +15,8 @@ from typing import Any, Optional
 import chainlit as cl
 import httpx
 
+from plugins import UploadContext, UploadMatch, UploadRenderResult, normalize_mime_type
+
 MIMETYPES = ["image/svg+xml"]
 UPLOAD_EXTENSIONS = [".svg"]
 COMPONENT_NAME = "SVGViewer"
@@ -88,11 +90,20 @@ async def render_artifact(artifact: dict) -> Optional[Any]:
     )
 
 
-async def process_upload(file_path: Path) -> tuple[str, list]:
-    content = _read_file(file_path) or ""
+async def inspect_upload(context: UploadContext) -> UploadMatch | None:
+    mime = normalize_mime_type(context.mime_type)
+    if mime in MIMETYPES:
+        return UploadMatch(mime_type=mime, confidence=90, reason="declared SVG MIME")
+    if context.suffix in UPLOAD_EXTENSIONS:
+        return UploadMatch(mime_type=MIMETYPES[0], confidence=60, reason="SVG file extension")
+    return None
+
+
+async def process_upload(context: UploadContext) -> UploadRenderResult:
+    content = _read_file(context.file_path) or ""
     element = cl.CustomElement(
         name=COMPONENT_NAME,
         display="inline",
-        props={"svgContent": content, "svgUrl": "", "name": file_path.name},
+        props={"svgContent": content, "svgUrl": "", "name": context.display_name},
     )
-    return f"**SVG loaded:** {file_path.name}", [element]
+    return UploadRenderResult(f"**SVG loaded:** {context.display_name}", [element])

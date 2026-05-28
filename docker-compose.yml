@@ -17,6 +17,7 @@ x-common-env: &common-env
   DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
   DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
   DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
+  PROMETHEUS_MAX_UPLOAD_BYTES: ${PROMETHEUS_MAX_UPLOAD_BYTES:-104857600}
 
 x-common-volumes: &common-volumes
   - ./certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem

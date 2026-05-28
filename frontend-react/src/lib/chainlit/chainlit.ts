@@ -290,10 +290,10 @@ export const isWaitingForInput  = (item: FlatItem) =>
 // Requirements:
 //   Attach button in chat input bar → opens file picker
 //   Multi-file support (message.elements is a list)
-//   20 MB per-file limit (MAX_UPLOAD_BYTES in backend) — show error if exceeded
+//   100 MB per-file limit (MAX_UPLOAD_BYTES in backend) — show error if exceeded
 //   CAD file types must be accepted: .stp, .step (not in browser default lists)
 //   PDF files: backend renders inline via cl.Pdf — upload flow should reflect this
-//   All other files: passed to agent via uploaded_files payload
+//   All other files: staged by the Chainlit backend, then referenced in uploaded_files
 //
 // Chainlit upload mechanism: sendMessage() accepts an attachments[] param
 //   (second arg) — this is currently passed as [] everywhere. Needs to be

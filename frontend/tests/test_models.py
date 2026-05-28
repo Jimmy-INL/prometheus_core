@@ -22,6 +22,7 @@ def test_convert_request_defaults():
     assert req.timestep_mode == "all"
     assert req.compress is True
     assert req.include_normals is True
+    assert req.normal_style == "flat"
     assert req.blocks is None
     assert req.variables is None
     assert req.decimate is None

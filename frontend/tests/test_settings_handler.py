@@ -1,7 +1,6 @@
 """Tests for components/settings_handler.py."""
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 
 import pytest
 
@@ -71,33 +70,31 @@ async def test_configure_settings_includes_debug_tab(monkeypatch):
 
     _install_widgets(monkeypatch)
     monkeypatch.setattr(handler.cl, "ChatSettings", DummyChatSettings)
-    monkeypatch.setattr(handler, "app_settings", SimpleNamespace(agent_names=["MOOSE", "Alchemy"], debug=True))
+    monkeypatch.setattr(handler.app_settings, "debug", True)
 
     await handler.configure_settings()
 
     assert created and created[0].sent
     tabs = created[0].tabs
-    assert [tab.id for tab in tabs] == ["ui_config", "agent_config", "debug"]
-    assert [switch.id for switch in tabs[1].inputs] == ["use_MOOSE", "use_Alchemy"]
+    assert [tab.id for tab in tabs] == ["ui_config", "debug"]
+    assert tabs[1].inputs[0].id == "debug_feature"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("debug_feature", "expected_message"),
+    "debug_feature",
     [
-        ("Exodus File", "Upload an Exodus file to test the viewer."),
-        ("IFC File", "Upload an IFC file to test the viewer."),
+        "Exodus File",
+        "IFC File",
     ],
 )
-async def test_settings_debug_options_prompts_expected_upload_message(
+async def test_settings_debug_options_sends_no_upload_message(
     monkeypatch,
     debug_feature,
-    expected_message,
 ):
     sent_messages = _install_message_spy(monkeypatch)
     await handler.settings_debug_options({"debug_feature": debug_feature})
-    assert len(sent_messages) == 1
-    assert sent_messages[0].content == expected_message
+    assert sent_messages == []
 
 
 @pytest.mark.asyncio

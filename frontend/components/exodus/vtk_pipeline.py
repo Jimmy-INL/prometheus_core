@@ -119,13 +119,18 @@ def apply_decimation(polydata: vtk.vtkPolyData, target_reduction: float) -> vtk.
     return decimate.GetOutput()
 
 
-def compute_normals(polydata: vtk.vtkPolyData) -> vtk.vtkPolyData:
-    """Compute normals for the polydata."""
+def compute_normals(polydata: vtk.vtkPolyData, style: str = "flat") -> vtk.vtkPolyData:
+    """Compute normals for display, defaulting to flat element shading."""
     normals = vtk.vtkPolyDataNormals()
     normals.SetInputData(polydata)
-    normals.ComputePointNormalsOn()
-    normals.ComputeCellNormalsOff()
-    normals.SplittingOff()
+    if style == "smooth":
+        normals.ComputePointNormalsOn()
+        normals.ComputeCellNormalsOff()
+        normals.SplittingOff()
+    else:
+        normals.ComputePointNormalsOff()
+        normals.ComputeCellNormalsOn()
+        normals.SplittingOn()
     normals.Update()
     return normals.GetOutput()
 
@@ -190,7 +195,7 @@ def convert_timestep(
 
     # Compute normals if requested
     if request.include_normals:
-        polydata = compute_normals(polydata)
+        polydata = compute_normals(polydata, request.normal_style)
 
     return polydata
 

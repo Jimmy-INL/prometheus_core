@@ -6,6 +6,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List
 
 from prometheus_api.agent import ArtifactReference, EventQueue, PrometheusAgent, RequestContext
@@ -75,6 +76,80 @@ class OrchestratorAgent(PrometheusAgent):
     async def _refresh_endpoint(self, request) -> JSONResponse:
         """Manual refresh endpoint for capability/tool discovery."""
         payload = await runtime.refresh_discovery()
+        return JSONResponse(payload)
+
+    async def _stage_upload_endpoint(self, request: Request) -> JSONResponse:
+        """Stage upload bytes server-side and return a metadata token for A2A."""
+        from file_upload_handler import (
+            MAX_UPLOAD_BYTES,
+            cleanup_stale_staged_uploads,
+            new_staged_upload_id,
+            staged_upload_paths,
+            write_staged_upload_metadata,
+        )
+
+        cleanup_stale_staged_uploads()
+
+        raw_name = (
+            request.query_params.get("name")
+            or request.headers.get("x-upload-name")
+            or "upload"
+        )
+        name = Path(str(raw_name).replace("\\", "/")).name or "upload"
+        mime_type = (
+            request.query_params.get("mime_type")
+            or request.headers.get("content-type")
+            or "application/octet-stream"
+        ).split(";", 1)[0].strip().lower() or "application/octet-stream"
+        conversation_id = request.query_params.get("conversation_id") or ""
+
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_UPLOAD_BYTES:
+                    return JSONResponse(
+                        {"error": f"{name} exceeds the {MAX_UPLOAD_BYTES} byte upload limit"},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
+
+        upload_id = new_staged_upload_id()
+        data_path, _ = staged_upload_paths(upload_id)
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        size = 0
+
+        try:
+            with data_path.open("wb") as stream:
+                async for chunk in request.stream():
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise ValueError(f"{name} exceeds the {MAX_UPLOAD_BYTES} byte upload limit")
+                    await asyncio.to_thread(stream.write, chunk)
+        except ValueError as exc:
+            try:
+                data_path.unlink()
+            except FileNotFoundError:
+                pass
+            return JSONResponse({"error": str(exc)}, status_code=413)
+        except Exception as exc:
+            try:
+                data_path.unlink()
+            except FileNotFoundError:
+                pass
+            return JSONResponse({"error": f"Failed to stage upload: {exc}"}, status_code=500)
+
+        payload = {
+            "upload_id": upload_id,
+            "name": name,
+            "mime_type": mime_type,
+            "size_bytes": size,
+            "conversation_id": conversation_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        write_staged_upload_metadata(upload_id, payload)
         return JSONResponse(payload)
 
     async def _workflow_catalog_endpoint(self, request: Request) -> JSONResponse:
@@ -540,6 +615,7 @@ class OrchestratorAgent(PrometheusAgent):
     def configure_app(self, app) -> None:
         """Add custom orchestrator endpoints."""
         app.add_route("/status/{conversation_id}", self._status_endpoint, methods=["GET"])
+        app.add_route("/uploads/stage", self._stage_upload_endpoint, methods=["POST"])
         app.add_route("/discovery/refresh", self._refresh_endpoint, methods=["POST"])
         app.add_route("/workflows/catalog", self._workflow_catalog_endpoint, methods=["GET"])
         app.add_route("/workflows/{workflow_id}/input-form", self._workflow_input_form_endpoint, methods=["GET"])

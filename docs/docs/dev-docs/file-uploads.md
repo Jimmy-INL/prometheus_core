@@ -6,11 +6,12 @@ Users can attach files to a query in the Chainlit frontend. This document descri
 
 ```
 User attaches file(s) in Chainlit
-  → frontend/components/message_handler.py optionally renders local viewers, then reads files and base64-encodes content
-  → ConversationRequest.uploaded_files: [{name, mime_type, size_bytes, content_b64}]
+  → frontend/components/message_handler.py optionally renders local viewers
+  → frontend streams bytes to client-agent /uploads/stage
+  → ConversationRequest.uploaded_files: [{name, mime_type, size_bytes, upload_id}]
   → client-agent/_execute() calls _handle_uploaded_files() (before routing)
       → infer_file_descriptions() — one LLM call, always returns a string per file
-      → upload_files_to_deeplynx() — decode, write temp file, call send_deeplynx_artifact()
+      → upload_files_to_deeplynx() — resolves staged file, calls send_deeplynx_artifact()
       → returns ArtifactReference entries for successfully-uploaded files
       → _handle_uploaded_files() merges them into the artifact catalog and returns their Prometheus artifact IDs
   → artifact IDs stored in ConversationRequest.newly_uploaded_artifact_ids
@@ -22,18 +23,24 @@ User attaches file(s) in Chainlit
 
 ## Frontend encoding
 
-`frontend/components/message_handler.py` reads each attached file, base64-encodes its content, and includes it in the `uploaded_files` payload sent to the client-agent.  Files handled by a visualization plugin (e.g. IFC, Exodus, image, or SVG viewers) are processed locally for immediate rendering and **also** captured for DeepLynx upload.  The plugin path must not `continue` before `_capture_uploaded_file()` runs.
+`frontend/components/message_handler.py` streams each attached file to the client-agent's `/uploads/stage` endpoint, then includes the returned staged upload ID in the `uploaded_files` payload sent through A2A.  Files handled by a visualization plugin (e.g. IFC, Exodus, image, or SVG viewers) are processed locally for immediate rendering and **also** staged for DeepLynx upload.  The plugin path must not `continue` before `_capture_uploaded_file()` runs.
 
-The payload is capped at `MAX_UPLOAD_BYTES` (20 MB) per file.  Files are passed as:
+The upload is capped at `MAX_UPLOAD_BYTES` (100 MB) per file.  A2A carries only metadata, so large file bytes do not inflate the JSON-RPC request body.  Files are passed as:
 
 ```json
 {
   "name": "reactor_core.exo",
   "mime_type": "application/x-hdf5",
   "size_bytes": 4194304,
-  "content_b64": "<base64>"
+  "upload_id": "9f3f5b5d2e704a82b8e99f448b914f7f"
 }
 ```
+
+## Upload plugin inspection
+
+Visualization plugins own upload detection through `inspect_upload(context) -> UploadMatch | None`.  The context includes the temporary file path, display name, initial MIME type, and file size.  Each plugin can combine MIME, extension, and lightweight content inspection, then returns a MIME type and confidence.  The registry chooses the highest-confidence match with deterministic tie-breaking and calls `process_upload(context)` with one structured argument.
+
+This keeps storage independent from viewing: plugin rendering is best-effort local preview, while staging for DeepLynx runs for every readable upload.
 
 ## Description inference (`infer_file_descriptions`)
 
@@ -51,7 +58,7 @@ If the LLM response cannot be parsed, `_fallback_description()` is used: `"User-
 
 ## DeepLynx upload
 
-`upload_files_to_deeplynx` decodes the base64 content, writes a temporary file, then calls `agent.send_deeplynx_artifact()`.  Each uploaded file becomes a conversation-scoped `ArtifactReference` with:
+`upload_files_to_deeplynx` resolves each staged upload file, validates it against the metadata sent through A2A, calls `agent.send_deeplynx_artifact()`, then consumes the staged file.  Each uploaded file becomes a conversation-scoped `ArtifactReference` with:
 
 - `tags: ["user-upload"]`
 - `metadata: {"original_filename": "<name>", "source": "user-upload", ...}` plus storage metadata added by `send_deeplynx_artifact()` such as `deeplynx_file_id`
@@ -59,7 +66,7 @@ If the LLM response cannot be parsed, `_fallback_description()` is used: `"User-
 
 The temporary file is cleaned up regardless of upload success or failure.
 
-`upload_files_to_deeplynx()` handles individual file failures by logging a warning and continuing with the remaining files.  Invalid base64 content is rejected by `base64.b64decode(..., validate=True)`.
+`upload_files_to_deeplynx()` handles individual file failures by logging a warning and continuing with the remaining files.  Invalid staged metadata, missing staged bytes, size mismatches, and MIME mismatches are rejected before storage.
 
 ## Artifact IDs vs DeepLynx IDs
 
