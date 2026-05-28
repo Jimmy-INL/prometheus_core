@@ -15,15 +15,16 @@
  *   ✓ assistant_message rendering (text/markdown only)
  *   ✓ tool step rendering (collapsible status + history)
  *   ✓ ask_action (AskActionMessage approve/reject buttons)
+ *   ✓ ask_form (AskElementMessage — DynamicForm)
  *   ✓ elements[] on IStepExtended — wired to ElementList in Chat.tsx
  *   ✓ element pipeline — classifyElement() + VIEWER_REGISTRY in elements.ts
- *   ✓ element fallback — all unregistered kinds show filename + download link
+ *   ✓ element fallback — non-custom unregistered kinds show download card;
+ *                        custom elements without a registered viewer are hidden
  *
  * Not yet implemented:
- *   ✗ ask_form  (AskElementMessage — DynamicForm) — renders as stuck spinner
  *   ✗ ask_plain (AskUserMessage)
  *   ✗ viewers — IFC, Exodus, PDF, file download, image, JSON, suggestions,
- *               PlanViewer, Mermaid, ThermalAnalysis (all fall back gracefully)
+ *               PlanViewer, Mermaid, ThermalAnalysis
  *   ✗ file upload UI
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -121,33 +122,6 @@ export const isAskForm          = (item: FlatItem) => item.kind === "ask_form";
 export const isAskPlain         = (item: FlatItem) => item.kind === "ask_plain";
 export const isWaitingForInput  = (item: FlatItem) =>
   item.kind === "ask_action" || item.kind === "ask_form" || item.kind === "ask_plain";
-
-// ---------------------------------------------------------------------------
-// ─── TODO: ask_form — DynamicForm (HIGHEST PRIORITY) ────────────────────────
-//
-// This is the most critical gap. When the agent calls _handle_needs_info(),
-// the backend sends an AskElementMessage with a DynamicForm custom element.
-// Currently this renders as a ToolStep spinner the user can never dismiss —
-// the conversation is stuck until the ask times out (600s).
-//
-// Wire format: step.waitForAnswer=true, step.type="tool", step.elements present
-//   step.elements[0] is a CustomElement(name="DynamicForm", props={
-//     title, fields:[{id,label,input_type,required,options?,default?,help?}],
-//     submitLabel, formId
-//   })
-//
-// Fix: In Chat.tsx, the isAskForm branch currently renders <ToolStep>.
-//   Replace with <DynamicFormStep item={item} onSubmit={...} /> which:
-//     1. Reads step.elements[0].props to get the field schema
-//     2. Renders text/select/multi-select inputs per field
-//     3. On submit calls sendMessage({ output: JSON.stringify(answers),
-//        type: "user_message" }, []) — formId must be in the answers payload
-//        so the backend correlates the submission
-//
-// Note: DynamicForm also appears in VIEWER_REGISTRY (elements.ts) for the
-//   rare case it arrives as a standalone element rather than an ask step.
-//   The ask_form path in Chat.tsx is the common case.
-// ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
 // ─── TODO: FollowUpSuggestions viewer ───────────────────────────────────────
