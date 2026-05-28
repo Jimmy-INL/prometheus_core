@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
 
 from langchain_anthropic import ChatAnthropic
 
@@ -21,6 +23,19 @@ _tools_cache = None
 _refresh_task: Optional[asyncio.Task] = None
 _refresh_lock: Optional[asyncio.Lock] = None
 _status_redis_client: Any = None
+StatusEmitter = Callable[[str], Awaitable[None]]
+_status_emitters: ContextVar[tuple[StatusEmitter, ...]] = ContextVar(
+    "status_emitters",
+    default=(),
+)
+_status_emit_tasks: ContextVar[Optional[List[asyncio.Task]]] = ContextVar(
+    "status_emit_tasks",
+    default=None,
+)
+_status_emit_tail: ContextVar[Optional[asyncio.Task]] = ContextVar(
+    "status_emit_tail",
+    default=None,
+)
 
 
 def create_llm():
@@ -48,12 +63,75 @@ def _get_status_redis_client():
     return _status_redis_client
 
 
+async def _safe_emit_status(emitter: StatusEmitter, message: str) -> None:
+    try:
+        await emitter(message)
+    except Exception as exc:
+        print(f"[STATUS] Failed to emit streaming status update: {exc}")
+
+
+async def _emit_status_to_all(
+    emitters: tuple[StatusEmitter, ...],
+    message: str,
+    previous: Optional[asyncio.Task],
+) -> None:
+    if previous is not None:
+        await previous
+    for emitter in emitters:
+        await _safe_emit_status(emitter, message)
+
+
+def _emit_status_update(message: str) -> None:
+    emitters = _status_emitters.get()
+    if not emitters:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    task_list = _status_emit_tasks.get()
+    task = loop.create_task(
+        _emit_status_to_all(
+            emitters,
+            message,
+            _status_emit_tail.get(),
+        )
+    )
+    _status_emit_tail.set(task)
+    if task_list is not None:
+        task_list.append(task)
+
+
+@contextmanager
+def status_stream(emitter: StatusEmitter) -> Iterator[List[asyncio.Task]]:
+    """Register a request-local status emitter for the current async context."""
+    tasks: List[asyncio.Task] = []
+    emitter_token = _status_emitters.set((*_status_emitters.get(), emitter))
+    tasks_token = _status_emit_tasks.set(tasks)
+    tail_token = _status_emit_tail.set(None)
+    try:
+        yield tasks
+    finally:
+        _status_emitters.reset(emitter_token)
+        _status_emit_tasks.reset(tasks_token)
+        _status_emit_tail.reset(tail_token)
+
+
+async def wait_for_status_stream(tasks: List[asyncio.Task]) -> None:
+    pending = [task for task in tasks if not task.done()]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 def store_status_update(conversation_id: Optional[str], message: str, final: bool = False) -> None:
-    """Store a status message in Redis for frontend progress rendering."""
+    """Stream a status message for the active request and persist it in Redis."""
     conv_id = str(conversation_id or "").strip()
     text = str(message or "").strip()
     if not conv_id or not text:
         return
+
+    _emit_status_update(text)
 
     try:
         status_data = {
@@ -136,53 +214,3 @@ async def refresh_discovery():
     """Manually refresh dynamic discovery artifacts without restarting the service."""
     result = await refresh_dynamic_components(trigger="api")
     return result
-
-
-async def get_status(conversation_id: str):
-    """
-    Get the current status of an ongoing analysis.
-
-    Used by the frontend to poll for status updates during long-running operations.
-    """
-    import redis
-    import os
-
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    redis_password = os.getenv("REDIS_PASSWORD")
-    try:
-        redis_client = redis.Redis.from_url(
-            redis_url,
-            password=redis_password,
-            decode_responses=True
-        )
-        key = f"agent:status:{conversation_id}"
-        status_data = redis_client.get(key)
-        history_key = f"agent:status_history:{conversation_id}"
-        history_raw = redis_client.lrange(history_key, 0, -1)
-        history: List[Dict[str, Any]] = []
-        for item in history_raw:
-            try:
-                parsed = json.loads(item)
-                if isinstance(parsed, dict):
-                    history.append(parsed)
-            except Exception:
-                continue
-
-        if status_data:
-            print(f"[STATUS] Found status for {conversation_id}: {status_data[:100]}...")
-            payload = json.loads(status_data)
-            if history:
-                payload["history"] = history
-            return payload
-        if history:
-            latest = history[-1]
-            latest["history"] = history
-            return latest
-        else:
-            # Check if there are any status keys to help debug
-            all_keys = redis_client.keys("agent:status:*")
-            print(f"[STATUS] No status for {conversation_id}. Available keys: {all_keys[:5]}")
-            return {"message": "No status available", "final": False}
-    except Exception as e:
-        print(f"[STATUS] Error: {e}")
-        return {"message": f"Error fetching status: {e}", "final": False}

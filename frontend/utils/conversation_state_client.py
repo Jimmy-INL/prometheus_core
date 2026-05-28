@@ -10,7 +10,7 @@ except ImportError:
 
 
 class ConversationStateClient:
-    """Read-only client for conversation state and status history."""
+    """Read-only client for persisted conversation state."""
 
     def __init__(self, redis_url: str):
         self._redis_url = redis_url
@@ -59,26 +59,6 @@ class ConversationStateClient:
                 })
             conversations.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
             return conversations
-        except Exception:
-            return []
-
-    def get_status_history(self, conversation_id: str) -> List[Dict[str, Any]]:
-        """Retrieve status history for a conversation."""
-        client = self.client
-        if client is None:
-            return []
-        try:
-            history_key = f"agent:status_history:{conversation_id}"
-            history_raw = client.lrange(history_key, 0, -1)
-            history = []
-            for item in history_raw:
-                try:
-                    parsed = json.loads(item)
-                    if isinstance(parsed, dict):
-                        history.append(parsed)
-                except Exception:
-                    continue
-            return history
         except Exception:
             return []
 

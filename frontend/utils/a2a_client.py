@@ -90,13 +90,7 @@ class A2AClient:
         uploaded_files: Optional[List[Dict]] = None,
         on_status: Optional[Callable[[str], Coroutine]] = None,
     ) -> ConversationResponse:
-        """Send a message to the client-agent via A2A JSON-RPC.
-
-        Args:
-            on_status: Optional async callback invoked with status text during long-running
-                       operations. The client polls /status/{conversation_id} every 3 seconds
-                       and calls this with each new status message.
-        """
+        """Send a message to the client-agent via A2A JSON-RPC streaming."""
         request_id = str(uuid.uuid4())
         message_id = str(uuid.uuid4())
 
@@ -120,7 +114,7 @@ class A2AClient:
         message = {
             "jsonrpc": "2.0",
             "id": request_id,
-            "method": "message/send",
+            "method": "message/stream",
             "params": {
                 "message": {
                     "messageId": message_id,
@@ -141,94 +135,147 @@ class A2AClient:
 
         headers = {
             "Content-Type": "application/json",
+            "Accept": "text/event-stream, application/x-ndjson",
             "Authorization": f"Bearer {self.agent_secret}",
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            initial_seen_count = 0
-            if on_status:
-                initial_seen_count = await self._get_status_history_count(
-                    client,
-                    conversation_id,
-                    headers,
-                )
-
-            send_task = asyncio.create_task(
-                client.post(self.agent_url, json=message, headers=headers)
-            )
-
-            # Poll for status updates while the blocking call is in flight
-            if on_status:
-                poll_task = asyncio.create_task(
-                    self._poll_status(
-                        client,
-                        conversation_id,
-                        headers,
-                        on_status,
-                        send_task,
-                        initial_seen_count=initial_seen_count,
-                    )
-                )
-
-            response = await send_task
-
-            if on_status:
-                poll_task.cancel()
-                try:
-                    await poll_task
-                except asyncio.CancelledError:
-                    pass
-
-            response.raise_for_status()
-            result = response.json()
+        result = await self._stream_request(message, headers, on_status=on_status)
 
         return self._parse_response(result, conversation_id)
 
-    async def _get_status_history_count(
+    async def _stream_request(
         self,
-        client: httpx.AsyncClient,
-        conversation_id: str,
+        message: Dict[str, Any],
         headers: Dict[str, str],
-    ) -> int:
-        """Return current status history length so polling only emits new entries."""
-        try:
-            status_url = f"{self.agent_url}/status/{conversation_id}"
-            resp = await client.get(status_url, headers=headers, timeout=5.0)
-            if resp.status_code != 200:
-                return 0
-            data = resp.json()
-            history = data.get("history", [])
-            return len(history) if isinstance(history, list) else 0
-        except Exception:
-            return 0
+        *,
+        on_status: Optional[Callable[[str], Coroutine]] = None,
+    ) -> Dict[str, Any]:
+        """Stream A2A events and return a blocking-style JSON-RPC result."""
+        a2a_result: Dict[str, Any] = {"kind": "task", "artifacts": []}
 
-    async def _poll_status(
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                self.agent_url,
+                json=message,
+                headers=headers,
+            ) as response:
+                response.raise_for_status()
+                content_type = str(response.headers.get("content-type") or "").lower()
+
+                if "application/x-ndjson" in content_type:
+                    async for line in response.aiter_lines():
+                        payload = str(line or "").strip()
+                        if payload:
+                            envelope = json.loads(payload)
+                            a2a_result = await self._apply_stream_event(
+                                a2a_result,
+                                envelope,
+                                on_status=on_status,
+                            )
+                elif "text/event-stream" in content_type:
+                    data_lines: List[str] = []
+                    async for line in response.aiter_lines():
+                        stripped = str(line or "").strip()
+                        if not stripped:
+                            if data_lines:
+                                envelope = json.loads("\n".join(data_lines))
+                                a2a_result = await self._apply_stream_event(
+                                    a2a_result,
+                                    envelope,
+                                    on_status=on_status,
+                                )
+                                data_lines = []
+                            continue
+                        if stripped.startswith(":"):
+                            continue
+                        if stripped.startswith("data:"):
+                            data_lines.append(stripped[5:].lstrip())
+
+                    if data_lines:
+                        envelope = json.loads("\n".join(data_lines))
+                        a2a_result = await self._apply_stream_event(
+                            a2a_result,
+                            envelope,
+                            on_status=on_status,
+                        )
+                else:
+                    raise ValueError(
+                        f"Unsupported A2A streaming content type: {content_type or 'unknown'}"
+                    )
+
+        return {"result": a2a_result}
+
+    async def _apply_stream_event(
         self,
-        client: httpx.AsyncClient,
-        conversation_id: str,
-        headers: Dict[str, str],
-        on_status: Callable[[str], Coroutine],
-        send_task: asyncio.Task,
-        initial_seen_count: int = 0,
-    ) -> None:
-        """Poll the status endpoint and invoke on_status with new messages."""
-        seen_count = max(0, int(initial_seen_count or 0))
-        status_url = f"{self.agent_url}/status/{conversation_id}"
-        await asyncio.sleep(2)  # Initial delay before first poll
-        while not send_task.done():
-            try:
-                resp = await client.get(status_url, headers=headers, timeout=5.0)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    history = data.get("history", [])
-                    for entry in history[seen_count:]:
-                        msg = entry.get("message", "") if isinstance(entry, dict) else str(entry)
-                        if msg:
-                            await on_status(msg)
-                    seen_count = len(history)
-            except Exception:
-                pass
-            await asyncio.sleep(3)
+        a2a_result: Dict[str, Any],
+        envelope: Dict[str, Any],
+        *,
+        on_status: Optional[Callable[[str], Coroutine]] = None,
+    ) -> Dict[str, Any]:
+        if "error" in envelope:
+            raise ValueError(f"Agent stream error: {envelope['error']}")
+
+        event = envelope.get("result", {})
+        if not isinstance(event, dict):
+            return a2a_result
+
+        kind = str(event.get("kind") or "").strip().lower()
+        if kind == "status-update":
+            a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
+            a2a_result["contextId"] = event.get("contextId") or a2a_result.get("contextId")
+            a2a_result["status"] = event.get("status", {})
+            status_text = self._extract_status_message_text(a2a_result["status"])
+            if on_status and status_text and not bool(event.get("final")):
+                await on_status(status_text)
+        elif kind == "artifact-update":
+            artifact = event.get("artifact")
+            if isinstance(artifact, dict):
+                a2a_result["artifacts"] = self._merge_stream_artifacts(
+                    a2a_result.get("artifacts", []),
+                    [artifact],
+                )
+
+        return a2a_result
+
+    def _extract_status_message_text(self, status_payload: Dict[str, Any]) -> str:
+        message = status_payload.get("message", {}) if isinstance(status_payload, dict) else {}
+        parts = message.get("parts", []) if isinstance(message, dict) else []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            root = part.get("root") if isinstance(part.get("root"), dict) else None
+            part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+            if part_kind != "text":
+                continue
+            text = part.get("text")
+            if text is None and root is not None:
+                text = root.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        return ""
+
+    def _merge_stream_artifacts(
+        self,
+        existing: List[Dict[str, Any]],
+        incoming: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        merged: List[Dict[str, Any]] = list(existing or [])
+        seen = {
+            str(item.get("artifactId") or item.get("name") or "")
+            for item in merged
+            if isinstance(item, dict)
+        }
+        for artifact in incoming or []:
+            if not isinstance(artifact, dict):
+                continue
+            key = str(artifact.get("artifactId") or artifact.get("name") or "")
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            merged.append(artifact)
+        return merged
 
     def _parse_response(self, result: Dict[str, Any], fallback_conv_id: str) -> ConversationResponse:
         """Parse A2A JSON-RPC response into ConversationResponse.

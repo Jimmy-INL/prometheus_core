@@ -74,7 +74,7 @@ User → Chainlit (frontend/main.py + components/message_handler.py)
        package, baked into the prometheus_api base image at PROMETHEUS_API_BASE_IMAGE_HASH)
 ```
 
-The frontend uses **blocking A2A** (`configuration.blocking: true`); during long calls the A2A client polls `/status/{conversation_id}` every ~3s and renders progress in a `cl.Step`. There is no streaming end-to-end yet — keep this in mind when designing UX for new long-running agent calls.
+The frontend uses A2A `message/stream`; streamed status events render progress in a `cl.Step`. Do not add `/status/{conversation_id}` polling for new long-running agent calls.
 
 ### Why LiteLLM is in the loop
 

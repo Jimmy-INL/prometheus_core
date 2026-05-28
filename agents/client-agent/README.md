@@ -33,8 +33,8 @@ A2A POST /
   -> specialist agent
 ```
 
-Slash commands, status polling, workflow catalog endpoints, artifact ingestion, and
-file upload pre-processing also enter through `OrchestratorAgent`.
+Slash commands, streaming status updates, workflow catalog endpoints, artifact ingestion,
+and file upload pre-processing also enter through `OrchestratorAgent`.
 
 ## Directory Structure
 
@@ -125,14 +125,15 @@ Major functions:
 
 - `create_llm()`: Builds the Anthropic chat model used by planner/refinement helpers.
 - `_get_status_redis_client()`: Lazily creates the Redis client used for status history.
-- `store_status_update(conversation_id, message, final=False)`: Writes latest status and rolling history to Redis for frontend polling.
+- `status_stream(emitter)`: Registers a request-local A2A status emitter.
+- `wait_for_status_stream(tasks)`: Waits for queued status emission tasks.
+- `store_status_update(conversation_id, message, final=False)`: Streams live status updates to the active request and persists status history in Redis.
 - `initialize_tools()`: Discovers all specialist tools and stores them in `_tools_cache`.
 - `get_refresh_lock()`: Returns the process-local discovery refresh lock.
 - `refresh_dynamic_components(trigger="manual")`: Refreshes tools, capability cache, and workflow library metadata.
 - `discovery_refresh_loop()`: Background periodic refresh loop.
 - `create_tools()`: Returns the initialized tool cache or raises if discovery has not run.
 - `refresh_discovery()`: API wrapper for manual refresh endpoint.
-- `get_status(conversation_id)`: Reads latest status and history for `/status/{conversation_id}`.
 
 Important globals:
 
@@ -153,12 +154,10 @@ Major methods:
 - `_on_startup()`: Refreshes discovery state and starts the background refresh task.
 - `_on_shutdown()`: Cancels the background refresh task.
 - `lifespan(app)`: Starlette lifespan wrapper used by the base agent.
-- `_status_endpoint(request)`: Returns Redis-backed status history.
 - `_refresh_endpoint(request)`: Manually refreshes discovery/capability/workflow state.
 - `_workflow_catalog_endpoint(request)`: Returns workflow catalog cards for the frontend picker.
 - `_workflow_input_form_endpoint(request)`: Builds the unresolved input form for a workflow template.
 - `_workflow_start_endpoint(request)`: Starts a conversation turn from a workflow catalog selection.
-- `_forward_status_history(...)`: Polls Redis status history and forwards updates into the A2A event stream.
 - `_collect_artifact_reference_payloads(payload)`: Recursively finds artifact-like payloads in responses.
 - `_ingest_response_artifacts(conversation_id, payload)`: Registers downstream artifact references in the orchestrator artifact registry.
 - `_response_payload_with_artifacts(...)`: Serializes a `ConversationResponse` and attaches `artifacts` plus `new_artifacts`.

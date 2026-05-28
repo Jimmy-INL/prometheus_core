@@ -12,6 +12,25 @@ if str(FRONTEND_DIR) not in sys.path:
 from utils.a2a_client import A2AClient
 
 
+class _FakeStreamingResponse:
+    def __init__(self, lines, *, content_type="application/x-ndjson"):
+        self._lines = lines
+        self.headers = {"content-type": content_type}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    def raise_for_status(self):
+        return None
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+
 def test_parse_response_extracts_conversation_response_from_data_artifact() -> None:
     client = A2AClient(agent_url="http://example.test", agent_secret="secret")
     payload = {
@@ -93,80 +112,154 @@ def test_parse_response_extracts_from_rooted_text_part() -> None:
     assert response.followup_questions[0]["field"] == "context.temperature_c"
 
 
-def test_poll_status_starts_after_existing_history(monkeypatch) -> None:
-    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
-    seen = []
-
-    class _FakeResponse:
-        def __init__(self, payload, status_code=200):
-            self._payload = payload
-            self.status_code = status_code
-
-        def json(self):
-            return self._payload
-
-    class _DoneTask:
-        def __init__(self):
-            self._done = False
-
-        def done(self):
-            return self._done
-
-        def mark_done(self):
-            self._done = True
-
-    status_calls = [
+def test_send_streams_sse_statuses_and_final_response(monkeypatch) -> None:
+    final_payload = {
+        "conversation_id": "conv-1",
+        "status": "completed",
+        "message": "Done.",
+    }
+    stream_events = [
         {
-            "history": [
-                {"message": "old-1"},
-                {"message": "old-2"},
-            ]
+            "result": {
+                "kind": "status-update",
+                "contextId": "conv-1",
+                "taskId": "task-1",
+                "final": False,
+                "status": {
+                    "state": "working",
+                    "message": {"parts": [{"kind": "text", "text": "Thinking..."}]},
+                },
+            }
         },
         {
-            "history": [
-                {"message": "old-1"},
-                {"message": "old-2"},
-                {"message": "new-1"},
-                {"message": "new-2"},
-            ]
+            "result": {
+                "kind": "status-update",
+                "contextId": "conv-1",
+                "taskId": "task-1",
+                "final": True,
+                "status": {
+                    "state": "completed",
+                    "message": {"parts": [{"kind": "text", "text": json.dumps(final_payload)}]},
+                },
+            }
         },
     ]
+    sse_lines = []
+    for event in stream_events:
+        sse_lines.append(f"data: {json.dumps(event)}")
+        sse_lines.append("")
+    statuses = []
+    captured = {}
 
-    async def _fake_sleep(_seconds):
-        return None
+    async def _on_status(message: str):
+        statuses.append(message)
 
-    async def _fake_on_status(message: str):
-        seen.append(message)
-        if len(seen) >= 2:
-            send_task.mark_done()
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    send_task = _DoneTask()
+        async def __aenter__(self):
+            return self
 
-    monkeypatch.setattr("utils.a2a_client.asyncio.sleep", _fake_sleep)
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
 
-    class _Client:
-        async def get(self, url, headers=None, timeout=None):
-            return _FakeResponse(status_calls.pop(0))
+        def stream(self, method, url, **kwargs):
+            captured["method"] = method
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            captured["headers"] = kwargs.get("headers", {})
+            return _FakeStreamingResponse(sse_lines, content_type="text/event-stream")
 
-    async def _run():
-        fake_client = _Client()
-        history_count = await client._get_status_history_count(
-            fake_client,
-            "conv-1",
-            {},
+    monkeypatch.setattr("utils.a2a_client.httpx.AsyncClient", _FakeAsyncClient)
+
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    response = asyncio.run(
+        client.send(
+            query="hello",
+            conversation_id="conv-1",
+            on_status=_on_status,
         )
-        await client._poll_status(
-            fake_client,
-            "conv-1",
-            {},
-            _fake_on_status,
-            send_task,
-            initial_seen_count=history_count,
+    )
+
+    assert statuses == ["Thinking..."]
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://example.test"
+    assert captured["json"]["method"] == "message/stream"
+    assert "application/x-ndjson" in captured["headers"]["Accept"]
+    assert captured["headers"]["Authorization"] == "Bearer secret"
+    assert response.status == "completed"
+    assert response.message == "Done."
+
+
+def test_send_accepts_ndjson_stream(monkeypatch) -> None:
+    final_payload = {
+        "conversation_id": "conv-2",
+        "status": "answer",
+        "message": "NDJSON done.",
+    }
+    lines = [
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-2",
+                    "taskId": "task-2",
+                    "final": False,
+                    "status": {
+                        "state": "working",
+                        "message": {"parts": [{"kind": "text", "text": "Working..."}]},
+                    },
+                }
+            }
+        ),
+        json.dumps(
+            {
+                "result": {
+                    "kind": "status-update",
+                    "contextId": "conv-2",
+                    "taskId": "task-2",
+                    "final": True,
+                    "status": {
+                        "state": "completed",
+                        "message": {"parts": [{"kind": "text", "text": json.dumps(final_payload)}]},
+                    },
+                }
+            }
+        ),
+    ]
+    statuses = []
+
+    async def _on_status(message: str):
+        statuses.append(message)
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, **kwargs):
+            return _FakeStreamingResponse(lines, content_type="application/x-ndjson")
+
+    monkeypatch.setattr("utils.a2a_client.httpx.AsyncClient", _FakeAsyncClient)
+
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    response = asyncio.run(
+        client.send(
+            query="hello",
+            conversation_id="conv-2",
+            on_status=_on_status,
         )
+    )
 
-    asyncio.run(_run())
-
-    assert seen == ["new-1", "new-2"]
+    assert statuses == ["Working..."]
+    assert response.status == "answer"
+    assert response.message == "NDJSON done."
 
 
 def test_stage_upload_streams_file_bytes(monkeypatch, tmp_path: Path) -> None:
