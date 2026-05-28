@@ -22,6 +22,9 @@ export default defineConfig({
         target: "http://localhost:8500",
         changeOrigin: true,
         ws: true,
+        timeout: 0,
+        proxyTimeout: 0,
+        secure: false,
       },
       "/user": {
         target: "http://localhost:8500",
