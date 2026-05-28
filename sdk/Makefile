@@ -129,7 +129,7 @@ build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, de
 
 build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>])
 ifndef IMAGE_REPO
-	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=ghcr.io/my-org/prometheus-api PUSH_LATEST=true)
+	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=containers.github.inl.gov/genesis PUSH_LATEST=true)
 endif
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \

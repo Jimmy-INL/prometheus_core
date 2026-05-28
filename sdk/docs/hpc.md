@@ -2,7 +2,7 @@
 
 Notes specific to running `prometheus-api` inside INL's HPC environment, where you need to mount the INL CA bundle and (for git-based installs) work around SSL chain issues.
 
-## Running the container with podman + INL CA bundle
+## Running the container
 
 INL HPC nodes provide the INL CA bundle at `/hpc-common/users/certs/inl_bundle.pem`. Mount it into the container and point the standard SSL/CA env vars at it so HTTPS calls to internal services validate.
 
