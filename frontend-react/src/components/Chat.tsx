@@ -5,6 +5,7 @@ import {
   useChatInteract,
   ChainlitContext,
   sessionState,
+  elementState,
   IAction,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
@@ -213,6 +214,7 @@ export function Chat() {
   const { sendMessage, stopTask } = useChatInteract();
   const apiClient = useContext(ChainlitContext);
   const session = useRecoilValue(sessionState);
+  const globalElements = useRecoilValue(elementState);
 
   const flat = flattenMessages(messages);
 
@@ -395,7 +397,10 @@ export function Chat() {
                         {m.output}
                       </ReactMarkdown>
                       <ElementList
-                        elements={m.elements as AnyElement[] | undefined}
+                        elements={[
+                          ...((m.elements as AnyElement[] | undefined) ?? []),
+                          ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                        ]}
                         onSend={handleSend}
                       />
                     </div>
