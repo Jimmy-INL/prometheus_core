@@ -12,6 +12,7 @@ import uuid
 import asyncio
 import hashlib
 import re
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from typing import AsyncIterator, Dict, Any, Optional, List, Mapping, Sequence, cast
@@ -1040,61 +1041,92 @@ class PrometheusAgent:
 
         return agent_card
 
-    def register_with_registry(self, agent_card: AgentCard) -> None:
+    def _try_register_once(
+        self,
+        agent_card: AgentCard,
+        registry_url: str,
+        headers: Dict[str, str],
+    ) -> None:
+        """Single registration attempt — raises on any failure."""
+        agent_name = agent_card.name.lower().replace(" ", "-")
+        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
+
+        with httpx.Client(timeout=15.0, headers=headers) as client:
+            # Delete any existing registration so re-registrations always
+            # pick up the latest agent card (LiteLLM returns 400 on duplicates).
+            existing = client.get(f"{registry_url}/v1/agents")
+            if existing.status_code == 200:
+                for entry in existing.json() if isinstance(existing.json(), list) else []:
+                    if entry.get("agent_name") == agent_name:
+                        client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
+                        logger.debug(f"Removed stale registration for '{agent_name}'")
+                        break
+
+            registration_payload: Dict[str, Any] = {
+                "agent_name": agent_name,
+                "agent_card_params": agent_card_params,
+            }
+            if agent_secret := os.getenv("AGENT_SECRET"):
+                registration_payload["static_headers"] = {
+                    "Authorization": f"Bearer {agent_secret}",
+                }
+
+            logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
+            response = client.post(f"{registry_url}/v1/agents", json=registration_payload)
+            response.raise_for_status()
+            logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
+
+    def register_with_registry(
+        self,
+        agent_card: AgentCard,
+        *,
+        max_retries: Optional[int] = None,
+        initial_delay: float = 2.0,
+        max_delay: float = 30.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
         """
         Register this agent with LiteLLM's A2A gateway.
 
-        Posts to POST /v1/agents so LiteLLM can route incoming A2A calls to
-        this agent and expose the full raw agent card for discovery and
-        routing metadata.
+        Retries with exponential backoff until success or max_retries is
+        exhausted. max_retries defaults to REGISTRY_MAX_RETRIES env var (default 10).
+        On final failure the agent starts unregistered with a warning logged.
         """
         registry_url = self.registry_url()
         if not registry_url:
             logger.info("REGISTRY_URL not set - skipping agent registration")
             return
 
+        resolved_max_retries = (
+            max_retries
+            if max_retries is not None
+            else int(os.getenv("REGISTRY_MAX_RETRIES", "10"))
+        )
+
         master_key = os.getenv("LITELLM_MASTER_KEY", "")
-        headers = {}
+        headers: Dict[str, str] = {}
         if master_key:
             headers["Authorization"] = f"Bearer {master_key}"
 
-        # agent_name becomes the routing key: /a2a/{agent_name}/message/send
-        agent_name = agent_card.name.lower().replace(" ", "-")
-
-        # Use the raw agent_card dict so any Prometheus-specific routing or
-        # usage metadata is preserved in LiteLLM.
-        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
-
-        try:
-            with httpx.Client(timeout=15.0, headers=headers) as client:
-                # Delete any existing registration so re-registrations always
-                # pick up the latest agent card (LiteLLM returns 400 on duplicates).
-                existing = client.get(f"{registry_url}/v1/agents")
-                if existing.status_code == 200:
-                    for entry in existing.json() if isinstance(existing.json(), list) else []:
-                        if entry.get("agent_name") == agent_name:
-                            client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
-                            logger.debug(f"Removed stale registration for '{agent_name}'")
-                            break
-                registration_payload = {
-                    "agent_name": agent_name,
-                    "agent_card_params": agent_card_params,
-                }
-
-                if agent_secret := os.getenv("AGENT_SECRET"):
-                    registration_payload["static_headers"] = {
-                        "Authorization": f"Bearer {agent_secret}",
-                    }
-                logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
-                response = client.post(
-                    f"{registry_url}/v1/agents",
-                    json=registration_payload,
+        delay = initial_delay
+        for attempt in range(resolved_max_retries + 1):
+            try:
+                self._try_register_once(agent_card, registry_url, headers)
+                return
+            except Exception as e:
+                if attempt >= resolved_max_retries:
+                    logger.error(
+                        f"Failed to register with LiteLLM after {resolved_max_retries + 1} "
+                        f"attempt(s): {e}"
+                    )
+                    logger.warning("Continuing without registration")
+                    return
+                logger.warning(
+                    f"Registry registration attempt {attempt + 1}/{resolved_max_retries + 1} "
+                    f"failed: {e}. Retrying in {delay:.1f}s..."
                 )
-                response.raise_for_status()
-                logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
-        except Exception as e:
-            logger.error(f"Failed to register with LiteLLM: {e}")
-            logger.warning("Continuing without registration")
+                time.sleep(delay)
+                delay = min(delay * backoff_factor, max_delay)
 
     def create_executor(self) -> PrometheusAgentExecutor:
         """
