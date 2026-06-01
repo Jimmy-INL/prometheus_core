@@ -13,7 +13,7 @@ import asyncio
 import hashlib
 import re
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass
 from typing import AsyncIterator, Dict, Any, Optional, List, Mapping, Sequence, cast
 from datetime import datetime, timezone
@@ -274,8 +274,11 @@ class PrometheusAgentExecutor(AgentExecutor):
                 params = json.loads(text)
             except json.JSONDecodeError:
                 # If not valid JSON, treat the text as a plain message
-                logger.debug(f"Message is not JSON, treating as plain text: {text}")
+                logger.debug("Message is not JSON; treating it as plain text")
                 params = {"message": text}
+            else:
+                if not isinstance(params, dict):
+                    params = {"value": params}
 
         # Inject skill_id from message metadata so agents can dispatch on
         # which skill was invoked without needing an explicit 'action' param.
@@ -285,7 +288,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             if skill_id and "skill_id" not in params:
                 params["skill_id"] = str(skill_id)
 
-        logger.info(f"Extracted parameters: {params}")
+        logger.info("Extracted parameter keys: %s", sorted(params.keys()))
         return params
 
     async def _execute(
@@ -1048,33 +1051,62 @@ class PrometheusAgent:
         headers: Dict[str, str],
     ) -> None:
         """Single registration attempt — raises on any failure."""
-        agent_name = agent_card.name.lower().replace(" ", "-")
-        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
+        agent_name, registration_payload = self._build_registration_payload(agent_card)
 
         with httpx.Client(timeout=15.0, headers=headers) as client:
             # Delete any existing registration so re-registrations always
             # pick up the latest agent card (LiteLLM returns 400 on duplicates).
             existing = client.get(f"{registry_url}/v1/agents")
             if existing.status_code == 200:
-                for entry in existing.json() if isinstance(existing.json(), list) else []:
+                entries = existing.json()
+                for entry in entries if isinstance(entries, list) else []:
                     if entry.get("agent_name") == agent_name:
                         client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
                         logger.debug(f"Removed stale registration for '{agent_name}'")
                         break
 
-            registration_payload: Dict[str, Any] = {
-                "agent_name": agent_name,
-                "agent_card_params": agent_card_params,
-            }
-            if agent_secret := os.getenv("AGENT_SECRET"):
-                registration_payload["static_headers"] = {
-                    "Authorization": f"Bearer {agent_secret}",
-                }
-
-            logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
+            logger.info("Registering '%s' with LiteLLM at %s", agent_name, registry_url)
             response = client.post(f"{registry_url}/v1/agents", json=registration_payload)
             response.raise_for_status()
             logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
+
+    async def _try_register_once_async(
+        self,
+        agent_card: AgentCard,
+        registry_url: str,
+        headers: Dict[str, str],
+    ) -> None:
+        """Single async registration attempt — raises on any failure."""
+        agent_name, registration_payload = self._build_registration_payload(agent_card)
+
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            existing = await client.get(f"{registry_url}/v1/agents")
+            if existing.status_code == 200:
+                entries = existing.json()
+                for entry in entries if isinstance(entries, list) else []:
+                    if entry.get("agent_name") == agent_name:
+                        await client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
+                        logger.debug(f"Removed stale registration for '{agent_name}'")
+                        break
+
+            logger.info("Registering '%s' with LiteLLM at %s", agent_name, registry_url)
+            response = await client.post(f"{registry_url}/v1/agents", json=registration_payload)
+            response.raise_for_status()
+            logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
+
+    def _build_registration_payload(self, agent_card: AgentCard) -> tuple[str, Dict[str, Any]]:
+        """Build the LiteLLM registration payload without logging secret-bearing values."""
+        agent_name = agent_card.name.lower().replace(" ", "-")
+        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
+        registration_payload: Dict[str, Any] = {
+            "agent_name": agent_name,
+            "agent_card_params": agent_card_params,
+        }
+        if agent_secret := os.getenv("AGENT_SECRET"):
+            registration_payload["static_headers"] = {
+                "Authorization": f"Bearer {agent_secret}",
+            }
+        return agent_name, registration_payload
 
     @staticmethod
     def _resolve_registry_max_retries(max_retries: Optional[int]) -> int:
@@ -1099,6 +1131,13 @@ class PrometheusAgent:
             return 0
         return resolved
 
+    @staticmethod
+    def _registry_headers() -> Dict[str, str]:
+        master_key = os.getenv("LITELLM_MASTER_KEY", "")
+        if not master_key:
+            return {}
+        return {"Authorization": f"Bearer {master_key}"}
+
     def register_with_registry(
         self,
         agent_card: AgentCard,
@@ -1122,10 +1161,7 @@ class PrometheusAgent:
 
         resolved_max_retries = self._resolve_registry_max_retries(max_retries)
 
-        master_key = os.getenv("LITELLM_MASTER_KEY", "")
-        headers: Dict[str, str] = {}
-        if master_key:
-            headers["Authorization"] = f"Bearer {master_key}"
+        headers = self._registry_headers()
 
         delay = initial_delay
         for attempt in range(resolved_max_retries + 1):
@@ -1145,6 +1181,51 @@ class PrometheusAgent:
                     f"failed: {e}. Retrying in {delay:.1f}s..."
                 )
                 time.sleep(delay)
+                delay = min(delay * backoff_factor, max_delay)
+
+    async def register_with_registry_async(
+        self,
+        agent_card: AgentCard,
+        *,
+        max_retries: Optional[int] = None,
+        initial_delay: float = 2.0,
+        max_delay: float = 30.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
+        """
+        Register this agent with LiteLLM's A2A gateway without blocking the event loop.
+
+        This is the registration path used by `build_app()`/`run()` during Starlette lifespan
+        startup. It keeps the same retry policy as `register_with_registry()`.
+        """
+        registry_url = self.registry_url()
+        if not registry_url:
+            logger.info("REGISTRY_URL not set - skipping agent registration")
+            return
+
+        resolved_max_retries = self._resolve_registry_max_retries(max_retries)
+        headers = self._registry_headers()
+
+        delay = initial_delay
+        for attempt in range(resolved_max_retries + 1):
+            try:
+                await self._try_register_once_async(agent_card, registry_url, headers)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if attempt >= resolved_max_retries:
+                    logger.error(
+                        f"Failed to register with LiteLLM after {resolved_max_retries + 1} "
+                        f"attempt(s): {e}"
+                    )
+                    logger.warning("Continuing without registration")
+                    return
+                logger.warning(
+                    f"Registry registration attempt {attempt + 1}/{resolved_max_retries + 1} "
+                    f"failed: {e}. Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
                 delay = min(delay * backoff_factor, max_delay)
 
     def create_executor(self) -> PrometheusAgentExecutor:
@@ -1545,21 +1626,81 @@ class PrometheusAgent:
         """
         yield
 
-    def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
+    @staticmethod
+    def _log_background_registration_result(task: asyncio.Task[None]) -> None:
+        """Log unexpected background registration task failures."""
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Background registry registration task failed unexpectedly")
+
+    @asynccontextmanager
+    async def _application_lifespan(
+        self,
+        app,
+        agent_card: AgentCard,
+        *,
+        register_on_startup: bool,
+    ) -> AsyncIterator[None]:
+        """Run subclass lifespan and start registry registration in the background."""
+        registration_task: Optional[asyncio.Task[None]] = None
+        async with self.lifespan(app):
+            if register_on_startup:
+                registration_task = asyncio.create_task(
+                    self.register_with_registry_async(agent_card),
+                    name=f"{self.agent_name}-registry-registration",
+                )
+                registration_task.add_done_callback(self._log_background_registration_result)
+                with suppress(Exception):
+                    app.state.registry_registration_task = registration_task
+
+            try:
+                yield
+            finally:
+                if registration_task and not registration_task.done():
+                    registration_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await registration_task
+
+    @staticmethod
+    def _agent_secret_required() -> bool:
+        return os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
+
+    def _configure_auth(self, app) -> None:
+        """Attach bearer-token authentication or fail fast for unsafe required config."""
+        agent_secret = os.getenv("AGENT_SECRET")
+        agent_secret_required = self._agent_secret_required()
+
+        if not agent_secret_required:
+            logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
+            return
+
+        if not agent_secret:
+            raise RuntimeError("AGENT_SECRET_REQUIRED=true but AGENT_SECRET is not set")
+
+        app.add_middleware(
+            BearerTokenMiddleware,
+            secret=agent_secret,
+            required=True,
+        )
+        logger.info("Bearer token authentication enabled")
+
+    def build_app(self, *, register_on_startup: bool = True):
         """
-        Start the agent HTTP server.
+        Build the Starlette app for this agent.
 
         This method:
         1. Loads the agent card
         2. Creates the executor
         3. Sets up the HTTP server with A2A protocol
         4. Adds Bearer token authentication
-        5. Registers with the registry
-        6. Starts the server
+        5. Starts registry registration during app lifespan
 
         Args:
-            host: Host to bind to (default: 0.0.0.0)
-            port: Port to listen on (default: from AGENT_PORT env var or 8000)
+            register_on_startup: Whether to start background LiteLLM registry registration
+                when the app lifespan starts.
         """
         logger.info(f"Starting {self.agent_name}")
 
@@ -1579,8 +1720,17 @@ class PrometheusAgent:
         # Create A2A application builder
         builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
 
+        @asynccontextmanager
+        async def app_lifespan(app) -> AsyncIterator[None]:
+            async with self._application_lifespan(
+                app,
+                agent_card,
+                register_on_startup=register_on_startup,
+            ):
+                yield
+
         # Build the Starlette app
-        app = builder.build(lifespan=self.lifespan)
+        app = builder.build(lifespan=app_lifespan)
 
         # add health endpoint
         app.add_route(
@@ -1789,31 +1939,19 @@ class PrometheusAgent:
         # Optional subclass hook for custom routes/endpoints.
         self.configure_app(app)
 
-        # Add Bearer token authentication middleware
-        agent_secret = os.getenv("AGENT_SECRET")
-        agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in [
-            "true",
-            "1",
-            "yes",
-        ]
+        self._configure_auth(app)
 
-        if agent_secret or agent_secret_required:
-            app.add_middleware(
-                BearerTokenMiddleware,
-                secret=agent_secret,
-                required=agent_secret_required,
-            )
-            if agent_secret:
-                logger.info("Bearer token authentication enabled")
-            else:
-                logger.warning(
-                    "AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled"
-                )
-        else:
-            logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
+        return app
 
-        # Register with registry
-        self.register_with_registry(agent_card)
+    def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
+        """
+        Start the agent HTTP server.
+
+        Args:
+            host: Host to bind to (default: 0.0.0.0)
+            port: Port to listen on (default: from AGENT_PORT env var or 8000)
+        """
+        app = self.build_app(register_on_startup=True)
 
         # Start HTTP server
         if port is None:

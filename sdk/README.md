@@ -157,7 +157,7 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 ### PrometheusAgent
 - Automatic agent card loading
 - Built-in Bearer token authentication
-- Registry registration
+- Background registry registration during app startup
 - HTTP server setup with A2A protocol
 - Optional `message/stream` support (`agent_card.capabilities.streaming=true`)
 - Final response emission from the returned `_execute(...)` dict

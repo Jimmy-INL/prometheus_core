@@ -624,6 +624,9 @@ class MyAgent(PrometheusAgent):
 
 ## Lifecycle Hooks
 
+`agent.run()` calls `build_app()` and starts uvicorn. Use `build_app(register_on_startup=False)`
+when tests or custom hosts need a Starlette app without background registry registration.
+
 ### `configure_app(app)`
 
 Override to add custom HTTP routes or middleware to the Starlette app:
@@ -665,7 +668,7 @@ utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).
 | `AGENT_PORT` | `8000` | Port uvicorn binds to (internal) |
 | `EXTERNAL_AGENT_URL` | auto | Full URL advertised to the registry. Auto-derived from the container hostname and `AGENT_PORT` when not set. Set explicitly for port-mapped or cross-host deployments (e.g. `http://my-host:9002`, where `9002` is the host-side port and `8000` is `AGENT_PORT` inside the container). |
 | `AGENT_SECRET` | — | Bearer token for inbound authentication |
-| `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header |
+| `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header. If true and `AGENT_SECRET` is unset, app startup fails fast. |
 | `REGISTRY_URL` | `http://litellm:4000` | LiteLLM gateway URL for registry registration |
 | `REGISTRY_MAX_RETRIES` | `10` | Registration retries after the first attempt, used for both explicit `REGISTRY_URL` and the built-in fallback URL. |
 | `LITELLM_MASTER_KEY` | — | LiteLLM admin key |
@@ -679,6 +682,10 @@ utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).
 ## Built-in HTTP Endpoints
 
 `agent.run()` exposes these endpoints automatically:
+
+Registry registration starts as a background async task during app lifespan startup, after
+subclass `lifespan(app)` startup completes. Registration retries do not block `uvicorn.run()`
+from starting the HTTP server.
 
 | Method | Path | Description |
 |---|---|---|
@@ -791,6 +798,16 @@ class MissingInput:
     sensitive: bool = False               # Suppress logging/display
     required: bool = True                 # False = optional form field
 ```
+
+### `build_app(register_on_startup=True)`
+
+Build and return the Starlette app without starting uvicorn. Use
+`register_on_startup=False` in tests or custom hosts that should not start background
+registry registration.
+
+### `run(host="0.0.0.0", port=None)`
+
+Build the app, start background registry registration during lifespan startup, and run uvicorn.
 
 ### `send_input_required(context, event_queue, *, missing_inputs, hint, metadata=None)`
 
