@@ -174,7 +174,7 @@ class RadiationDamageAgent(PrometheusAgent):
                     "task_id": context.task_id,
                 },
             )
-            return {}
+            return {"status": "input_required"}
 
         if not ANTHROPIC_API_KEY:
             return {

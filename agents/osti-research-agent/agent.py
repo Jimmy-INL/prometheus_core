@@ -26,10 +26,9 @@ from typing import Any, Dict, List, Optional
 import redis
 import requests
 from anthropic import Anthropic
-from prometheus_api.agent import PrometheusAgent
+from prometheus_api.agent import PrometheusAgent, TaskState
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent, TaskStatus, TaskState, Message, TextPart, Part
 
 # Configure logging
 logging.basicConfig(
@@ -1037,7 +1036,7 @@ Rules:
         final: bool = False,
         conversation_id: str = None
     ) -> None:
-        """Helper to send status updates using A2A event types and log progress."""
+        """Helper to send status updates and log progress."""
         # Log the status message for visibility
         logger.info(f"[STATUS] {status_message}")
 
@@ -1045,25 +1044,12 @@ Rules:
         status_id = conversation_id or context.context_id
         self._store_status_in_redis(status_id, status_message, final)
 
-        # Create an A2A Message object for the status
-        message = Message(
-            messageId=str(uuid.uuid4()),
-            role="agent",
-            parts=[Part(TextPart(text=status_message))],
-            contextId=context.context_id,
-            taskId=context.task_id,
-        )
-
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                final=final,
-                status=TaskStatus(
-                    state=TaskState.working if not final else TaskState.completed,
-                    message=message,
-                ),
-            )
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.completed if final else TaskState.working,
+            final=final,
+            message=status_message,
         )
 
     def extract_and_store_facts(self, question: str, answers: List[Dict]) -> int:
@@ -1419,34 +1405,21 @@ Return ONLY the JSON array."""
         result: Dict[str, Any],
         conversation_id: str = None
     ) -> None:
-        """Send the final result as a Message to the event queue so it appears in history."""
+        """Send the final result to the event queue so it appears in history."""
         logger.info(f"[RESULT] Sending final result to event queue")
 
         # Store final status in Redis
         status_id = conversation_id or context.context_id
         self._store_status_in_redis(status_id, "Research complete", final=True)
 
-        # Create an A2A Message with the final result as JSON
+        # Send the final result as JSON text.
         result_text = json.dumps(result, indent=2, default=str)
-        message = Message(
-            messageId=str(uuid.uuid4()),
-            role="agent",
-            parts=[Part(TextPart(text=result_text))],
-            contextId=context.context_id,
-            taskId=context.task_id,
-        )
-
-        # Send as final status update with the result message
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                final=True,
-                status=TaskStatus(
-                    state=TaskState.completed,
-                    message=message,
-                ),
-            )
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.completed,
+            final=True,
+            message=result_text,
         )
         logger.info(f"[RESULT] Final result sent to event queue ({len(result_text)} chars)")
 
