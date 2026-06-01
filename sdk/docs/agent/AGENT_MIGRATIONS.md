@@ -2,9 +2,11 @@
 
 This document is the running migration log for `PrometheusAgent` behavior changes.
 When a base-agent change requires downstream agent updates, add a short section here
-with migration steps and a minimal code example.
+under the relevant version heading with migration steps and a minimal code example.
 
-## Use the Agent `_execute` Hook
+## 0.5.0
+
+### Use the Agent `_execute` Hook
 
 Most agents should implement `PrometheusAgent._execute()` and let the base class create
 the executor. The executor now delegates to the agent's `_execute` method through
@@ -32,7 +34,7 @@ class MyAgent(PrometheusAgent):
         return {"message": "Analysis complete.", "agent": self.agent_name}
 ```
 
-## Build Apps Through `build_app`
+### Build Apps Through `build_app`
 
 Agents that host the Starlette app themselves should call `build_app()` instead of
 constructing `A2AStarletteApplication`, request handlers, middleware, and debug routes
@@ -57,7 +59,7 @@ app = agent.build_app()
 test_app = agent.build_app(register_on_startup=False)
 ```
 
-## Configure Required Auth Explicitly
+### Configure Required Auth Explicitly
 
 When `AGENT_SECRET_REQUIRED=true` (the default), `AGENT_SECRET` must be configured before
 the agent app is built. The base agent fails fast at app construction time instead of
@@ -81,7 +83,7 @@ monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
 app = agent.build_app(register_on_startup=False)
 ```
 
-## Let Startup Handle Registry Registration
+### Let Startup Handle Registry Registration
 
 Registry registration now runs as an asynchronous background task from app lifespan
 startup. The task keeps exponential backoff retries so an agent can come up while the
@@ -106,7 +108,7 @@ REGISTRY_URL=http://litellm:4000
 REGISTRY_MAX_RETRIES=10
 ```
 
-## Use Status Helpers Instead of Manual Events
+### Use Status Helpers Instead of Manual Events
 
 Status event construction is centralized so `task_id`, `context_id`, text messages, and
 metadata stay consistent across the executor and public helper APIs.
