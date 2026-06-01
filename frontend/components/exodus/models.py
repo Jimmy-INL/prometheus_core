@@ -20,6 +20,7 @@ class ConvertRequest:
     decimate: float | None = None
     compress: bool = True
     include_normals: bool = True
+    normal_style: Literal["flat", "smooth"] = "flat"
 
     def __post_init__(self) -> None:
         """Validate and convert paths."""

@@ -9,6 +9,8 @@ CONFIG_PATH = os.environ.get(
     "PROMETHEUS_CONFIG_PATH",
     str(Path(__file__).parent.parent / "config.yml"),
 )
+MAX_UPLOAD_BYTES_ENV = "PROMETHEUS_MAX_UPLOAD_BYTES"
+DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
 def read_config(config_file_path: str):
@@ -22,6 +24,23 @@ def read_config(config_file_path: str):
         raise RuntimeError(f"Invalid YAML: {e}")
 
 
+def _positive_int(value: Any, name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if parsed <= 0:
+        raise ValueError(f"{name} must be positive")
+    return parsed
+
+
+def get_max_upload_bytes(data: dict[str, Any]) -> int:
+    env_value = os.environ.get(MAX_UPLOAD_BYTES_ENV)
+    if env_value is not None and env_value.strip():
+        return _positive_int(env_value, MAX_UPLOAD_BYTES_ENV)
+    return _positive_int(data.get("max-upload-bytes", DEFAULT_MAX_UPLOAD_BYTES), "max-upload-bytes")
+
+
 class Settings(BaseSettings):
     data: dict[str, Any] = read_config(CONFIG_PATH)
     local_users: list[dict[str, str]] = data.get("local-users", [])
@@ -33,6 +52,7 @@ class Settings(BaseSettings):
     agent_url: str = os.environ.get("CLIENT_AGENT_URL", data.get("agent-url", "http://localhost:8001"))
     agent_secret: str = os.environ.get("AGENT_SECRET", data.get("agent-secret", ""))
     redis_url: str = os.environ.get("REDIS_URL", data.get("redis-url", "redis://localhost:6379"))
+    max_upload_bytes: int = get_max_upload_bytes(data)
     debug: bool = data.get("debug", True)
     auto_approve_steps: bool = data.get("auto-approve-steps", False)
 

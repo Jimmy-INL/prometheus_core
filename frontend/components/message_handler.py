@@ -1,9 +1,10 @@
-import base64
 import json
 import logging
+import math
 import mimetypes
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,10 +15,13 @@ logger = logging.getLogger(__name__)
 
 import plugins as _plugins  # noqa: E402
 from utils.a2a_client import A2AClient, ConversationResponse  # noqa: E402
+_normalize_mime_type = _plugins.normalize_mime_type
+GENERIC_UPLOAD_MIMETYPES = _plugins.GENERIC_UPLOAD_MIMETYPES
 from utils.settings import settings  # noqa: E402
 from utils.uri_resolver import resolve_to_local_path  # noqa: E402
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_UPLOAD_BYTES = settings.max_upload_bytes
+MAX_UPLOAD_MB = max(1, math.ceil(MAX_UPLOAD_BYTES / (1024 * 1024)))
 
 CAD_EXTENSION_MIMETYPES = {
     ".stp": "model/step",
@@ -34,35 +38,80 @@ CAD_FILE_MIMETYPES = {
     "application/step+zip",
 }
 
+def _upload_download_element(name: str, file_path: Path, mime_type: str = "") -> Any:
+    """Create a downloadable Chainlit file element for an uploaded file."""
+    return cl.File(
+        name=name,
+        path=str(file_path),
+        display="inline",
+        mime=mime_type or _guess_upload_mime(name),
+    )
+
+
+def _upload_limit_message(name: str) -> str:
+    return f"**{name}** exceeds the {MAX_UPLOAD_MB} MB upload limit and will not be stored."
+
+
+async def _send_upload_limit_message(name: str) -> None:
+    await cl.Message(content=_upload_limit_message(name)).send()
+
 
 def _guess_upload_mime(filename: str, element_mime: Optional[str] = None) -> str:
     """Return a stable MIME type for uploaded files, including CAD extensions."""
+    mime = _normalize_mime_type(element_mime)
+    if mime and mime not in GENERIC_UPLOAD_MIMETYPES:
+        return mime
+
     suffix = Path(filename).suffix.lower()
     if suffix in CAD_EXTENSION_MIMETYPES:
         return CAD_EXTENSION_MIMETYPES[suffix]
-    return element_mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return mimetypes.guess_type(filename)[0] or mime or "application/octet-stream"
 
 
-async def _capture_uploaded_file(element: Any, file_path: Path) -> Optional[Dict[str, Any]]:
-    """Read one Chainlit upload into the payload shape expected by the agent."""
+def _build_upload_context(element: Any, file_path: Path, size_bytes: int) -> _plugins.UploadContext:
+    """Create the upload context used by plugin inspection and staging."""
+    return _plugins.UploadContext(
+        file_path=file_path,
+        display_name=element.name,
+        mime_type=_guess_upload_mime(element.name, getattr(element, "mime", None)),
+        size_bytes=size_bytes,
+    )
+
+
+async def _capture_uploaded_file(
+    element: Any,
+    file_path: Path,
+    client: A2AClient,
+    conversation_id: str,
+    mime_type: str = "",
+    size_bytes: int | None = None,
+) -> Optional[Dict[str, Any]]:
+    """Stage one Chainlit upload and return metadata expected by the agent."""
     try:
-        size = file_path.stat().st_size
+        size = size_bytes if size_bytes is not None else file_path.stat().st_size
         if size > MAX_UPLOAD_BYTES:
-            await cl.Message(
-                content=f"**{element.name}** exceeds the 20 MB upload limit and will not be stored."
-            ).send()
+            await _send_upload_limit_message(element.name)
             return None
 
-        mime = _guess_upload_mime(element.name, getattr(element, "mime", None))
-        content_b64 = base64.b64encode(file_path.read_bytes()).decode()
+        mime = mime_type or _guess_upload_mime(element.name, getattr(element, "mime", None))
+        staged = await client.stage_upload(
+            file_path,
+            name=element.name,
+            mime_type=mime,
+            conversation_id=conversation_id,
+        )
+        upload_id = staged.get("upload_id")
+        if not upload_id:
+            raise ValueError("Upload staging response did not include upload_id")
         return {
-            "name": element.name,
-            "mime_type": mime,
-            "size_bytes": size,
-            "content_b64": content_b64,
+            "name": staged.get("name") or element.name,
+            "mime_type": staged.get("mime_type") or mime,
+            "size_bytes": staged.get("size_bytes", size),
+            "upload_id": upload_id,
         }
     except Exception as exc:
-        logger.warning("Could not read %r for upload: %s", element.name, exc)
+        logger.warning("Could not stage %r for upload: %s", element.name, exc)
+        await cl.Message(content=f"Failed to upload **{element.name}** for storage: {exc}").send()
         return None
 
 
@@ -93,6 +142,15 @@ def _get_a2a_client() -> A2AClient:
 async def message_handler(message: cl.Message):
     # --- File upload handling ---
     uploaded_files: List[Dict] = []
+    raw_content = message.content or ""
+    if not raw_content.strip() and not message.elements:
+        return
+
+    conversation_id = cl.user_session.get("conversation_id")
+    if not conversation_id:
+        conversation_id = str(uuid.uuid4())
+        cl.user_session.set("conversation_id", conversation_id)
+    client = _get_a2a_client()
 
     if message.elements:
         for element in message.elements:
@@ -100,50 +158,73 @@ async def message_handler(message: cl.Message):
                 continue
 
             file_path = Path(element.path)
+            try:
+                size_bytes = file_path.stat().st_size
+                if size_bytes > MAX_UPLOAD_BYTES:
+                    await _send_upload_limit_message(element.name)
+                    continue
+            except Exception as exc:
+                logger.warning("Could not stat %r for upload: %s", element.name, exc)
+                continue
 
-            # Visualization plugins get first pick; they handle the element fully
-            plugin = _plugins.find_plugin_for_upload(file_path)
-            if plugin is not None:
+            upload_context = _build_upload_context(element, file_path, size_bytes)
+            upload_match = await _plugins.inspect_upload(upload_context)
+            if upload_match is not None:
+                upload_context = replace(upload_context, mime_type=upload_match.mime_type)
+            upload_mime = upload_context.mime_type
+
+            # Visualization plugins get a local preview first, but every readable
+            # upload is staged for DeepLynx afterward.
+            if upload_match is not None:
                 try:
                     await cl.Message(content=f"Processing **{element.name}**…").send()
-                    description, viewer_elements = await _plugins.process_upload(file_path)
-                    await cl.Message(content=description, elements=viewer_elements).send()
+                    result = await _plugins.process_upload(
+                        upload_context,
+                        match=upload_match,
+                    )
+                    if result is not None:
+                        elements = list(result.elements or [])
+                        if result.add_download:
+                            elements.append(_upload_download_element(element.name, file_path, upload_mime))
+                        await cl.Message(content=result.description, elements=elements).send()
                 except Exception as e:
                     await cl.Message(
                         content=f"Failed to process **{element.name}**: {e}"
                     ).send()
-            elif file_path.suffix.lower() == ".pdf":
+            elif upload_mime == "application/pdf":
                 # PDF: render inline as a Chainlit native element
                 try:
                     pdf_el = cl.Pdf(name=element.name, display="inline", path=element.path)
+                    download_el = _upload_download_element(element.name, file_path, upload_mime)
                     await cl.Message(
-                        content=f"**PDF loaded:** {element.name}", elements=[pdf_el]
+                        content=f"**PDF loaded:** {element.name}", elements=[pdf_el, download_el]
                     ).send()
                 except Exception as e:
                     await cl.Message(content=f"Failed to display PDF: {e}").send()
 
             # Capture every readable file for DeepLynx storage via the agent, including
             # files already rendered locally by visualization plugins.
-            uploaded = await _capture_uploaded_file(element, file_path)
+            uploaded = await _capture_uploaded_file(
+                element,
+                file_path,
+                client,
+                conversation_id,
+                upload_mime,
+                size_bytes=size_bytes,
+            )
             if uploaded is not None:
                 uploaded_files.append(uploaded)
 
     # Build the query; when files are uploaded with no text, use a neutral default so
     # the agent can still determine context and upload them.
-    query = message.content.strip()
+    query = raw_content.strip()
     if not query and uploaded_files:
         query = "Please process the uploaded file(s)."
     if not query:
         return
 
     # --- Text query → A2A client-agent ---
-    conversation_id = cl.user_session.get("conversation_id")
-    if not conversation_id:
-        conversation_id = str(uuid.uuid4())
-        cl.user_session.set("conversation_id", conversation_id)
-
     artifacts_catalog = cl.user_session.get("artifacts", [])
-    client = _get_a2a_client()
 
     status_history: List[str] = []
     status_step = cl.Step(name="Sending request to agent...", type="tool")
@@ -467,6 +548,9 @@ async def render_artifacts(
             element = None
         if element is not None:
             elements.append(element)
+            download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
+            if download_el:
+                elements.append(download_el)
             continue
 
         # Fallback: text-based rendering for non-visual artifact types
@@ -476,6 +560,9 @@ async def render_artifacts(
             el = await _render_pdf_artifact(uri, name, tmp_dir)
             if el:
                 elements.append(el)
+                download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
+                if download_el:
+                    elements.append(download_el)
             else:
                 text_parts.append(f"- **{name}** (PDF): `{uri}`")
 
@@ -495,6 +582,9 @@ async def render_artifacts(
                         "json_type": json_type or "",
                     },
                 ))
+                download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
+                if download_el:
+                    elements.append(download_el)
             else:
                 el = await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
                 if el:
@@ -514,6 +604,9 @@ async def render_artifacts(
                 text_parts.append(f"### {name}\n{report_text}")
             else:
                 text_parts.append(f"- **{name}**: {description or uri}")
+            download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
+            if download_el:
+                elements.append(download_el)
 
         elif artifact_type == "file":
             el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
@@ -524,6 +617,9 @@ async def render_artifacts(
 
         elif artifact_type == "reference":
             text_parts.append(_render_reference_artifact(name, uri, description, metadata))
+            download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
+            if download_el:
+                elements.append(download_el)
 
         else:
             # No plugin and no known text type — tell the user and offer a download
@@ -531,7 +627,7 @@ async def render_artifacts(
             line = f"**{name}** — no viewer available for `{label}`"
             if description:
                 line += f"\n  > {description}"
-            el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
+            el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
             if el:
                 elements.append(el)
             else:
@@ -623,6 +719,56 @@ async def _render_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: s
         effective_mime = mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
         return cl.File(name=name, path=str(path), display="inline", mime=effective_mime)
     return None
+
+
+async def _render_download_artifact(
+    artifact: Dict[str, Any],
+    uri: str,
+    name: str,
+    tmp_dir: Path,
+    mime_type: str = "",
+) -> Optional[Any]:
+    """Create a downloadable file element for any artifact with bytes or inline content."""
+    if uri:
+        file_el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
+        if file_el:
+            return file_el
+
+    payload = _artifact_download_payload(artifact, mime_type)
+    if payload is None:
+        return None
+
+    content, extension, effective_mime = payload
+    filename = _download_filename(name, extension)
+    tmp = tmp_dir / f"{uuid.uuid4().hex}_{filename}"
+    tmp.write_bytes(content)
+    return cl.File(name=filename, path=str(tmp), display="inline", mime=effective_mime)
+
+
+def _artifact_download_payload(
+    artifact: Dict[str, Any],
+    mime_type: str = "",
+) -> Optional[tuple[bytes, str, str]]:
+    """Serialize inline artifact content so it can still be downloaded."""
+    if "json_body" in artifact and artifact["json_body"] is not None:
+        content = json.dumps(artifact["json_body"], indent=2).encode("utf-8")
+        return content + b"\n", ".json", "application/json"
+
+    for key in ("content", "text", "description"):
+        value = artifact.get(key)
+        if value:
+            effective_mime = mime_type or "text/plain"
+            extension = ".md" if effective_mime == "text/markdown" else ".txt"
+            return str(value).encode("utf-8"), extension, effective_mime
+
+    return None
+
+
+def _download_filename(name: str, extension: str) -> str:
+    filename = Path(str(name or "artifact")).name or "artifact"
+    if extension and not Path(filename).suffix:
+        filename = f"{filename}{extension}"
+    return filename
 
 
 def _render_reference_artifact(name: str, uri: str, description: str, metadata: dict) -> str:

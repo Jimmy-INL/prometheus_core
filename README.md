@@ -201,8 +201,8 @@ make check       # All checks (lint + format + typecheck)
 Run a single test:
 
 ```bash
-uv run pytest tests/test_chat.py       # By file
-uv run pytest -k test_name             # By name
+uv run python -m pytest tests/test_chat.py       # By file
+uv run python -m pytest -k test_name             # By name
 ```
 
 ### Per-agent
@@ -212,7 +212,7 @@ Each agent has its own `pyproject.toml`; the client-agent additionally ships a `
 ```bash
 cd agents/client-agent
 uv sync
-uv run pytest
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests
 ```
 
 ### Infrastructure tests (`tests/`)

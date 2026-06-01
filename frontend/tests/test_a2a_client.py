@@ -167,3 +167,64 @@ def test_poll_status_starts_after_existing_history(monkeypatch) -> None:
     asyncio.run(_run())
 
     assert seen == ["new-1", "new-2"]
+
+
+def test_stage_upload_streams_file_bytes(monkeypatch, tmp_path: Path) -> None:
+    upload_path = tmp_path / "mesh.e"
+    upload_path.write_bytes(b"exodus bytes")
+    captured = {}
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "upload_id": "abc123",
+                "name": "mesh.e",
+                "mime_type": "application/x-exodus",
+                "size_bytes": 12,
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, *, params, headers, content):
+            chunks = []
+            async for chunk in content:
+                chunks.append(chunk)
+            captured.update(
+                {
+                    "url": url,
+                    "params": params,
+                    "headers": headers,
+                    "body": b"".join(chunks),
+                }
+            )
+            return _FakeResponse()
+
+    monkeypatch.setattr("utils.a2a_client.httpx.AsyncClient", _FakeAsyncClient)
+
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    result = asyncio.run(
+        client.stage_upload(
+            upload_path,
+            name="mesh.e",
+            mime_type="application/x-exodus",
+            conversation_id="conv-1",
+        )
+    )
+
+    assert result["upload_id"] == "abc123"
+    assert captured["url"] == "http://example.test/uploads/stage"
+    assert captured["params"]["conversation_id"] == "conv-1"
+    assert captured["headers"]["Authorization"] == "Bearer secret"
+    assert captured["headers"]["Content-Length"] == "12"
+    assert captured["body"] == b"exodus bytes"

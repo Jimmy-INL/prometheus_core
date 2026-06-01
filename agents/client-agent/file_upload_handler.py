@@ -12,12 +12,14 @@ See docs/dev-docs/file-uploads.md for the full workflow description.
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
+import re
 import tempfile
+import time
+import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
@@ -26,14 +28,123 @@ if TYPE_CHECKING:
     from prometheus_api.agent import ArtifactReference, EventQueue, RequestContext
     from prometheus_api.storage_client.connection import ConnectionConfig
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_UPLOAD_BYTES_ENV = "PROMETHEUS_MAX_UPLOAD_BYTES"
+DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+def configured_max_upload_bytes() -> int:
+    raw_value = os.getenv(MAX_UPLOAD_BYTES_ENV)
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_MAX_UPLOAD_BYTES
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{MAX_UPLOAD_BYTES_ENV} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{MAX_UPLOAD_BYTES_ENV} must be positive")
+    return value
+
+
+MAX_UPLOAD_BYTES = configured_max_upload_bytes()
+STAGED_UPLOAD_TTL_SECONDS = 24 * 60 * 60
+_UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 
 
 class UploadedFile(BaseModel):
     name: str
     mime_type: str
     size_bytes: int
-    content_b64: str  # base64-encoded file content
+    upload_id: str  # Server-side staged upload token
+
+
+def staged_upload_dir() -> Path:
+    """Return the server-local directory used for staged upload bytes."""
+    root = os.getenv("PROMETHEUS_STAGED_UPLOAD_DIR")
+    if root:
+        return Path(root)
+    return Path(tempfile.gettempdir()) / "prometheus-staged-uploads"
+
+
+def new_staged_upload_id() -> str:
+    return uuid.uuid4().hex
+
+
+def staged_upload_paths(upload_id: str) -> tuple[Path, Path]:
+    """Return data and metadata paths for a staged upload ID."""
+    token = str(upload_id or "")
+    if not _UPLOAD_ID_RE.fullmatch(token):
+        raise ValueError("Invalid staged upload ID")
+    root = staged_upload_dir()
+    return root / f"{token}.bin", root / f"{token}.json"
+
+
+def write_staged_upload_metadata(upload_id: str, metadata: Dict[str, Any]) -> None:
+    _, meta_path = staged_upload_paths(upload_id)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+
+def read_staged_upload_metadata(upload_id: str) -> Dict[str, Any]:
+    _, meta_path = staged_upload_paths(upload_id)
+    try:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Staged upload {upload_id} was not found") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Staged upload {upload_id} metadata is invalid")
+    return payload
+
+
+def consume_staged_upload(upload_id: str) -> None:
+    """Delete a staged upload after it has been persisted or rejected."""
+    data_path, meta_path = staged_upload_paths(upload_id)
+    for path in (data_path, meta_path):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def cleanup_stale_staged_uploads(max_age_seconds: int = STAGED_UPLOAD_TTL_SECONDS) -> None:
+    """Best-effort cleanup for staged uploads abandoned before the A2A turn."""
+    root = staged_upload_dir()
+    if not root.exists():
+        return
+    cutoff = time.time() - max(0, int(max_age_seconds))
+    for path in root.glob("*"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+        except Exception:
+            pass
+
+
+def _normalize_mime_type(mime_type: str | None) -> str:
+    return (mime_type or "").split(";", 1)[0].strip().lower()
+
+
+def resolve_staged_upload(uploaded_file: UploadedFile) -> Path:
+    """Validate request metadata for a staged upload and return the byte path."""
+    source_path, _ = staged_upload_paths(uploaded_file.upload_id)
+    metadata = read_staged_upload_metadata(uploaded_file.upload_id)
+    if not source_path.exists():
+        raise FileNotFoundError(f"Staged upload {uploaded_file.upload_id} file is missing")
+
+    actual_size = source_path.stat().st_size
+    if actual_size > MAX_UPLOAD_BYTES:
+        raise ValueError(f"{uploaded_file.name} exceeds the {MAX_UPLOAD_BYTES} byte upload limit")
+    if actual_size != uploaded_file.size_bytes:
+        raise ValueError(f"Staged upload {uploaded_file.upload_id} size does not match request")
+
+    if metadata.get("name") and metadata.get("name") != uploaded_file.name:
+        raise ValueError(f"Staged upload {uploaded_file.upload_id} name does not match request")
+
+    staged_mime = _normalize_mime_type(metadata.get("mime_type"))
+    request_mime = _normalize_mime_type(uploaded_file.mime_type)
+    if staged_mime and request_mime and staged_mime != request_mime:
+        raise ValueError(f"Staged upload {uploaded_file.upload_id} MIME type does not match request")
+
+    return source_path
 
 
 # ---------------------------------------------------------------------------
@@ -188,21 +299,17 @@ async def upload_files_to_deeplynx(
     event_queue: "EventQueue",
     storage_config: "ConnectionConfig",
 ) -> List["ArtifactReference"]:
-    """Decode each file, upload to DeepLynx, and return ArtifactReferences."""
+    """Resolve each staged file, upload to DeepLynx, and return refs."""
     refs = []
     for f in files:
         description = descriptions.get(f.name) or _fallback_description(f)
-        suffix = Path(f.name).suffix or ""
-        tmp_path: Optional[str] = None
         try:
-            content = base64.b64decode(f.content_b64, validate=True)
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
+            source_path = resolve_staged_upload(f)
+
             ref = await agent.send_deeplynx_artifact(
                 context=context,
                 event_queue=event_queue,
-                file_path=Path(tmp_path),
+                file_path=source_path,
                 name=f.name,
                 description=description,
                 storage_config=storage_config,
@@ -214,9 +321,8 @@ async def upload_files_to_deeplynx(
         except Exception as exc:
             print(f"[WARN] Failed to upload {f.name!r} to DeepLynx: {exc}")
         finally:
-            if tmp_path:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+            try:
+                consume_staged_upload(f.upload_id)
+            except Exception:
+                pass
     return refs

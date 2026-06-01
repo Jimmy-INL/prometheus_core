@@ -208,10 +208,12 @@ export const isWaitingForInput  = (item: FlatItem) =>
 // is unreachable until this is wired.
 //
 // Requirements:
-//   Attach button in chat input toolbar → file picker
-//   Multi-file support
-//   20 MB per-file limit (MAX_UPLOAD_BYTES) — client-side error if exceeded
-//   Accept .stp, .step explicitly (not in browser defaults)
+//   Attach button in chat input bar → opens file picker
+//   Multi-file support (message.elements is a list)
+//   100 MB per-file limit (MAX_UPLOAD_BYTES in backend) — show error if exceeded
+//   CAD file types must be accepted: .stp, .step (not in browser default lists)
+//   PDF files: backend renders inline via cl.Pdf — upload flow should reflect this
+//   All other files: staged by the Chainlit backend, then referenced in uploaded_files
 //   Attachment preview chips in the input bar before send
 //   Confirm IAttachment shape for @chainlit/react-client 0.4.2 sendMessage()
 // ────────────────────────────────────────────────────────────────────────────

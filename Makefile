@@ -117,13 +117,13 @@ $(COMPOSE_AGENTS): FORCE $(AGENT_COMPOSE_FILES)
 .PHONY: test-static test-integration test-infra
 
 test-static: ##@ Run static infrastructure tests (no Docker needed)
-	cd tests && uv run pytest -m "not integration" -v
+	cd tests && uv run python -m pytest -m "not integration" -v
 
 test-integration: ##@ Run integration tests (containers must be running)
-	cd tests && uv run pytest -m integration -v
+	cd tests && uv run python -m pytest -m integration -v
 
 test-infra: ##@ Run all infrastructure tests
-	cd tests && uv run pytest -v
+	cd tests && uv run python -m pytest -v
 
 ##@
 ##@ Compose

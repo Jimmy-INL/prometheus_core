@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LayoutDashboard, MessageSquare, FolderOpen, Bot } from "lucide-react";
+import { useChatInteract } from "@chainlit/react-client";
 import { Chat } from "../components/Chat";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
@@ -22,12 +23,25 @@ export function ProjectView({ onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [chatKey, setChatKey] = useState(0);
+  const { clear, stopTask } = useChatInteract();
+
+  const handleNewChat = () => {
+    stopTask();
+    clear();
+    setActiveTab("chat");
+    setChatKey((key) => key + 1);
+  };
 
   return (
     <div className="flex flex-col h-screen bg-base-100 text-base-content">
       <Header onLogout={onLogout} onToggleSettings={() => setRightOpen((v) => !v)} />
       <div className="flex flex-1 overflow-hidden">
-        <LeftPanel isOpen={leftOpen} onToggle={() => setLeftOpen((v) => !v)} />
+        <LeftPanel
+          isOpen={leftOpen}
+          onToggle={() => setLeftOpen((v) => !v)}
+          onNewChat={handleNewChat}
+        />
 
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Tab bar */}
@@ -58,7 +72,7 @@ export function ProjectView({ onLogout }: Props) {
 
           {/* Tab content */}
           <div className={`flex flex-col flex-1 overflow-hidden ${activeTab === "chat" ? "" : "hidden"}`}>
-            <Chat />
+            <Chat key={chatKey} />
           </div>
           {activeTab === "dashboard" && (
             <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">
