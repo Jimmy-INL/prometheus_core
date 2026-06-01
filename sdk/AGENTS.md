@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
+`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
 
 `tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 
@@ -28,6 +28,8 @@ For targeted tests, use `uv run pytest tests/test_agent.py::TestPrometheusAgentE
 This project targets Python 3.12+. Ruff uses a 100-character line length and excludes `examples/`. Prefer typed Pydantic models for API payloads, explicit resource classes for endpoints, and clear async/sync parity between `storage_client/resources/` and `storage_client/async_resources/`. Keep `llm_client` sync and async behavior aligned when changing aliases, fallback behavior, logging, or response objects. Use `snake_case` for modules, functions, variables, and test functions; use `PascalCase` for classes.
 
 Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized. Registry registration starts from the app lifespan as a background async task; keep `REGISTRY_MAX_RETRIES` docs and tests aligned with that startup behavior, including retries against the built-in fallback URL. Invalid retry configuration should not prevent an agent from starting.
+
+Keep debug/compatibility HTTP route logic (including `/api/chat`) in `agent/debug_routes.py` rather than growing `agent/base.py`.
 
 ## Testing Guidelines
 

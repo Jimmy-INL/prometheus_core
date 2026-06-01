@@ -5,6 +5,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from starlette.applications import Starlette
@@ -535,6 +536,35 @@ class TestPrometheusAgent:
         assert "/health" in route_paths
         assert "/api/chat" in route_paths
         assert "/api/agent-card" in route_paths
+
+    async def test_build_app_debug_chat_route_executes_agent(self, monkeypatch):
+        class TestAgent(PrometheusAgent):
+            async def _execute(self, params, context, event_queue):
+                return {
+                    "message": params.get("message"),
+                    "context_id": context.context_id,
+                }
+
+        agent = TestAgent(agent_name="MyAgent")
+        monkeypatch.setattr(agent, "load_agent_card", _test_agent_card)
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/api/chat",
+                json={
+                    "params": {"message": "hello"},
+                    "conversation_id": "conv-1",
+                },
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ok"] is True
+        assert payload["context_id"] == "conv-1"
+        assert payload["result"] == {"message": "hello", "context_id": "conv-1"}
 
     def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""
