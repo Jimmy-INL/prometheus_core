@@ -230,9 +230,7 @@ class DeepLynxFileSystem(AbstractFileSystem):
         item_id = self._parse_item_uri_key(remote_key)
         if item_id is not None:
             if recursive:
-                raise NotADirectoryError(
-                    f"DeepLynx item URI is a file, not a directory: {rpath}"
-                )
+                raise NotADirectoryError(f"DeepLynx item URI is a file, not a directory: {rpath}")
             destination = self._resolve_local_destination(lpath, remote_key)
             callback.set_size(None)
             self._client.files.download(item_id, destination)
