@@ -5,6 +5,7 @@ import {
   useChatInteract,
   ChainlitContext,
   sessionState,
+  elementState,
   IAction,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
@@ -22,6 +23,8 @@ import {
   isAskForm,
   isAskPlain,
 } from "../lib/chainlit/chainlit";
+import { ElementList } from "./ElementRenderer";
+import type { AnyElement } from "../lib/chainlit/elements";
 
 // ---------------------------------------------------------------------------
 // Markdown renderers
@@ -63,11 +66,6 @@ function CodeBlock({ children, className }: { children?: React.ReactNode; classN
   );
 }
 
-// TODO: Syntax highlighting for code blocks
-// Add react-syntax-highlighter or shiki when the time comes.
-// When implemented, detect language from className (e.g. "language-python") and
-// only apply highlighting when a language is explicitly tagged — untagged blocks
-// (ASCII diagrams, plain text) should render as-is without highlighting attempts.
 const markdownComponents = {
   code: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
     <CodeBlock className={className}>{children}</CodeBlock>
@@ -104,7 +102,6 @@ const AssistantAvatar = () => (
   />
 );
 
-/** Collapsible status step rendered from cl.Step(type="tool") */
 function ToolStep({ item }: { item: FlatItem }) {
   const [open, setOpen] = useState(false);
   const { step } = item;
@@ -145,7 +142,6 @@ function ToolStep({ item }: { item: FlatItem }) {
   );
 }
 
-/** Approve/Reject buttons from cl.AskActionMessage */
 function ActionButtons({
   item,
   onAction,
@@ -175,16 +171,6 @@ function ActionButtons({
     </div>
   );
 }
-
-// TODO: AskFormStep component
-// Renders cl.AskElementMessage flows (DynamicForm, PlanViewer).
-// Blocked on CustomElement registry implementation in src/lib/chainlit/chainlit.ts.
-// For now, ask_form items fall through to ToolStep (shows name + spinner),
-// which is harmless — user just can't respond to the form yet.
-
-// TODO: AskPlainStep component
-// Renders cl.AskUserMessage with an inline text input.
-// Rare in current backend but should be handled before considering chat complete.
 
 function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
   const [chatType] = useChatType();
@@ -233,10 +219,10 @@ export function Chat() {
   const { sendMessage, stopTask } = useChatInteract();
   const apiClient = useContext(ChainlitContext);
   const session = useRecoilValue(sessionState);
+  const globalElements = useRecoilValue(elementState);
 
   const flat = flattenMessages(messages);
 
-  // Indices for scroll anchoring
   let lastUserIdx = -1;
   let lastAssistantIdx = -1;
   for (let i = flat.length - 1; i >= 0; i--) {
@@ -355,7 +341,6 @@ export function Chat() {
     }
   };
 
-  // Show loading dots only when awaiting a response and not waiting for user input
   const showLoadingDots =
     awaitingResponse &&
     lastMessage?.type === "user_message" &&
@@ -374,7 +359,6 @@ export function Chat() {
           {flat.map((item: FlatItem, i: number) => {
             const { step: m } = item;
 
-            // Tool step (includes ask_form fallthrough until CustomElement registry exists)
             if (isToolStep(item) || isAskForm(item) || isAskPlain(item)) {
               return (
                 <div key={m.id} className="space-y-2">
@@ -383,7 +367,6 @@ export function Chat() {
               );
             }
 
-            // Ask action — tool step + action buttons
             if (isAskAction(item)) {
               return (
                 <div key={m.id} className="space-y-2">
@@ -393,7 +376,6 @@ export function Chat() {
               );
             }
 
-            // User / assistant messages
             return (
               <div
                 key={m.id}
@@ -419,6 +401,13 @@ export function Chat() {
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                         {m.output}
                       </ReactMarkdown>
+                      <ElementList
+                        elements={[
+                          ...((m.elements as AnyElement[] | undefined) ?? []),
+                          ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                        ]}
+                        onSend={handleSend}
+                      />
                     </div>
                   </>
                 )}
