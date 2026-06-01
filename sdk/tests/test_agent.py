@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -77,6 +78,7 @@ class TestPrometheusAgentExecutor:
 
     def test_extract_params_without_message_context(self, executor):
         """_extract_params should tolerate local/debug contexts without .message."""
+
         class LocalLikeContext:
             def get_user_input(self):
                 return '{"skill_id": "demo_skill", "message": "hello"}'
@@ -84,7 +86,6 @@ class TestPrometheusAgentExecutor:
         params = executor._extract_params(LocalLikeContext())
 
         assert params == {"skill_id": "demo_skill", "message": "hello"}
-
 
     def test_execute_calls_enqueue_event(self, executor, mock_context, mock_event_queue):
         """Test that execute uses enqueue_event for status updates."""
@@ -259,6 +260,98 @@ class TestPrometheusAgent:
 
         monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
         assert PrometheusAgent.registry_url() == "http://registry:4000"
+
+    def test_register_with_registry_retries_fallback_url_without_registry_url(self, monkeypatch):
+        """Unset REGISTRY_URL still retries the built-in LiteLLM service fallback."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_then_succeed(self, agent_card, registry_url, headers):
+            attempts.append((registry_url, headers))
+            if len(attempts) < 3:
+                raise RuntimeError("registry unavailable")
+
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        monkeypatch.delenv("REGISTRY_MAX_RETRIES", raising=False)
+        monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
+        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+
+        agent.register_with_registry(DummyAgentCard())
+
+        assert attempts == [
+            ("http://litellm:4000", {}),
+            ("http://litellm:4000", {}),
+            ("http://litellm:4000", {}),
+        ]
+        assert sleep_delays == [2.0, 4.0]
+
+    def test_register_with_registry_retries_configured_registry(self, monkeypatch):
+        """Explicit registry configuration should use the configured retry count."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_registration(self, agent_card, registry_url, headers):
+            attempts.append((registry_url, dict(headers)))
+            raise RuntimeError("registry unavailable")
+
+        monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
+        monkeypatch.setenv("REGISTRY_MAX_RETRIES", "2")
+        monkeypatch.setenv("LITELLM_MASTER_KEY", "master-key")
+        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_registration)
+        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+
+        agent.register_with_registry(
+            DummyAgentCard(),
+            initial_delay=0.5,
+            max_delay=0.75,
+            backoff_factor=2.0,
+        )
+
+        assert attempts == [
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+        ]
+        assert sleep_delays == [0.5, 0.75]
+
+    def test_register_with_registry_ignores_invalid_retry_env(self, monkeypatch, caplog):
+        """Bad REGISTRY_MAX_RETRIES should not prevent agent startup."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_then_succeed(self, agent_card, registry_url, headers):
+            attempts.append(registry_url)
+            if len(attempts) < 3:
+                raise RuntimeError("registry unavailable")
+
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        monkeypatch.setenv("REGISTRY_MAX_RETRIES", "not-an-int")
+        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+
+        with caplog.at_level(logging.WARNING):
+            agent.register_with_registry(DummyAgentCard())
+
+        assert attempts == [
+            "http://litellm:4000",
+            "http://litellm:4000",
+            "http://litellm:4000",
+        ]
+        assert sleep_delays == [2.0, 4.0]
+        assert "Invalid REGISTRY_MAX_RETRIES='not-an-int'; using 10" in caplog.text
 
     def test_get_raw_agent_card_returns_loaded_dict(self):
         agent = PrometheusAgent(agent_name="MyAgent")

@@ -27,7 +27,7 @@ For targeted tests, use `uv run pytest tests/test_agent.py::TestPrometheusAgentE
 
 This project targets Python 3.12+. Ruff uses a 100-character line length and excludes `examples/`. Prefer typed Pydantic models for API payloads, explicit resource classes for endpoints, and clear async/sync parity between `storage_client/resources/` and `storage_client/async_resources/`. Keep `llm_client` sync and async behavior aligned when changing aliases, fallback behavior, logging, or response objects. Use `snake_case` for modules, functions, variables, and test functions; use `PascalCase` for classes.
 
-Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized.
+Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized. Keep `REGISTRY_MAX_RETRIES` docs and tests aligned with registry startup behavior, including retries against the built-in fallback URL; invalid retry configuration should not prevent an agent from starting.
 
 ## Testing Guidelines
 
@@ -39,7 +39,7 @@ Recent commits use short, direct summaries such as `fix tag ids` or `Cleaned up 
 
 ## Security & Configuration Tips
 
-Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `AM_SC_API_KEY`, MLflow tracking settings, and LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, and structured A2A `llm_api_key` values must be redacted from logs. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
+Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `REGISTRY_MAX_RETRIES`, `AM_SC_API_KEY`, MLflow tracking settings, and LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, and structured A2A `llm_api_key` values must be redacted from logs. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
 
 ## Additional Instructions
 

@@ -1076,6 +1076,29 @@ class PrometheusAgent:
             response.raise_for_status()
             logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
 
+    @staticmethod
+    def _resolve_registry_max_retries(max_retries: Optional[int]) -> int:
+        """Resolve registry retry count without allowing bad config to block startup."""
+        default_retries = 10
+        raw_value: Any = max_retries
+        source = "max_retries"
+        if raw_value is None:
+            raw_value = os.getenv("REGISTRY_MAX_RETRIES")
+            source = "REGISTRY_MAX_RETRIES"
+        if raw_value in (None, ""):
+            return default_retries
+
+        try:
+            resolved = int(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid {source}={raw_value!r}; using {default_retries}")
+            return default_retries
+
+        if resolved < 0:
+            logger.warning(f"Invalid {source}={raw_value!r}; using 0")
+            return 0
+        return resolved
+
     def register_with_registry(
         self,
         agent_card: AgentCard,
@@ -1097,11 +1120,7 @@ class PrometheusAgent:
             logger.info("REGISTRY_URL not set - skipping agent registration")
             return
 
-        resolved_max_retries = (
-            max_retries
-            if max_retries is not None
-            else int(os.getenv("REGISTRY_MAX_RETRIES", "10"))
-        )
+        resolved_max_retries = self._resolve_registry_max_retries(max_retries)
 
         master_key = os.getenv("LITELLM_MASTER_KEY", "")
         headers: Dict[str, str] = {}

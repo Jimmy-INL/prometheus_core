@@ -72,7 +72,8 @@ environment:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | - | No |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | `http://litellm:4000` | No |
+| `REGISTRY_MAX_RETRIES` | Registration retries after the first attempt, used for both explicit `REGISTRY_URL` and the built-in fallback URL. | `10` | No |
 
 ### Example Agent .env
 
@@ -87,6 +88,7 @@ AGENT_SECRET_REQUIRED=true
 
 # Registry (optional)
 REGISTRY_URL=http://litellm:4000
+# REGISTRY_MAX_RETRIES=10
 ```
 
 ### Agent Usage
