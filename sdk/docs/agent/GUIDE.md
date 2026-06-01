@@ -26,6 +26,21 @@ The base class emits the initial `working` status and the final `completed` stat
 
 ---
 
+## Executor Design
+
+`PrometheusAgent` owns agent behavior. `PrometheusAgentExecutor` owns the A2A task
+lifecycle: parameter extraction, initial status emission, calling `_execute`, automatic
+final status emission, cancellation, and failed-status handling. The default executor is
+`DelegatingPrometheusAgentExecutor`, which delegates the work step back to your agent's
+`_execute()` method.
+
+Most agents should not override `create_executor()`. Override `_execute()` for agent
+logic and use helper methods for status updates, artifacts, missing input, and
+conversation messages. Override `create_executor()` only when replacing the standard
+executor lifecycle.
+
+---
+
 ## The `_execute` Contract
 
 ### Signature
@@ -661,7 +676,8 @@ async def lifespan(self, app):
 ## Environment Variables
 
 For migrating existing agents from direct provider SDKs or hard-coded LLM
-utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md).
+utilities, see [LLM Client Migration Guide](LLM_CLIENT_MIGRATION.md). For base-agent
+behavior changes, see [Prometheus Agent Migration Guide](AGENT_MIGRATIONS.md).
 
 | Variable | Default | Description |
 |---|---|---|
@@ -804,6 +820,13 @@ class MissingInput:
 Build and return the Starlette app without starting uvicorn. Use
 `register_on_startup=False` in tests or custom hosts that should not start background
 registry registration.
+
+### `create_executor()`
+
+Return the executor for this agent. The default returns
+`DelegatingPrometheusAgentExecutor`, which preserves the standard lifecycle and calls the
+agent's `_execute()` method for the work step. Override only for custom executor
+lifecycles.
 
 ### `run(host="0.0.0.0", port=None)`
 

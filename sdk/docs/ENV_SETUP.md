@@ -39,6 +39,9 @@ llm = LLMClient()
 
 Environment variables for `PrometheusAgent`:
 
+For base-agent behavior changes and migration examples, see
+[`docs/agent/AGENT_MIGRATIONS.md`](agent/AGENT_MIGRATIONS.md).
+
 ### Agent Server
 
 | Variable | Description | Default | Required |

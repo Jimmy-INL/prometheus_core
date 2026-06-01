@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 from starlette.applications import Starlette
 
 from prometheus_api.agent import (
+    DelegatingPrometheusAgentExecutor,
     MissingInput,
     PrometheusAgent,
     PrometheusAgentExecutor,
@@ -21,6 +22,7 @@ from prometheus_api.agent import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
 )
+from prometheus_api.agent.registry import AgentRegistryClient
 from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill, Artifact, DataPart, TextPart
 
@@ -320,16 +322,16 @@ class TestPrometheusAgent:
         class DummyAgentCard:
             name = "My Agent"
 
-        def fail_then_succeed(self, agent_card, registry_url, headers):
-            attempts.append((registry_url, headers))
+        def fail_then_succeed(self, agent_card, *, raw_agent_card=None):
+            attempts.append((self.registry_url, self.headers))
             if len(attempts) < 3:
                 raise RuntimeError("registry unavailable")
 
         monkeypatch.delenv("REGISTRY_URL", raising=False)
         monkeypatch.delenv("REGISTRY_MAX_RETRIES", raising=False)
         monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
-        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_then_succeed)
-        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
 
         agent.register_with_registry(DummyAgentCard())
 
@@ -349,15 +351,15 @@ class TestPrometheusAgent:
         class DummyAgentCard:
             name = "My Agent"
 
-        def fail_registration(self, agent_card, registry_url, headers):
-            attempts.append((registry_url, dict(headers)))
+        def fail_registration(self, agent_card, *, raw_agent_card=None):
+            attempts.append((self.registry_url, dict(self.headers)))
             raise RuntimeError("registry unavailable")
 
         monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
         monkeypatch.setenv("REGISTRY_MAX_RETRIES", "2")
         monkeypatch.setenv("LITELLM_MASTER_KEY", "master-key")
-        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_registration)
-        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_registration)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
 
         agent.register_with_registry(
             DummyAgentCard(),
@@ -382,15 +384,15 @@ class TestPrometheusAgent:
         class DummyAgentCard:
             name = "My Agent"
 
-        def fail_then_succeed(self, agent_card, registry_url, headers):
-            attempts.append(registry_url)
+        def fail_then_succeed(self, agent_card, *, raw_agent_card=None):
+            attempts.append(self.registry_url)
             if len(attempts) < 3:
                 raise RuntimeError("registry unavailable")
 
         monkeypatch.delenv("REGISTRY_URL", raising=False)
         monkeypatch.setenv("REGISTRY_MAX_RETRIES", "not-an-int")
-        monkeypatch.setattr(PrometheusAgent, "_try_register_once", fail_then_succeed)
-        monkeypatch.setattr("prometheus_api.agent.base.time.sleep", sleep_delays.append)
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
 
         with caplog.at_level(logging.WARNING):
             agent.register_with_registry(DummyAgentCard())
@@ -402,6 +404,27 @@ class TestPrometheusAgent:
         ]
         assert sleep_delays == [2.0, 4.0]
         assert "Invalid REGISTRY_MAX_RETRIES='not-an-int'; using 10" in caplog.text
+
+    def test_registry_client_build_payload_uses_raw_card_and_agent_secret(self):
+        """Registry payload should preserve raw card metadata and static auth headers."""
+        raw_agent_card = {
+            "name": "Test Agent",
+            "description": "Raw card",
+            "skills": [{"id": "extra", "usage_notes": "Preserved for routing"}],
+        }
+        client = AgentRegistryClient(
+            "http://registry:4000",
+            agent_secret="agent-secret",
+        )
+
+        agent_name, payload = client.build_payload(
+            _test_agent_card(),
+            raw_agent_card=raw_agent_card,
+        )
+
+        assert agent_name == "test-agent"
+        assert payload["agent_card_params"] is raw_agent_card
+        assert payload["static_headers"] == {"Authorization": "Bearer agent-secret"}
 
     def test_get_raw_agent_card_returns_loaded_dict(self):
         agent = PrometheusAgent(agent_name="MyAgent")
@@ -610,8 +633,8 @@ class TestPrometheusAgent:
         assert part.data["hint"] == "Thermal analysis requires a temperature."
         assert part.data["missing_inputs"][0]["name"] == "temperature_c"
 
-    def test_create_executor_returns_custom_executor(self):
-        """Test that create_executor returns a working executor."""
+    def test_create_executor_returns_delegating_executor(self):
+        """Test that create_executor returns the standard delegating executor."""
 
         class TestAgent(PrometheusAgent):
             async def _execute(self, params, context, event_queue):
@@ -620,6 +643,7 @@ class TestPrometheusAgent:
         agent = TestAgent(agent_name="TestAgent")
         executor = agent.create_executor()
 
+        assert isinstance(executor, DelegatingPrometheusAgentExecutor)
         assert isinstance(executor, PrometheusAgentExecutor)
         assert executor.agent_name == "TestAgent"
 

@@ -12,10 +12,10 @@ import uuid
 import asyncio
 import hashlib
 import re
-import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass
-from typing import AsyncIterator, Dict, Any, Optional, List, Mapping, Sequence, cast
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Sequence, cast
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -48,11 +48,12 @@ from .middleware import BearerTokenMiddleware
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from .debug_routes import add_debug_chat_route
+from .events import context_id as event_context_id, context_task_id, emit_status_update
+from .registry import AgentRegistryClient
 from ..storage_client.async_client import AsyncStorageClient
 from ..storage_client.connection import ConnectionConfig
 from ..storage_client.models.item import ItemUpdate
 import uvicorn
-import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +82,6 @@ def _build_artifact_metadata(
     }
     metadata.update(dict(extra or {}))
     return metadata
-
-
-def _context_task_id(context: RequestContext) -> str:
-    """Return a non-null task ID for A2A event models."""
-    return str(getattr(context, "task_id", "") or "")
-
-
-def _context_id(context: RequestContext) -> str:
-    """Return a non-null context ID for A2A event models."""
-    return str(getattr(context, "context_id", "") or "")
 
 
 class _TrackedEventQueue:
@@ -229,26 +220,13 @@ class PrometheusAgentExecutor(AgentExecutor):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a task status update event with optional human-readable message."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        status_message = None
-        if message:
-            status_message = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=message))],
-                context_id=context_id,
-                task_id=task_id,
-            )
-
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=final,
-                status=TaskStatus(state=state, message=status_message),
-                metadata=metadata,
-            )
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=state,
+            final=final,
+            message=message,
+            metadata=metadata,
         )
 
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
@@ -316,14 +294,12 @@ class PrometheusAgentExecutor(AgentExecutor):
             async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
-                # Send progress update
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
-                        final=False,
-                        status=TaskStatus(state=TaskState.working),
-                    )
+                await self._emit_status(
+                    context=context,
+                    event_queue=event_queue,
+                    state=TaskState.working,
+                    final=False,
+                    message="Running analysis.",
                 )
 
                 # Do your work
@@ -349,16 +325,37 @@ class PrometheusAgentExecutor(AgentExecutor):
             event_queue: Queue for sending status updates
         """
         logger.info(f"Cancellation requested for {self.agent_name}")
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=True,
-                status=TaskStatus(state=TaskState.canceled),
-            )
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.canceled,
+            final=True,
         )
+
+
+class DelegatingPrometheusAgentExecutor(PrometheusAgentExecutor):
+    """Executor that delegates agent work to a provided async callback."""
+
+    def __init__(
+        self,
+        *,
+        agent_name: str,
+        execute_fn: Callable[
+            [Dict[str, Any], RequestContext, EventQueue],
+            Awaitable[Dict[str, Any]],
+        ],
+    ):
+        super().__init__(agent_name=agent_name)
+        self._execute_fn = execute_fn
+
+    async def _execute(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
+        """Delegate to the owning agent's `_execute` implementation."""
+        return await self._execute_fn(params, context, event_queue)
 
 
 class PrometheusAgent:
@@ -490,8 +487,8 @@ class PrometheusAgent:
     ) -> None:
         """Emit a canonical final INPUT_REQUIRED status message."""
         payload = build_input_required_payload(missing_inputs, hint=hint)
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
@@ -520,7 +517,7 @@ class PrometheusAgent:
     @staticmethod
     def _context_conversation_id(context: RequestContext) -> str:
         """Return the effective conversation scope key for registry operations."""
-        return _context_id(context)
+        return event_context_id(context)
 
     @property
     def _producer_agent_id(self) -> str:
@@ -555,8 +552,8 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a text artifact from public helper methods."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
@@ -591,8 +588,8 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a URI-backed file artifact from public helper methods."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
@@ -1045,99 +1042,13 @@ class PrometheusAgent:
 
         return agent_card
 
-    def _try_register_once(
-        self,
-        agent_card: AgentCard,
-        registry_url: str,
-        headers: Dict[str, str],
-    ) -> None:
-        """Single registration attempt — raises on any failure."""
-        agent_name, registration_payload = self._build_registration_payload(agent_card)
-
-        with httpx.Client(timeout=15.0, headers=headers) as client:
-            # Delete any existing registration so re-registrations always
-            # pick up the latest agent card (LiteLLM returns 400 on duplicates).
-            existing = client.get(f"{registry_url}/v1/agents")
-            if existing.status_code == 200:
-                entries = existing.json()
-                for entry in entries if isinstance(entries, list) else []:
-                    if entry.get("agent_name") == agent_name:
-                        client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
-                        logger.debug(f"Removed stale registration for '{agent_name}'")
-                        break
-
-            logger.info("Registering '%s' with LiteLLM at %s", agent_name, registry_url)
-            response = client.post(f"{registry_url}/v1/agents", json=registration_payload)
-            response.raise_for_status()
-            logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
-
-    async def _try_register_once_async(
-        self,
-        agent_card: AgentCard,
-        registry_url: str,
-        headers: Dict[str, str],
-    ) -> None:
-        """Single async registration attempt — raises on any failure."""
-        agent_name, registration_payload = self._build_registration_payload(agent_card)
-
-        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
-            existing = await client.get(f"{registry_url}/v1/agents")
-            if existing.status_code == 200:
-                entries = existing.json()
-                for entry in entries if isinstance(entries, list) else []:
-                    if entry.get("agent_name") == agent_name:
-                        await client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
-                        logger.debug(f"Removed stale registration for '{agent_name}'")
-                        break
-
-            logger.info("Registering '%s' with LiteLLM at %s", agent_name, registry_url)
-            response = await client.post(f"{registry_url}/v1/agents", json=registration_payload)
-            response.raise_for_status()
-            logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
-
-    def _build_registration_payload(self, agent_card: AgentCard) -> tuple[str, Dict[str, Any]]:
-        """Build the LiteLLM registration payload without logging secret-bearing values."""
-        agent_name = agent_card.name.lower().replace(" ", "-")
-        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
-        registration_payload: Dict[str, Any] = {
-            "agent_name": agent_name,
-            "agent_card_params": agent_card_params,
-        }
-        if agent_secret := os.getenv("AGENT_SECRET"):
-            registration_payload["static_headers"] = {
-                "Authorization": f"Bearer {agent_secret}",
-            }
-        return agent_name, registration_payload
-
-    @staticmethod
-    def _resolve_registry_max_retries(max_retries: Optional[int]) -> int:
-        """Resolve registry retry count without allowing bad config to block startup."""
-        default_retries = 10
-        raw_value: Any = max_retries
-        source = "max_retries"
-        if raw_value is None:
-            raw_value = os.getenv("REGISTRY_MAX_RETRIES")
-            source = "REGISTRY_MAX_RETRIES"
-        if raw_value in (None, ""):
-            return default_retries
-
-        try:
-            resolved = int(raw_value)
-        except (TypeError, ValueError):
-            logger.warning(f"Invalid {source}={raw_value!r}; using {default_retries}")
-            return default_retries
-
-        if resolved < 0:
-            logger.warning(f"Invalid {source}={raw_value!r}; using 0")
-            return 0
-        return resolved
-
-    @staticmethod
-    def _registry_headers() -> Dict[str, str]:
-        master_key = os.getenv("LITELLM_MASTER_KEY", "")
-        if not master_key:
-            return {}
-        return {"Authorization": f"Bearer {master_key}"}
+    def _registry_client(self) -> Optional[AgentRegistryClient]:
+        """Return a LiteLLM registry client, or None when registration is disabled."""
+        registry_url = self.registry_url()
+        if not registry_url:
+            logger.info("REGISTRY_URL not set - skipping agent registration")
+            return None
+        return AgentRegistryClient.from_env(registry_url)
 
     def register_with_registry(
         self,
@@ -1155,34 +1066,17 @@ class PrometheusAgent:
         exhausted. max_retries defaults to REGISTRY_MAX_RETRIES env var (default 10).
         On final failure the agent starts unregistered with a warning logged.
         """
-        registry_url = self.registry_url()
-        if not registry_url:
-            logger.info("REGISTRY_URL not set - skipping agent registration")
+        registry_client = self._registry_client()
+        if registry_client is None:
             return
-
-        resolved_max_retries = self._resolve_registry_max_retries(max_retries)
-
-        headers = self._registry_headers()
-
-        delay = initial_delay
-        for attempt in range(resolved_max_retries + 1):
-            try:
-                self._try_register_once(agent_card, registry_url, headers)
-                return
-            except Exception as e:
-                if attempt >= resolved_max_retries:
-                    logger.error(
-                        f"Failed to register with LiteLLM after {resolved_max_retries + 1} "
-                        f"attempt(s): {e}"
-                    )
-                    logger.warning("Continuing without registration")
-                    return
-                logger.warning(
-                    f"Registry registration attempt {attempt + 1}/{resolved_max_retries + 1} "
-                    f"failed: {e}. Retrying in {delay:.1f}s..."
-                )
-                time.sleep(delay)
-                delay = min(delay * backoff_factor, max_delay)
+        registry_client.register_with_retries(
+            agent_card,
+            raw_agent_card=self.agent_card_dict,
+            max_retries=max_retries,
+            initial_delay=initial_delay,
+            max_delay=max_delay,
+            backoff_factor=backoff_factor,
+        )
 
     async def register_with_registry_async(
         self,
@@ -1199,59 +1093,33 @@ class PrometheusAgent:
         This is the registration path used by `build_app()`/`run()` during Starlette lifespan
         startup. It keeps the same retry policy as `register_with_registry()`.
         """
-        registry_url = self.registry_url()
-        if not registry_url:
-            logger.info("REGISTRY_URL not set - skipping agent registration")
+        registry_client = self._registry_client()
+        if registry_client is None:
             return
-
-        resolved_max_retries = self._resolve_registry_max_retries(max_retries)
-        headers = self._registry_headers()
-
-        delay = initial_delay
-        for attempt in range(resolved_max_retries + 1):
-            try:
-                await self._try_register_once_async(agent_card, registry_url, headers)
-                return
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                if attempt >= resolved_max_retries:
-                    logger.error(
-                        f"Failed to register with LiteLLM after {resolved_max_retries + 1} "
-                        f"attempt(s): {e}"
-                    )
-                    logger.warning("Continuing without registration")
-                    return
-                logger.warning(
-                    f"Registry registration attempt {attempt + 1}/{resolved_max_retries + 1} "
-                    f"failed: {e}. Retrying in {delay:.1f}s..."
-                )
-                await asyncio.sleep(delay)
-                delay = min(delay * backoff_factor, max_delay)
+        await registry_client.register_with_retries_async(
+            agent_card,
+            raw_agent_card=self.agent_card_dict,
+            max_retries=max_retries,
+            initial_delay=initial_delay,
+            max_delay=max_delay,
+            backoff_factor=backoff_factor,
+        )
 
     def create_executor(self) -> PrometheusAgentExecutor:
         """
         Create the agent executor.
 
-        Override this method if you need custom executor initialization.
+        Override this method only when you need to replace the standard
+        Prometheus execution lifecycle. Normal agents should override
+        `PrometheusAgent._execute()` instead.
 
         Returns:
             Agent executor instance
         """
-        # Create a custom executor class that wraps _execute
-        agent_instance = self
-
-        class CustomExecutor(PrometheusAgentExecutor):
-            async def _execute(
-                self,
-                params: Dict[str, Any],
-                context: RequestContext,
-                event_queue: EventQueue,
-            ) -> Dict[str, Any]:
-                """Delegate to the agent instance's _execute method."""
-                return await agent_instance._execute(params, context, event_queue)
-
-        return CustomExecutor(agent_name=self.agent_name)
+        return DelegatingPrometheusAgentExecutor(
+            agent_name=self.agent_name,
+            execute_fn=self._execute,
+        )
 
     async def _execute(
         self,
@@ -1277,14 +1145,10 @@ class PrometheusAgent:
             async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
-                # Send progress update
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
-                        final=False,
-                        status=TaskStatus(state=TaskState.working),
-                    )
+                await self.send_status_update(
+                    context,
+                    event_queue,
+                    message="Running analysis.",
                 )
 
                 # Your logic here
@@ -1312,26 +1176,13 @@ class PrometheusAgent:
 
         This helper is optional and does not change `_execute` signature.
         """
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        status_message = None
-        if message:
-            status_message = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=message))],
-                context_id=context_id,
-                task_id=task_id,
-            )
-
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=final,
-                status=TaskStatus(state=state, message=status_message),
-                metadata=metadata,
-            )
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=state,
+            final=final,
+            message=message,
+            metadata=metadata,
         )
 
     async def send_json_artifact(
@@ -1381,8 +1232,8 @@ class PrometheusAgent:
         part_metadata = {"mime_type": "application/json", **dict(metadata or {})}
         if json_type:
             part_metadata["json_type"] = json_type
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
