@@ -170,7 +170,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             tracked_queue = _TrackedEventQueue(event_queue)
 
             # Send "working" status
-            await self._emit_status(
+            await emit_status_update(
                 context=context,
                 event_queue=tracked_queue,
                 state=TaskState.working,
@@ -183,7 +183,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
             if not tracked_queue.seen_final_status:
-                await self._emit_status(
+                await emit_status_update(
                     context=context,
                     event_queue=tracked_queue,
                     state=TaskState.completed,
@@ -202,32 +202,13 @@ class PrometheusAgentExecutor(AgentExecutor):
             logger.error(f"Error during execution: {str(e)}", exc_info=True)
             # Avoid sending contradictory terminal states if the agent already finalized.
             if not tracked_queue or not tracked_queue.seen_final_status:
-                await self._emit_status(
+                await emit_status_update(
                     context=context,
                     event_queue=tracked_queue or event_queue,
                     state=TaskState.failed,
                     final=True,
                 )
             raise
-
-    async def _emit_status(
-        self,
-        context: RequestContext,
-        event_queue: Any,
-        state: TaskState,
-        final: bool,
-        message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit a task status update event with optional human-readable message."""
-        await emit_status_update(
-            context=context,
-            event_queue=event_queue,
-            state=state,
-            final=final,
-            message=message,
-            metadata=metadata,
-        )
 
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
         """
@@ -294,7 +275,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
-                await self._emit_status(
+                await emit_status_update(
                     context=context,
                     event_queue=event_queue,
                     state=TaskState.working,
