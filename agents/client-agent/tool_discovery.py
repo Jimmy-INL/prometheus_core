@@ -89,6 +89,12 @@ async def _apply_a2a_stream_event(
     if not isinstance(event, dict):
         return a2a_result
 
+    # Heartbeat keepalives exist only to hold the connection open; they carry no
+    # payload, so skip them before they can overwrite accumulated status/artifacts.
+    event_metadata = event.get("metadata")
+    if isinstance(event_metadata, dict) and event_metadata.get("heartbeat"):
+        return a2a_result
+
     kind = str(event.get("kind") or "").strip().lower()
     if kind == "status-update":
         a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
