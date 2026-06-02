@@ -177,8 +177,10 @@ class PrometheusAgentExecutor(AgentExecutor):
                 final=False,
             )
 
-            # Perform the main analysis (implemented by subclass)
-            result = await self._execute(params, context, cast(EventQueue, tracked_queue))
+            # Perform the main analysis (implemented by subclass), with a
+            # background keepalive so streaming connections do not time out
+            # during long gaps between substantive status updates.
+            result = await self._execute_with_heartbeat(params, context, tracked_queue)
 
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
@@ -208,6 +210,83 @@ class PrometheusAgentExecutor(AgentExecutor):
                     state=TaskState.failed,
                     final=True,
                 )
+            raise
+
+    @staticmethod
+    def _heartbeat_interval() -> float:
+        """Seconds between automatic keepalive events; ``0`` disables heartbeats.
+
+        Configured via ``PROMETHEUS_HEARTBEAT_INTERVAL`` (seconds). Defaults to
+        15 s, comfortably below typical proxy/idle-connection timeouts.
+        """
+        raw = (os.getenv("PROMETHEUS_HEARTBEAT_INTERVAL") or "15").strip()
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 15.0
+        return value if value > 0 else 0.0
+
+    async def _execute_with_heartbeat(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        tracked_queue: "_TrackedEventQueue",
+    ) -> Dict[str, Any]:
+        """Run ``_execute`` while emitting periodic keepalive status events."""
+        interval = self._heartbeat_interval()
+        if interval <= 0:
+            return await self._execute(params, context, cast(EventQueue, tracked_queue))
+
+        stop_event = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(context, tracked_queue, interval, stop_event)
+        )
+        try:
+            return await self._execute(params, context, cast(EventQueue, tracked_queue))
+        finally:
+            stop_event.set()
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+
+    async def _heartbeat_loop(
+        self,
+        context: RequestContext,
+        tracked_queue: "_TrackedEventQueue",
+        interval: float,
+        stop_event: asyncio.Event,
+    ) -> None:
+        """Emit non-final, message-less ``working`` events at a fixed interval.
+
+        These keep the streaming HTTP connection alive (and reset idle timers in
+        intermediary proxies) without surfacing UI text: consumers ignore status
+        updates that carry no message and are tagged ``metadata.heartbeat``.
+        """
+        try:
+            while True:
+                try:
+                    # Sleep for the interval, waking early if work has finished.
+                    await asyncio.wait_for(stop_event.wait(), timeout=interval)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+
+                # Never emit after the task has been finalized.
+                if tracked_queue.seen_final_status:
+                    return
+
+                try:
+                    await emit_status_update(
+                        context=context,
+                        event_queue=tracked_queue,
+                        state=TaskState.working,
+                        final=False,
+                        metadata={"heartbeat": True},
+                    )
+                except Exception as exc:  # a keepalive must never break execution
+                    logger.debug("Heartbeat emit failed for %s: %s", self.agent_name, exc)
+                    return
+        except asyncio.CancelledError:
             raise
 
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:

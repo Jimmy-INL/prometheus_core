@@ -173,6 +173,71 @@ class TestPrometheusAgentExecutor:
         payload_text = second_event.status.message.parts[0].root.text
         assert json.loads(payload_text) == {"status": "success", "data": "test data"}
 
+    def test_execute_emits_heartbeats_during_long_execute(self, mock_context, monkeypatch):
+        """A slow _execute should produce periodic non-final keepalive events."""
+        monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", "0.01")
+
+        events: list = []
+
+        class RecordingQueue:
+            async def enqueue_event(self, event):
+                events.append(event)
+
+        def _heartbeats():
+            return [
+                e
+                for e in events
+                if isinstance(e, TaskStatusUpdateEvent) and (e.metadata or {}).get("heartbeat")
+            ]
+
+        class SlowExecutor(PrometheusAgentExecutor):
+            async def _execute(self, params, context, event_queue):
+                # Wait until at least one keepalive has been emitted, then finish.
+                for _ in range(500):
+                    if _heartbeats():
+                        break
+                    await asyncio.sleep(0.01)
+                return {"status": "success"}
+
+        asyncio.run(SlowExecutor(agent_name="HB").execute(mock_context, RecordingQueue()))
+
+        heartbeats = _heartbeats()
+        assert heartbeats, "expected at least one heartbeat keepalive event"
+        for hb in heartbeats:
+            assert hb.final is False
+            assert hb.status.state == TaskState.working
+            assert hb.status.message is None  # silent: no UI text
+
+        # The terminal event is the completed status, emitted after heartbeats stop.
+        assert isinstance(events[-1], TaskStatusUpdateEvent)
+        assert events[-1].final is True
+        assert events[-1].status.state == TaskState.completed
+        assert not (events[-1].metadata or {}).get("heartbeat")
+
+    def test_heartbeat_disabled_when_interval_zero(self, mock_context, monkeypatch):
+        """Setting the interval to 0 disables keepalives entirely."""
+        monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", "0")
+
+        events: list = []
+
+        class RecordingQueue:
+            async def enqueue_event(self, event):
+                events.append(event)
+
+        class Slow(PrometheusAgentExecutor):
+            async def _execute(self, params, context, event_queue):
+                await asyncio.sleep(0.05)
+                return {"status": "success"}
+
+        asyncio.run(Slow(agent_name="HB").execute(mock_context, RecordingQueue()))
+
+        assert not any(
+            isinstance(e, TaskStatusUpdateEvent) and (e.metadata or {}).get("heartbeat")
+            for e in events
+        )
+        # Only the working + completed terminal events.
+        assert len([e for e in events if isinstance(e, TaskStatusUpdateEvent)]) == 2
+
     def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
         """Test that execute sends failed status on error."""
 
