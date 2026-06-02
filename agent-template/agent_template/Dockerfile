@@ -1,53 +1,40 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
+# The base image bundles Python 3.12, prometheus_api, and all agent
+# infrastructure (a2a, starlette, uvicorn).  Its hash is pinned in the
+# platform's Makefile / your .env and passed in as a build argument — you never
+# edit the FROM line directly; you change PROMETHEUS_API_BASE_IMAGE_HASH.
+ARG PROMETHEUS_API_BASE_IMAGE_HASH
+FROM containers.github.inl.gov/genesis/prometheus_api:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
-# Accept proxy settings as build arguments
+# Accept corporate proxy settings as build arguments (optional).
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY}
 
-# Set proxy environment variables if provided
-ENV HTTP_PROXY=${HTTP_PROXY}
-ENV HTTPS_PROXY=${HTTPS_PROXY}
-ENV NO_PROXY=${NO_PROXY}
-
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Tell uv (the package manager) to install into the system Python — where
+# prometheus_api already lives — rather than creating a separate virtualenv.
+ENV UV_PROJECT_ENVIRONMENT="/usr/local" \
+    UV_LINK_MODE=copy
 
-# Copy and install CA certificates if provided
-# This allows for custom SSL certificates in corporate environments
-COPY --from=certs . /tmp/certs/ || true
-RUN if [ -d /tmp/certs ]; then \
-        cat /etc/ssl/certs/ca-certificates.crt /tmp/certs/*.pem > /etc/ssl/certs/ca-bundle.pem 2>/dev/null || \
-        cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem; \
-    else \
-        cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem; \
-    fi
+# Copy the dependency manifest first so Docker can cache this layer.
+# If pyproject.toml hasn't changed, the next RUN is skipped on rebuild.
+COPY pyproject.toml /app/
 
-# Set SSL certificate environment variables
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem
+# Install your agent's extra dependencies (not prometheus_api itself — it's in
+# the base image).  The cache mount speeds up repeated builds on the same host.
+RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --no-dev --no-install-project --inexact
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy agent source last so code changes don't invalidate the dependency cache.
+COPY agent.py /app/agent.py
+COPY agent_card.json /app/agent_card.json
 
-# Copy agent code
-COPY agent.py .
-
-# Note: Port is configured via AGENT_PORT environment variable (default: 8000)
-# For multi-agent deployments, use unique ports per agent (8000, 8001, 8002, etc.)
-# with matching internal/external Docker port mappings (-p 8001:8001)
+# Port is configured via the AGENT_PORT environment variable (default 8000).
 EXPOSE 8000
 
-# Health check - uses AGENT_PORT if set, otherwise defaults to 8000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import os, httpx; port = os.getenv('AGENT_PORT', '8000'); httpx.get(f'http://localhost:{port}/health', timeout=5.0)" || exit 1
-
-# Run the agent
 CMD ["python", "agent.py"]

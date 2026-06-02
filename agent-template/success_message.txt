@@ -6,17 +6,20 @@ Your new agent has been created in: {output_dir}
 
 Next steps:
   1. cd {output_dir}
-  2. cp .env.example .env
-  3. Edit .env if needed
-  4. Install dependencies: pip install -r requirements.txt
-  5. Run the agent: AGENT_SECRET_REQUIRED=false python agent.py
+  2. cp .env.example .env        # then fill in real values
+  3. Edit agent_card.json (description, inputSchema) and agent.py (_execute)
 
-Or use uv:
-  1. cd {output_dir} && AGENT_SECRET_REQUIRED=false uv run agent.py
+Run locally (fast iteration):
+  uv venv && source .venv/bin/activate
+  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git
+  uv pip install -e .            # install your extra dependencies, if any
+  AGENT_SECRET_REQUIRED=false python agent.py
 
-Or use Docker:
-  1. docker build -t {slug} {output_dir}
-  2. docker run -p 8000:8000 --env-file {output_dir}/.env {slug}
-     (or pass env vars: docker run -p 8000:8000 -e AGENT_PORT=8000 {slug})
+Run with Docker (integration testing / deployment):
+  # Set PROMETHEUS_API_BASE_IMAGE_HASH in .env first.
+  docker compose up --build
+
+Edit the network block in docker-compose.yml to match your deployment
+(external repo vs. in-tree).  See TUTORIAL.md for the full walkthrough.
 
 For more information, see the README.md in your agent directory.

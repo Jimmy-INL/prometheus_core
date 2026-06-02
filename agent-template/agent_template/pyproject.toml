@@ -1,13 +1,17 @@
 [project]
-name = "agent-template"
+name = "TEMPLATE_SLUG-agent"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "TEMPLATE_DESCRIPTION"
 requires-python = ">=3.12"
 dependencies = [
-  "a2a-sdk[http-server]>=0.3.0",
-  "pydantic>=2.5.3",
-  "httpx>=0.26.0",
-  "uvicorn[standard]>=0.27.0",
-  "prometheus-api[agent] @ git+ssh://git@github.inl.gov/genesis/prometheus_api.git",
+    # List only packages YOUR agent code imports directly.
+    #
+    # prometheus_api (and a2a, starlette, uvicorn) are already installed in the
+    # base Docker image — do NOT list them here, or you'll install a second,
+    # possibly conflicting copy.
+    #
+    # Examples:
+    #   "anthropic>=0.18.0",   # if you call Claude directly
+    #   "httpx>=0.26.0",       # if you call external HTTP APIs
+    #   "numpy>=1.26.0",       # if you use NumPy
 ]

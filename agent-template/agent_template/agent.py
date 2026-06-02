@@ -1,38 +1,32 @@
 """
-TEMPLATE_NAME Agent - A2A Agent Template
+TEMPLATE_NAME Agent.
 
-This is a template for creating A2A-enabled agents. Replace TEMPLATE_NAME with your agent's name.
+TEMPLATE_DESCRIPTION
+
+This is a Prometheus specialist agent.  Subclass PrometheusAgent and implement
+`_execute` — the base class handles the HTTP server, authentication, agent-card
+serving, and registry registration for you.
 """
 
 import logging
-import sys
-from datetime import UTC, datetime
 from typing import Any
 
-from prometheus_api.agent import (
-    EventQueue,
-    PrometheusAgent,
-    RequestContext,
-    TaskState,  # noqa: F401 - used in commented example
-    TaskStatus,  # noqa: F401 - used in commented example
-    TaskStatusUpdateEvent,  # noqa: F401 - used in commented example
+from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
+
+# Read secrets and configuration from environment variables.
+# Never hard-code API keys or URLs here.
+# Example:
+#   MY_API_KEY = os.getenv("MY_API_KEY")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-from prometheus_api.storage_client import StorageClient  # noqa: F401 - example import
-
-# Add shared directory to path
-sys.path.insert(0, "/app")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 class TEMPLATE_CLASSAgent(PrometheusAgent):
-    """
-    TEMPLATE_NAME Agent.
-
-    This agent handles [DESCRIBE YOUR AGENT'S CAPABILITIES HERE].
-    """
+    """TEMPLATE_NAME Agent."""
 
     async def _execute(
         self,
@@ -40,88 +34,85 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> dict[str, Any]:
-        """
-        Process the analysis request.
-
-        This is the main method you should customize for your agent's specific logic.
+        """Process one request.
 
         Args:
-            params: Parameters extracted from the A2A message
-            context: A2A request context with task_id and context_id
-            event_queue: Queue for sending progress updates
+            params: Parameters from the caller's JSON payload, plus ``skill_id``
+                from the message metadata (the skill the orchestrator selected).
+            context: The A2A request context.  Use ``context.context_id`` as a
+                stable key for per-conversation state.
+            event_queue: Pass to the ``send_*`` helpers to emit progress updates
+                and artifacts.
 
         Returns:
-            Dict containing the analysis results
+            A plain ``dict``.  The base class wraps it as the final ``completed``
+            task status automatically — do not enqueue that event yourself.
         """
-        # Extract required parameters
-        # Customize these based on your agent's needs
+        # ------------------------------------------------------------------
+        # 1. Read inputs from params.  These keys must match the properties
+        #    declared in agent_card.json's inputSchema.
+        # ------------------------------------------------------------------
         input_data = params.get("input_data")
         if not input_data:
-            raise ValueError("input_data parameter is required")
+            return {"status": "error", "error": "input_data is required"}
 
-        # ============================================================
-        # CUSTOMIZE THIS SECTION FOR YOUR AGENT'S LOGIC
-        # ============================================================
-        # Example: Use storage_client to process the data
-        # result = StorageClient().items.get(input_data)
+        # ------------------------------------------------------------------
+        # 2. Send optional progress updates so the UI stays responsive.
+        #    The base class sends the initial "working" update automatically;
+        #    call this only when you want intermediate messages.
+        # ------------------------------------------------------------------
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message="Processing your request…",
+        )
 
-        # For now, return a placeholder result
+        # ------------------------------------------------------------------
+        # 3. Do your actual work here.  Replace this with real logic.
+        # ------------------------------------------------------------------
         result = {
             "status": "success",
             "input_received": input_data,
-            "message": "Replace this with your agent's processing logic",
+            "message": "Replace this with your agent's processing logic.",
         }
 
-        # You can access other parameters from params
-        # optional_param = params.get("optional_param", "default_value")
-        # ============================================================
-
-        # ============================================================
-        # LONG-RUNNING TASK EXAMPLE WITH PROGRESS UPDATES
-        # ============================================================
-        # Uncomment this section for an example of a long-running task
-        # with incremental progress updates
-        #
-        # import asyncio
-        #
-        # steps = [
-        #     "Loading data",
-        #     "Preprocessing",
-        #     "Running analysis",
-        #     "Generating results",
-        #     "Finalizing"
-        # ]
-        #
-        # results = {}
-        # for i, step in enumerate(steps):
-        #     # Send progress update using A2A event types
-        #     await event_queue.enqueue_event(
-        #         TaskStatusUpdateEvent(
-        #             taskId=context.task_id,
-        #             contextId=context.context_id,
-        #             final=False,
-        #             status=TaskStatus(state=TaskState.working),
-        #         )
-        #     )
-        #
-        #     # Simulate work (replace with actual processing)
-        #     await asyncio.sleep(1)
-        #     results[step] = f"Completed {step}"
-        #
-        # result = {
-        #     "status": "success",
-        #     "steps_completed": results,
-        #     "total_steps": len(steps)
-        # }
-        # ============================================================
-
-        # Add metadata
-        result.update({"agent": "TEMPLATE_NAME", "timestamp": datetime.now(UTC).isoformat()})
-
+        # ------------------------------------------------------------------
+        # 4. Return a plain dict.  Keep keys consistent with the
+        #    "output_format" you described in agent_card.json.
+        # ------------------------------------------------------------------
         return result
+
+    # ----------------------------------------------------------------------
+    # PATTERNS — uncomment and adapt as needed.
+    # ----------------------------------------------------------------------
+    #
+    # Calling an LLM through the platform's LiteLLM gateway:
+    #
+    #     async with self.llm_client(context) as llm:
+    #         response = await llm.medium(f"Summarize this:\n\n{input_data}")
+    #     return {"status": "success", "summary": response.text}
+    #
+    # Dispatching when agent_card.json declares more than one skill:
+    #
+    #     handler = {
+    #         "skill_a": self._handle_a,
+    #         "skill_b": self._handle_b,
+    #     }.get(params.get("skill_id"))
+    #     if handler is None:
+    #         return {"status": "error", "error": f"Unknown skill: {params.get('skill_id')}"}
+    #     return await handler(params, context, event_queue)
+    #
+    # Persisting per-conversation state across turns (Redis-backed, with an
+    # in-memory fallback for local development):
+    #
+    #     state = self.load_context_state(str(context.context_id))
+    #     state["count"] = state.get("count", 0) + 1
+    #     self.save_context_state(str(context.context_id), state)
+    #
+    # See TUTORIAL.md ("Advanced topics") for emitting artifacts, asking the
+    # user for missing inputs (INPUT_REQUIRED), and DeepLynx file storage.
 
 
 if __name__ == "__main__":
-    # Create and run the agent
     agent = TEMPLATE_CLASSAgent(agent_name="TEMPLATE_NAME Agent")
     agent.run()
