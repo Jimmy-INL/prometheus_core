@@ -54,7 +54,9 @@ model_list:
     return path
 
 
-def _proxy_response(request: httpx.Request, payload: dict, status_code: int = 200) -> httpx.Response:
+def _proxy_response(
+    request: httpx.Request, payload: dict, status_code: int = 200
+) -> httpx.Response:
     return httpx.Response(status_code, json=payload, request=request)
 
 

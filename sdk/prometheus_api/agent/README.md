@@ -45,6 +45,7 @@ To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}
 
 - **[PrometheusAgent Guide](../../docs/agent/GUIDE.md)**: full API reference, patterns, and examples
 - **[Quick Start](../../docs/agent/QUICK_START.md)**: minimal setup plus common agent actions
+- **[Prometheus Agent Migration Guide](../../docs/agent/AGENT_MIGRATIONS.md)**: running migration notes for base-agent behavior changes
 - **[LLM Client Migration Guide](../../docs/agent/LLM_CLIENT_MIGRATION.md)**: replace vendor-specific LLM utilities with `llm_client`
 - **[Environment Setup](../../docs/ENV_SETUP.md)**: environment variables
 - **[Reference Example](../../examples/agent_patterns.py)**: one example agent showing status, artifacts, input requests, and stateful resume
@@ -52,8 +53,10 @@ To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}
 ## Components
 
 - `PrometheusAgent`: base class for A2A-enabled specialists
+- `PrometheusAgentExecutor` / `DelegatingPrometheusAgentExecutor`: standard A2A task lifecycle and delegation to agent `_execute`
 - `MissingInput`: canonical descriptor for `INPUT_REQUIRED`
 - `ArtifactReference` / `ArtifactRegistry`: conversation artifact helpers
+- `AgentRegistryClient`: LiteLLM registry registration client with exponential retries
 - `ContextStateStore`: per-agent state persistence keyed by `contextId`
 - `BearerTokenMiddleware`: shared-secret auth middleware
 

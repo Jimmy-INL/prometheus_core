@@ -2,11 +2,16 @@
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
+import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from starlette.applications import Starlette
 
 from prometheus_api.agent import (
+    DelegatingPrometheusAgentExecutor,
     MissingInput,
     PrometheusAgent,
     PrometheusAgentExecutor,
@@ -17,8 +22,29 @@ from prometheus_api.agent import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
 )
+from prometheus_api.agent.registry import AgentRegistryClient
 from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
-from a2a.types import Artifact, DataPart, TextPart
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill, Artifact, DataPart, TextPart
+
+
+def _test_agent_card() -> AgentCard:
+    return AgentCard(
+        name="Test Agent",
+        description="Agent card used by tests",
+        url="http://test-agent:8000",
+        version="1.0.0",
+        capabilities=AgentCapabilities(streaming=True),
+        skills=[
+            AgentSkill(
+                id="test_skill",
+                name="Test Skill",
+                description="Skill used by tests",
+                tags=["test"],
+            )
+        ],
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+    )
 
 
 class TestPrometheusAgentExecutor:
@@ -75,8 +101,36 @@ class TestPrometheusAgentExecutor:
 
         assert params == {"message": "Hello, this is plain text"}
 
+    def test_extract_params_wraps_json_non_objects(self, executor):
+        """JSON values that are not objects should still produce a params dict."""
+        context = MagicMock(spec=RequestContext)
+        context.get_user_input.return_value = '["alpha", "beta"]'
+
+        params = executor._extract_params(context)
+
+        assert params == {"value": ["alpha", "beta"]}
+
+    def test_extract_params_logs_keys_without_values(self, executor, caplog):
+        """Parameter logging should not expose prompt or credential values."""
+        context = MagicMock(spec=RequestContext)
+        context.get_user_input.return_value = json.dumps(
+            {
+                "prompt": "sensitive prompt text",
+                "llm_api_key": "secret-key",
+            }
+        )
+
+        with caplog.at_level(logging.INFO):
+            params = executor._extract_params(context)
+
+        assert params["llm_api_key"] == "secret-key"
+        assert "llm_api_key" in caplog.text
+        assert "secret-key" not in caplog.text
+        assert "sensitive prompt text" not in caplog.text
+
     def test_extract_params_without_message_context(self, executor):
         """_extract_params should tolerate local/debug contexts without .message."""
+
         class LocalLikeContext:
             def get_user_input(self):
                 return '{"skill_id": "demo_skill", "message": "hello"}'
@@ -84,7 +138,6 @@ class TestPrometheusAgentExecutor:
         params = executor._extract_params(LocalLikeContext())
 
         assert params == {"skill_id": "demo_skill", "message": "hello"}
-
 
     def test_execute_calls_enqueue_event(self, executor, mock_context, mock_event_queue):
         """Test that execute uses enqueue_event for status updates."""
@@ -260,6 +313,119 @@ class TestPrometheusAgent:
         monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
         assert PrometheusAgent.registry_url() == "http://registry:4000"
 
+    def test_register_with_registry_retries_fallback_url_without_registry_url(self, monkeypatch):
+        """Unset REGISTRY_URL still retries the built-in LiteLLM service fallback."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_then_succeed(self, agent_card, *, raw_agent_card=None):
+            attempts.append((self.registry_url, self.headers))
+            if len(attempts) < 3:
+                raise RuntimeError("registry unavailable")
+
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        monkeypatch.delenv("REGISTRY_MAX_RETRIES", raising=False)
+        monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
+
+        agent.register_with_registry(DummyAgentCard())
+
+        assert attempts == [
+            ("http://litellm:4000", {}),
+            ("http://litellm:4000", {}),
+            ("http://litellm:4000", {}),
+        ]
+        assert sleep_delays == [2.0, 4.0]
+
+    def test_register_with_registry_retries_configured_registry(self, monkeypatch):
+        """Explicit registry configuration should use the configured retry count."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_registration(self, agent_card, *, raw_agent_card=None):
+            attempts.append((self.registry_url, dict(self.headers)))
+            raise RuntimeError("registry unavailable")
+
+        monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
+        monkeypatch.setenv("REGISTRY_MAX_RETRIES", "2")
+        monkeypatch.setenv("LITELLM_MASTER_KEY", "master-key")
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_registration)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
+
+        agent.register_with_registry(
+            DummyAgentCard(),
+            initial_delay=0.5,
+            max_delay=0.75,
+            backoff_factor=2.0,
+        )
+
+        assert attempts == [
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+            ("http://registry:4000", {"Authorization": "Bearer master-key"}),
+        ]
+        assert sleep_delays == [0.5, 0.75]
+
+    def test_register_with_registry_ignores_invalid_retry_env(self, monkeypatch, caplog):
+        """Bad REGISTRY_MAX_RETRIES should not prevent agent startup."""
+        agent = PrometheusAgent(agent_name="MyAgent")
+        attempts = []
+        sleep_delays = []
+
+        class DummyAgentCard:
+            name = "My Agent"
+
+        def fail_then_succeed(self, agent_card, *, raw_agent_card=None):
+            attempts.append(self.registry_url)
+            if len(attempts) < 3:
+                raise RuntimeError("registry unavailable")
+
+        monkeypatch.delenv("REGISTRY_URL", raising=False)
+        monkeypatch.setenv("REGISTRY_MAX_RETRIES", "not-an-int")
+        monkeypatch.setattr(AgentRegistryClient, "register_once", fail_then_succeed)
+        monkeypatch.setattr("prometheus_api.agent.registry.time.sleep", sleep_delays.append)
+
+        with caplog.at_level(logging.WARNING):
+            agent.register_with_registry(DummyAgentCard())
+
+        assert attempts == [
+            "http://litellm:4000",
+            "http://litellm:4000",
+            "http://litellm:4000",
+        ]
+        assert sleep_delays == [2.0, 4.0]
+        assert "Invalid REGISTRY_MAX_RETRIES='not-an-int'; using 10" in caplog.text
+
+    def test_registry_client_build_payload_uses_raw_card_and_agent_secret(self):
+        """Registry payload should preserve raw card metadata and static auth headers."""
+        raw_agent_card = {
+            "name": "Test Agent",
+            "description": "Raw card",
+            "skills": [{"id": "extra", "usage_notes": "Preserved for routing"}],
+        }
+        client = AgentRegistryClient(
+            "http://registry:4000",
+            agent_secret="agent-secret",
+        )
+
+        agent_name, payload = client.build_payload(
+            _test_agent_card(),
+            raw_agent_card=raw_agent_card,
+        )
+
+        assert agent_name == "test-agent"
+        assert payload["agent_card_params"] is raw_agent_card
+        assert payload["static_headers"] == {"Authorization": "Bearer agent-secret"}
+
     def test_get_raw_agent_card_returns_loaded_dict(self):
         agent = PrometheusAgent(agent_name="MyAgent")
         agent.agent_card_dict = {
@@ -323,6 +489,106 @@ class TestPrometheusAgent:
             ("shutdown", sentinel_app),
         ]
 
+    def test_application_lifespan_starts_background_registration(self):
+        events = []
+
+        class TestAgent(PrometheusAgent):
+            @asynccontextmanager
+            async def lifespan(self, app):
+                events.append("startup")
+                try:
+                    yield
+                finally:
+                    events.append("shutdown")
+
+            async def register_with_registry_async(self, agent_card, **kwargs):
+                events.append(("register", agent_card.name))
+
+        agent = TestAgent(agent_name="MyAgent")
+        app = SimpleNamespace(state=SimpleNamespace())
+        agent_card = _test_agent_card()
+
+        async def run_lifespan():
+            async with agent._application_lifespan(
+                app,
+                agent_card,
+                register_on_startup=True,
+            ):
+                events.append("running")
+                await asyncio.sleep(0)
+
+        asyncio.run(run_lifespan())
+
+        assert events == ["startup", "running", ("register", "Test Agent"), "shutdown"]
+        assert app.state.registry_registration_task.done()
+
+    def test_configure_auth_requires_secret_by_default(self, monkeypatch):
+        agent = PrometheusAgent(agent_name="MyAgent")
+        app = Starlette()
+        monkeypatch.delenv("AGENT_SECRET", raising=False)
+        monkeypatch.delenv("AGENT_SECRET_REQUIRED", raising=False)
+
+        with pytest.raises(RuntimeError, match="AGENT_SECRET_REQUIRED=true"):
+            agent._configure_auth(app)
+
+    def test_configure_auth_can_be_disabled(self, monkeypatch):
+        agent = PrometheusAgent(agent_name="MyAgent")
+        app = Starlette()
+        monkeypatch.delenv("AGENT_SECRET", raising=False)
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+
+        agent._configure_auth(app)
+
+        assert app.user_middleware == []
+
+    def test_build_app_sets_components_and_routes_without_registration(self, monkeypatch):
+        class TestAgent(PrometheusAgent):
+            async def _execute(self, params, context, event_queue):
+                return {"ok": True}
+
+        agent = TestAgent(agent_name="MyAgent")
+        agent_card = _test_agent_card()
+        monkeypatch.setattr(agent, "load_agent_card", lambda: agent_card)
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+
+        app = agent.build_app(register_on_startup=False)
+
+        assert agent.agent_card is agent_card
+        assert isinstance(agent.executor, PrometheusAgentExecutor)
+        route_paths = {getattr(route, "path", None) for route in app.routes}
+        assert "/health" in route_paths
+        assert "/api/chat" in route_paths
+        assert "/api/agent-card" in route_paths
+
+    async def test_build_app_debug_chat_route_executes_agent(self, monkeypatch):
+        class TestAgent(PrometheusAgent):
+            async def _execute(self, params, context, event_queue):
+                return {
+                    "message": params.get("message"),
+                    "context_id": context.context_id,
+                }
+
+        agent = TestAgent(agent_name="MyAgent")
+        monkeypatch.setattr(agent, "load_agent_card", _test_agent_card)
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/api/chat",
+                json={
+                    "params": {"message": "hello"},
+                    "conversation_id": "conv-1",
+                },
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ok"] is True
+        assert payload["context_id"] == "conv-1"
+        assert payload["result"] == {"message": "hello", "context_id": "conv-1"}
+
     def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""
         agent = PrometheusAgent(agent_name="MyAgent")
@@ -367,8 +633,8 @@ class TestPrometheusAgent:
         assert part.data["hint"] == "Thermal analysis requires a temperature."
         assert part.data["missing_inputs"][0]["name"] == "temperature_c"
 
-    def test_create_executor_returns_custom_executor(self):
-        """Test that create_executor returns a working executor."""
+    def test_create_executor_returns_delegating_executor(self):
+        """Test that create_executor returns the standard delegating executor."""
 
         class TestAgent(PrometheusAgent):
             async def _execute(self, params, context, event_queue):
@@ -377,6 +643,7 @@ class TestPrometheusAgent:
         agent = TestAgent(agent_name="TestAgent")
         executor = agent.create_executor()
 
+        assert isinstance(executor, DelegatingPrometheusAgentExecutor)
         assert isinstance(executor, PrometheusAgentExecutor)
         assert executor.agent_name == "TestAgent"
 

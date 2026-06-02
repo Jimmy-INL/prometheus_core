@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
+`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
 
 `tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 
@@ -27,7 +27,13 @@ For targeted tests, use `uv run pytest tests/test_agent.py::TestPrometheusAgentE
 
 This project targets Python 3.12+. Ruff uses a 100-character line length and excludes `examples/`. Prefer typed Pydantic models for API payloads, explicit resource classes for endpoints, and clear async/sync parity between `storage_client/resources/` and `storage_client/async_resources/`. Keep `llm_client` sync and async behavior aligned when changing aliases, fallback behavior, logging, or response objects. Use `snake_case` for modules, functions, variables, and test functions; use `PascalCase` for classes.
 
-Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized.
+Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized. Registry HTTP/retry behavior belongs in `agent/registry.py`; registration starts from the app lifespan as a background async task. Keep `REGISTRY_MAX_RETRIES` docs and tests aligned with that startup behavior, including retries against the built-in fallback URL. Invalid retry configuration should not prevent an agent from starting.
+
+Keep debug/compatibility HTTP route logic (including `/api/chat`) in `agent/debug_routes.py` rather than growing `agent/base.py`.
+
+Keep task status event construction in `agent/events.py` and route public helper methods through those helpers instead of duplicating `TaskStatusUpdateEvent` boilerplate.
+
+Base-agent behavior changes that downstream agents may need to react to should be documented in `docs/agent/AGENT_MIGRATIONS.md` under a version heading, with each migration as a short subheading followed by migration steps and a compact code example.
 
 ## Testing Guidelines
 
@@ -39,7 +45,7 @@ Recent commits use short, direct summaries such as `fix tag ids` or `Cleaned up 
 
 ## Security & Configuration Tips
 
-Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `AM_SC_API_KEY`, MLflow tracking settings, and LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, and structured A2A `llm_api_key` values must be redacted from logs. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
+Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `REGISTRY_MAX_RETRIES`, `AM_SC_API_KEY`, MLflow tracking settings, and LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, structured A2A `llm_api_key` values must be redacted from logs, and agent parameter/registration logging must not emit prompt content or bearer tokens. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
 
 ## Additional Instructions
 

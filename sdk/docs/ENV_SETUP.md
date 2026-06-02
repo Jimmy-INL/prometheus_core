@@ -39,6 +39,9 @@ llm = LLMClient()
 
 Environment variables for `PrometheusAgent`:
 
+For base-agent behavior changes and migration examples, see
+[`docs/agent/AGENT_MIGRATIONS.md`](agent/AGENT_MIGRATIONS.md).
+
 ### Agent Server
 
 | Variable | Description | Default | Required |
@@ -68,11 +71,18 @@ environment:
 | `AGENT_SECRET` | Shared secret for Bearer token auth | - | Yes (production) |
 | `AGENT_SECRET_REQUIRED` | Enforce authentication | `true` | No |
 
+When `AGENT_SECRET_REQUIRED=true`, `AGENT_SECRET` must be set or agent app startup fails fast.
+Set `AGENT_SECRET_REQUIRED=false` only for local unauthenticated development.
+
 ### Agent Registry
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | - | No |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL for auto-registration | `http://litellm:4000` | No |
+| `REGISTRY_MAX_RETRIES` | Registration retries after the first attempt, used for both explicit `REGISTRY_URL` and the built-in fallback URL. | `10` | No |
+
+Registry registration is started as a background async task during the agent app lifespan so
+the HTTP server can start while the LiteLLM registry is still becoming ready.
 
 ### Example Agent .env
 
@@ -87,6 +97,7 @@ AGENT_SECRET_REQUIRED=true
 
 # Registry (optional)
 REGISTRY_URL=http://litellm:4000
+# REGISTRY_MAX_RETRIES=10
 ```
 
 ### Agent Usage

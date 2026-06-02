@@ -41,6 +41,9 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         - Health check (/health) and agent card (/.well-known/agent.json) endpoints are exempt
         - Token values are never logged (only validation status)
         - Returns 401 Unauthorized with JSON-RPC 2.0 error format on failure
+        - `PrometheusAgent.build_app()` validates required auth before adding this middleware,
+          so normal agents fail fast with RuntimeError if `AGENT_SECRET_REQUIRED=true` and
+          `AGENT_SECRET` is unset. Direct middleware users still receive ValueError.
     """
 
     def __init__(self, app, secret: Optional[str] = None, required: bool = True):

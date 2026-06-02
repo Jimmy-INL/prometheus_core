@@ -107,7 +107,8 @@ class AnalysisAgent(PrometheusAgent):
 | `AGENT_PORT` | Port uvicorn binds to | `8000` |
 | `EXTERNAL_AGENT_URL` | Full URL advertised to the registry (e.g. `http://my-host:9002`). When absent, auto-derived from the container hostname and `AGENT_PORT`. | auto |
 | `AGENT_SECRET` | Shared secret for auth | - |
-| `REGISTRY_URL` | LiteLLM registry/proxy URL used for agent registration | - |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL used for agent registration | `http://litellm:4000` |
+| `REGISTRY_MAX_RETRIES` | Registration retries after the first attempt, used for both explicit `REGISTRY_URL` and the built-in fallback URL. | `10` |
 
 ### LLMClient
 
@@ -156,7 +157,7 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 ### PrometheusAgent
 - Automatic agent card loading
 - Built-in Bearer token authentication
-- Registry registration
+- Background registry registration during app startup
 - HTTP server setup with A2A protocol
 - Optional `message/stream` support (`agent_card.capabilities.streaming=true`)
 - Final response emission from the returned `_execute(...)` dict

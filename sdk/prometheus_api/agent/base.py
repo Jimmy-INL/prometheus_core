@@ -12,9 +12,10 @@ import uuid
 import asyncio
 import hashlib
 import re
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass
-from typing import AsyncIterator, Dict, Any, Optional, List, Mapping, Sequence, cast
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Sequence, cast
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -46,11 +47,13 @@ from a2a.types import (
 from .middleware import BearerTokenMiddleware
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
+from .debug_routes import add_debug_chat_route
+from .events import context_id as event_context_id, context_task_id, emit_status_update
+from .registry import AgentRegistryClient
 from ..storage_client.async_client import AsyncStorageClient
 from ..storage_client.connection import ConnectionConfig
 from ..storage_client.models.item import ItemUpdate
 import uvicorn
-import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +82,6 @@ def _build_artifact_metadata(
     }
     metadata.update(dict(extra or {}))
     return metadata
-
-
-def _context_task_id(context: RequestContext) -> str:
-    """Return a non-null task ID for A2A event models."""
-    return str(getattr(context, "task_id", "") or "")
-
-
-def _context_id(context: RequestContext) -> str:
-    """Return a non-null context ID for A2A event models."""
-    return str(getattr(context, "context_id", "") or "")
 
 
 class _TrackedEventQueue:
@@ -177,7 +170,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             tracked_queue = _TrackedEventQueue(event_queue)
 
             # Send "working" status
-            await self._emit_status(
+            await emit_status_update(
                 context=context,
                 event_queue=tracked_queue,
                 state=TaskState.working,
@@ -190,7 +183,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
             if not tracked_queue.seen_final_status:
-                await self._emit_status(
+                await emit_status_update(
                     context=context,
                     event_queue=tracked_queue,
                     state=TaskState.completed,
@@ -209,45 +202,13 @@ class PrometheusAgentExecutor(AgentExecutor):
             logger.error(f"Error during execution: {str(e)}", exc_info=True)
             # Avoid sending contradictory terminal states if the agent already finalized.
             if not tracked_queue or not tracked_queue.seen_final_status:
-                await self._emit_status(
+                await emit_status_update(
                     context=context,
                     event_queue=tracked_queue or event_queue,
                     state=TaskState.failed,
                     final=True,
                 )
             raise
-
-    async def _emit_status(
-        self,
-        context: RequestContext,
-        event_queue: Any,
-        state: TaskState,
-        final: bool,
-        message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit a task status update event with optional human-readable message."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        status_message = None
-        if message:
-            status_message = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=message))],
-                context_id=context_id,
-                task_id=task_id,
-            )
-
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=final,
-                status=TaskStatus(state=state, message=status_message),
-                metadata=metadata,
-            )
-        )
 
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
         """
@@ -273,8 +234,11 @@ class PrometheusAgentExecutor(AgentExecutor):
                 params = json.loads(text)
             except json.JSONDecodeError:
                 # If not valid JSON, treat the text as a plain message
-                logger.debug(f"Message is not JSON, treating as plain text: {text}")
+                logger.debug("Message is not JSON; treating it as plain text")
                 params = {"message": text}
+            else:
+                if not isinstance(params, dict):
+                    params = {"value": params}
 
         # Inject skill_id from message metadata so agents can dispatch on
         # which skill was invoked without needing an explicit 'action' param.
@@ -284,7 +248,7 @@ class PrometheusAgentExecutor(AgentExecutor):
             if skill_id and "skill_id" not in params:
                 params["skill_id"] = str(skill_id)
 
-        logger.info(f"Extracted parameters: {params}")
+        logger.info("Extracted parameter keys: %s", sorted(params.keys()))
         return params
 
     async def _execute(
@@ -311,14 +275,12 @@ class PrometheusAgentExecutor(AgentExecutor):
             async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
-                # Send progress update
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
-                        final=False,
-                        status=TaskStatus(state=TaskState.working),
-                    )
+                await emit_status_update(
+                    context=context,
+                    event_queue=event_queue,
+                    state=TaskState.working,
+                    final=False,
+                    message="Running analysis.",
                 )
 
                 # Do your work
@@ -344,16 +306,37 @@ class PrometheusAgentExecutor(AgentExecutor):
             event_queue: Queue for sending status updates
         """
         logger.info(f"Cancellation requested for {self.agent_name}")
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=True,
-                status=TaskStatus(state=TaskState.canceled),
-            )
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.canceled,
+            final=True,
         )
+
+
+class DelegatingPrometheusAgentExecutor(PrometheusAgentExecutor):
+    """Executor that delegates agent work to a provided async callback."""
+
+    def __init__(
+        self,
+        *,
+        agent_name: str,
+        execute_fn: Callable[
+            [Dict[str, Any], RequestContext, EventQueue],
+            Awaitable[Dict[str, Any]],
+        ],
+    ):
+        super().__init__(agent_name=agent_name)
+        self._execute_fn = execute_fn
+
+    async def _execute(
+        self,
+        params: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
+        """Delegate to the owning agent's `_execute` implementation."""
+        return await self._execute_fn(params, context, event_queue)
 
 
 class PrometheusAgent:
@@ -485,8 +468,8 @@ class PrometheusAgent:
     ) -> None:
         """Emit a canonical final INPUT_REQUIRED status message."""
         payload = build_input_required_payload(missing_inputs, hint=hint)
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
@@ -515,7 +498,7 @@ class PrometheusAgent:
     @staticmethod
     def _context_conversation_id(context: RequestContext) -> str:
         """Return the effective conversation scope key for registry operations."""
-        return _context_id(context)
+        return event_context_id(context)
 
     @property
     def _producer_agent_id(self) -> str:
@@ -550,8 +533,8 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a text artifact from public helper methods."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
@@ -586,8 +569,8 @@ class PrometheusAgent:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Emit a URI-backed file artifact from public helper methods."""
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
@@ -1040,85 +1023,84 @@ class PrometheusAgent:
 
         return agent_card
 
-    def register_with_registry(self, agent_card: AgentCard) -> None:
-        """
-        Register this agent with LiteLLM's A2A gateway.
-
-        Posts to POST /v1/agents so LiteLLM can route incoming A2A calls to
-        this agent and expose the full raw agent card for discovery and
-        routing metadata.
-        """
+    def _registry_client(self) -> Optional[AgentRegistryClient]:
+        """Return a LiteLLM registry client, or None when registration is disabled."""
         registry_url = self.registry_url()
         if not registry_url:
             logger.info("REGISTRY_URL not set - skipping agent registration")
+            return None
+        return AgentRegistryClient.from_env(registry_url)
+
+    def register_with_registry(
+        self,
+        agent_card: AgentCard,
+        *,
+        max_retries: Optional[int] = None,
+        initial_delay: float = 2.0,
+        max_delay: float = 30.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
+        """
+        Register this agent with LiteLLM's A2A gateway.
+
+        Retries with exponential backoff until success or max_retries is
+        exhausted. max_retries defaults to REGISTRY_MAX_RETRIES env var (default 10).
+        On final failure the agent starts unregistered with a warning logged.
+        """
+        registry_client = self._registry_client()
+        if registry_client is None:
             return
+        registry_client.register_with_retries(
+            agent_card,
+            raw_agent_card=self.agent_card_dict,
+            max_retries=max_retries,
+            initial_delay=initial_delay,
+            max_delay=max_delay,
+            backoff_factor=backoff_factor,
+        )
 
-        master_key = os.getenv("LITELLM_MASTER_KEY", "")
-        headers = {}
-        if master_key:
-            headers["Authorization"] = f"Bearer {master_key}"
+    async def register_with_registry_async(
+        self,
+        agent_card: AgentCard,
+        *,
+        max_retries: Optional[int] = None,
+        initial_delay: float = 2.0,
+        max_delay: float = 30.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
+        """
+        Register this agent with LiteLLM's A2A gateway without blocking the event loop.
 
-        # agent_name becomes the routing key: /a2a/{agent_name}/message/send
-        agent_name = agent_card.name.lower().replace(" ", "-")
-
-        # Use the raw agent_card dict so any Prometheus-specific routing or
-        # usage metadata is preserved in LiteLLM.
-        agent_card_params = getattr(self, "agent_card_dict", None) or agent_card.model_dump()
-
-        try:
-            with httpx.Client(timeout=15.0, headers=headers) as client:
-                # Delete any existing registration so re-registrations always
-                # pick up the latest agent card (LiteLLM returns 400 on duplicates).
-                existing = client.get(f"{registry_url}/v1/agents")
-                if existing.status_code == 200:
-                    for entry in existing.json() if isinstance(existing.json(), list) else []:
-                        if entry.get("agent_name") == agent_name:
-                            client.delete(f"{registry_url}/v1/agents/{entry['agent_id']}")
-                            logger.debug(f"Removed stale registration for '{agent_name}'")
-                            break
-                registration_payload = {
-                    "agent_name": agent_name,
-                    "agent_card_params": agent_card_params,
-                }
-
-                if agent_secret := os.getenv("AGENT_SECRET"):
-                    registration_payload["static_headers"] = {
-                        "Authorization": f"Bearer {agent_secret}",
-                    }
-                logger.info(f"AGENT_REGISTRATION_PAYLOAD: {registration_payload}")
-                response = client.post(
-                    f"{registry_url}/v1/agents",
-                    json=registration_payload,
-                )
-                response.raise_for_status()
-                logger.info(f"Registered '{agent_name}' with LiteLLM at {registry_url}")
-        except Exception as e:
-            logger.error(f"Failed to register with LiteLLM: {e}")
-            logger.warning("Continuing without registration")
+        This is the registration path used by `build_app()`/`run()` during Starlette lifespan
+        startup. It keeps the same retry policy as `register_with_registry()`.
+        """
+        registry_client = self._registry_client()
+        if registry_client is None:
+            return
+        await registry_client.register_with_retries_async(
+            agent_card,
+            raw_agent_card=self.agent_card_dict,
+            max_retries=max_retries,
+            initial_delay=initial_delay,
+            max_delay=max_delay,
+            backoff_factor=backoff_factor,
+        )
 
     def create_executor(self) -> PrometheusAgentExecutor:
         """
         Create the agent executor.
 
-        Override this method if you need custom executor initialization.
+        Override this method only when you need to replace the standard
+        Prometheus execution lifecycle. Normal agents should override
+        `PrometheusAgent._execute()` instead.
 
         Returns:
             Agent executor instance
         """
-        # Create a custom executor class that wraps _execute
-        agent_instance = self
-
-        class CustomExecutor(PrometheusAgentExecutor):
-            async def _execute(
-                self,
-                params: Dict[str, Any],
-                context: RequestContext,
-                event_queue: EventQueue,
-            ) -> Dict[str, Any]:
-                """Delegate to the agent instance's _execute method."""
-                return await agent_instance._execute(params, context, event_queue)
-
-        return CustomExecutor(agent_name=self.agent_name)
+        return DelegatingPrometheusAgentExecutor(
+            agent_name=self.agent_name,
+            execute_fn=self._execute,
+        )
 
     async def _execute(
         self,
@@ -1144,14 +1126,10 @@ class PrometheusAgent:
             async def _execute(self, params, context, event_queue):
                 input_data = params.get("input_data")
 
-                # Send progress update
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
-                        final=False,
-                        status=TaskStatus(state=TaskState.working),
-                    )
+                await self.send_status_update(
+                    context,
+                    event_queue,
+                    message="Running analysis.",
                 )
 
                 # Your logic here
@@ -1179,26 +1157,13 @@ class PrometheusAgent:
 
         This helper is optional and does not change `_execute` signature.
         """
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
-        status_message = None
-        if message:
-            status_message = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=message))],
-                context_id=context_id,
-                task_id=task_id,
-            )
-
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                final=final,
-                status=TaskStatus(state=state, message=status_message),
-                metadata=metadata,
-            )
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=state,
+            final=final,
+            message=message,
+            metadata=metadata,
         )
 
     async def send_json_artifact(
@@ -1248,8 +1213,8 @@ class PrometheusAgent:
         part_metadata = {"mime_type": "application/json", **dict(metadata or {})}
         if json_type:
             part_metadata["json_type"] = json_type
-        task_id = _context_task_id(context)
-        context_id = _context_id(context)
+        task_id = context_task_id(context)
+        context_id = event_context_id(context)
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=task_id,
@@ -1494,21 +1459,81 @@ class PrometheusAgent:
         """
         yield
 
-    def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
+    @staticmethod
+    def _log_background_registration_result(task: asyncio.Task[None]) -> None:
+        """Log unexpected background registration task failures."""
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Background registry registration task failed unexpectedly")
+
+    @asynccontextmanager
+    async def _application_lifespan(
+        self,
+        app,
+        agent_card: AgentCard,
+        *,
+        register_on_startup: bool,
+    ) -> AsyncIterator[None]:
+        """Run subclass lifespan and start registry registration in the background."""
+        registration_task: Optional[asyncio.Task[None]] = None
+        async with self.lifespan(app):
+            if register_on_startup:
+                registration_task = asyncio.create_task(
+                    self.register_with_registry_async(agent_card),
+                    name=f"{self.agent_name}-registry-registration",
+                )
+                registration_task.add_done_callback(self._log_background_registration_result)
+                with suppress(Exception):
+                    app.state.registry_registration_task = registration_task
+
+            try:
+                yield
+            finally:
+                if registration_task and not registration_task.done():
+                    registration_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await registration_task
+
+    @staticmethod
+    def _agent_secret_required() -> bool:
+        return os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in ["true", "1", "yes"]
+
+    def _configure_auth(self, app) -> None:
+        """Attach bearer-token authentication or fail fast for unsafe required config."""
+        agent_secret = os.getenv("AGENT_SECRET")
+        agent_secret_required = self._agent_secret_required()
+
+        if not agent_secret_required:
+            logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
+            return
+
+        if not agent_secret:
+            raise RuntimeError("AGENT_SECRET_REQUIRED=true but AGENT_SECRET is not set")
+
+        app.add_middleware(
+            BearerTokenMiddleware,
+            secret=agent_secret,
+            required=True,
+        )
+        logger.info("Bearer token authentication enabled")
+
+    def build_app(self, *, register_on_startup: bool = True):
         """
-        Start the agent HTTP server.
+        Build the Starlette app for this agent.
 
         This method:
         1. Loads the agent card
         2. Creates the executor
         3. Sets up the HTTP server with A2A protocol
         4. Adds Bearer token authentication
-        5. Registers with the registry
-        6. Starts the server
+        5. Starts registry registration during app lifespan
 
         Args:
-            host: Host to bind to (default: 0.0.0.0)
-            port: Port to listen on (default: from AGENT_PORT env var or 8000)
+            register_on_startup: Whether to start background LiteLLM registry registration
+                when the app lifespan starts.
         """
         logger.info(f"Starting {self.agent_name}")
 
@@ -1528,8 +1553,17 @@ class PrometheusAgent:
         # Create A2A application builder
         builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
 
+        @asynccontextmanager
+        async def app_lifespan(app) -> AsyncIterator[None]:
+            async with self._application_lifespan(
+                app,
+                agent_card,
+                register_on_startup=register_on_startup,
+            ):
+                yield
+
         # Build the Starlette app
-        app = builder.build(lifespan=self.lifespan)
+        app = builder.build(lifespan=app_lifespan)
 
         # add health endpoint
         app.add_route(
@@ -1544,175 +1578,7 @@ class PrometheusAgent:
             methods=["GET"],
         )
 
-        async def api_chat(request):
-            """
-            Compatibility/debug chat endpoint.
-
-            Accepts either:
-            - {"message": "<text>"} or {"message": {...}}
-            - {"params": {...}}
-
-            Optional fields:
-            - task_id, context_id, conversation_id
-            - include_events (bool): include raw event payloads in response
-            - include_artifacts (bool, default true): include conversation artifact catalog
-            """
-
-            class LocalRequestContext:
-                def __init__(self, request_params: Dict[str, Any], task_id: str, context_id: str):
-                    self.task_id = task_id
-                    self.context_id = context_id
-                    self._request_params = request_params
-
-                def get_user_input(self) -> str:
-                    return json.dumps(self._request_params)
-
-            class CollectingEventQueue:
-                def __init__(self):
-                    self.events = []
-
-                async def enqueue_event(self, event: Any) -> None:
-                    self.events.append(event)
-
-            def extract_result_payload(events: list[Any]) -> Any:
-                for event in reversed(events):
-                    if not isinstance(event, TaskStatusUpdateEvent) or not event.final:
-                        continue
-
-                    status_message = getattr(event.status, "message", None)
-                    if status_message is None:
-                        continue
-
-                    for part in getattr(status_message, "parts", []) or []:
-                        text_value = None
-                        if hasattr(part, "text"):
-                            text_value = part.text
-                        elif hasattr(part, "root") and hasattr(part.root, "text"):
-                            text_value = part.root.text
-
-                        if text_value is None:
-                            continue
-
-                        try:
-                            return json.loads(text_value)
-                        except Exception:
-                            return text_value
-                return None
-
-            def serialize_events(events: list[Any]) -> list[Dict[str, Any]]:
-                serialized = []
-                for event in events:
-                    if hasattr(event, "model_dump"):
-                        serialized.append(
-                            event.model_dump(
-                                mode="json",
-                                by_alias=True,
-                                exclude_none=True,
-                            )
-                        )
-                    else:
-                        serialized.append({"type": type(event).__name__, "value": str(event)})
-                return serialized
-
-            try:
-                body = await request.json()
-            except Exception:
-                return JSONResponse(
-                    {"ok": False, "error": "Invalid JSON body"},
-                    status_code=400,
-                )
-
-            if not isinstance(body, dict):
-                return JSONResponse(
-                    {"ok": False, "error": "JSON body must be an object"},
-                    status_code=400,
-                )
-
-            params: Dict[str, Any]
-            if isinstance(body.get("params"), dict):
-                params = body["params"]
-            elif "message" in body:
-                message_value = body.get("message")
-                if isinstance(message_value, dict):
-                    params = message_value
-                elif isinstance(message_value, str):
-                    try:
-                        parsed = json.loads(message_value)
-                        params = parsed if isinstance(parsed, dict) else {"message": message_value}
-                    except Exception:
-                        params = {"message": message_value}
-                else:
-                    return JSONResponse(
-                        {"ok": False, "error": "message must be a string or object"},
-                        status_code=400,
-                    )
-            else:
-                # Last-resort compatibility: treat entire body as params except control keys.
-                params = {
-                    k: v
-                    for k, v in body.items()
-                    if k
-                    not in {
-                        "task_id",
-                        "context_id",
-                        "conversation_id",
-                        "include_events",
-                        "include_artifacts",
-                    }
-                }
-
-            task_id = str(body.get("task_id") or uuid.uuid4())
-            context_id = str(body.get("context_id") or body.get("conversation_id") or uuid.uuid4())
-            include_events = bool(body.get("include_events", False))
-            include_artifacts = bool(body.get("include_artifacts", True))
-
-            local_context = LocalRequestContext(params, task_id=task_id, context_id=context_id)
-            local_queue = CollectingEventQueue()
-
-            try:
-                await executor.execute(
-                    cast(RequestContext, local_context),
-                    cast(EventQueue, local_queue),
-                )
-            except Exception as e:
-                error_response = {
-                    "ok": False,
-                    "task_id": task_id,
-                    "context_id": context_id,
-                    "error": str(e),
-                }
-                if include_events:
-                    error_response["events"] = serialize_events(local_queue.events)
-                return JSONResponse(error_response, status_code=500)
-
-            result_payload = extract_result_payload(local_queue.events)
-            final_state = None
-            for event in reversed(local_queue.events):
-                if isinstance(event, TaskStatusUpdateEvent):
-                    final_state = event.status.state.value
-                    break
-
-            response_payload = {
-                "ok": True,
-                "task_id": task_id,
-                "context_id": context_id,
-                "state": final_state,
-                "result": result_payload,
-            }
-            if include_events:
-                response_payload["events"] = serialize_events(local_queue.events)
-            if include_artifacts:
-                artifact_refs = [ref.to_dict() for ref in self.list_artifact_references(context_id)]
-                response_payload["artifacts"] = artifact_refs
-                response_payload["artifact_lookup"] = {
-                    ref.get("name"): ref.get("artifact_id")
-                    for ref in artifact_refs
-                    if isinstance(ref.get("name"), str) and ref.get("name")
-                }
-
-            return JSONResponse(response_payload)
-
-        app.add_route("/api/chat", api_chat, methods=["POST"])
+        add_debug_chat_route(app, agent=self, executor=executor)
 
         async def api_agent_card(request):
             """Return the raw agent card with Prometheus-specific skill metadata."""
@@ -1738,31 +1604,19 @@ class PrometheusAgent:
         # Optional subclass hook for custom routes/endpoints.
         self.configure_app(app)
 
-        # Add Bearer token authentication middleware
-        agent_secret = os.getenv("AGENT_SECRET")
-        agent_secret_required = os.getenv("AGENT_SECRET_REQUIRED", "true").lower() in [
-            "true",
-            "1",
-            "yes",
-        ]
+        self._configure_auth(app)
 
-        if agent_secret or agent_secret_required:
-            app.add_middleware(
-                BearerTokenMiddleware,
-                secret=agent_secret,
-                required=agent_secret_required,
-            )
-            if agent_secret:
-                logger.info("Bearer token authentication enabled")
-            else:
-                logger.warning(
-                    "AGENT_SECRET_REQUIRED=true but AGENT_SECRET not set - authentication disabled"
-                )
-        else:
-            logger.warning("Bearer token authentication disabled (AGENT_SECRET_REQUIRED=false)")
+        return app
 
-        # Register with registry
-        self.register_with_registry(agent_card)
+    def run(self, host: str = "0.0.0.0", port: Optional[int] = None):
+        """
+        Start the agent HTTP server.
+
+        Args:
+            host: Host to bind to (default: 0.0.0.0)
+            port: Port to listen on (default: from AGENT_PORT env var or 8000)
+        """
+        app = self.build_app(register_on_startup=True)
 
         # Start HTTP server
         if port is None:
