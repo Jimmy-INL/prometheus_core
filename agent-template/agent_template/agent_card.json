@@ -12,17 +12,16 @@
       "id": "TEMPLATE_SKILL_ID",
       "name": "TEMPLATE_SKILL_NAME",
       "description": "TEMPLATE_SKILL_DESCRIPTION",
-      "usage_notes": "When to use this skill",
+      "usage_notes": "When to use this skill vs. other available skills.",
       "requires_approval": false,
       "expected_duration_seconds": 30,
-      "provides": [],
-      "derivation_rules": [],
+      "output_format": "JSON with keys: status, input_received, message",
       "inputSchema": {
         "type": "object",
         "properties": {
           "input_data": {
             "type": "string",
-            "description": "The main input data to analyze"
+            "description": "The main input data to process."
           }
         },
         "required": ["input_data"]
