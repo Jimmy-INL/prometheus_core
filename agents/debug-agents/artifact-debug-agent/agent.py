@@ -413,7 +413,7 @@ class ArtifactDebugAgent(PrometheusAgent):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> Dict[str, Any]:
-        """Dispatch artifact debug operations based on required skill parameters."""
+        """Dispatch artifact debug operations on the invoked skill_id."""
         conversation_id = str(params.get("conversation_id") or context.context_id or str(uuid.uuid4()))
 
         await self.send_status_update(
@@ -422,23 +422,30 @@ class ArtifactDebugAgent(PrometheusAgent):
             message="Parsing artifact debug request.",
         )
 
-        if params.get("json_type") or params.get("payload") is not None:
-            return await self._handle_create_json_artifact(
-                params=params,
-                conversation_id=conversation_id,
-                context=context,
-                event_queue=event_queue,
-            )
+        # Route on the invoked skill (injected by the base executor as
+        # params["skill_id"] from the A2A message metadata). This is the
+        # authoritative selector — do not infer the skill from which
+        # parameters happen to be present.
+        handlers = {
+            "create_svg_artifact": self._handle_create_svg,
+            "convert_svg_to_png": self._handle_convert_svg_to_png,
+            "create_json_artifact": self._handle_create_json_artifact,
+        }
+        skill_id = str(params.get("skill_id") or "").strip()
+        handler = handlers.get(skill_id)
 
-        if params.get("artifact_id"):
-            return await self._handle_convert_svg_to_png(
-                params=params,
-                conversation_id=conversation_id,
-                context=context,
-                event_queue=event_queue,
-            )
+        if handler is None:
+            # No (or unknown) skill_id — e.g. a direct/manual invocation without
+            # metadata. Fall back to inferring from parameters so such calls
+            # still work, but a routed skill_id always wins.
+            if params.get("json_type") or params.get("payload") is not None:
+                handler = self._handle_create_json_artifact
+            elif params.get("artifact_id"):
+                handler = self._handle_convert_svg_to_png
+            else:
+                handler = self._handle_create_svg
 
-        return await self._handle_create_svg(
+        return await handler(
             params=params,
             conversation_id=conversation_id,
             context=context,

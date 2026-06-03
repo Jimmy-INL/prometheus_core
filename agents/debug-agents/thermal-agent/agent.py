@@ -16,6 +16,21 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 THERMAL_ANALYSIS_JSON_TYPE = "prometheus.thermal_analysis.result.v1"
 
+# Skill routing: the invoked skill (params["skill_id"]) selects a focus the
+# model emphasizes on top of the shared structured analysis.
+DEFAULT_SKILL = "analyze_thermal"
+SKILL_FOCUS = {
+    "analyze_thermal": "Provide the full thermal analysis across every field.",
+    "calculate_thermal_fatigue": (
+        "Prioritize thermal-fatigue assessment: thermal_fatigue_usage_factor, "
+        "fatigue_analysis, and thermal_stress_mpa are the key outputs."
+    ),
+    "assess_creep": (
+        "Prioritize creep damage: creep_strain_percent and creep_analysis "
+        "(creep_rate, Larson-Miller, rupture_life_fraction_used) are the key outputs."
+    ),
+}
+
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear reactor thermal analysis specialist. Analyze thermal effects on material: {material_id}
 {context_str}
@@ -246,7 +261,15 @@ class ThermalAnalysisAgent(PrometheusAgent):
             if operating_context.get("operating_hours"):
                 context_str += f"- Operating Hours: {operating_context['operating_hours']}\n"
 
-        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+        # Route on the invoked skill (injected by the base executor as
+        # params["skill_id"]); fall back to the primary analysis skill.
+        skill_id = str(params.get("skill_id") or "").strip()
+        if skill_id not in SKILL_FOCUS:
+            skill_id = DEFAULT_SKILL
+        prompt = (
+            ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+            + f"\n\nSkill focus ({skill_id}): {SKILL_FOCUS[skill_id]}"
+        )
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -267,6 +290,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
             analysis["material_id"] = material_id
             analysis["timestamp"] = datetime.now(timezone.utc).isoformat()
             analysis["analysis_type"] = "thermal"
+            analysis["skill_id"] = skill_id
             analysis["model_used"] = MODEL_NAME
             analysis["operating_temperature_c"] = operating_context.get(
                 "temperature_c",
@@ -286,7 +310,7 @@ class ThermalAnalysisAgent(PrometheusAgent):
                 context=context,
                 event_queue=event_queue,
                 payload=analysis,
-                name=f"{material_id.lower()}_thermal_analysis",
+                name=f"{material_id.lower()}_{skill_id}",
                 description=f"Thermal analysis result for {material_id}.",
                 json_type=THERMAL_ANALYSIS_JSON_TYPE,
                 catalog_artifact=True,

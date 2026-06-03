@@ -16,6 +16,21 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 CORROSION_ANALYSIS_JSON_TYPE = "prometheus.corrosion_analysis.result.v1"
 
+# Skill routing: the invoked skill (params["skill_id"]) selects a focus the
+# model emphasizes on top of the shared structured analysis.
+DEFAULT_SKILL = "analyze_corrosion"
+SKILL_FOCUS = {
+    "analyze_corrosion": "Provide the full corrosion analysis across every field.",
+    "predict_corrosion_rate": (
+        "Prioritize predicted corrosion/oxidation rates and degradation timelines: "
+        "oxidation_rate_mm_per_year, affected_area_percent, and confidence are the key outputs."
+    ),
+    "assess_coating_integrity": (
+        "Prioritize protective coating condition and remaining service life: "
+        "coating_status, affected_area_percent, and recommendations are the key outputs."
+    ),
+}
+
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear reactor corrosion specialist. Analyze the corrosion state of material: {material_id}
 {context_str}
@@ -187,7 +202,15 @@ class CorrosionAnalysisAgent(PrometheusAgent):
             if non_null.get("operating_hours"):
                 context_str += f"- Operating Hours: {non_null['operating_hours']}\n"
 
-        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+        # Route on the invoked skill (injected by the base executor as
+        # params["skill_id"]); fall back to the primary analysis skill.
+        skill_id = str(params.get("skill_id") or "").strip()
+        if skill_id not in SKILL_FOCUS:
+            skill_id = DEFAULT_SKILL
+        prompt = (
+            ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+            + f"\n\nSkill focus ({skill_id}): {SKILL_FOCUS[skill_id]}"
+        )
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -211,6 +234,7 @@ class CorrosionAnalysisAgent(PrometheusAgent):
             analysis["material_id"] = material_id
             analysis["timestamp"] = datetime.now(timezone.utc).isoformat()
             analysis["analysis_type"] = "corrosion"
+            analysis["skill_id"] = skill_id
             analysis["model_used"] = MODEL_NAME
 
             message = _build_corrosion_summary(material_id, analysis)
@@ -220,7 +244,7 @@ class CorrosionAnalysisAgent(PrometheusAgent):
                 context=context,
                 event_queue=event_queue,
                 payload=analysis,
-                name=f"{material_id.lower()}_corrosion_analysis",
+                name=f"{material_id.lower()}_{skill_id}",
                 description=f"Corrosion analysis result for {material_id}.",
                 json_type=CORROSION_ANALYSIS_JSON_TYPE,
                 catalog_artifact=True,

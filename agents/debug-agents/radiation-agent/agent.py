@@ -16,6 +16,21 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 RADIATION_DAMAGE_JSON_TYPE = "prometheus.radiation_damage.result.v1"
 
+# Skill routing: the invoked skill (params["skill_id"]) selects a focus the
+# model emphasizes on top of the shared structured analysis.
+DEFAULT_SKILL = "analyze_radiation_damage"
+SKILL_FOCUS = {
+    "analyze_radiation_damage": "Provide the full radiation damage analysis across every field.",
+    "calculate_dpa": (
+        "Prioritize the displacement damage calculation: dpa, total_fluence_n_cm2, "
+        "and fluence_spectrum are the key outputs."
+    ),
+    "assess_embrittlement": (
+        "Prioritize embrittlement and regulatory margin: dbtt_shift_c, "
+        "regulatory_compliance, and remaining_service_life_years are the key outputs."
+    ),
+}
+
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear reactor radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
 {context_str}
@@ -205,7 +220,15 @@ class RadiationDamageAgent(PrometheusAgent):
             if non_null.get("operating_hours"):
                 context_str += f"- Operating Hours: {non_null['operating_hours']}\n"
 
-        prompt = ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+        # Route on the invoked skill (injected by the base executor as
+        # params["skill_id"]); fall back to the primary analysis skill.
+        skill_id = str(params.get("skill_id") or "").strip()
+        if skill_id not in SKILL_FOCUS:
+            skill_id = DEFAULT_SKILL
+        prompt = (
+            ANALYSIS_PROMPT_TEMPLATE.format(material_id=material_id, context_str=context_str)
+            + f"\n\nSkill focus ({skill_id}): {SKILL_FOCUS[skill_id]}"
+        )
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -226,6 +249,7 @@ class RadiationDamageAgent(PrometheusAgent):
             analysis["material_id"] = material_id
             analysis["timestamp"] = datetime.now(timezone.utc).isoformat()
             analysis["analysis_type"] = "radiation_damage"
+            analysis["skill_id"] = skill_id
             analysis["model_used"] = MODEL_NAME
 
             message = _build_radiation_summary(material_id, analysis)
@@ -235,7 +259,7 @@ class RadiationDamageAgent(PrometheusAgent):
                 context=context,
                 event_queue=event_queue,
                 payload=analysis,
-                name=f"{material_id.lower()}_radiation_damage",
+                name=f"{material_id.lower()}_{skill_id}",
                 description=f"Radiation damage analysis result for {material_id}.",
                 json_type=RADIATION_DAMAGE_JSON_TYPE,
                 catalog_artifact=True,
