@@ -218,6 +218,75 @@ await self.send_status_update(
 
 ---
 
+## Don't block the event loop
+
+Your agent runs on a **single asyncio event loop**. A synchronous call that does
+not `await` — a blocking SDK (`anthropic.Anthropic().messages.create(...)`), a
+`requests` call, a legacy library, a CPU loop, `time.sleep` — holds that loop
+until it returns. While it is blocked, nothing else runs: not the keepalive
+**heartbeat** the base executor emits during `_execute`, not the A2A stream that
+flushes status updates to the caller, not other in-flight requests. If the gap
+exceeds the upstream socket-read timeout (LiteLLM/aiohttp, ~30s), the streaming
+connection is torn down **even though your agent is still working**.
+
+The fix is never "raise the timeout" — it is to keep the loop free.
+
+**Offload blocking calls** with `asyncio.to_thread` (or use an async client):
+
+```python
+# WRONG — blocks the loop for the whole call; heartbeat and streaming stall
+result = blocking_library.run(payload)
+
+# CORRECT — runs off-loop; the loop stays free to flush heartbeats/status
+result = await asyncio.to_thread(blocking_library.run, payload)
+```
+
+**Reporting progress from a long blocking task (offload-and-observe).** The worker
+thread must not touch `event_queue` (it wraps a loop-bound `asyncio.Queue` that is
+not thread-safe). Instead the thread writes progress into a thread-safe
+`queue.Queue`, and the `_execute` coroutine polls it, emits status on the loop,
+and `await`s a short sleep between polls (which keeps the loop alive):
+
+```python
+import asyncio, queue, threading
+
+class ProgressReporter:           # thread writes, loop reads
+    def __init__(self):
+        self._q: "queue.Queue[str]" = queue.Queue()
+    def report(self, message):    # worker thread
+        self._q.put(str(message))
+    def drain(self):              # event loop
+        out = []
+        while True:
+            try: out.append(self._q.get_nowait())
+            except queue.Empty: return out
+
+async def _execute(self, params, context, event_queue):
+    progress = ProgressReporter()
+    cancel = threading.Event()    # threads can't be killed; cancel cooperatively
+    work = asyncio.create_task(asyncio.to_thread(self._run, params, progress, cancel))
+    try:
+        while not work.done():
+            for msg in progress.drain():
+                await self.send_status_update(context=context, event_queue=event_queue, message=msg)
+            await asyncio.sleep(1.0)          # yields → heartbeat + SSE keep flowing
+        for msg in progress.drain():
+            await self.send_status_update(context=context, event_queue=event_queue, message=msg)
+        return await work                     # recover result / re-raise exceptions
+    except asyncio.CancelledError:
+        cancel.set()                          # caller went away; ask the worker to stop
+        raise
+```
+
+Caveats: a client disconnect cancels the *coroutine*, not the *thread* (use the
+cancel `Event`); `to_thread` only parallelizes work that releases the GIL — for
+sustained CPU use `ProcessPoolExecutor` (progress must then cross processes); and a
+truly opaque blocking call that can't report mid-flight relies on the heartbeat
+alone. The base executor's heartbeat interval is configurable via
+`PROMETHEUS_HEARTBEAT_INTERVAL` (seconds; default 15, 0 disables).
+
+---
+
 ## Artifacts
 
 ### Inline JSON artifact
