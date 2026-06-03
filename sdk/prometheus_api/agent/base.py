@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional
 from typing import Sequence, cast
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from starlette.responses import JSONResponse
@@ -48,7 +48,15 @@ from .middleware import BearerTokenMiddleware
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from .debug_routes import add_debug_chat_route
-from .events import context_id as event_context_id, context_task_id, emit_status_update
+from .events import (
+    build_artifact_metadata as _build_artifact_metadata,
+    build_data_artifact_event,
+    context_id as event_context_id,
+    context_task_id,
+    emit_status_update,
+    normalize_producer_agent_id as _normalize_producer_agent_id,
+)
+from .worker import PrometheusWorker
 from .registry import AgentRegistryClient
 from ..storage_client.async_client import AsyncStorageClient
 from ..storage_client.connection import ConnectionConfig
@@ -56,32 +64,6 @@ from ..storage_client.models.item import ItemUpdate
 import uvicorn
 
 logger = logging.getLogger(__name__)
-
-
-def _utc_now_iso() -> str:
-    """Return a timezone-aware UTC timestamp string."""
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _normalize_producer_agent_id(agent_name: str) -> str:
-    """Normalize agent names into stable producer identifiers."""
-    return agent_name.lower().replace(" ", "-")
-
-
-def _build_artifact_metadata(
-    *,
-    context: RequestContext,
-    agent_name: str,
-    extra: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Build the canonical Prometheus artifact metadata envelope."""
-    metadata = {
-        "conversation_id": str(getattr(context, "context_id", "") or ""),
-        "producer_agent_id": _normalize_producer_agent_id(agent_name),
-        "created_at": _utc_now_iso(),
-    }
-    metadata.update(dict(extra or {}))
-    return metadata
 
 
 class _TrackedEventQueue:
@@ -1245,6 +1227,56 @@ class PrometheusAgent:
             metadata=metadata,
         )
 
+    async def run_worker(
+        self,
+        worker: PrometheusWorker,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        poll_interval: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Run a :class:`PrometheusWorker` on a worker thread, forwarding the
+        events it emits to the A2A event queue from the event loop.
+
+        Use this to run genuinely blocking work (a synchronous SDK, a legacy
+        library, a CPU loop) without freezing the loop: the blocking ``run()``
+        executes off-loop while this coroutine drains the worker's mailbox and
+        enqueues each event, ``await``-ing a short sleep between polls so the
+        keepalive heartbeat and streaming keep flowing.
+
+        Returns the worker's ``run()`` result and re-raises any exception it
+        raised (so the base executor still emits a ``failed`` status). On
+        cancellation (e.g. the caller disconnects) the worker is asked to stop
+        cooperatively via ``worker.cancel()`` — threads cannot be force-killed,
+        so the worker must check ``self.cancelled``.
+        """
+        worker._bind(context, self.agent_name)
+        task = asyncio.create_task(asyncio.to_thread(worker.run))
+        try:
+            while not task.done():
+                await self._forward_worker_events(worker, event_queue)
+                await asyncio.sleep(poll_interval)
+            # Flush events emitted between the last poll and completion.
+            await self._forward_worker_events(worker, event_queue)
+            return await task
+        except asyncio.CancelledError:
+            worker.cancel()
+            # Let the worker observe the flag and exit so we don't leak the
+            # thread, then flush whatever it emitted on the way out.
+            with suppress(Exception):
+                await task
+            await self._forward_worker_events(worker, event_queue)
+            raise
+
+    async def _forward_worker_events(
+        self,
+        worker: PrometheusWorker,
+        event_queue: EventQueue,
+    ) -> None:
+        """Drain a worker's mailbox and enqueue each event on the loop."""
+        for event in worker.drain():
+            await event_queue.enqueue_event(event)
+
     async def send_json_artifact(
         self,
         context: RequestContext,
@@ -1289,37 +1321,19 @@ class PrometheusAgent:
             )
             artifact_id = registered.artifact_id
 
-        part_metadata = {"mime_type": "application/json", **dict(metadata or {})}
-        if json_type:
-            part_metadata["json_type"] = json_type
-        task_id = context_task_id(context)
-        context_id = event_context_id(context)
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                artifact=Artifact(
-                    artifact_id=artifact_id,
-                    name=name,
-                    description=description,
-                    metadata=_build_artifact_metadata(
-                        context=context,
-                        agent_name=self.agent_name,
-                    ),
-                    parts=[
-                        Part(
-                            root=DataPart(
-                                data=payload if isinstance(payload, dict) else {"value": payload},
-                                metadata=part_metadata,
-                            )
-                        )
-                    ],
-                ),
-                append=append,
-                last_chunk=last_chunk,
-                metadata=metadata,
-            )
+        event, artifact_id = build_data_artifact_event(
+            context=context,
+            agent_name=self.agent_name,
+            payload=payload,
+            name=name,
+            description=description,
+            json_type=json_type,
+            artifact_id=artifact_id,
+            append=append,
+            last_chunk=last_chunk,
+            metadata=metadata,
         )
+        await event_queue.enqueue_event(event)
         return artifact_id
 
     async def send_artifact_reference(

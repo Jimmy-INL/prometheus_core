@@ -10,6 +10,7 @@ from .base import (
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from .registry import AgentRegistryClient
+from .worker import PrometheusWorker
 
 # Re-export commonly used A2A types for convenience
 from a2a.server.agent_execution.context import RequestContext
@@ -29,6 +30,7 @@ __all__ = [
     "MissingInput",
     "PrometheusAgent",
     "PrometheusAgentExecutor",
+    "PrometheusWorker",
     "ArtifactReference",
     "ArtifactRegistry",
     "AgentRegistryClient",
