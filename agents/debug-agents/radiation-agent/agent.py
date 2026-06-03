@@ -2,6 +2,7 @@
 Radiation Damage Agent - Specialist for nuclear reactor radiation damage analysis
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -232,11 +233,12 @@ class RadiationDamageAgent(PrometheusAgent):
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
-            response = client.messages.create(
+            response = await asyncio.to_thread(
+                client.messages.create,
                 model=MODEL_NAME,
                 max_tokens=2048,
                 temperature=0.3,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
 
             response_text = response.content[0].text

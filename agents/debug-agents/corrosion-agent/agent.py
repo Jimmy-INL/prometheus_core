@@ -2,6 +2,7 @@
 Corrosion Analysis Agent - Specialist for nuclear reactor corrosion analysis
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -214,11 +215,12 @@ class CorrosionAnalysisAgent(PrometheusAgent):
 
         try:
             client = Anthropic(api_key=ANTHROPIC_API_KEY)
-            response = client.messages.create(
+            response = await asyncio.to_thread(
+                client.messages.create,
                 model=MODEL_NAME,
                 max_tokens=2048,
                 temperature=0.3,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
 
             # Extract JSON from response
