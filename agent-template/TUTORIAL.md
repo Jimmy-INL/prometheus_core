@@ -368,16 +368,54 @@ class SimulationAgent(PrometheusAgent):
         return {"mean": float(data.mean()), "std": float(data.std())}
 ```
 
-#### Streaming progress from a long blocking task — the offload-and-observe pattern
+#### Streaming progress from a long blocking task
 
 A long task that emits no traffic for tens of seconds will look dead to the
 caller and can trip upstream timeouts. The fix is **not** a bigger timeout — it is
 to keep bytes on the wire. The worker thread cannot emit directly (`event_queue`
-wraps a loop-bound `asyncio.Queue` that is **not thread-safe**), so the thread
-writes progress into a thread-safe `queue.Queue`, and the `_execute` coroutine
-*observes* it: it polls, emits status updates on the loop, and `await`s a short
-sleep between polls — which is what keeps the loop alive so the heartbeat and SSE
-keep flowing.
+wraps a loop-bound `asyncio.Queue` that is **not thread-safe**), so the blocking
+work runs on a thread and emits progress into a thread-safe mailbox that the event
+loop drains and forwards while `await`-ing short sleeps that keep the loop alive.
+
+**Recommended: subclass `PrometheusWorker`.** It packages exactly that — a
+thread-safe mailbox, cooperative cancellation, and a safe subset of emit helpers
+that mirror the agent's (`emit_status_update`, plus `emit_json_artifact` for
+verbose/structured output). `PrometheusAgent.run_worker` runs it off-loop, forwards
+its events, flushes on completion, re-raises its errors, and signals cancellation:
+
+```python
+from prometheus_api.agent import PrometheusAgent, PrometheusWorker
+
+class SimulationWorker(PrometheusWorker):
+    def __init__(self, items):
+        super().__init__()
+        self.items = items
+
+    def run(self):                        # plain synchronous code on a worker thread
+        for i, item in enumerate(self.items, 1):
+            if self.cancelled:            # threads can't be killed — stop cooperatively
+                return {"status": "cancelled", "done": i - 1}
+            self.emit_status_update(f"Processing {i}/{len(self.items)}…")
+            heavy_blocking_call(item)
+        # JSON artifacts are handy for verbose/structured progress (e.g. a long
+        # numerical simulation); supports append/last_chunk for streaming chunks.
+        self.emit_json_artifact({"processed": len(self.items)}, name="summary")
+        return {"status": "success", "processed": len(self.items)}
+
+class SimulationAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        worker = SimulationWorker(params["items"])
+        return await self.run_worker(worker, context, event_queue)
+```
+
+`emit_json_artifact` is inline-only (not cataloged). DeepLynx uploads, catalog
+registration, conversation messages, and `INPUT_REQUIRED` are intentionally absent
+from the worker — do those from `_execute` on the loop, before or after
+`run_worker`.
+
+**Under the hood (the manual equivalent).** If you cannot use `PrometheusWorker`,
+this is the same pattern by hand — the thread writes progress into a thread-safe
+`queue.Queue`, and `_execute` polls it, emits on the loop, and sleeps between polls:
 
 ```python
 import asyncio
@@ -430,11 +468,12 @@ class SimulationAgent(PrometheusAgent):
         return {"status": "success", "processed": len(items)}
 ```
 
-Caveats:
+Caveats (either way):
 
 - **Cancellation:** a client disconnect cancels the *coroutine*, not the *thread*
-  (Python threads cannot be force-killed). Pass a `threading.Event` the worker
-  checks so it can stop cooperatively instead of running on orphaned.
+  (Python threads cannot be force-killed). `PrometheusWorker` exposes `self.cancelled`;
+  by hand, pass a `threading.Event` the worker checks so it stops cooperatively
+  instead of running on orphaned.
 - **CPU-bound work:** `to_thread` truly parallelizes only work that releases the
   GIL (I/O, heavy NumPy). For sustained pure-Python CPU loops use
   `ProcessPoolExecutor` — but then progress must cross processes (e.g. a
@@ -444,7 +483,8 @@ Caveats:
   alive.
 
 A complete, runnable reference lives in the platform's
-`agents/debug-agents/thread-pattern-agent` (skill `run_blocking_task`).
+`agents/debug-agents/thread-pattern-agent` (skill `run_blocking_task`), which uses
+`PrometheusWorker`.
 
 ### Reading environment variables
 
