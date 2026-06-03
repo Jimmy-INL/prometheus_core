@@ -4,6 +4,84 @@ This document is the running migration log for `PrometheusAgent` behavior change
 When a base-agent change requires downstream agent updates, add a short section here
 under the relevant version heading with migration steps and a minimal code example.
 
+## 0.6.0
+
+### Keepalive Heartbeats During `_execute` — Do Not Block the Event Loop
+
+The base executor now emits periodic non-final "working" status events while your
+`_execute` runs, so long-running agents keep traffic on the wire and do not trip
+upstream idle-connection timeouts (LiteLLM/aiohttp) mid-task.
+
+This only works if your `_execute` does not block the single event loop. A
+synchronous call that does not `await` — a blocking SDK
+(`anthropic.Anthropic().messages.create(...)`), `requests`, a legacy library, a
+CPU loop, `time.sleep` — freezes the loop, so the heartbeat (and your own
+`send_status_update` calls) cannot be sent and the very timeout the heartbeat
+prevents will still fire. The fix is never a bigger timeout; it is to keep the
+loop free.
+
+Migration steps:
+
+1. Audit `_execute` for synchronous, blocking calls and offload them with
+   `asyncio.to_thread` (or use an async client). For long blocking work that needs
+   to stream progress, use `PrometheusWorker` (below).
+2. If you consume or inspect the raw event stream, ignore heartbeat events: they
+   carry no message and are tagged `metadata.heartbeat=true`.
+3. Tune or disable the cadence with `PROMETHEUS_HEARTBEAT_INTERVAL` (seconds;
+   default `15`, `0` disables).
+
+```python
+# WRONG — blocks the loop for the whole call; heartbeat and streaming stall
+result = blocking_library.run(payload)
+
+# CORRECT — runs off-loop; the loop stays free to flush heartbeats/status
+result = await asyncio.to_thread(blocking_library.run, payload)
+```
+
+### Run Blocking Workloads with `PrometheusWorker`
+
+For genuinely blocking work that should still stream progress, subclass
+`PrometheusWorker` and dispatch it with `PrometheusAgent.run_worker`. The worker's
+`run()` executes on a worker thread; from there it cannot touch the loop-bound A2A
+event queue, so it emits a safe subset of events into a thread-safe mailbox that
+`run_worker` drains and forwards from the loop. Only pure, no-I/O event
+construction is exposed — `emit_status_update` and `emit_json_artifact` (inline,
+not cataloged). DeepLynx uploads, catalog registration, conversation messages, and
+`INPUT_REQUIRED` are intentionally unavailable; do those on the loop, before or
+after `run_worker`.
+
+Migration steps:
+
+1. Move the blocking work into a `PrometheusWorker.run()` (plain synchronous code).
+2. Stream progress with `self.emit_status_update(...)` and, for verbose output,
+   `self.emit_json_artifact(...)` (supports `append`/`last_chunk` for chunks).
+3. Check `self.cancelled` periodically and stop early — threads cannot be
+   force-killed, so cancellation is cooperative.
+4. Dispatch from `_execute` with `await self.run_worker(worker, context, event_queue)`,
+   which returns `run()`'s result and re-raises its exceptions.
+
+```python
+from prometheus_api.agent import PrometheusAgent, PrometheusWorker
+
+
+class CrunchWorker(PrometheusWorker):
+    def run(self):
+        total = len(self.items)
+        for i, item in enumerate(self.items, 1):
+            if self.cancelled:
+                return {"status": "cancelled", "done": i - 1}
+            self.emit_status_update(f"Crunching {i}/{total}…")
+            heavy_blocking_call(item)
+        return {"status": "success", "processed": total}
+
+
+class CrunchAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        worker = CrunchWorker()
+        worker.items = params["items"]
+        return await self.run_worker(worker, context, event_queue)
+```
+
 ## 0.5.0
 
 ### Use the Agent `_execute` Hook
