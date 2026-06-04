@@ -1,0 +1,131 @@
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Circle, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import type { ViewerProps } from "@/lib/chainlit/elements";
+
+type StepStatus = "pending" | "running" | "completed" | "failed";
+
+interface PlanStepObject {
+  name?: string;
+  agent?: string;
+  description?: string;
+  prompt?: string;
+}
+
+type PlanStep = string | PlanStepObject;
+
+interface Plan {
+  steps?: PlanStep[];
+  workflow_type?: string;
+  estimated_duration_seconds?: number;
+  intent?: string;
+  skills?: string[];
+  selection_source?: string;
+  workflow_id?: string;
+}
+
+interface PlanViewerProps {
+  plan?: Plan;
+  stepStatuses?: Record<number, StepStatus>;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m`;
+}
+
+function StatusIcon({ status }: { status: StepStatus }) {
+  switch (status) {
+    case "running":
+      return <Loader2 size={16} className="text-info animate-spin" />;
+    case "completed":
+      return <CheckCircle2 size={16} className="text-success" />;
+    case "failed":
+      return <XCircle size={16} className="text-error" />;
+    case "pending":
+    default:
+      return <Circle size={16} className="text-base-content/40" />;
+  }
+}
+
+function stepLabel(step: PlanStep): { title: string; subtitle?: string } {
+  if (typeof step === "string") return { title: step };
+  const title = step.name ?? step.agent ?? step.description ?? step.prompt ?? "Step";
+  const subtitle =
+    step.name && step.description
+      ? step.description
+      : step.agent && step.name
+        ? step.agent
+        : undefined;
+  return { title, subtitle };
+}
+
+export function PlanViewerElement({ element }: ViewerProps) {
+  const props = ((element as { props?: PlanViewerProps }).props) ?? {};
+  const plan = props.plan ?? {};
+  const stepStatuses = props.stepStatuses ?? {};
+  const steps = plan.steps ?? [];
+  const workflowType = plan.workflow_type ?? "sequential";
+  const estimatedDuration = plan.estimated_duration_seconds;
+  const intent = plan.intent ?? "";
+  const skills = plan.skills ?? [];
+  const selectionSource = plan.selection_source;
+  const workflowId = plan.workflow_id;
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const hasDetails = Boolean(workflowId || selectionSource || skills.length);
+
+  return (
+    <div className="border border-base-300 rounded-lg p-4 my-2 bg-base-200/40 space-y-3 max-w-2xl">
+      <div className="flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold">Execution Plan</h3>
+        <span className="badge badge-sm badge-ghost">{workflowType}</span>
+        {estimatedDuration != null && (
+          <span className="badge badge-sm badge-ghost">~{formatDuration(estimatedDuration)}</span>
+        )}
+      </div>
+
+      {intent && (
+        <p className="text-sm text-base-content/60 italic">{intent}</p>
+      )}
+
+      <ol className="space-y-2">
+        {steps.map((step, i) => {
+          const status = stepStatuses[i] ?? "pending";
+          const { title, subtitle } = stepLabel(step);
+          return (
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="mt-0.5 shrink-0"><StatusIcon status={status} /></span>
+              <span className="text-xs text-base-content/50 mt-0.5 w-5 shrink-0">{i + 1}.</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-base-content">{title}</p>
+                {subtitle && (
+                  <p className="text-xs text-base-content/50 mt-0.5">{subtitle}</p>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {hasDetails && (
+        <div className="pt-1">
+          <button
+            className="flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
+            onClick={() => setDetailsOpen((v) => !v)}
+          >
+            {detailsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {detailsOpen ? "Hide details" : "Show details"}
+          </button>
+          {detailsOpen && (
+            <div className="mt-2 space-y-1 text-xs text-base-content/60">
+              {workflowId && <p>Workflow ID: <code className="text-base-content/80">{workflowId}</code></p>}
+              {selectionSource && <p>Selection source: {selectionSource}</p>}
+              {skills.length > 0 && <p>Skills: {skills.join(" → ")}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
