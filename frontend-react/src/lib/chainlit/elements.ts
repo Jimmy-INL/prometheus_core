@@ -86,7 +86,7 @@ import { PdfViewerElement }                from "../../viewers/PdfViewerElement"
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
 // import { ImageViewerElement }          from "../../viewers/ImageViewerElement";
 // import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
-// import { FollowUpSuggestionsElement }  from "../../viewers/FollowUpSuggestionsElement";
+import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
 // import { PlanViewerElement }           from "../../viewers/PlanViewerElement";
 // import { MermaidElement }              from "../../viewers/MermaidElement";
 // import { ThermalAnalysisElement }      from "../../viewers/ThermalAnalysisElement";
@@ -98,7 +98,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   file:         null,  // → FileDownloadElement
   image:        null,  // → ImageViewerElement
   json:         null,  // → CollapsibleJsonElement
-  suggestions:  null,  // → FollowUpSuggestionsElement  (needs onSend)
+  suggestions:  FollowUpSuggestionsElement,
   plan_viewer:  null,  // → PlanViewerElement
   dynamic_form: DynamicFormElement,
   mermaid:      null,  // → MermaidElement
