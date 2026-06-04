@@ -31,7 +31,6 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-
 function stepLabel(step: PlanStep): { title: string; subtitle?: string } {
   if (typeof step === "string") return { title: step };
   const title = step.name ?? step.agent ?? step.description ?? step.prompt ?? "Step";
@@ -77,15 +76,14 @@ export function PlanViewerElement({ element }: ViewerProps) {
           const { title, subtitle } = stepLabel(step);
           return (
             <li key={i} className="flex items-start gap-2.5">
-              <span className="text-xs text-base-content/50 w-5 shrink-0 tabular-nums">{i + 1}.</span>
+              <span className="text-sm text-base-content/50 w-5 shrink-0 tabular-nums">{i + 1}.</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-base-content">{title}</p>
+                <span className="text-sm text-base-content block">{title}</span>
                 {subtitle && (
                   <p className="text-xs text-base-content/50 mt-0.5">{subtitle}</p>
                 )}
               </div>
-
-              </li>
+            </li>
           );
         })}
       </ol>
