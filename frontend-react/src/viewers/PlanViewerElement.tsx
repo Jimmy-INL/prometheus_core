@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ViewerProps } from "@/lib/chainlit/elements";
-
-type StepStatus = "pending" | "running" | "completed" | "failed";
 
 interface PlanStepObject {
   name?: string;
@@ -25,7 +23,6 @@ interface Plan {
 
 interface PlanViewerProps {
   plan?: Plan;
-  stepStatuses?: Record<number, StepStatus>;
 }
 
 function formatDuration(seconds: number): string {
@@ -34,19 +31,6 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-function StatusIcon({ status }: { status: StepStatus }) {
-  switch (status) {
-    case "running":
-      return <Loader2 size={16} className="text-info animate-spin" />;
-    case "completed":
-      return <CheckCircle2 size={16} className="text-success" />;
-    case "failed":
-      return <XCircle size={16} className="text-error" />;
-    case "pending":
-    default:
-      return null;
-  }
-}
 
 function stepLabel(step: PlanStep): { title: string; subtitle?: string } {
   if (typeof step === "string") return { title: step };
@@ -63,7 +47,6 @@ function stepLabel(step: PlanStep): { title: string; subtitle?: string } {
 export function PlanViewerElement({ element }: ViewerProps) {
   const props = ((element as { props?: PlanViewerProps }).props) ?? {};
   const plan = props.plan ?? {};
-  const stepStatuses = props.stepStatuses ?? {};
   const steps = plan.steps ?? [];
   const workflowType = plan.workflow_type ?? "sequential";
   const estimatedDuration = plan.estimated_duration_seconds;
@@ -91,10 +74,9 @@ export function PlanViewerElement({ element }: ViewerProps) {
 
       <ol className="space-y-2">
         {steps.map((step, i) => {
-          const status = stepStatuses[i] ?? "pending";
           const { title, subtitle } = stepLabel(step);
           return (
-            <li key={i} className="flex items-center gap-2.5">
+            <li key={i} className="flex items-start gap-2.5">
               <span className="text-xs text-base-content/50 w-5 shrink-0 tabular-nums">{i + 1}.</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-base-content">{title}</p>
@@ -102,10 +84,8 @@ export function PlanViewerElement({ element }: ViewerProps) {
                   <p className="text-xs text-base-content/50 mt-0.5">{subtitle}</p>
                 )}
               </div>
-              <div className="w-5 shrink-0 flex justify-center">
-                <StatusIcon status={status} />
-              </div>
-            </li>
+
+              </li>
           );
         })}
       </ol>
