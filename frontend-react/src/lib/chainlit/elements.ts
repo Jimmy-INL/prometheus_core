@@ -79,6 +79,7 @@ export function classifyElement(el: AnyElement): ElementKind {
 // Registry — swap null → component as you build each viewer
 // ---------------------------------------------------------------------------
 
+import { DynamicFormElement }                from "../../viewers/DynamicFormElement";
 // import { IFCViewerElement }            from "../../viewers/IFCViewerElement";
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
 // import { PdfViewerElement }            from "../../viewers/PdfViewerElement";
@@ -99,7 +100,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   json:         null,  // → CollapsibleJsonElement
   suggestions:  null,  // → FollowUpSuggestionsElement  (needs onSend)
   plan_viewer:  null,  // → PlanViewerElement
-  dynamic_form: null,  // → DynamicFormElement  (ask_form path only)
+  dynamic_form: DynamicFormElement,
   mermaid:      null,  // → MermaidElement
   thermal:      null,  // → ThermalAnalysisElement
   unknown:      null,

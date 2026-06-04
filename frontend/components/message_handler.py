@@ -404,6 +404,7 @@ async def _handle_plan_ready(
                 cl.Action(name="approve", payload={"value": "approve"}, label="Approve & Execute"),
                 cl.Action(name="reject", payload={"value": "reject"}, label="Reject"),
             ],
+            timeout=600,
         ).send()
         approved = res and res.get("name") == "approve"
     else:

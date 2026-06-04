@@ -1,11 +1,11 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
 import {
   useChatMessages,
   useChatInteract,
-  ChainlitContext,
-  sessionState,
   elementState,
+  actionState,
+  askUserState,
   IAction,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
@@ -217,9 +217,18 @@ export function Chat() {
 
   const { messages } = useChatMessages();
   const { sendMessage, stopTask } = useChatInteract();
-  const apiClient = useContext(ChainlitContext);
-  const session = useRecoilValue(sessionState);
   const globalElements = useRecoilValue(elementState);
+  const globalActions = useRecoilValue(actionState);
+  const askUser = useRecoilValue(askUserState);
+
+  useEffect(() => {
+    console.log(
+      `[askUser ${new Date().toISOString().slice(11, 23)}]`,
+      askUser
+        ? { type: askUser.spec.type, parentId: askUser.parentId, spec: askUser.spec }
+        : null,
+    );
+  }, [askUser]);
 
   const flat = flattenMessages(messages);
 
@@ -329,9 +338,12 @@ export function Chat() {
     setAwaitingResponse(false);
   };
 
-  const handleAction = async (action: IAction) => {
-    if (!apiClient || !session?.socket.id) return;
-    await apiClient.callAction(action, session.socket.id);
+  const handleAction = (action: IAction) => {
+    if (askUser?.spec.type === "action") {
+      askUser.callback(action);
+    } else {
+      console.warn("Action ask is no longer active (timed out or cleared).");
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -359,19 +371,61 @@ export function Chat() {
           {flat.map((item: FlatItem, i: number) => {
             const { step: m } = item;
 
-            if (isToolStep(item) || isAskForm(item) || isAskPlain(item)) {
+            const joinedActions = item.actions.length
+              ? item.actions
+              : globalActions.filter((a) => a.forId === m.id);
+            const effective: FlatItem =
+              joinedActions.length && item.kind !== "ask_action"
+                ? { ...item, actions: joinedActions, kind: "ask_action" }
+                : joinedActions.length !== item.actions.length
+                ? { ...item, actions: joinedActions }
+                : item;
+
+            if (isToolStep(effective) || isAskPlain(effective)) {
               return (
                 <div key={m.id} className="space-y-2">
-                  <ToolStep item={item} />
+                  <ToolStep item={effective} />
                 </div>
               );
             }
 
-            if (isAskAction(item)) {
+            if (isAskForm(effective)) {
+              const askElements = [
+                ...((m.elements as AnyElement[] | undefined) ?? []),
+                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+              ];
               return (
-                <div key={m.id} className="space-y-2">
-                  <ToolStep item={item} />
-                  <ActionButtons item={item} onAction={handleAction} />
+                <div key={m.id} className="flex gap-2 justify-start">
+                  <AssistantAvatar />
+                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                    {m.output && (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {m.output}
+                      </ReactMarkdown>
+                    )}
+                    <ElementList elements={askElements} onSend={handleSend} />
+                  </div>
+                </div>
+              );
+            }
+
+            if (isAskAction(effective)) {
+              const askElements = [
+                ...((m.elements as AnyElement[] | undefined) ?? []),
+                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+              ];
+              return (
+                <div key={m.id} className="flex gap-2 justify-start">
+                  <AssistantAvatar />
+                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                    {m.output && (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {m.output}
+                      </ReactMarkdown>
+                    )}
+                    <ElementList elements={askElements} onSend={handleSend} />
+                    <ActionButtons item={effective} onAction={handleAction} />
+                  </div>
                 </div>
               );
             }
