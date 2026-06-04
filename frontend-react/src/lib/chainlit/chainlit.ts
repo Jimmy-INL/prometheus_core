@@ -75,8 +75,12 @@ export interface FlatItem {
 function classifyStep(step: IStepExtended): MessageKind {
   if (step.waitForAnswer) {
     if (step.actions?.length) return "ask_action";
-    if (step.type === "tool") return "ask_form";
-    return "ask_plain";
+    // Any wait-for-answer without actions is element-shaped (AskElementMessage
+    // → DynamicForm/PlanViewer). step.type is unreliable here — AskElementMessage
+    // arrives with wire type "assistant_message" in 0.4.x, not "tool".
+    // If there's no element attached, ElementList renders nothing and the text
+    // alone shows — same UX as a plain ask.
+    return "ask_form";
   }
   if (step.type === "user_message") return "user";
   if (step.type === "assistant_message") return "assistant";
@@ -196,9 +200,9 @@ export const isWaitingForInput  = (item: FlatItem) =>
 // ─── TODO: ask_plain ────────────────────────────────────────────────────────
 //
 // cl.AskUserMessage — not currently used in message_handler.py but part of
-// the Chainlit API. Currently falls through to ToolStep (harmless for now).
-// When needed: render an inline text input + submit button beneath the message,
-// submit via sendMessage.
+// the Chainlit API. Currently collapses into ask_form (text + empty
+// ElementList = same UX as a plain ask). When a real text-input ask is
+// needed, split the classifier and render an inline <input>+submit.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
