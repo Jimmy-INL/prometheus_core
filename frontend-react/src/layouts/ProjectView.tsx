@@ -23,14 +23,12 @@ export function ProjectView({ onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
-  const [chatKey, setChatKey] = useState(0);
   const { clear, stopTask } = useChatInteract();
 
   const handleNewChat = () => {
     stopTask();
     clear();
-    setActiveTab("chat");
-    setChatKey((key) => key + 1);
+    window.location.reload();
   };
 
   return (
@@ -72,7 +70,7 @@ export function ProjectView({ onLogout }: Props) {
 
           {/* Tab content */}
           <div className={`flex flex-col flex-1 overflow-hidden ${activeTab === "chat" ? "" : "hidden"}`}>
-            <Chat key={chatKey} />
+            <Chat />
           </div>
           {activeTab === "dashboard" && (
             <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">

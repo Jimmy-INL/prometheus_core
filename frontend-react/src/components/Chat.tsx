@@ -410,7 +410,7 @@ export function Chat() {
   };
 
   const handleAction = (action: IAction) => {
-    if (askUser?.spec.type === "action") {
+    if (askUser) {
       askUser.callback(action);
     } else {
       console.warn("Action ask is no longer active (timed out or cleared).");
