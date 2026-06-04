@@ -264,9 +264,37 @@ This is where you replace the `TODO` placeholder with real work.
 
 ### Example A: Calling Claude
 
-This mirrors what the synthesis-agent does. Install `anthropic` first (see Step 5).
+**Prefer the built-in `LLMClient`.** It is async (`await`), routes through LiteLLM like the rest of the platform, and never blocks the event loop:
 
 ```python
+class SummarizerAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        text = params.get("text")
+        if not text:
+            return {"status": "error", "error": "text is required"}
+
+        await self.send_status_update(context, event_queue, message="Summarizing…")
+
+        async with self.llm_client(context) as llm:
+            response = await llm.medium(f"Summarize this in 2-3 sentences:\n\n{text}")
+
+        return {"status": "success", "summary": response.text}
+```
+
+> ⚠️ **Do not call a synchronous SDK directly inside `async def _execute`.** Your
+> agent runs on a single event loop. A blocking call — like the synchronous
+> `anthropic.Anthropic().messages.create(...)` — does not `await`, so while it
+> runs it freezes the whole loop: the keepalive heartbeat stops, streamed status
+> updates stop flushing, and the upstream (LiteLLM) connection can hit its
+> socket-read timeout and tear down mid-task even though your agent is still
+> working. See "Don't block the event loop" below.
+
+If you must use the **synchronous** Anthropic SDK (install `anthropic`; see Step 5),
+offload the blocking call to a worker thread with `asyncio.to_thread` so the loop
+stays free:
+
+```python
+import asyncio
 import os
 from anthropic import Anthropic
 
@@ -282,7 +310,9 @@ class SummarizerAgent(PrometheusAgent):
         await self.send_status_update(context, event_queue, message="Summarizing…")
 
         client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
+        # to_thread runs the blocking call off the event loop and awaits the result.
+        response = await asyncio.to_thread(
+            client.messages.create,
             model=MODEL_NAME,
             max_tokens=512,
             messages=[{"role": "user", "content": f"Summarize this in 2-3 sentences:\n\n{text}"}],
@@ -292,20 +322,6 @@ class SummarizerAgent(PrometheusAgent):
             "status": "success",
             "summary": response.content[0].text,
         }
-```
-
-Alternatively, use the built-in `LLMClient` which routes through LiteLLM (same as the rest of the platform):
-
-```python
-class SummarizerAgent(PrometheusAgent):
-    async def _execute(self, params, context, event_queue):
-        text = params.get("text")
-        await self.send_status_update(context, event_queue, message="Summarizing…")
-
-        async with self.llm_client(context) as llm:
-            response = await llm.medium(f"Summarize this in 2-3 sentences:\n\n{text}")
-
-        return {"status": "success", "summary": response.text}
 ```
 
 ### Example B: Calling an external HTTP API
@@ -330,29 +346,145 @@ class DataFetcherAgent(PrometheusAgent):
         return {"status": "success", "record": data}
 ```
 
-### Example C: CPU-bound / synchronous library
+### Example C: long blocking work (and reporting progress from it)
 
-If your computation uses a blocking library (NumPy, SciPy, a legacy analysis tool), run it in a thread pool so it does not block the async event loop:
+If your computation uses a blocking library (NumPy/SciPy, a legacy analysis tool,
+a synchronous SDK), run it on a worker thread with `asyncio.to_thread` so it does
+not block the event loop. For a short call, fire-and-await is enough:
 
 ```python
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-_POOL = ThreadPoolExecutor(max_workers=4)
 
 class SimulationAgent(PrometheusAgent):
     async def _execute(self, params, context, event_queue):
         await self.send_status_update(context, event_queue, message="Running simulation…")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(_POOL, self._run_simulation, params)
+        result = await asyncio.to_thread(self._run_simulation, params)
         return {"status": "success", "result": result}
 
     def _run_simulation(self, params):
-        # blocking computation here — regular synchronous Python
+        # blocking computation here — regular synchronous Python, no asyncio.
         import numpy as np
         data = np.array(params.get("values", []))
         return {"mean": float(data.mean()), "std": float(data.std())}
 ```
+
+#### Streaming progress from a long blocking task
+
+A long task that emits no traffic for tens of seconds will look dead to the
+caller and can trip upstream timeouts. The fix is **not** a bigger timeout — it is
+to keep bytes on the wire. The worker thread cannot emit directly (`event_queue`
+wraps a loop-bound `asyncio.Queue` that is **not thread-safe**), so the blocking
+work runs on a thread and emits progress into a thread-safe mailbox that the event
+loop drains and forwards while `await`-ing short sleeps that keep the loop alive.
+
+**Recommended: subclass `PrometheusWorker`.** It packages exactly that — a
+thread-safe mailbox, cooperative cancellation, and a safe subset of emit helpers
+that mirror the agent's (`emit_status_update`, plus `emit_json_artifact` for
+verbose/structured output). `PrometheusAgent.run_worker` runs it off-loop, forwards
+its events, flushes on completion, re-raises its errors, and signals cancellation:
+
+```python
+from prometheus_api.agent import PrometheusAgent, PrometheusWorker
+
+class SimulationWorker(PrometheusWorker):
+    def __init__(self, items):
+        super().__init__()
+        self.items = items
+
+    def run(self):                        # plain synchronous code on a worker thread
+        for i, item in enumerate(self.items, 1):
+            if self.cancelled:            # threads can't be killed — stop cooperatively
+                return {"status": "cancelled", "done": i - 1}
+            self.emit_status_update(f"Processing {i}/{len(self.items)}…")
+            heavy_blocking_call(item)
+        # JSON artifacts are handy for verbose/structured progress (e.g. a long
+        # numerical simulation); supports append/last_chunk for streaming chunks.
+        self.emit_json_artifact({"processed": len(self.items)}, name="summary")
+        return {"status": "success", "processed": len(self.items)}
+
+class SimulationAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        worker = SimulationWorker(params["items"])
+        return await self.run_worker(worker, context, event_queue)
+```
+
+`emit_json_artifact` is inline-only (not cataloged). DeepLynx uploads, catalog
+registration, conversation messages, and `INPUT_REQUIRED` are intentionally absent
+from the worker — do those from `_execute` on the loop, before or after
+`run_worker`.
+
+**Under the hood (the manual equivalent).** If you cannot use `PrometheusWorker`,
+this is the same pattern by hand — the thread writes progress into a thread-safe
+`queue.Queue`, and `_execute` polls it, emits on the loop, and sleeps between polls:
+
+```python
+import asyncio
+import queue
+import threading
+
+class ProgressReporter:
+    """Worker thread writes; event loop reads. queue.Queue keeps every
+    message (a 'latest value' field would drop updates between polls)."""
+    def __init__(self):
+        self._queue: "queue.Queue[str]" = queue.Queue()
+
+    def report(self, message):        # called FROM the worker thread
+        self._queue.put(str(message))
+
+    def drain(self):                  # called FROM the event loop
+        msgs = []
+        while True:
+            try:
+                msgs.append(self._queue.get_nowait())
+            except queue.Empty:
+                return msgs
+
+class SimulationAgent(PrometheusAgent):
+    async def _execute(self, params, context, event_queue):
+        progress = ProgressReporter()
+        cancel = threading.Event()   # threads can't be killed; cancel cooperatively
+        work = asyncio.create_task(asyncio.to_thread(self._run, params, progress, cancel))
+
+        try:
+            while not work.done():
+                for msg in progress.drain():
+                    await self.send_status_update(context, event_queue, message=msg)
+                await asyncio.sleep(1.0)   # yields → heartbeat + SSE keep flowing
+            for msg in progress.drain():    # flush the last messages
+                await self.send_status_update(context, event_queue, message=msg)
+            return await work               # recover result / re-raise exceptions
+        except asyncio.CancelledError:
+            cancel.set()                    # caller disconnected — ask the worker to stop
+            raise
+
+    def _run(self, params, progress, cancel):
+        """Pure synchronous code — no asyncio, no event_queue."""
+        items = params["items"]
+        for i, item in enumerate(items, 1):
+            if cancel.is_set():
+                return {"status": "cancelled", "done": i - 1}
+            progress.report(f"Processing {i}/{len(items)}…")
+            heavy_blocking_call(item)
+        return {"status": "success", "processed": len(items)}
+```
+
+Caveats (either way):
+
+- **Cancellation:** a client disconnect cancels the *coroutine*, not the *thread*
+  (Python threads cannot be force-killed). `PrometheusWorker` exposes `self.cancelled`;
+  by hand, pass a `threading.Event` the worker checks so it stops cooperatively
+  instead of running on orphaned.
+- **CPU-bound work:** `to_thread` truly parallelizes only work that releases the
+  GIL (I/O, heavy NumPy). For sustained pure-Python CPU loops use
+  `ProcessPoolExecutor` — but then progress must cross processes (e.g. a
+  `multiprocessing.Queue`) rather than a shared object.
+- **A truly opaque blocking call** (one `library.run()` with no hooks) cannot
+  report mid-flight; there the loop-side heartbeat alone keeps the connection
+  alive.
+
+A complete, runnable reference lives in the platform's
+`agents/debug-agents/thread-pattern-agent` (skill `run_blocking_task`), which uses
+`PrometheusWorker`.
 
 ### Reading environment variables
 
