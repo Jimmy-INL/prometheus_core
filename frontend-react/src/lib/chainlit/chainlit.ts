@@ -21,11 +21,11 @@
  *   ✓ element fallback — non-custom unregistered kinds show download card;
  *                        custom elements without a registered viewer are hidden
  *   ✓ viewers — PDF, FollowUpSuggestions, PlanViewer
+ *   ✓ file upload UI — Paperclip button + multi-file picker, IFileRef wiring
  *
  * Not yet implemented:
  *   ✗ ask_plain (AskUserMessage)
  *   ✗ viewers — IFC, Exodus, file download, image, JSON, Mermaid, ThermalAnalysis
- *   ✗ file upload UI
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -144,24 +144,6 @@ export const isWaitingForInput  = (item: FlatItem) =>
 //
 // NOTE: Audit plugins/ folder to confirm CustomElement names before building
 //   IFC, Mermaid, and ThermalAnalysis viewers — names above are assumed.
-// ────────────────────────────────────────────────────────────────────────────
-
-// ---------------------------------------------------------------------------
-// ─── TODO: File upload UI ────────────────────────────────────────────────────
-//
-// sendMessage() is currently called with [] as the attachments arg everywhere.
-// The backend's entire upload path (_capture_uploaded_file, CAD/PDF handling)
-// is unreachable until this is wired.
-//
-// Requirements:
-//   Attach button in chat input bar → opens file picker
-//   Multi-file support (message.elements is a list)
-//   100 MB per-file limit (MAX_UPLOAD_BYTES in backend) — show error if exceeded
-//   CAD file types must be accepted: .stp, .step (not in browser default lists)
-//   PDF files: backend renders inline via cl.Pdf — upload flow should reflect this
-//   All other files: staged by the Chainlit backend, then referenced in uploaded_files
-//   Attachment preview chips in the input bar before send
-//   Confirm IAttachment shape for @chainlit/react-client 0.4.2 sendMessage()
 // ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
