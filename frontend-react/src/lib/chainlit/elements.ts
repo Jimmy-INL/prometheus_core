@@ -82,7 +82,7 @@ export function classifyElement(el: AnyElement): ElementKind {
 import { DynamicFormElement }                from "../../viewers/DynamicFormElement";
 // import { IFCViewerElement }            from "../../viewers/IFCViewerElement";
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
-// import { PdfViewerElement }            from "../../viewers/PdfViewerElement";
+import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
 // import { ImageViewerElement }          from "../../viewers/ImageViewerElement";
 // import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
@@ -94,7 +94,7 @@ import { DynamicFormElement }                from "../../viewers/DynamicFormElem
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          null,  // → IFCViewerElement
   exodus:       null,  // → ExodusViewerElement
-  pdf:          null,  // → PdfViewerElement
+  pdf:          PdfViewerElement,
   file:         null,  // → FileDownloadElement
   image:        null,  // → ImageViewerElement
   json:         null,  // → CollapsibleJsonElement
