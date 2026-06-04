@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Circle, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import type { ViewerProps } from "@/lib/chainlit/elements";
 
 type StepStatus = "pending" | "running" | "completed" | "failed";
@@ -44,7 +44,7 @@ function StatusIcon({ status }: { status: StepStatus }) {
       return <XCircle size={16} className="text-error" />;
     case "pending":
     default:
-      return <Circle size={16} className="text-base-content/40" />;
+      return null;
   }
 }
 
@@ -94,14 +94,16 @@ export function PlanViewerElement({ element }: ViewerProps) {
           const status = stepStatuses[i] ?? "pending";
           const { title, subtitle } = stepLabel(step);
           return (
-            <li key={i} className="flex items-start gap-2.5">
-              <span className="mt-0.5 shrink-0"><StatusIcon status={status} /></span>
-              <span className="text-xs text-base-content/50 mt-0.5 w-5 shrink-0">{i + 1}.</span>
+            <li key={i} className="flex items-center gap-2.5">
+              <span className="text-xs text-base-content/50 w-5 shrink-0 tabular-nums">{i + 1}.</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-base-content">{title}</p>
                 {subtitle && (
                   <p className="text-xs text-base-content/50 mt-0.5">{subtitle}</p>
                 )}
+              </div>
+              <div className="w-5 shrink-0 flex justify-center">
+                <StatusIcon status={status} />
               </div>
             </li>
           );
