@@ -27,8 +27,9 @@ Migration steps:
    to stream progress, use `PrometheusWorker` (below).
 2. If you consume or inspect the raw event stream, ignore heartbeat events: they
    carry no message and are tagged `metadata.heartbeat=true`.
-3. Tune or disable the cadence with `PROMETHEUS_HEARTBEAT_INTERVAL` (seconds;
-   default `15`, `0` disables).
+3. Tune the cadence with `PROMETHEUS_HEARTBEAT_INTERVAL` (positive seconds;
+   default `15`). A non-numeric or non-positive value is rejected; heartbeats
+   cannot be disabled.
 
 ```python
 # WRONG — blocks the loop for the whole call; heartbeat and streaming stall

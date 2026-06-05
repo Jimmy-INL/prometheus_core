@@ -283,7 +283,7 @@ cancel `Event`); `to_thread` only parallelizes work that releases the GIL — fo
 sustained CPU use `ProcessPoolExecutor` (progress must then cross processes); and a
 truly opaque blocking call that can't report mid-flight relies on the heartbeat
 alone. The base executor's heartbeat interval is configurable via
-`PROMETHEUS_HEARTBEAT_INTERVAL` (seconds; default 15, 0 disables).
+`PROMETHEUS_HEARTBEAT_INTERVAL` (positive seconds; default 15).
 
 ---
 

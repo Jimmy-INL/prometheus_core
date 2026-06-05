@@ -215,29 +215,19 @@ class TestPrometheusAgentExecutor:
         assert events[-1].status.state == TaskState.completed
         assert not (events[-1].metadata or {}).get("heartbeat")
 
-    def test_heartbeat_disabled_when_interval_zero(self, mock_context, monkeypatch):
-        """Setting the interval to 0 disables keepalives entirely."""
-        monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", "0")
+    def test_heartbeat_interval_rejects_invalid_values(self, monkeypatch):
+        """A non-positive or non-numeric PROMETHEUS_HEARTBEAT_INTERVAL is rejected
+        (fail-fast) instead of silently defaulting or disabling the keepalive.
+        Heartbeats cannot be turned off, so 0/negative are invalid."""
+        for bad in ("0", "-5", "abc"):
+            monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", bad)
+            with pytest.raises(ValueError):
+                PrometheusAgentExecutor._heartbeat_interval()
 
-        events: list = []
-
-        class RecordingQueue:
-            async def enqueue_event(self, event):
-                events.append(event)
-
-        class Slow(PrometheusAgentExecutor):
-            async def _execute(self, params, context, event_queue):
-                await asyncio.sleep(0.05)
-                return {"status": "success"}
-
-        asyncio.run(Slow(agent_name="HB").execute(mock_context, RecordingQueue()))
-
-        assert not any(
-            isinstance(e, TaskStatusUpdateEvent) and (e.metadata or {}).get("heartbeat")
-            for e in events
-        )
-        # Only the working + completed terminal events.
-        assert len([e for e in events if isinstance(e, TaskStatusUpdateEvent)]) == 2
+    def test_heartbeat_interval_defaults_to_15(self, monkeypatch):
+        """With the env var unset the interval falls back to the 15 s default."""
+        monkeypatch.delenv("PROMETHEUS_HEARTBEAT_INTERVAL", raising=False)
+        assert PrometheusAgentExecutor._heartbeat_interval() == 15.0
 
     def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
         """Test that execute sends failed status on error."""
@@ -808,6 +798,10 @@ class TestPrometheusWorker:
             self.events.append(event)
 
     def test_run_worker_forwards_events_and_returns_result(self):
+        """Events a worker emits (status updates and JSON artifacts) are forwarded
+        to the A2A event queue in order, and run_worker returns the worker's
+        run() result. Status updates are non-final; the artifact carries its
+        payload as a data part."""
         queue_ = self._RecordingQueue()
 
         class DemoWorker(PrometheusWorker):
@@ -839,6 +833,8 @@ class TestPrometheusWorker:
         assert artifact.parts[0].root.data == {"k": 1}
 
     def test_run_worker_propagates_worker_exception(self):
+        """An exception raised in worker.run() propagates out of run_worker (so the
+        base executor still emits a failed status) rather than being swallowed."""
         queue_ = self._RecordingQueue()
 
         class BoomWorker(PrometheusWorker):
@@ -852,6 +848,9 @@ class TestPrometheusWorker:
             )
 
     def test_run_worker_cancellation_signals_worker_cooperatively(self):
+        """Cancelling the run_worker task sets the worker's cancel flag so a
+        cooperative worker (one that checks self.cancelled) stops, instead of
+        being abandoned -- threads cannot be force-killed."""
         import time as _time
 
         queue_ = self._RecordingQueue()
@@ -878,6 +877,8 @@ class TestPrometheusWorker:
         assert worker.cancelled is True
 
     def test_emit_before_bind_raises(self):
+        """Emitting from a worker that hasn't been bound to a request (i.e. not
+        run via run_worker) raises a clear error instead of failing obscurely."""
         worker = PrometheusWorker()
         with pytest.raises(RuntimeError, match="not bound"):
             worker.emit_status_update("nope")

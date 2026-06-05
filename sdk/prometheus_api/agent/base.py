@@ -196,17 +196,21 @@ class PrometheusAgentExecutor(AgentExecutor):
 
     @staticmethod
     def _heartbeat_interval() -> float:
-        """Seconds between automatic keepalive events; ``0`` disables heartbeats.
+        """Seconds between automatic keepalive events.
 
-        Configured via ``PROMETHEUS_HEARTBEAT_INTERVAL`` (seconds). Defaults to
-        15 s, comfortably below typical proxy/idle-connection timeouts.
+        Configured via ``PROMETHEUS_HEARTBEAT_INTERVAL`` (seconds, default 15),
+        comfortably below typical proxy/idle-connection timeouts. Must be a
+        positive number: a non-numeric or non-positive value raises
+        ``ValueError`` rather than silently defaulting. Heartbeats cannot be
+        disabled -- a long ``_execute`` must not run without keepalives.
         """
         raw = (os.getenv("PROMETHEUS_HEARTBEAT_INTERVAL") or "15").strip()
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return 15.0
-        return value if value > 0 else 0.0
+        value = float(raw)
+        if value <= 0:
+            raise ValueError(
+                "PROMETHEUS_HEARTBEAT_INTERVAL must be a positive number of seconds"
+            )
+        return value
 
     async def _execute_with_heartbeat(
         self,
@@ -216,9 +220,6 @@ class PrometheusAgentExecutor(AgentExecutor):
     ) -> Dict[str, Any]:
         """Run ``_execute`` while emitting periodic keepalive status events."""
         interval = self._heartbeat_interval()
-        if interval <= 0:
-            return await self._execute(params, context, cast(EventQueue, tracked_queue))
-
         stop_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(context, tracked_queue, interval, stop_event)
@@ -266,8 +267,10 @@ class PrometheusAgentExecutor(AgentExecutor):
                         metadata={"heartbeat": True},
                     )
                 except Exception as exc:  # a keepalive must never break execution
+                    # A transient emit failure shouldn't permanently stop the
+                    # keepalive; log and retry on the next interval.
                     logger.debug("Heartbeat emit failed for %s: %s", self.agent_name, exc)
-                    return
+                    continue
         except asyncio.CancelledError:
             raise
 

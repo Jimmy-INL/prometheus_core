@@ -45,7 +45,7 @@ While `_execute()` runs, the base executor emits periodic non-final keepalive
 ("heartbeat") status events so streaming connections survive long gaps between
 substantive updates. Heartbeats carry no message and are tagged
 `metadata.heartbeat=true`, so consumers ignore them for display. Tune via
-`PROMETHEUS_HEARTBEAT_INTERVAL` (seconds; default `15`, `0` disables).
+`PROMETHEUS_HEARTBEAT_INTERVAL` (positive seconds; default `15`).
 
 ## Documentation
 
