@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -13,6 +14,8 @@ from langchain_anthropic import ChatAnthropic
 from capability_cache import get_capability_cache
 from tool_discovery import get_all_tools_dynamic
 from workflow_library import get_workflow_registry
+
+logger = logging.getLogger(__name__)
 
 AGENT_PORT = int(os.getenv("AGENT_PORT", "8000"))
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
@@ -67,7 +70,7 @@ async def _safe_emit_status(emitter: StatusEmitter, message: str) -> None:
     try:
         await emitter(message)
     except Exception as exc:
-        print(f"[STATUS] Failed to emit streaming status update: {exc}")
+        logger.warning("[STATUS] Failed to emit streaming status update: %s", exc)
 
 
 async def _emit_status_to_all(
@@ -146,7 +149,7 @@ def store_status_update(conversation_id: Optional[str], message: str, final: boo
         redis_client.ltrim(history_key, -300, -1)
         redis_client.expire(history_key, 900)
     except Exception as exc:
-        print(f"[STATUS] Failed to store status update: {exc}")
+        logger.warning("[STATUS] Failed to store status update: %s", exc)
 
 
 async def initialize_tools():
@@ -200,7 +203,7 @@ async def discovery_refresh_loop() -> None:
         try:
             await refresh_dynamic_components(trigger="background")
         except Exception as e:
-            print(f"[WARN] Background discovery refresh failed: {e}")
+            logger.warning("[WARN] Background discovery refresh failed: %s", e)
 
 
 def create_tools():

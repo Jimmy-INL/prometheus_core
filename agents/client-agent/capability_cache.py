@@ -90,7 +90,7 @@ class CapabilityCache:
     Cache strategy:
     - Primary storage: Redis (shared across instances)
     - Fallback storage: In-memory (_local_cache)
-    - TTL: 5 minutes (balances freshness vs. registry load)
+    - TTL: 1 minute (balances freshness vs. registry load)
     """
 
     TTL_SECONDS = 60  # 1 minute
