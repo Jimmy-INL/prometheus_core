@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -66,12 +64,6 @@ class OrchestratorAgent(PrometheusAgent):
             yield
         finally:
             await self._on_shutdown()
-
-    async def _status_endpoint(self, request) -> JSONResponse:
-        """Status polling endpoint."""
-        conversation_id = request.path_params.get("conversation_id")
-        payload = await runtime.get_status(conversation_id)
-        return JSONResponse(payload)
 
     async def _refresh_endpoint(self, request) -> JSONResponse:
         """Manual refresh endpoint for capability/tool discovery."""
@@ -229,71 +221,6 @@ class OrchestratorAgent(PrometheusAgent):
         )
         response = await chat(chat_request)
         return JSONResponse(response.model_dump(exclude_none=True))
-
-    async def _forward_status_history(
-        self,
-        conversation_id: str,
-        context: RequestContext,
-        event_queue: EventQueue,
-        started_at: datetime,
-        stop_event: asyncio.Event,
-    ) -> None:
-        """Forward Redis-backed status history entries into this task's event stream."""
-        if not conversation_id:
-            return
-
-        try:
-            import redis
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-            redis_password = os.getenv("REDIS_PASSWORD")
-            redis_client = redis.Redis.from_url(
-                redis_url,
-                password=redis_password,
-                decode_responses=True
-            )
-        except Exception as exc:
-            print(f"[WARN] Status forwarder unavailable: {exc}")
-            return
-
-        history_key = f"agent:status_history:{conversation_id}"
-        next_index = 0
-
-        while True:
-            try:
-                raw_entries = redis_client.lrange(history_key, next_index, -1)
-                if raw_entries:
-                    next_index += len(raw_entries)
-                    for raw in raw_entries:
-                        try:
-                            entry = json.loads(raw)
-                        except Exception:
-                            continue
-                        if not isinstance(entry, dict):
-                            continue
-                        message = str(entry.get("message", "")).strip()
-                        if not message:
-                            continue
-                        ts = entry.get("timestamp")
-                        if ts:
-                            try:
-                                entry_time = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-                                if entry_time.tzinfo is None:
-                                    entry_time = entry_time.replace(tzinfo=timezone.utc)
-                                if entry_time < started_at:
-                                    continue
-                            except Exception:
-                                pass
-                        await self.send_status_update(
-                            context=context,
-                            event_queue=event_queue,
-                            message=message,
-                        )
-            except Exception as exc:
-                print(f"[WARN] Status forwarder loop error: {exc}")
-
-            if stop_event.is_set():
-                break
-            await asyncio.sleep(0.4)
 
     def _collect_artifact_reference_payloads(self, payload: Any) -> List[Any]:
         """Recursively collect artifact payloads from tool responses.
@@ -581,31 +508,20 @@ class OrchestratorAgent(PrometheusAgent):
         if newly_uploaded_ids:
             request_payload["newly_uploaded_artifact_ids"] = newly_uploaded_ids
 
-        request_started_at = datetime.now(timezone.utc)
-        status_forwarder_stop = asyncio.Event()
-        status_forwarder_task = asyncio.create_task(
-            self._forward_status_history(
-                conversation_id=conversation_id,
+        chat_request = ConversationRequest.model_validate(request_payload)
+
+        async def emit_chat_status(message: str) -> None:
+            await self.send_status_update(
                 context=context,
                 event_queue=event_queue,
-                started_at=request_started_at,
-                stop_event=status_forwarder_stop,
+                message=message,
             )
-        )
 
-        chat_request = ConversationRequest.model_validate(request_payload)
-        try:
-            response = await chat(chat_request)
-        finally:
-            status_forwarder_stop.set()
+        with runtime.status_stream(emit_chat_status) as status_tasks:
             try:
-                await asyncio.wait_for(status_forwarder_task, timeout=1.0)
-            except Exception:
-                status_forwarder_task.cancel()
-                try:
-                    await status_forwarder_task
-                except Exception:
-                    pass
+                response = await chat(chat_request)
+            finally:
+                await runtime.wait_for_status_stream(status_tasks)
         return self._response_payload_with_artifacts(
             conversation_id,
             response,
@@ -614,7 +530,6 @@ class OrchestratorAgent(PrometheusAgent):
 
     def configure_app(self, app) -> None:
         """Add custom orchestrator endpoints."""
-        app.add_route("/status/{conversation_id}", self._status_endpoint, methods=["GET"])
         app.add_route("/uploads/stage", self._stage_upload_endpoint, methods=["POST"])
         app.add_route("/discovery/refresh", self._refresh_endpoint, methods=["POST"])
         app.add_route("/workflows/catalog", self._workflow_catalog_endpoint, methods=["GET"])

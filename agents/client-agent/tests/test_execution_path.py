@@ -151,6 +151,37 @@ def test_configured_max_upload_bytes_rejects_invalid_env(monkeypatch) -> None:
     with pytest.raises(ValueError, match="PROMETHEUS_MAX_UPLOAD_BYTES must be positive"):
         file_upload_handler.configured_max_upload_bytes()
 
+def test_runtime_status_stream_emits_store_updates(monkeypatch) -> None:
+    emitted = []
+
+    class _Redis:
+        def setex(self, *args, **kwargs):
+            return None
+
+        def rpush(self, *args, **kwargs):
+            return None
+
+        def ltrim(self, *args, **kwargs):
+            return None
+
+        def expire(self, *args, **kwargs):
+            return None
+
+    async def emit_status(message: str) -> None:
+        emitted.append(message)
+
+    monkeypatch.setattr(agent_module._runtime, "_get_status_redis_client", lambda: _Redis())
+
+    async def run_stream():
+        with agent_module._runtime.status_stream(emit_status) as tasks:
+            agent_module._runtime.store_status_update("conv-1", "Streaming status 1.")
+            agent_module._runtime.store_status_update("conv-1", "Streaming status 2.")
+            await agent_module._runtime.wait_for_status_stream(tasks)
+
+    asyncio.run(run_stream())
+
+    assert emitted == ["Streaming status 1.", "Streaming status 2."]
+
 
 def test_upload_files_to_deeplynx_consumes_staged_upload(monkeypatch, tmp_path) -> None:
     stage_dir = tmp_path / "staged"

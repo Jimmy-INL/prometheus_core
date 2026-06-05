@@ -62,7 +62,6 @@ refresh_dynamic_components = _runtime.refresh_dynamic_components
 discovery_refresh_loop = _runtime.discovery_refresh_loop
 create_tools = _runtime.create_tools
 refresh_discovery = _runtime.refresh_discovery
-get_status = _runtime.get_status
 
 extract_json_from_text = _utils.extract_json_from_text
 extract_material_ids_from_text = _utils.extract_material_ids_from_text

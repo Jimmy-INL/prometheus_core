@@ -1,0 +1,54 @@
+{
+  "name": "Thread Pattern Debug Agent",
+  "description": "Reference/debug agent demonstrating how to run long blocking work off the event loop (asyncio.to_thread) while streaming progress observed from the _execute coroutine. Useful for validating heartbeats and streaming during long-running tasks.",
+  "url": "http://localhost:8000",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "run_blocking_task",
+      "name": "Run Blocking Task",
+      "description": "Run a long blocking compute on a worker thread and stream progress updates observed from the event loop. The client-agent waits for completion; status updates and heartbeats flow for the full duration.",
+      "usage_notes": "Foreground demo of the thread/observe pattern. Set duration_seconds to control how long the worker blocks (defaults to 60).",
+      "requires_approval": false,
+      "expected_duration_seconds": 60,
+      "output_format": "JSON with status, requested_seconds, elapsed_seconds, and a summary message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "duration_seconds": {
+            "type": "integer",
+            "description": "How many seconds the blocking compute should run inside the worker thread. Optional; defaults to 60.",
+            "default": 60,
+            "minimum": 1,
+            "maximum": 600
+          }
+        }
+      }
+    },
+    {
+      "id": "run_background_task",
+      "name": "Run Background Task (scaffolded)",
+      "description": "SCAFFOLDED, NOT YET IMPLEMENTED. Intended to run the blocking task detached as an A2A background task: return immediately with a 'working' status and deliver a 'completed' status once the worker finishes. Currently returns a not-implemented response.",
+      "usage_notes": "Placeholder for the future background-task feature. Use run_blocking_task for the working demo.",
+      "requires_approval": false,
+      "expected_duration_seconds": 1,
+      "output_format": "JSON with status 'not_implemented' and an explanatory message",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "duration_seconds": {
+            "type": "integer",
+            "description": "How many seconds the background blocking compute would run. Optional; defaults to 60.",
+            "default": 60,
+            "minimum": 1,
+            "maximum": 600
+          }
+        }
+      }
+    }
+  ]
+}
