@@ -27,6 +27,8 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+
+from .task_store import RedisTaskStore
 from a2a.types import (
     AgentCard,
     AgentCapabilities,
@@ -1641,9 +1643,20 @@ class PrometheusAgent:
         executor = self.create_executor()
         self.executor = executor
 
-        # Create request handler
+        # Create request handler. Tasks are persisted in Redis by default so
+        # background / long-running tasks survive an agent restart and can be
+        # re-attached to. RedisTaskStore degrades to an in-process dict when
+        # Redis is unavailable; set PROMETHEUS_TASK_STORE=memory to force the
+        # SDK's volatile in-memory store. See docs/dev-docs/background-tasks.md.
+        task_store_kind = os.getenv("PROMETHEUS_TASK_STORE", "redis").strip().lower()
+        if task_store_kind == "memory":
+            task_store: Any = InMemoryTaskStore()
+            logger.info("Using in-memory task store (PROMETHEUS_TASK_STORE=memory)")
+        else:
+            task_store = RedisTaskStore()
+            logger.info("Using Redis-backed task store")
         request_handler = DefaultRequestHandler(
-            agent_executor=executor, task_store=InMemoryTaskStore()
+            agent_executor=executor, task_store=task_store
         )
 
         # Create A2A application builder

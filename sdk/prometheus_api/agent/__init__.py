@@ -9,6 +9,7 @@ from .base import (
 )
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
+from .task_store import RedisTaskStore
 from .registry import AgentRegistryClient
 from .worker import PrometheusWorker
 
@@ -35,6 +36,7 @@ __all__ = [
     "ArtifactRegistry",
     "AgentRegistryClient",
     "ContextStateStore",
+    "RedisTaskStore",
     # A2A types
     "RequestContext",
     "EventQueue",
