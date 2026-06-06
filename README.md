@@ -138,7 +138,7 @@ Notable environment variables (see `.env.example` for the full list):
 
 ### Optional integrations (work in progress)
 
-**DeepLynx** — storage catalog for artifact payloads and `deeplynx://` URI resolution (required for the artifact-debug-agent and a handful of specialist flows). Configure with `DEEPLYNX_BASE_URL`, `DEEPLYNX_KEY`, `DEEPLYNX_SECRET`, `DEEPLYNX_ORG_ID`, `DEEPLYNX_PROJECT_ID`.
+**DeepLynx** — storage catalog for artifact payloads and `deeplynx://` URI resolution (required for the artifact-debug-agent and a handful of specialist flows). Configure with `DEEPLYNX_BASE_URL`, `DEEPLYNX_KEY`, `DEEPLYNX_SECRET`, `DEEPLYNX_ORG_ID`, `DEEPLYNX_PROJECT_ID`. Instructions to configure a local DeepLynx server can be found [here](docs/docs/local-deeplynx.md).
 
 **OAuth via Okta** — alternative to the local-users login. Configure with `OAUTH_OKTA_CLIENT_ID`, `OAUTH_OKTA_CLIENT_SECRET`, `OAUTH_OKTA_DOMAIN`, `OAUTH_OKTA_AUTHORIZATION_SERVER_ID`, and `CHAINLIT_URL`.
 
@@ -234,4 +234,5 @@ _TBD — common issues and fixes will be collected here as they come up._
 - [Adding agents](docs/docs/dev-docs/adding-agents.md)
 - [Artifacts](docs/docs/dev-docs/artifacts.md)
 - [Visualization plugins](docs/docs/dev-docs/visualization-plugins.md)
-- [Migration guide](docs/docs/dev-docs/migration.md) — what changed from the original projects and why
+- [Migration guide](docs/docs/dev-docs/migration.md) - what changed from the original projects and why
+- [Self-hosted DeepLynx](docs/docs/local-deeplynx.md) - roll out your own DeepLynx instance and connect the platform to it
