@@ -41,6 +41,12 @@ Use helper methods when needed:
 
 To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}` in `agent_card.json`.
 
+While `_execute()` runs, the base executor emits periodic non-final keepalive
+("heartbeat") status events so streaming connections survive long gaps between
+substantive updates. Heartbeats carry no message and are tagged
+`metadata.heartbeat=true`, so consumers ignore them for display. Tune via
+`PROMETHEUS_HEARTBEAT_INTERVAL` (positive seconds; default `15`).
+
 ## Documentation
 
 - **[PrometheusAgent Guide](../../docs/agent/GUIDE.md)**: full API reference, patterns, and examples

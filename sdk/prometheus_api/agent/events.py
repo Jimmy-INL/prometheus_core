@@ -1,10 +1,48 @@
 """A2A event helpers shared by Prometheus agent executors and agent helpers."""
 
 import uuid
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 
 from a2a.server.agent_execution.context import RequestContext
-from a2a.types import Message, Part, Role, TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
+from a2a.types import (
+    Artifact,
+    DataPart,
+    Message,
+    Part,
+    Role,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
+
+
+def utc_now_iso() -> str:
+    """Return a timezone-aware UTC timestamp string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_producer_agent_id(agent_name: str) -> str:
+    """Normalize agent names into stable producer identifiers."""
+    return agent_name.lower().replace(" ", "-")
+
+
+def build_artifact_metadata(
+    *,
+    context: RequestContext,
+    agent_name: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the canonical Prometheus artifact metadata envelope."""
+    metadata = {
+        "conversation_id": str(getattr(context, "context_id", "") or ""),
+        "producer_agent_id": normalize_producer_agent_id(agent_name),
+        "created_at": utc_now_iso(),
+    }
+    metadata.update(dict(extra or {}))
+    return metadata
 
 
 def context_task_id(context: RequestContext) -> str:
@@ -66,3 +104,52 @@ async def emit_status_update(
             metadata=metadata,
         )
     )
+
+
+def build_data_artifact_event(
+    *,
+    context: RequestContext,
+    agent_name: str,
+    payload: Any,
+    name: str = "result",
+    description: Optional[str] = None,
+    json_type: Optional[str] = None,
+    artifact_id: Optional[str] = None,
+    append: bool = False,
+    last_chunk: Optional[bool] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Tuple[TaskArtifactUpdateEvent, str]:
+    """Build an inline JSON (data) artifact event. Pure construction — no I/O.
+
+    Returns ``(event, artifact_id)``; the caller may reuse ``artifact_id`` for
+    subsequent chunked appends. Shared by ``PrometheusAgent.send_json_artifact``
+    (loop side) and ``PrometheusWorker.emit_json_artifact`` (worker side) so both
+    enqueue identically-shaped events.
+    """
+    artifact_id = artifact_id or str(uuid.uuid4())
+    part_metadata = {"mime_type": "application/json", **dict(metadata or {})}
+    if json_type:
+        part_metadata["json_type"] = json_type
+
+    event = TaskArtifactUpdateEvent(
+        task_id=context_task_id(context),
+        context_id=context_id(context),
+        artifact=Artifact(
+            artifact_id=artifact_id,
+            name=name,
+            description=description,
+            metadata=build_artifact_metadata(context=context, agent_name=agent_name),
+            parts=[
+                Part(
+                    root=DataPart(
+                        data=payload if isinstance(payload, dict) else {"value": payload},
+                        metadata=part_metadata,
+                    )
+                )
+            ],
+        ),
+        append=append,
+        last_chunk=last_chunk,
+        metadata=metadata,
+    )
+    return event, artifact_id

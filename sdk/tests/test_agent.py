@@ -15,6 +15,7 @@ from prometheus_api.agent import (
     MissingInput,
     PrometheusAgent,
     PrometheusAgentExecutor,
+    PrometheusWorker,
     RequestContext,
     EventQueue,
     TaskState,
@@ -172,6 +173,61 @@ class TestPrometheusAgentExecutor:
         assert second_event.final is True
         payload_text = second_event.status.message.parts[0].root.text
         assert json.loads(payload_text) == {"status": "success", "data": "test data"}
+
+    def test_execute_emits_heartbeats_during_long_execute(self, mock_context, monkeypatch):
+        """A slow _execute should produce periodic non-final keepalive events."""
+        monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", "0.01")
+
+        events: list = []
+
+        class RecordingQueue:
+            async def enqueue_event(self, event):
+                events.append(event)
+
+        def _heartbeats():
+            return [
+                e
+                for e in events
+                if isinstance(e, TaskStatusUpdateEvent) and (e.metadata or {}).get("heartbeat")
+            ]
+
+        class SlowExecutor(PrometheusAgentExecutor):
+            async def _execute(self, params, context, event_queue):
+                # Wait until at least one keepalive has been emitted, then finish.
+                for _ in range(500):
+                    if _heartbeats():
+                        break
+                    await asyncio.sleep(0.01)
+                return {"status": "success"}
+
+        asyncio.run(SlowExecutor(agent_name="HB").execute(mock_context, RecordingQueue()))
+
+        heartbeats = _heartbeats()
+        assert heartbeats, "expected at least one heartbeat keepalive event"
+        for hb in heartbeats:
+            assert hb.final is False
+            assert hb.status.state == TaskState.working
+            assert hb.status.message is None  # silent: no UI text
+
+        # The terminal event is the completed status, emitted after heartbeats stop.
+        assert isinstance(events[-1], TaskStatusUpdateEvent)
+        assert events[-1].final is True
+        assert events[-1].status.state == TaskState.completed
+        assert not (events[-1].metadata or {}).get("heartbeat")
+
+    def test_heartbeat_interval_rejects_invalid_values(self, monkeypatch):
+        """A non-positive or non-numeric PROMETHEUS_HEARTBEAT_INTERVAL is rejected
+        (fail-fast) instead of silently defaulting or disabling the keepalive.
+        Heartbeats cannot be turned off, so 0/negative are invalid."""
+        for bad in ("0", "-5", "abc"):
+            monkeypatch.setenv("PROMETHEUS_HEARTBEAT_INTERVAL", bad)
+            with pytest.raises(ValueError):
+                PrometheusAgentExecutor._heartbeat_interval()
+
+    def test_heartbeat_interval_defaults_to_15(self, monkeypatch):
+        """With the env var unset the interval falls back to the 15 s default."""
+        monkeypatch.delenv("PROMETHEUS_HEARTBEAT_INTERVAL", raising=False)
+        assert PrometheusAgentExecutor._heartbeat_interval() == 15.0
 
     def test_execute_handles_errors(self, executor, mock_context, mock_event_queue):
         """Test that execute sends failed status on error."""
@@ -720,3 +776,109 @@ class TestAgentIntegration:
         result = json.loads(text_content)
         assert result["echo"] == "Hello, World!"
         assert result["task_id"] == "echo-task-1"
+
+
+class TestPrometheusWorker:
+    """Tests for PrometheusWorker + PrometheusAgent.run_worker."""
+
+    def _agent(self):
+        return PrometheusAgent(agent_name="Worker Agent")
+
+    def _context(self):
+        ctx = MagicMock(spec=RequestContext)
+        ctx.task_id = "task-1"
+        ctx.context_id = "conv-1"
+        return ctx
+
+    class _RecordingQueue:
+        def __init__(self):
+            self.events = []
+
+        async def enqueue_event(self, event):
+            self.events.append(event)
+
+    def test_run_worker_forwards_events_and_returns_result(self):
+        """Events a worker emits (status updates and JSON artifacts) are forwarded
+        to the A2A event queue in order, and run_worker returns the worker's
+        run() result. Status updates are non-final; the artifact carries its
+        payload as a data part."""
+        queue_ = self._RecordingQueue()
+
+        class DemoWorker(PrometheusWorker):
+            def run(self):
+                self.emit_status_update("step 1")
+                self.emit_json_artifact({"k": 1}, name="partial", json_type="demo.v1")
+                self.emit_status_update("step 2")
+                return {"status": "success", "n": 2}
+
+        agent = self._agent()
+        worker = DemoWorker()
+        result = asyncio.run(
+            agent.run_worker(worker, self._context(), queue_, poll_interval=0.01)
+        )
+
+        assert result == {"status": "success", "n": 2}
+        kinds = [type(e).__name__ for e in queue_.events]
+        assert kinds == [
+            "TaskStatusUpdateEvent",
+            "TaskArtifactUpdateEvent",
+            "TaskStatusUpdateEvent",
+        ]
+        # Status text is preserved and non-final (the base executor finalizes).
+        assert queue_.events[0].status.message.parts[0].root.text == "step 1"
+        assert queue_.events[0].final is False
+        # The JSON artifact carries the payload as a data part.
+        artifact = queue_.events[1].artifact
+        assert artifact.name == "partial"
+        assert artifact.parts[0].root.data == {"k": 1}
+
+    def test_run_worker_propagates_worker_exception(self):
+        """An exception raised in worker.run() propagates out of run_worker (so the
+        base executor still emits a failed status) rather than being swallowed."""
+        queue_ = self._RecordingQueue()
+
+        class BoomWorker(PrometheusWorker):
+            def run(self):
+                raise RuntimeError("boom")
+
+        agent = self._agent()
+        with pytest.raises(RuntimeError, match="boom"):
+            asyncio.run(
+                agent.run_worker(BoomWorker(), self._context(), queue_, poll_interval=0.01)
+            )
+
+    def test_run_worker_cancellation_signals_worker_cooperatively(self):
+        """Cancelling the run_worker task sets the worker's cancel flag so a
+        cooperative worker (one that checks self.cancelled) stops, instead of
+        being abandoned -- threads cannot be force-killed."""
+        import time as _time
+
+        queue_ = self._RecordingQueue()
+
+        class LoopWorker(PrometheusWorker):
+            def run(self):
+                while not self.cancelled:
+                    _time.sleep(0.01)
+                return {"status": "cancelled"}
+
+        agent = self._agent()
+        worker = LoopWorker()
+
+        async def go():
+            task = asyncio.create_task(
+                agent.run_worker(worker, self._context(), queue_, poll_interval=0.01)
+            )
+            await asyncio.sleep(0.05)  # let the worker start
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(go())
+        assert worker.cancelled is True
+
+    def test_emit_before_bind_raises(self):
+        """Emitting from a worker that hasn't been bound to a request (i.e. not
+        run via run_worker) raises a clear error instead of failing obscurely."""
+        worker = PrometheusWorker()
+        with pytest.raises(RuntimeError, match="not bound"):
+            worker.emit_status_update("nope")
