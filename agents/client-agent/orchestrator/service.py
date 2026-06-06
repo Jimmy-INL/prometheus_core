@@ -16,7 +16,7 @@ from capability_cache import get_capability_cache
 from conversation_store import get_conversation
 from workflow_library import get_workflow_registry
 
-from . import runtime
+from . import runtime, task_tracking
 from .chat_flow import chat
 from .debug_commands import _is_slash_command_query
 from .models import ConversationRequest, ConversationResponse
@@ -517,11 +517,13 @@ class OrchestratorAgent(PrometheusAgent):
                 message=message,
             )
 
+        task_tracking.begin_turn(conversation_id, chat_request.query or "request")
         with runtime.status_stream(emit_chat_status) as status_tasks:
             try:
                 response = await chat(chat_request)
             finally:
                 await runtime.wait_for_status_stream(status_tasks)
+        task_tracking.finish_turn(getattr(response, "status", "") or "")
         return self._response_payload_with_artifacts(
             conversation_id,
             response,

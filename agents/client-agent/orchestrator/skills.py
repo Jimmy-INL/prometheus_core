@@ -10,7 +10,7 @@ from param_schema import (
     normalize_params_for_input_schema,
 )
 
-from . import runtime
+from . import runtime, task_tracking
 
 
 async def find_tool_for_skill(skill_id: str, refresh_on_miss: bool = True):
@@ -29,6 +29,19 @@ async def find_tool_for_skill(skill_id: str, refresh_on_miss: bool = True):
 
 
 async def invoke_skill(
+    skill_id: str,
+    params: Dict[str, Any],
+    conversation_id: str,
+    emit_status: bool = True,
+) -> Dict[str, Any]:
+    """Invoke a single discovered skill, tracking it as a Task Graph node."""
+    async with task_tracking.track_skill(conversation_id, skill_id, title=skill_id) as tracker:
+        result = await _invoke_skill_impl(skill_id, params, conversation_id, emit_status)
+        task_tracking.apply_result_outcome(tracker, result)
+        return result
+
+
+async def _invoke_skill_impl(
     skill_id: str,
     params: Dict[str, Any],
     conversation_id: str,
