@@ -20,14 +20,30 @@ See ``docs/dev-docs/background-tasks.md``.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Optional
 
 import task_graph
 
 logger = logging.getLogger(__name__)
+
+
+def background_deadline_seconds() -> float:
+    """Soft deadline after which a slow turn is promoted to a background task.
+
+    ``PROMETHEUS_BACKGROUND_DEADLINE_SECONDS`` <= 0 (the default) disables
+    backgrounding entirely, preserving the synchronous request/response flow.
+    """
+    raw = os.getenv("PROMETHEUS_BACKGROUND_DEADLINE_SECONDS", "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.0
 
 
 def _new_id() -> str:
@@ -88,26 +104,98 @@ def current_root_id() -> Optional[str]:
     return turn.root_id if turn is not None else None
 
 
-def finish_turn(status: str) -> None:
-    """Resolve the turn root based on the orchestrator response status.
+def _own_state_for_status(status: str) -> Optional[str]:
+    """Map an orchestrator response status to the root node's own state.
 
-    ``needs_info`` / ``plan_ready`` / ``backgrounded`` intentionally leave the
-    root non-terminal: the turn is paused, not done.
+    ``needs_info`` / ``plan_ready`` / ``backgrounded`` return ``None``: the turn
+    is paused or detached, not done — leave the root non-terminal.
     """
+    state = (status or "").strip().lower()
+    if state == "error":
+        return "failed"
+    if state in ("completed", "answer"):
+        return "completed"
+    return None
+
+
+def finish_turn(status: str) -> None:
+    """Resolve the current turn's root node based on the response status."""
     turn = _turn.get()
     if turn is None or not turn.created:
         return
-    state = (status or "").strip().lower()
-    if state == "error":
-        own = "failed"
-    elif state in ("completed", "answer"):
-        own = "completed"
-    else:
-        return  # paused — leave the root working
+    finish_turn_for(turn.conversation_id, turn.root_id, status)
+
+
+def finish_turn_for(conversation_id: str, root_id: Optional[str], status: str) -> None:
+    """Resolve a specific root node — used by the detached background finisher,
+    which runs outside the originating request's context vars."""
+    if not conversation_id or not root_id:
+        return
+    own = _own_state_for_status(status)
+    if own is None:
+        return
     try:
-        task_graph.update_own_state(turn.conversation_id, turn.root_id, own_state=own)
+        task_graph.update_own_state(conversation_id, root_id, own_state=own)
     except Exception as exc:
         logger.warning("[TASKTRACK] Failed to finalize root node: %s", exc)
+
+
+def ensure_background_root() -> Optional[str]:
+    """Materialize the turn root (if not already) and flag it as backgrounded.
+
+    Called when a turn is detached so there is always a trackable node, even if
+    the slowness was in orchestration rather than a tracked skill dispatch.
+    """
+    root_id = _ensure_root()
+    if root_id is None:
+        return None
+    turn = _turn.get()
+    try:
+        task_graph.update_own_state(
+            turn.conversation_id, root_id, own_state="working", is_background=True
+        )
+    except Exception as exc:
+        logger.warning("[TASKTRACK] Failed to flag background root: %s", exc)
+    return root_id
+
+
+async def run_background_finish(
+    *,
+    chat_task: Awaitable[Any],
+    conversation_id: str,
+    root_id: Optional[str],
+    build_payload: Callable[[Any], Dict[str, Any]],
+    on_status: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Await a detached orchestration task, then finalize its Task Graph root and
+    persist the result so the frontend can render it on completion.
+
+    Kept here (rather than in service.py) so it depends only on task_graph and is
+    unit-testable without importing the heavy orchestrator/prometheus_api stack.
+    """
+    try:
+        response = await chat_task
+    except Exception as exc:
+        if root_id:
+            try:
+                task_graph.update_own_state(
+                    conversation_id, root_id, own_state="failed", error=str(exc)
+                )
+            except Exception:
+                pass
+        if on_status:
+            on_status(f"Background task failed: {exc}")
+        return
+
+    try:
+        payload = build_payload(response)
+        task_graph.store_result(conversation_id, root_id or "", payload)
+    except Exception as exc:
+        logger.warning("[TASKTRACK] Failed to store background result: %s", exc)
+
+    finish_turn_for(conversation_id, root_id, getattr(response, "status", "") or "")
+    if on_status:
+        on_status("Background task complete.")
 
 
 # --- per-skill tracking ------------------------------------------------------

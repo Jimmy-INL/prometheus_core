@@ -186,6 +186,36 @@ def _publish_event(conversation_id: str, event: Dict[str, Any]) -> None:
         logger.warning("[TASKGRAPH] Failed to publish event: %s", exc)
 
 
+def _result_key(conversation_id: str, task_id: str) -> str:
+    return f"tasks:result:{conversation_id}:{task_id}"
+
+
+def store_result(conversation_id: str, task_id: str, payload: Dict[str, Any]) -> None:
+    """Persist the final response payload of a backgrounded task for later delivery."""
+    try:
+        client = _client()
+        key = _result_key(conversation_id, task_id)
+        client.set(key, json.dumps(payload, default=str))
+        client.expire(key, NODE_TTL_SECONDS)
+    except Exception as exc:
+        logger.warning("[TASKGRAPH] Failed to store result for %s: %s", task_id, exc)
+
+
+def get_result(conversation_id: str, task_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve a stored backgrounded-task result payload, if any."""
+    try:
+        data = _client().get(_result_key(conversation_id, task_id))
+    except Exception as exc:
+        logger.warning("[TASKGRAPH] Failed to read result for %s: %s", task_id, exc)
+        return None
+    if not data:
+        return None
+    try:
+        return json.loads(data)
+    except Exception:
+        return None
+
+
 # --- mutations ---------------------------------------------------------------
 
 

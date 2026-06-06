@@ -244,6 +244,20 @@ bottleneck is, live.
   orchestrator promotes the task to background. Short tasks feel synchronous; long ones
   detach gracefully.
 
+### Implementation note — turn-level detach (Phase 1 realization)
+
+Phase 1 realizes the watcher at the **turn level** rather than per sub-agent stream:
+far less invasive and equally correct, since `chat()` already runs in-process and already
+updates the Task Graph via `task_tracking`. `service._execute` races `chat()` against a
+soft deadline (`PROMETHEUS_BACKGROUND_DEADLINE_SECONDS`, default `0` = disabled). If the
+deadline fires, the orchestration is **detached** — left running as a background
+`asyncio.Task` (strong-ref'd in `service._BACKGROUND_TASKS`) — and the user gets a
+`backgrounded` response. `task_tracking.run_background_finish` awaits the detached task,
+finalizes the root node (percolation publishes the completion event), and persists the
+final payload via `task_graph.store_result` for the frontend to render on notification.
+Sub-agent calls are unchanged, so this needs no LiteLLM change. Per-sub-agent stream
+detach (next) is the Phase 2 generalization.
+
 ### The watcher (works through LiteLLM **today**)
 
 When the orchestrator backgrounds a task it does **not** stop the work and does **not**
@@ -390,9 +404,14 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
    `message_metadata["tasks"]` for richer frontend rendering. Works end-to-end today because
    the frontend already forwards non-`/history` slash commands. `tests/test_tasks_command.py`
    **6 passing.**
-6. ⬜ orchestrator: soft-deadline + promote-to-background; spawn the detached stream-watcher;
-   emit the `backgrounded` terminal event. *(next; the hot-path + watcher-lifecycle piece.)*
-7. ⬜ base class: `declare_long_running()` helper. **(base image)**
+6. ✅ orchestrator: soft-deadline + promote-to-background (turn-level detach). `service._execute`
+   races `chat()` against `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` (default `0` = disabled);
+   on timeout it detaches the orchestration into a background task, returns a `backgrounded`
+   response, and `task_tracking.run_background_finish` finalizes the root + persists the result
+   (`task_graph.store_result`). All testable logic lives in `task_tracking` (no prometheus_api
+   dep). `tests/test_background_tasks.py` **9 passing**; full client-agent suite 62 green, ruff
+   clean. *(Gated off by default, so safe to ship ahead of the frontend pieces.)*
+7. ⬜ base class: `declare_long_running()` helper for proactive (pre-deadline) detach. **(base image)**
 8. ⬜ `frontend/utils/a2a_client.py`: handle the `backgrounded` terminal event →
    `ConversationResponse(status="backgrounded", …)`.
 9. ⬜ `frontend/main.py` + a new `components/task_panel.py`: per-session Redis pub/sub
