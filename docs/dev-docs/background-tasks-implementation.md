@@ -109,8 +109,9 @@ Related env vars:
 | `prometheus_api/.../agent/base.py` | — | **`PrometheusAgent.declare_long_running()`** — emits the early `metadata.background` status. | **Yes** |
 | `prometheus_api/.../agent/task_store.py` | A (per-agent store) | `RedisTaskStore` implementing the A2A `TaskStore` (`save`/`get`/`delete`), wired into `base.py` `DefaultRequestHandler`. | **Yes** |
 | `frontend/utils/a2a_client.py` | frontend | `response_from_payload()`; `ConversationResponse.status` union gains `backgrounded`. | No |
-| `frontend/components/message_handler.py` | frontend | `_handle_backgrounded()` ack + spawn; `_watch_background_task()` watcher. | No |
-| `frontend/utils/task_events.py` | frontend | `redis.asyncio` pub/sub helpers: `wait_for_task`, `fetch_result`, key/channel builders. | No |
+| `frontend/components/message_handler.py` | frontend | `_handle_backgrounded()` ack + register id; `run_task_notifier()` per-session subscriber; idempotent `_maybe_announce_completion()`. | No |
+| `frontend/main.py` | frontend | Starts `run_task_notifier` in `@cl.on_chat_start` (handle in `cl.user_session`); cancels it in `@cl.on_chat_end`. | No |
+| `frontend/utils/task_events.py` | frontend | `redis.asyncio` pub/sub helpers: `subscribe()` (event generator), `node_state()` (race guard), `fetch_result`, key/channel builders. | No |
 
 Tests: `agents/client-agent/tests/test_task_graph.py`, `test_task_tracking.py`, `test_tasks_command.py`,
 `test_background_tasks.py`; `prometheus_api/tests/test_task_store.py`; `frontend/tests/test_background_tasks.py`.
@@ -211,30 +212,59 @@ as a task whose context is *copied* from `_execute` (which holds the same `_Turn
 deep `request_background()` call inside the dispatched skill sets the very event `_execute` is waiting on.
 This is the whole reason the signal can cross from inside `chat()` back out to the turn-level race.
 
-### Frontend delivery (out-of-band)
+### Frontend delivery (out-of-band) — one subscriber per chat session
+
+Delivery uses a **single long-lived subscriber per chat session**, not a watcher per task. The subscriber is
+started in `@cl.on_chat_start` (where the session is guaranteed live), its handle is retained in
+`cl.user_session` (a strong ref — an un-referenced `asyncio.create_task` can be GC'd mid-flight), and it is
+cancelled in `@cl.on_chat_end`.
 
 ```
-message_handler._handle_response(response):
-  status == "backgrounded" → _handle_backgrounded(response, conversation_id):
-    cl.Message("running in the background … use /tasks").send()
-    task_id = response.message_metadata["task_id"]
-    asyncio.create_task(_watch_background_task(conversation_id, task_id))   # inherits Chainlit session ctx
+@cl.on_chat_start:
+  notifier = asyncio.create_task(run_task_notifier(cl.context.session, conversation_id))
+  cl.user_session.set("task_notifier", notifier)        # strong ref → not GC'd
 
-_watch_background_task(conversation_id, task_id):
-  state  = await task_events.wait_for_task(redis_url, conversation_id, task_id)  # pub/sub, blocks
-  if state is None:        return                      # Redis unavailable → silent no-op
-  if state != "completed": cl.Message("⚠️ ended ({state})").send(); return
-  result = await task_events.fetch_result(redis_url, conversation_id, task_id)   # tasks:result:…
-  cl.Message("✅ complete — here's the result:").send()
-  _handle_final_response(response_from_payload(result))   # same renderer as a synchronous final answer
+_handle_backgrounded(response, conversation_id):         # on a "backgrounded" turn
+  cl.Message("running in the background … use /tasks").send()
+  ids = cl.user_session["backgrounded_task_ids"]; ids.add(response.message_metadata["task_id"])
+  if task_events.node_state(...) is terminal: _maybe_announce_completion(...)   # fast-finish guard
+
+run_task_notifier(session, conversation_id):             # the per-session subscriber
+  init_ws_context(session)                               # bind Chainlit ctx for out-of-band sends
+  async for event in task_events.subscribe(redis_url, conversation_id):   # pub/sub, whole session
+    if event.task_id in awaited_ids and is_terminal(event.state):
+      _maybe_announce_completion(conversation_id, event.task_id, event.state)
+
+_maybe_announce_completion(conversation_id, task_id, state):   # idempotent via the awaited-ids set
+  if task_id not in awaited_ids: return                  # already announced / not ours
+  awaited_ids.discard(task_id)
+  if state == "completed":
+    result = await task_events.fetch_result(redis_url, conversation_id, task_id)   # tasks:result:…
+    cl.Message("✅ complete — here's the result:").send(); _handle_final_response(response_from_payload(result))
+  else:
+    cl.Message(f"⚠️ ended ({state}).").send()
 ```
 
-`response_from_payload()` is shared by the streaming parser (`_dict_to_response`) and the background
-notifier, so a backgrounded result renders **identically** to a synchronous one (artifacts, report, etc.).
+Why one subscriber instead of one watcher per task:
 
-**Subscribe-race guard.** `wait_for_task` subscribes to the channel first, *then* reads the current node
-state once — so a task that completes between detach and subscribe is still detected (the node is already
-terminal) rather than hanging forever waiting for an event that already fired.
+- **No GC footgun** — the handle lives in `cl.user_session`; a fire-and-forget per-task `create_task` had no
+  strong ref and could be collected during its long `await`.
+- **Guaranteed context** — `init_ws_context(session)` (Chainlit) binds the captured `WebsocketSession` so
+  `cl.Message().send()` and `cl.user_session` work *after* the originating request returned. This is the
+  out-of-band send mechanism the design flagged as the #1 risk; it's now resolved.
+- **Filtering** — the events channel carries *every* node transition (including internal sub-nodes). The
+  subscriber announces only ids in the `backgrounded_task_ids` set (populated by `_handle_backgrounded`), so
+  internal hops don't spam the user. The set also makes announcement **idempotent** (first consumer wins).
+- **Foundation for `cl.TaskList`** — the same subscriber already has every `node-*` event, so the live
+  progress panel hangs off it later with no new plumbing.
+
+`response_from_payload()` is shared by the streaming parser (`_dict_to_response`) and the notifier, so a
+backgrounded result renders **identically** to a synchronous one (artifacts, report, etc.).
+
+**Subscribe-race guard.** The subscriber is up from chat start, so it's listening before any detach. The one
+residual race — a task that finishes between the `backgrounded` response and the subscriber processing its
+event — is covered by `_handle_backgrounded`'s `node_state` fast-finish check (announce immediately if the
+node is already terminal).
 
 `message_metadata` survives the wire: the backend sets it on the `ConversationResponse`, which is serialized
 via `model_dump(exclude_none=True)` into the A2A status text part, then parsed back by
@@ -266,8 +296,12 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
     (`prometheus_api` declare tests, `tool_discovery` callback tests, `task_tracking` event tests, and a
     `service._execute` detach-on-signal integration test). **Base-image change** — reaches agent containers
     only after a base-image rebuild+push and a `PROMETHEUS_API_BASE_IMAGE_HASH` bump.
-  - **Frontend `backgrounded` handling** — `a2a_client` `response_from_payload`/status union;
-    `message_handler` ack + watcher; `task_events` pub/sub helpers. Tested (frontend suite green).
+  - **Frontend `backgrounded` handling + proactive completion notification** — `a2a_client`
+    `response_from_payload`/status union; `_handle_backgrounded` ack + id registration; **one per-session
+    subscriber** (`run_task_notifier`, started in `@cl.on_chat_start`, cancelled in `@cl.on_chat_end`) that
+    posts the result out-of-band on completion via `init_ws_context(session)`; `task_events.subscribe`/
+    `node_state` pub/sub helpers. Tested (frontend suite green). *Reaches the still-open session only — see the
+    reload limitation below.*
 
 ---
 
@@ -285,18 +319,21 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
    thread-pattern agent's `run_background_task` runs but its `declare_long_running` call is a no-op method on
    the *old* base image, so no detach happens. Roll the image, then exercise it.
 
-3. **Live `cl.TaskList` progress panel.** The frontend currently posts a one-shot "running in the
-   background" ack and a completion message. It does **not** yet render Chainlit's native RUNNING/DONE
-   panel or stream interim `node-updated` progress. The watcher already receives every event on
-   `tasks:events:…` — wiring those into a `cl.TaskList` is the remaining UX piece.
-   *Caveat:* this needs the **Chainlit out-of-band context spike** (does session context propagate into a
-   `create_task` subscriber well enough to mutate a `cl.TaskList`?). The completion-message path is already
-   proven to work via `asyncio.create_task` inheriting the session context.
+3. **Live `cl.TaskList` progress panel.** The frontend posts a "running in the background" ack and a
+   completion message, but does **not** yet render Chainlit's native RUNNING/DONE panel or surface interim
+   `node-updated` progress. `run_task_notifier` already receives every `node-*` event on `tasks:events:…`,
+   so this hangs off the existing subscriber: on each event upsert a `cl.Task` keyed by `task_id`, mapping
+   graph state → `cl.TaskStatus`. The out-of-band context question is now resolved (`init_ws_context`), so
+   this is purely additive UI work.
 
-4. **End-to-end test with a deliberately slow agent.** No integration test yet exercises detach → run →
+4. **Cross-reload / cross-device persistence.** Notifications reach only the **still-open** session that
+   launched the task (see the reload limitation below). True persistence needs stable, user-scoped task
+   ownership — designed in *"Persisting notifications across reloads"* below; gated on real auth + accounts.
+
+5. **End-to-end test with a deliberately slow agent.** No integration test yet exercises detach → run →
    notify against a real slow specialist. Needed before flipping the deadline on.
 
-5. **Flip `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` on** (e.g. `45`) once 3–4 are satisfied.
+6. **Flip `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` on** (e.g. `45`) once the above are satisfied.
 
 ### Beyond Phase 1 (design doc Phases 2–3, not started)
 
@@ -325,12 +362,61 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
      query that takes >5 s.
 
 3. **Build the `cl.TaskList` panel** (`frontend`, no base image):
-   - Do the context-propagation spike first (mutate a `cl.TaskList` from the existing watcher coroutine).
-   - On `node-created`/`node-updated`/`node-completed`/`node-failed`, upsert a `cl.Task` keyed by `task_id`,
-     mapping graph state → `cl.TaskStatus`. The watcher already has the event stream.
+   - The out-of-band context question is resolved (`init_ws_context`), so no spike needed.
+   - In `run_task_notifier`, on `node-created`/`node-updated`/`node-completed`/`node-failed`, upsert a
+     `cl.Task` keyed by `task_id`, mapping graph state → `cl.TaskStatus`. The subscriber already has the
+     stream and a bound context.
 
 4. **Flip `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` on** per environment once satisfied (the agent-driven
    path needs no flip — it's live as soon as the base image ships).
+
+---
+
+## Persisting notifications across reloads (needs real auth + user accounts)
+
+**Today's limitation.** Notifications reach **only the chat session that launched the task**, and only while
+its browser tab stays open. Two reasons:
+
+1. `@cl.on_chat_start` mints a fresh `conversation_id = uuid4()` every load, so a reload starts a *new*
+   conversation with no link to the in-flight task. The Task Graph node still completes and the result is
+   still persisted at `tasks:result:{old_conv}:{root}` (TTL 24 h) — but nothing in the new session knows to
+   look for it.
+2. The subscriber is per-session and dies with the session (cancelled in `@cl.on_chat_end`).
+
+The backend already does the durable half correctly (node + result survive in Redis with a TTL); the gap is
+purely **frontend identity** — there's no stable, user-scoped handle to re-attach to.
+
+**What true persistence needs, once auth + accounts land.** The unlock is a **stable identity to scope
+in-flight tasks to**, instead of a per-tab `conversation_id`:
+
+1. **Stable conversation identity across reloads.** Either adopt Chainlit's resumable threads (persistence
+   layer + `@cl.on_chat_resume`, which restores the previous `thread_id`), or derive/persist a
+   `conversation_id` from the authenticated user + thread rather than `uuid4()` per load. Then a reload
+   re-enters the *same* conversation.
+2. **A per-user "open background tasks" index in Redis**, written by the backend at detach time:
+   `tasks:user:{user_id}:open` → set of `(conversation_id, root_task_id)`. Keyed by the authenticated
+   `cl.User.identifier`, not the conversation, so it survives reloads, new tabs, and different devices.
+3. **Reconcile-on-connect in `@cl.on_chat_start` / `on_chat_resume`.** With a `user_id` in hand, the frontend:
+   - reads `tasks:user:{user_id}:open`;
+   - for each entry, checks `node_state` — if already terminal, immediately announce via the existing
+     `_maybe_announce_completion` (fetch the still-persisted `tasks:result:…` payload), and drop it from the
+     index; if still running, add it to `backgrounded_task_ids` so the (now per-user) subscriber will fire.
+4. **Subscribe per user, not just per conversation.** Either keep the per-conversation subscriber but start
+   one per restored conversation, or add a `tasks:events:user:{user_id}` fan-out channel the backend also
+   publishes terminal events to, so a single subscriber catches completions across all the user's
+   conversations.
+5. **Lifecycle / cleanup.** Remove ids from the per-user index on announce; TTL the index alongside the
+   result keys; decide cross-device behavior (announce in every open session, or mark "delivered" once via a
+   Redis flag to avoid double-posting).
+
+This is **frontend + a small backend index**, not a protocol change — it does *not* need the LiteLLM
+passthrough work (that's for restart-survivable *server-side* watchers / re-attach, a different axis). The
+dependency is genuinely just **authenticated user identity**: without it there's no durable key to scope
+"this user's in-flight tasks" to. Until then, the per-session subscriber is the right scope.
+
+> **Backend prep that's cheap to do now:** have `_spawn_background_finisher` / `run_background_finish` also
+> write `tasks:user:{user_id}:open` when a `user_id` is available on the request context. It's a no-op while
+> auth is absent (no `user_id`), but means the durable index exists the moment accounts land.
 
 ---
 
@@ -346,8 +432,16 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
   each define the Redis key/channel names. Keep them identical.
 - **`message_metadata.task_id` is load-bearing.** No `task_id` → the frontend acks but can't watch
   (`_handle_backgrounded` returns early). The backend sets it from the materialized root id.
-- **Background tasks need a strong ref.** Detached tasks are held in `service._BACKGROUND_TASKS`; dropping
-  that would let the loop GC them mid-flight.
+- **Background tasks need a strong ref — both ends.** The backend holds detached tasks in
+  `service._BACKGROUND_TASKS`; the frontend holds the per-session notifier in `cl.user_session`. A bare
+  `asyncio.create_task(...)` with no retained handle can be GC'd mid-`await` (this was the original
+  "notifications never fire" bug).
+- **Out-of-band sends need `init_ws_context(session)`.** A coroutine that posts to the UI after its
+  originating request returned must bind the captured `WebsocketSession` first; `run_task_notifier` does this
+  once at startup. Don't rely on contextvar copying alone.
+- **Notifications are session-scoped today.** The subscriber dies with the chat session and the
+  `conversation_id` is per-tab, so a reload loses the link to in-flight tasks. Cross-reload persistence needs
+  authenticated user identity — see *"Persisting notifications across reloads."*
 - **Testable logic stays out of `prometheus_api`.** `run_background_finish` lives in `task_tracking` (not
   `service`) specifically so it can be unit-tested without importing the heavy orchestrator/prometheus_api
   stack and fighting `sys.modules` stubs. Keep new detach logic there.

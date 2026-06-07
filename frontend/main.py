@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import uuid
 
 import chainlit as cl
@@ -9,8 +11,11 @@ import plugins as _visualization_plugins  # noqa: F401
 
 from utils.settings import settings
 from utils.conversation_state_client import ConversationStateClient
-from components.message_handler import message_handler
+from components.message_handler import message_handler, run_task_notifier
 from components.settings_handler import configure_settings, settings_debug_options
+
+# cl.user_session key holding the per-session background-task notifier asyncio.Task.
+_TASK_NOTIFIER_KEY = "task_notifier"
 
 _conversation_state_client = ConversationStateClient(settings.redis_url)
 
@@ -65,8 +70,15 @@ async def chat_profile():
 @cl.on_chat_start
 async def on_chat_start():
     # Initialize conversation state for A2A multi-turn
-    cl.user_session.set("conversation_id", str(uuid.uuid4()))
+    conversation_id = str(uuid.uuid4())
+    cl.user_session.set("conversation_id", conversation_id)
     cl.user_session.set("artifacts", [])
+
+    # Start the single per-session subscriber that posts background-task results
+    # out-of-band on completion. Started here so it inherits a live session, and
+    # retained in user_session as a strong ref so it isn't garbage-collected.
+    notifier = asyncio.create_task(run_task_notifier(cl.context.session, conversation_id))
+    cl.user_session.set(_TASK_NOTIFIER_KEY, notifier)
 
     await configure_settings()
 
@@ -80,6 +92,16 @@ async def on_chat_start():
         await cl.Message(content=settings.chat_intro, elements=[suggestions]).send()
     else:
         ...
+
+
+@cl.on_chat_end
+async def on_chat_end():
+    # Stop the per-session background-task notifier so subscribers don't leak.
+    notifier = cl.user_session.get(_TASK_NOTIFIER_KEY)
+    if notifier is not None:
+        notifier.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await notifier
 
 
 async def _handle_conversation_history():

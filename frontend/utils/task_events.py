@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional
 
 try:  # redis.asyncio ships with redis-py >= 4.2
     import redis.asyncio as aioredis
@@ -70,24 +70,43 @@ async def fetch_result(redis_url: str, conversation_id: str, task_id: str) -> Op
             pass
 
 
-async def wait_for_task(redis_url: str, conversation_id: str, task_id: str) -> Optional[str]:
-    """Block until ``task_id`` reaches a terminal state; return that state.
+async def node_state(redis_url: str, conversation_id: str, task_id: str) -> Optional[str]:
+    """Return the current persisted state of a Task Graph node, or ``None``.
 
-    Returns ``None`` if Redis is unavailable. Guards the subscribe race by
-    checking the current node state immediately after subscribing, so a task
-    that finishes between detach and subscribe is still detected.
+    Used as a subscribe-race guard: a task that reached a terminal state between
+    detach and subscribe won't emit another event, so callers check the node
+    directly once on startup.
     """
     if aioredis is None:
         return None
     client = aioredis.from_url(redis_url, decode_responses=True)
+    try:
+        node = await _get_json(client, _node_key(conversation_id, task_id))
+        return str(node.get("state")) if node else None
+    finally:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
+async def subscribe(redis_url: str, conversation_id: str) -> AsyncIterator[Dict[str, Any]]:
+    """Yield Task Graph events for a conversation until the consumer is cancelled.
+
+    Each yielded value is a parsed event dict published on
+    ``tasks:events:{conversation_id}`` (``{type, task_id, state, …}``). Yields
+    nothing (returns immediately) when Redis is unavailable, so callers degrade
+    to "no proactive notifications" rather than crashing.
+
+    The single long-lived subscriber per chat session is started in
+    ``@cl.on_chat_start`` and cancelled in ``@cl.on_chat_end``.
+    """
+    if aioredis is None:
+        return
+    client = aioredis.from_url(redis_url, decode_responses=True)
     pubsub = client.pubsub()
     try:
         await pubsub.subscribe(events_channel(conversation_id))
-
-        node = await _get_json(client, _node_key(conversation_id, task_id))
-        if node and is_terminal(node.get("state")):
-            return str(node.get("state"))
-
         async for msg in pubsub.listen():
             if msg.get("type") != "message":
                 continue
@@ -95,11 +114,8 @@ async def wait_for_task(redis_url: str, conversation_id: str, task_id: str) -> O
                 event = json.loads(msg["data"])
             except Exception:
                 continue
-            if event.get("task_id") != task_id:
-                continue
-            if is_terminal(event.get("state")):
-                return str(event.get("state"))
-        return None
+            if isinstance(event, dict):
+                yield event
     finally:
         for close in (
             lambda: pubsub.unsubscribe(events_channel(conversation_id)),

@@ -282,13 +282,26 @@ async def _handle_response(
         await cl.Message(content=text).send()
 
 
-async def _handle_backgrounded(response: ConversationResponse, conversation_id: str) -> None:
-    """The turn was detached to run in the background. Acknowledge it and spawn an
-    in-session watcher that posts the result when the task completes.
+# Key under which the set of backgrounded root task ids the user is waiting on is
+# stored in cl.user_session. The per-session notifier (run_task_notifier) only
+# announces completion for ids in this set, so internal sub-node transitions on
+# the shared events channel don't generate spurious messages.
+BACKGROUNDED_IDS_KEY = "backgrounded_task_ids"
 
-    The watcher is started with ``asyncio.create_task`` from within the message
-    handler so it inherits the Chainlit session context and can send messages to
-    this session out-of-band.
+
+def _awaited_task_ids() -> set:
+    ids = cl.user_session.get(BACKGROUNDED_IDS_KEY)
+    return ids if isinstance(ids, set) else set()
+
+
+async def _handle_backgrounded(response: ConversationResponse, conversation_id: str) -> None:
+    """The turn was detached to run in the background. Acknowledge it and register
+    the task id so the per-session notifier announces its result on completion.
+
+    Delivery is handled by ``run_task_notifier`` (one subscriber per chat session,
+    started in ``@cl.on_chat_start``) rather than a per-turn watcher — a long-lived
+    subscriber whose handle is retained in the session can't be GC'd mid-flight and
+    has a guaranteed Chainlit context for out-of-band sends.
     """
     metadata = response.message_metadata or {}
     task_id = metadata.get("task_id")
@@ -299,23 +312,39 @@ async def _handle_backgrounded(response: ConversationResponse, conversation_id: 
     ).send()
     if not task_id:
         return
-    asyncio.create_task(_watch_background_task(conversation_id, str(task_id)))
+    task_id = str(task_id)
+    ids = _awaited_task_ids()
+    ids.add(task_id)
+    cl.user_session.set(BACKGROUNDED_IDS_KEY, ids)
 
-
-async def _watch_background_task(conversation_id: str, task_id: str) -> None:
-    """Wait for a detached task to finish, then render its result in this session."""
+    # Fast-finish guard: if the task already reached a terminal state before the
+    # notifier saw an event for it (rare — detach normally precedes completion),
+    # announce now. We're inside the request context here, so no init_ws_context.
     from utils import task_events
 
     try:
-        state = await task_events.wait_for_task(settings.redis_url, conversation_id, task_id)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        logger.warning("Background task watcher failed for %s: %s", task_id, exc)
-        return
+        state = await task_events.node_state(settings.redis_url, conversation_id, task_id)
+    except Exception:
+        state = None
+    if task_events.is_terminal(state):
+        await _maybe_announce_completion(conversation_id, task_id, str(state))
 
-    if state is None:
-        return  # Redis unavailable; nothing to deliver.
+
+async def _maybe_announce_completion(conversation_id: str, task_id: str, state: str) -> None:
+    """Render a backgrounded task's result in the session, once.
+
+    Idempotent via the awaited-ids set: the first caller to consume an id wins, so
+    the notifier and the fast-finish guard can't both post for the same task.
+    """
+    from utils import task_events
+
+    if not task_events.is_terminal(state):
+        return
+    ids = _awaited_task_ids()
+    if task_id not in ids:
+        return  # already announced (or never ours)
+    ids.discard(task_id)
+    cl.user_session.set(BACKGROUNDED_IDS_KEY, ids)
 
     if state != "completed":
         await cl.Message(content=f"⚠️ Background task ended ({state}).").send()
@@ -325,9 +354,44 @@ async def _watch_background_task(conversation_id: str, task_id: str) -> None:
     if not result:
         await cl.Message(content="✅ Background task complete.").send()
         return
-
     await cl.Message(content="✅ Background task complete — here's the result:").send()
     await _handle_final_response(response_from_payload(result))
+
+
+async def run_task_notifier(session: Any, conversation_id: str) -> None:
+    """Per-session subscriber: announce completion of backgrounded turns the user
+    is waiting on. Started once in ``@cl.on_chat_start`` (its handle retained in the
+    session) and cancelled in ``@cl.on_chat_end``.
+
+    ``session`` is the Chainlit ``WebsocketSession`` captured at chat start; we bind
+    it as this coroutine's Chainlit context so ``cl.Message().send()`` and
+    ``cl.user_session`` work out-of-band, after the originating request has returned.
+    """
+    from utils import task_events
+
+    try:
+        from chainlit.context import init_ws_context
+
+        init_ws_context(session)
+    except Exception as exc:  # context binding shouldn't be fatal; sends may still work
+        logger.warning("Task notifier could not bind Chainlit context: %s", exc)
+
+    try:
+        async for event in task_events.subscribe(settings.redis_url, conversation_id):
+            task_id = str(event.get("task_id") or "")
+            state = str(event.get("state") or "")
+            if not task_id or not task_events.is_terminal(state):
+                continue
+            if task_id not in _awaited_task_ids():
+                continue
+            try:
+                await _maybe_announce_completion(conversation_id, task_id, state)
+            except Exception as exc:
+                logger.warning("Failed to announce background task %s: %s", task_id, exc)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Task notifier for %s stopped: %s", conversation_id, exc)
 
 
 def _coerce_final_text(response: ConversationResponse, artifact_count: int) -> str:
