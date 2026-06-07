@@ -3,6 +3,7 @@
 Status: **design + Phase 0/1 in progress** (turn-level backgrounding implemented, gated off by default)
 Owner: platform
 Related: [`background-tasks-implementation.md`](./background-tasks-implementation.md) (as-built reference),
+[`hierarchical-agents.md`](./hierarchical-agents.md) (deep-hierarchy design: who owns/writes the Task Graph),
 [`architecture.md`](../docs/dev-docs/architecture.md), [`prometheus_api_a2a_routing_refactor_plan.md`](./prometheus_api_a2a_routing_refactor_plan.md)
 
 > **As-built reference.** This document is the design + rationale + phasing. For the *as-built*
