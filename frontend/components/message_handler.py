@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import math
@@ -14,7 +15,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 import plugins as _plugins  # noqa: E402
-from utils.a2a_client import A2AClient, ConversationResponse  # noqa: E402
+from utils.a2a_client import A2AClient, ConversationResponse, response_from_payload  # noqa: E402
 _normalize_mime_type = _plugins.normalize_mime_type
 GENERIC_UPLOAD_MIMETYPES = _plugins.GENERIC_UPLOAD_MIMETYPES
 from utils.settings import settings  # noqa: E402
@@ -274,9 +275,59 @@ async def _handle_response(
         await cl.Message(
             content=f"**Error:** {response.message or 'An error occurred during processing.'}"
         ).send()
+    elif response.status == "backgrounded":
+        await _handle_backgrounded(response, conversation_id)
     else:
         text = response.message or response.response_text or str(response)
         await cl.Message(content=text).send()
+
+
+async def _handle_backgrounded(response: ConversationResponse, conversation_id: str) -> None:
+    """The turn was detached to run in the background. Acknowledge it and spawn an
+    in-session watcher that posts the result when the task completes.
+
+    The watcher is started with ``asyncio.create_task`` from within the message
+    handler so it inherits the Chainlit session context and can send messages to
+    this session out-of-band.
+    """
+    metadata = response.message_metadata or {}
+    task_id = metadata.get("task_id")
+    await cl.Message(
+        content=response.message
+        or "This is taking a while — it's now running in the background. "
+        "I'll post the result here when it's ready (use /tasks to check progress)."
+    ).send()
+    if not task_id:
+        return
+    asyncio.create_task(_watch_background_task(conversation_id, str(task_id)))
+
+
+async def _watch_background_task(conversation_id: str, task_id: str) -> None:
+    """Wait for a detached task to finish, then render its result in this session."""
+    from utils import task_events
+
+    try:
+        state = await task_events.wait_for_task(settings.redis_url, conversation_id, task_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Background task watcher failed for %s: %s", task_id, exc)
+        return
+
+    if state is None:
+        return  # Redis unavailable; nothing to deliver.
+
+    if state != "completed":
+        await cl.Message(content=f"⚠️ Background task ended ({state}).").send()
+        return
+
+    result = await task_events.fetch_result(settings.redis_url, conversation_id, task_id)
+    if not result:
+        await cl.Message(content="✅ Background task complete.").send()
+        return
+
+    await cl.Message(content="✅ Background task complete — here's the result:").send()
+    await _handle_final_response(response_from_payload(result))
 
 
 def _coerce_final_text(response: ConversationResponse, artifact_count: int) -> str:

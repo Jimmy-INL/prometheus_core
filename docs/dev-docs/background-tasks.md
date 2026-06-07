@@ -1,8 +1,14 @@
 # Background / Long-Running Tasks
 
-Status: **design + Phase 0/1 in progress**
+Status: **design + Phase 0/1 in progress** (turn-level backgrounding implemented, gated off by default)
 Owner: platform
-Related: [`architecture.md`](../docs/dev-docs/architecture.md), [`prometheus_api_a2a_routing_refactor_plan.md`](./prometheus_api_a2a_routing_refactor_plan.md)
+Related: [`background-tasks-implementation.md`](./background-tasks-implementation.md) (as-built reference),
+[`architecture.md`](../docs/dev-docs/architecture.md), [`prometheus_api_a2a_routing_refactor_plan.md`](./prometheus_api_a2a_routing_refactor_plan.md)
+
+> **As-built reference.** This document is the design + rationale + phasing. For the *as-built*
+> implementation (file map, Redis schema, data flow, the `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` switch,
+> and the concrete "what's left to finish Phase 1" checklist), see
+> [`background-tasks-implementation.md`](./background-tasks-implementation.md).
 
 ## Why
 
@@ -412,11 +418,16 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
    dep). `tests/test_background_tasks.py` **9 passing**; full client-agent suite 62 green, ruff
    clean. *(Gated off by default, so safe to ship ahead of the frontend pieces.)*
 7. ⬜ base class: `declare_long_running()` helper for proactive (pre-deadline) detach. **(base image)**
-8. ⬜ `frontend/utils/a2a_client.py`: handle the `backgrounded` terminal event →
-   `ConversationResponse(status="backgrounded", …)`.
-9. ⬜ `frontend/main.py` + a new `components/task_panel.py`: per-session Redis pub/sub
-   subscriber, `cl.TaskList` live panel, completion `cl.Message`. *(Needs the Chainlit
-   out-of-band context spike — see Risks.)*
+8. ✅ `frontend/utils/a2a_client.py`: handle the `backgrounded` response →
+   `ConversationResponse(status="backgrounded", …)`. Added `response_from_payload()` (shared by the
+   streaming parser and the background notifier). Tested.
+9. 🟡 frontend per-session out-of-band delivery — **partially done.** `frontend/utils/task_events.py`
+   (`redis.asyncio` pub/sub: `wait_for_task`/`fetch_result`) + `message_handler._handle_backgrounded` /
+   `_watch_background_task` ack the detach and post the completion result via `_handle_final_response`.
+   `tests/test_background_tasks.py` **8 passing**; full frontend suite 80 green. **Still missing:** the live
+   `cl.TaskList` progress panel (interim `node-updated` events). *(Needs the Chainlit out-of-band context
+   spike — see Risks; the completion-message path is already proven via `asyncio.create_task` inheriting the
+   session context.)*
 10. ⬜ End-to-end test with a deliberately slow debug agent.
 
 ---
