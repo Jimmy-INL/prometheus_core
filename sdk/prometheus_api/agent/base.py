@@ -1232,6 +1232,47 @@ class PrometheusAgent:
             metadata=metadata,
         )
 
+    async def declare_long_running(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        estimate_seconds: Optional[float] = None,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Declare up front that this skill will run for a long time.
+
+        Emits a non-final ``working`` status tagged ``metadata.background = True``
+        so the orchestrator can *proactively* detach the turn — handing control
+        back to the user immediately instead of waiting out its soft deadline —
+        and deliver the result out-of-band when the work finishes. Call this near
+        the start of ``_execute`` for simulation-class skills that you know will
+        outlive a normal request.
+
+        The task itself keeps running exactly as before; this only flags it as a
+        background candidate. ``estimate_seconds`` (if given) is forwarded in the
+        event metadata as a hint for UI/scheduling.
+        """
+        payload: Dict[str, Any] = {"background": True}
+        if estimate_seconds is not None:
+            payload["estimate_seconds"] = float(estimate_seconds)
+        if metadata:
+            payload.update(metadata)
+        if message is None:
+            if estimate_seconds is not None:
+                message = f"Running in the background (estimated ~{int(estimate_seconds)}s)."
+            else:
+                message = "Running in the background."
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.working,
+            final=False,
+            message=message,
+            metadata=payload,
+        )
+
     async def run_worker(
         self,
         worker: PrometheusWorker,
