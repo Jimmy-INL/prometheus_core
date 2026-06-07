@@ -417,7 +417,12 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
    (`task_graph.store_result`). All testable logic lives in `task_tracking` (no prometheus_api
    dep). `tests/test_background_tasks.py` **9 passing**; full client-agent suite 62 green, ruff
    clean. *(Gated off by default, so safe to ship ahead of the frontend pieces.)*
-7. ⬜ base class: `declare_long_running()` helper for proactive (pre-deadline) detach. **(base image)**
+7. ✅ base class: `declare_long_running()` helper for proactive (pre-deadline) detach. **(base image)**
+   `PrometheusAgent.declare_long_running` emits a `metadata.background` status; `tool_discovery` detects it
+   → `skills._background_callback` → `task_tracking.request_background()` sets a turn-scoped event that
+   `service._execute` races, detaching immediately (always active, independent of the deadline). Wired into
+   the thread-pattern debug agent's `run_background_task`. Tested across `prometheus_api` + client-agent.
+   Reaches agent containers only after a base-image rebuild + `PROMETHEUS_API_BASE_IMAGE_HASH` bump.
 8. ✅ `frontend/utils/a2a_client.py`: handle the `backgrounded` response →
    `ConversationResponse(status="backgrounded", …)`. Added `response_from_payload()` (shared by the
    streaming parser and the background notifier). Tested.

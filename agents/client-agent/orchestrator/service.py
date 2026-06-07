@@ -531,17 +531,26 @@ class OrchestratorAgent(PrometheusAgent):
 
         task_tracking.begin_turn(conversation_id, chat_request.query or "request")
         deadline = task_tracking.background_deadline_seconds()
+        background_evt = task_tracking.background_event()
 
-        if deadline <= 0:
-            # Backgrounding disabled: preserve the synchronous behavior exactly.
-            response = await _run_chat()
-            task_tracking.finish_turn(getattr(response, "status", "") or "")
-            return self._response_payload_with_artifacts(
-                conversation_id, response, artifact_ids_before_turn
-            )
-
+        # Detach is triggered by either the soft deadline (time-based promotion,
+        # gated by PROMETHEUS_BACKGROUND_DEADLINE_SECONDS) or an agent calling
+        # declare_long_running mid-turn (agent-driven, always active). With both
+        # disabled — no deadline and no signaling turn — this awaits chat() to
+        # completion, exactly the synchronous path.
         chat_task = asyncio.create_task(_run_chat())
-        done, _pending = await asyncio.wait({chat_task}, timeout=deadline)
+        waiters: set = {chat_task}
+        bg_wait = asyncio.create_task(background_evt.wait()) if background_evt is not None else None
+        if bg_wait is not None:
+            waiters.add(bg_wait)
+        done, _pending = await asyncio.wait(
+            waiters,
+            timeout=deadline if deadline > 0 else None,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if bg_wait is not None and not bg_wait.done():
+            bg_wait.cancel()
+
         if chat_task in done:
             response = chat_task.result()
             task_tracking.finish_turn(getattr(response, "status", "") or "")
@@ -549,8 +558,9 @@ class OrchestratorAgent(PrometheusAgent):
                 conversation_id, response, artifact_ids_before_turn
             )
 
-        # Soft deadline exceeded: detach. The orchestration keeps running in a
-        # background task; the user regains control and is notified on completion.
+        # Detach (soft deadline exceeded, or an agent declared itself long-running):
+        # the orchestration keeps running in a background task; the user regains
+        # control and is notified on completion.
         root_id = task_tracking.ensure_background_root()
         self._spawn_background_finisher(
             chat_task, conversation_id, root_id, artifact_ids_before_turn

@@ -86,6 +86,43 @@ def test_finish_turn_for_leaves_paused_root_working(fake_redis: _FakeRedis) -> N
     assert task_graph.get_node(CONV, "root").state == "working"
 
 
+# --- proactive detach (declare_long_running) ---------------------------------
+
+
+def test_background_event_none_outside_turn(fake_redis: _FakeRedis) -> None:
+    task_tracking._turn.set(None)
+    assert task_tracking.background_event() is None
+
+
+def test_background_event_present_within_turn(fake_redis: _FakeRedis) -> None:
+    task_tracking.begin_turn(CONV, "thing")
+    evt = task_tracking.background_event()
+    assert evt is not None
+    assert not evt.is_set()
+
+
+def test_request_background_sets_event_and_flags_nodes(fake_redis: _FakeRedis) -> None:
+    task_tracking.begin_turn(CONV, "thing")
+    root_id = task_tracking._ensure_root()
+    # Simulate being inside a tracked skill dispatch.
+    node_id = "t_child"
+    task_graph.create_node(task_id=node_id, conversation_id=CONV, parent_task_id=root_id, title="skill")
+    token = task_tracking._nested_parent.set(node_id)
+    try:
+        task_tracking.request_background()
+    finally:
+        task_tracking._nested_parent.reset(token)
+
+    assert task_tracking.background_event().is_set()
+    assert task_graph.get_node(CONV, node_id).is_background is True
+    assert task_graph.get_node(CONV, root_id).is_background is True
+
+
+def test_request_background_noop_outside_turn(fake_redis: _FakeRedis) -> None:
+    task_tracking._turn.set(None)
+    task_tracking.request_background()  # must not raise
+
+
 # --- background finisher -----------------------------------------------------
 
 

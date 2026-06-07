@@ -610,6 +610,68 @@ def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> Non
     assert payload["new_artifacts"] == []
 
 
+def test_execute_detaches_when_agent_declares_long_running(monkeypatch) -> None:
+    """When a dispatched agent calls declare_long_running mid-turn (signalled via
+    task_tracking.request_background), _execute detaches and returns a
+    backgrounded response — even with the soft deadline disabled.
+
+    Exercises service.OrchestratorAgent directly (the base _execute) to bypass
+    agent.py's compat layer, which re-exports service.chat on every call.
+    """
+    import orchestrator.service as service_mod
+    import task_graph
+    from orchestrator import task_tracking
+    from tests.test_task_graph import _FakeRedis
+
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(task_graph, "_client", lambda: fake_redis)
+    task_tracking._turn.set(None)
+    task_tracking._nested_parent.set(None)
+
+    monkeypatch.delenv("PROMETHEUS_BACKGROUND_DEADLINE_SECONDS", raising=False)  # deadline off
+    monkeypatch.setattr(service_mod.runtime, "_tools_cache", [object()])  # skip lazy refresh
+    monkeypatch.setattr(service_mod.runtime, "store_status_update", lambda *a, **k: None)
+    monkeypatch.setattr(service_mod, "get_conversation", lambda conversation_id: None)
+
+    async def no_upload(self, *args, **kwargs):
+        return []
+
+    monkeypatch.setattr(service_mod.OrchestratorAgent, "_handle_uploaded_files", no_upload)
+
+    async def fake_chat(request):
+        # Simulate a dispatched agent declaring itself long-running, then keep
+        # working (so the race resolves on the background signal, not chat).
+        task_tracking.request_background()
+        await asyncio.sleep(0.05)
+        return service_mod.ConversationResponse(
+            conversation_id="conv-bg", status="completed", report="eventually"
+        )
+
+    monkeypatch.setattr(service_mod, "chat", fake_chat)
+
+    captured: dict = {}
+
+    def fake_spawn(self, chat_task, conversation_id, root_id, before):
+        captured["root_id"] = root_id
+        chat_task.cancel()  # don't leave the slow task running past the test
+
+    monkeypatch.setattr(service_mod.OrchestratorAgent, "_spawn_background_finisher", fake_spawn)
+
+    orchestrator = service_mod.OrchestratorAgent()
+    orchestrator.list_artifact_references = lambda *args, **kwargs: []
+
+    payload = asyncio.run(
+        orchestrator._execute(
+            {"query": "run a long simulation", "conversation_id": "conv-bg"},
+            SimpleNamespace(context_id="conv-bg"),
+            object(),
+        )
+    )
+
+    assert payload["status"] == "backgrounded"
+    assert payload["message_metadata"]["task_id"] == captured["root_id"]
+
+
 def test_invoke_agent_generic_passes_artifact_catalog_to_skill(monkeypatch) -> None:
     captured = {}
 

@@ -29,9 +29,10 @@ Skills
 - ``run_blocking_task``    — foreground demo. The client-agent waits for it;
   status (and a JSON summary artifact) stream the whole time. Optional
   ``duration_seconds`` (default 60) controls how long the worker blocks.
-- ``run_background_task``  — SCAFFOLDED ONLY. Shows where a future "detach and
-  return immediately" background-task implementation would go. Not implemented;
-  the intended A2A task flow is written out as comments.
+- ``run_background_task``  — same blocking work, but calls
+  ``declare_long_running`` first so the orchestrator proactively detaches the
+  turn (the user regains control immediately and is notified out-of-band on
+  completion). The reference exercise for the agent-driven background-task path.
 """
 import time
 from datetime import datetime, timezone
@@ -157,7 +158,7 @@ class ThreadPatternAgent(PrometheusAgent):
         return result
 
     # ------------------------------------------------------------------ #
-    # Skill 2: background task (SCAFFOLDED — NOT YET IMPLEMENTED)
+    # Skill 2: background task (declare_long_running → orchestrator detaches)
     # ------------------------------------------------------------------ #
     async def _run_background_task(
         self,
@@ -166,69 +167,44 @@ class ThreadPatternAgent(PrometheusAgent):
         event_queue: EventQueue,
         duration_seconds: int,
     ) -> Dict[str, Any]:
-        """Placeholder for a detached background-task implementation.
+        """Declare the work long-running up front, then run it like the
+        foreground path.
 
-        Intended behaviour, once background tasks are supported platform-wide:
-        return immediately with an A2A ``working`` status (freeing the frontend
-        to keep prompting), run the blocking work detached from this request,
-        and deliver the final result out-of-band when the worker finishes.
+        ``declare_long_running`` emits an early status tagged
+        ``metadata.background = True``. The orchestrator (client-agent) sees that
+        flag on the stream and *proactively detaches the turn*: the user regains
+        control immediately and is notified out-of-band when this finishes —
+        rather than waiting out the orchestrator's soft deadline.
 
-        The mechanics are intentionally left as comments until the background
-        task feature lands; see the design notes below.
+        From this agent's side the execution is identical to the foreground demo:
+        the blocking work still runs on a ``PrometheusWorker`` via ``run_worker``,
+        streaming progress the whole time. The only difference is the early
+        declaration. The detach/notify machinery lives entirely in the
+        orchestrator + frontend; this agent just opts in.
+
+        See ``docs/dev-docs/background-tasks-implementation.md``.
         """
-        # ---- INTENDED BACKGROUND-TASK FLOW (not yet implemented) ----------
-        #
-        # Prerequisites the platform still needs before this can work:
-        #   * A durable task store (Redis-backed) replacing the in-memory one,
-        #     so the task survives this request and an agent restart, and the
-        #     frontend can reattach to it later.
-        #   * A delivery channel: A2A push notifications (the `pushNotifications`
-        #     capability, currently false) and/or client polling via `tasks/get`
-        #     / re-subscription via `tasks/resubscribe`.
-        #   * Detached execution that outlives the request — ideally a real job
-        #     runner (Redis queue + worker), NOT an OS thread held for the whole
-        #     job (a thread per long task would exhaust the worker pool).
-        #
-        # Sketch of the handler once those exist:
-        #
-        #   task_id = context.task_id
-        #
-        #   # 1) Emit a non-final "working" status and return right away so the
-        #   #    caller is freed. (final=False keeps the task open.)
-        #   await emit_status_update(
-        #       context=context, event_queue=event_queue,
-        #       state=TaskState.working, final=False,
-        #       message=f"Accepted; running ~{duration_seconds}s in the background.",
-        #   )
-        #
-        #   # 2) Hand the work to the job runner (survives this request). The job
-        #   #    runs a PrometheusWorker exactly like the foreground path, but its
-        #   #    events are delivered to a detached, durable consumer:
-        #   await job_runner.enqueue(
-        #       agent="thread-pattern-agent", skill=SKILL_BACKGROUND,
-        #       task_id=task_id, params={"duration_seconds": duration_seconds},
-        #   )
-        #
-        #   # 3) The worker finishes, writes its result to the durable task store,
-        #   #    and a FINAL completed status is emitted for task_id
-        #   #    (state=TaskState.completed, final=True). Delivery to the frontend
-        #   #    happens via push notification or the next tasks/get / resubscribe.
-        #
-        #   # 4) Return the working acknowledgement to the caller now.
-        #   return {"status": "working", "task_id": task_id, "background": True}
-        # -------------------------------------------------------------------
-
-        return {
-            "status": "not_implemented",
-            "skill_id": SKILL_BACKGROUND,
-            "message": (
-                "Background execution is scaffolded but not yet implemented. "
-                "Use 'run_blocking_task' for the foreground thread/observe demo. "
-                "See the comments in _run_background_task for the intended A2A flow."
+        await self.declare_long_running(
+            context=context,
+            event_queue=event_queue,
+            estimate_seconds=duration_seconds,
+            message=(
+                f"Accepted; this will take ~{duration_seconds}s and will run in "
+                "the background while you keep working."
             ),
-            "requested_seconds": duration_seconds,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+        )
+
+        worker = BlockingDemoWorker(duration_seconds)
+        result = await self.run_worker(
+            worker, context, event_queue, poll_interval=POLL_INTERVAL_SECONDS
+        )
+        result["background"] = True
+        result.setdefault(
+            "message",
+            f"Background task finished after {result.get('elapsed_seconds')}s.",
+        )
+        result.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        return result
 
 
 if __name__ == "__main__":

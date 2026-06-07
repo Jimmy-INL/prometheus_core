@@ -75,7 +75,15 @@ async def _invoke_skill_impl(
                 if text:
                     runtime.store_status_update(conversation_id, f"[{skill_id}] {text}")
 
+            async def _background_callback(metadata: Dict[str, Any]) -> None:
+                # The agent declared itself long-running: ask the orchestrator to
+                # detach this turn. The skill node is resolved from the current
+                # task-tracking context.
+                task_tracking.request_background()
+                runtime.store_status_update(conversation_id, f"[{skill_id}] running in the background.")
+
             invoke_params["_status_callback"] = _status_callback
+            invoke_params["_background_callback"] = _background_callback
         missing = [param for param in required_params if not has_param_path(invoke_params, param)]
         if missing:
             if emit_status:

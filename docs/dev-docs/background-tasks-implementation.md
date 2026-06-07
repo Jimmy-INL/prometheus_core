@@ -19,8 +19,15 @@ running, finalizes its node in the per-conversation **Task Graph**, and persists
 The frontend, on receiving `backgrounded`, spawns an in-session watcher that subscribes to the Task Graph's
 Redis pub/sub channel and renders the result out-of-band when the task completes.
 
-The whole feature is **gated off** by `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS=0` (the default), so it ships
-dark and the synchronous request/response path is byte-for-byte unchanged until someone flips it on.
+There are **two detach triggers**:
+
+1. **Time-based auto-promotion** — gated by `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` (default `0` = off).
+   When `> 0`, any turn still running past the deadline detaches. This is the "ships dark" switch.
+2. **Agent-driven (`declare_long_running`)** — an agent that *knows* it will be slow calls
+   `self.declare_long_running(...)` near the start of its skill, which the orchestrator turns into an
+   *immediate* detach. **Always active**, independent of the deadline — it's opt-in per agent, so only
+   agents that explicitly declare (today: just the thread-pattern debug agent's `run_background_task`)
+   ever background. A turn with neither trigger active runs exactly the synchronous path.
 
 ---
 
@@ -59,20 +66,24 @@ if deadline <= 0:
     return self._response_payload_with_artifacts(...)
 
 chat_task = asyncio.create_task(_run_chat())
-done, _ = await asyncio.wait({chat_task}, timeout=deadline)
+bg_evt = task_tracking.background_event()              # agent-driven detach signal (declare_long_running)
+waiters = {chat_task} | ({asyncio.create_task(bg_evt.wait())} if bg_evt else set())
+done, _ = await asyncio.wait(waiters, timeout=deadline if deadline > 0 else None,
+                             return_when=asyncio.FIRST_COMPLETED)
 if chat_task in done:
-    response = chat_task.result()                      # beat the deadline → return normally
+    response = chat_task.result()                      # finished before any detach trigger → return normally
     ...
 else:
-    root_id = task_tracking.ensure_background_root()   # missed it → detach
+    root_id = task_tracking.ensure_background_root()   # deadline OR background signal → detach
     self._spawn_background_finisher(chat_task, ...)
     return ConversationResponse(status="backgrounded", message_metadata={"task_id": root_id}, ...)
 ```
 
-> **Why default off:** the frontend and base-image pieces are sequenced to land independently. Until the
-> frontend understands `backgrounded` (now done) *and* you've validated the end-to-end flow against a real
-> slow agent, leaving the deadline at `0` keeps production on the proven synchronous path. Flip it on (per
-> environment, e.g. `45`) only after the end-to-end smoke test.
+> **Why the deadline defaults off:** time-based auto-promotion is sequenced to land after the frontend and
+> base-image pieces. Until you've validated the end-to-end flow against a real slow agent, leaving the
+> deadline at `0` keeps production on the proven synchronous path *for ordinary turns*. Flip it on (per
+> environment, e.g. `45`) after the smoke test. Note the agent-driven path (`declare_long_running`) is
+> **not** gated by this — but it only fires for agents that explicitly opt in.
 
 Related env vars:
 
@@ -88,11 +99,14 @@ Related env vars:
 | File | Layer | Role | Base-image? |
 |---|---|---|---|
 | `agents/client-agent/task_graph.py` | B (Task Graph) | `TaskNode` model, Redis CRUD, `reconcile()` percolation, pub/sub `_publish_event`, `store_result`/`get_result`. | No |
-| `agents/client-agent/orchestrator/task_tracking.py` | B | Turn/skill → graph integration: `begin_turn`/`finish_turn`, lazy root, `track_skill` ctx manager, `background_deadline_seconds`, `ensure_background_root`, `run_background_finish`. | No |
-| `agents/client-agent/orchestrator/service.py` | B | `_execute()` deadline race + detach; `_spawn_background_finisher`; builds the `backgrounded` response. | No |
-| `agents/client-agent/orchestrator/skills.py` | B | `invoke_skill` split into `_invoke_skill_impl` wrapped by `track_skill`. | No |
+| `agents/client-agent/orchestrator/task_tracking.py` | B | Turn/skill → graph integration: `begin_turn`/`finish_turn`, lazy root, `track_skill` ctx manager, `background_deadline_seconds`, `ensure_background_root`, `run_background_finish`, **`background_event`/`request_background`** (proactive detach signal). | No |
+| `agents/client-agent/orchestrator/service.py` | B | `_execute()` races `chat()` against the deadline **and** the background event; `_spawn_background_finisher`; builds the `backgrounded` response. | No |
+| `agents/client-agent/orchestrator/skills.py` | B | `invoke_skill` split into `_invoke_skill_impl` wrapped by `track_skill`; wires `_background_callback` → `task_tracking.request_background()`. | No |
+| `agents/client-agent/tool_discovery.py` | B | A2A stream consumer; detects `metadata.background` on status events and fires the `_background_callback` (`BackgroundCallback`). | No |
 | `agents/client-agent/orchestrator/debug_commands.py` | B | `/tasks` (tree list) and `/tasks <id>` (inspect) slash commands. | No |
+| `agents/debug-agents/thread-pattern-agent/agent.py` | agent | `run_background_task` skill: calls `declare_long_running` then runs the blocking worker. Reference exercise for the agent-driven path. | No |
 | `shared/a2a_protocol.py` | — | `TaskStatus` enum aligned to the SDK's 9-state set. | No (mounted) |
+| `prometheus_api/.../agent/base.py` | — | **`PrometheusAgent.declare_long_running()`** — emits the early `metadata.background` status. | **Yes** |
 | `prometheus_api/.../agent/task_store.py` | A (per-agent store) | `RedisTaskStore` implementing the A2A `TaskStore` (`save`/`get`/`delete`), wired into `base.py` `DefaultRequestHandler`. | **Yes** |
 | `frontend/utils/a2a_client.py` | frontend | `response_from_payload()`; `ConversationResponse.status` union gains `backgrounded`. | No |
 | `frontend/components/message_handler.py` | frontend | `_handle_backgrounded()` ack + spawn; `_watch_background_task()` watcher. | No |
@@ -172,6 +186,31 @@ run_background_finish(chat_task, …):
 `_BACKGROUND_TASKS` is a module-level `set` holding a strong reference to each detached task (and a
 `add_done_callback(discard)` to drop it) so the event loop doesn't GC an in-flight background task.
 
+### Backgrounded turn (agent-declared, `declare_long_running`)
+
+Same detach machinery, different trigger — and it fires **immediately**, not after a deadline:
+
+```
+specialist agent (e.g. thread-pattern-agent.run_background_task):
+  await self.declare_long_running(context, event_queue, estimate_seconds=…)
+    → emits a non-final working status with metadata={"background": true, "estimate_seconds": …}
+
+client-agent stream consumer (tool_discovery._apply_a2a_stream_event):
+  sees metadata.background on the status event → await background_callback(metadata)
+
+skills.invoke_once._background_callback:
+  task_tracking.request_background()        # sets the turn's asyncio.Event, flags skill + root is_background
+
+service._execute:
+  the bg_evt waiter wins the asyncio.wait race (before the deadline, if any) → detach now
+  → identical backgrounded response + finisher as the deadline path
+```
+
+The turn-scoped `asyncio.Event` lives on the `_Turn` object created in `begin_turn`. Because `chat()` runs
+as a task whose context is *copied* from `_execute` (which holds the same `_Turn` instance by reference), a
+deep `request_background()` call inside the dispatched skill sets the very event `_execute` is waiting on.
+This is the whole reason the signal can cross from inside `chat()` back out to the turn-level race.
+
 ### Frontend delivery (out-of-band)
 
 ```
@@ -220,6 +259,13 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
     slash commands). Tested.
   - **Turn-level detach** — `service._execute` deadline race + `_spawn_background_finisher` +
     `run_background_finish`. Tested.
+  - **Agent-driven detach (`declare_long_running`)** — `PrometheusAgent.declare_long_running` (base image)
+    emits the `metadata.background` status; `tool_discovery` detects it and fires `_background_callback`;
+    `skills` → `task_tracking.request_background()` sets the turn event; `service._execute` races on it and
+    detaches immediately. Wired into the thread-pattern agent's `run_background_task`. Tested
+    (`prometheus_api` declare tests, `tool_discovery` callback tests, `task_tracking` event tests, and a
+    `service._execute` detach-on-signal integration test). **Base-image change** — reaches agent containers
+    only after a base-image rebuild+push and a `PROMETHEUS_API_BASE_IMAGE_HASH` bump.
   - **Frontend `backgrounded` handling** — `a2a_client` `response_from_payload`/status union;
     `message_handler` ack + watcher; `task_events` pub/sub helpers. Tested (frontend suite green).
 
@@ -233,10 +279,11 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
    level and never calls `tasks/get`. Layer A matters for per-agent task durability and the later
    re-attach work, not for shipping Phase 1's UX.
 
-2. **`declare_long_running()` base-class helper (proactive detach).** A specialist that *knows* it will be
-   slow should be able to detach up front rather than waiting out the soft deadline. The design calls for
-   `self.declare_long_running(estimate=…)` emitting an early status with `metadata={"background": true}`.
-   Lives in `prometheus_api` → **base-image change.** Today only *soft promotion* (deadline) exists.
+2. **Base-image roll for `declare_long_running`.** The helper is code-complete in `prometheus_api` and
+   wired through the orchestrator + thread-pattern agent, but (like Layer A) only reaches agent containers
+   after a base-image rebuild+push and a `PROMETHEUS_API_BASE_IMAGE_HASH` bump. Until then the
+   thread-pattern agent's `run_background_task` runs but its `declare_long_running` call is a no-op method on
+   the *old* base image, so no detach happens. Roll the image, then exercise it.
 
 3. **Live `cl.TaskList` progress panel.** The frontend currently posts a one-shot "running in the
    background" ack and a completion message. It does **not** yet render Chainlit's native RUNNING/DONE
@@ -265,29 +312,36 @@ via `model_dump(exclude_none=True)` into the A2A status text part, then parsed b
 
 ## How to finish — concrete next steps
 
-1. **Smoke-test the happy path now (no base-image roll needed):**
-   - Set `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS=5` in the client-agent env.
-   - Issue a query that takes >5 s. Confirm: a `backgrounded` ack appears, `/tasks` shows the root as
-     `working`, and on completion the result is posted out-of-band in the same session.
+1. **Roll the base image** (`prometheus_api`): rebuild + push, bump `PROMETHEUS_API_BASE_IMAGE_HASH` in
+   `docker-compose.yml`. This ships both `RedisTaskStore` (Layer A) and `declare_long_running`.
+
+2. **Exercise the agent-driven path end-to-end** against the thread-pattern agent (no deadline needed):
+   - Invoke its `run_background_task` skill (e.g. `duration_seconds=60`).
+   - Confirm: a `backgrounded` ack appears almost immediately, `/tasks` shows the root `working` and
+     `is_background`, and on completion the result is posted out-of-band in the same session.
    - Verify Redis: `tasks:node:{conv}:{root}` flips to `completed`, `tasks:result:{conv}:{root}` holds the
      payload, and a `node-completed` event is published.
+   - Also smoke-test the time-based path: set `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS=5` and issue any
+     query that takes >5 s.
 
-2. **Build the `cl.TaskList` panel** (`frontend`, no base image):
+3. **Build the `cl.TaskList` panel** (`frontend`, no base image):
    - Do the context-propagation spike first (mutate a `cl.TaskList` from the existing watcher coroutine).
    - On `node-created`/`node-updated`/`node-completed`/`node-failed`, upsert a `cl.Task` keyed by `task_id`,
      mapping graph state → `cl.TaskStatus`. The watcher already has the event stream.
 
-3. **Ship Layer A** (`prometheus_api`, base image): rebuild + push the base image, bump
-   `PROMETHEUS_API_BASE_IMAGE_HASH`. Then add `declare_long_running()` to `PrometheusAgent` and re-roll.
-
-4. **Add the slow-agent integration test**, then **flip the deadline on** per environment.
+4. **Flip `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` on** per environment once satisfied (the agent-driven
+   path needs no flip — it's live as soon as the base image ships).
 
 ---
 
 ## Gotchas for the next developer
 
-- **The default is off.** If you can't reproduce backgrounding, check
-  `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS` — `0`/unset means the detach branch is never taken.
+- **Two triggers, one of them off by default.** Time-based detach needs
+  `PROMETHEUS_BACKGROUND_DEADLINE_SECONDS > 0`. Agent-driven detach (`declare_long_running`) is always live
+  *but only on the new base image* — on an un-rolled image the method is absent/no-op and nothing detaches.
+- **The background signal rides a turn-scoped `asyncio.Event` via a copied context.** `request_background()`
+  must run within the same turn whose `_Turn` was set by `begin_turn` — i.e. inside `chat()` (whose context
+  is copied from `_execute`). Calling it outside a turn is a silent no-op.
 - **Two key definitions, one contract.** `task_events.py` (frontend) and `task_graph.py` (client-agent)
   each define the Redis key/channel names. Keep them identical.
 - **`message_metadata.task_id` is load-bearing.** No `task_id` → the frontend acks but can't watch

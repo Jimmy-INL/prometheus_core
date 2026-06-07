@@ -19,6 +19,7 @@ See ``docs/dev-docs/background-tasks.md``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -58,13 +59,18 @@ def _clean_title(title: str, limit: int = 80) -> str:
 
 
 class _Turn:
-    __slots__ = ("conversation_id", "title", "root_id", "created")
+    __slots__ = ("conversation_id", "title", "root_id", "created", "background_requested")
 
     def __init__(self, conversation_id: str, title: str) -> None:
         self.conversation_id = conversation_id
         self.title = title
         self.root_id = _new_id()
         self.created = False
+        # Set when a dispatched agent declares itself long-running (proactive
+        # detach). The turn object is created once per turn and shared by
+        # reference into the detached chat() task's copied context, so a deep
+        # call setting this event is observed by the waiter in service._execute.
+        self.background_requested = asyncio.Event()
 
 
 _turn: ContextVar[Optional[_Turn]] = ContextVar("task_turn", default=None)
@@ -102,6 +108,35 @@ def _ensure_root() -> Optional[str]:
 def current_root_id() -> Optional[str]:
     turn = _turn.get()
     return turn.root_id if turn is not None else None
+
+
+def background_event() -> Optional[asyncio.Event]:
+    """The current turn's proactive-detach signal, or ``None`` outside a turn.
+
+    ``service._execute`` races ``chat()`` against this event so an agent that
+    calls ``declare_long_running`` detaches the turn immediately, regardless of
+    the soft-deadline setting.
+    """
+    turn = _turn.get()
+    return turn.background_requested if turn is not None else None
+
+
+def request_background(node_id: Optional[str] = None) -> None:
+    """Signal that the current turn should detach now (an agent declared itself
+    long-running). Idempotent. Also flags the dispatched skill node — and the
+    turn root — as background so ``/tasks`` and percolation reflect it."""
+    turn = _turn.get()
+    if turn is None:
+        return
+    turn.background_requested.set()
+    node_id = node_id or _nested_parent.get()
+    for tid in (node_id, turn.root_id if turn.created else None):
+        if not tid:
+            continue
+        try:
+            task_graph.update_own_state(turn.conversation_id, tid, is_background=True)
+        except Exception as exc:
+            logger.warning("[TASKTRACK] Failed to flag background node %s: %s", tid, exc)
 
 
 def _own_state_for_status(status: str) -> Optional[str]:
