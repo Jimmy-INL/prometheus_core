@@ -1,6 +1,6 @@
 # Prometheus Platform Agent Output Contract
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Status:** Draft  
 **Audience:** Frontend (prometheus-frontend) + Backend agent authors
 
@@ -57,17 +57,17 @@ cl.Text(name="summary", content="...", display="inline", language="markdown")
 
 ## Custom elements
 
-For structured interactive output that needs a purpose-built viewer, use `cl.CustomElement`. The `name` field determines which viewer component handles it. **Do not invent new names** without a corresponding frontend viewer being registered first : coordinate with the frontend team.
+For structured interactive output that needs a purpose-built viewer, use `cl.CustomElement`. On the wire this arrives as `type: "custom"` — do not use any other type string. The `name` field determines which viewer component handles it. **Do not invent new names** without a corresponding frontend viewer being registered first : coordinate with the frontend team.
 
 ### Registered custom element names
 
-| `name` | Purpose | Required `props` keys |
-|---|---|---|
-| `PlanViewer` | Execution plan approval | `steps: {title, description}[]` |
-| `DynamicForm` | Structured data collection | `fields: FormField[]`, `submitLabel?: string` |
-| `FollowUpSuggestions` | Clickable follow-up prompts | `suggestions: string[]` |
-| `IFCViewer` | 3D IFC model viewer | `url: string` |
-| `CollapsibleJson` | Raw JSON inspection | `data: object`, `label?: string` |
+| `name` | Purpose | Required `props` keys | Notes |
+|---|---|---|---|
+| `PlanViewer` | Execution plan approval | `steps: {title, description}[]`  |
+| `DynamicForm` | Structured data collection | `fields: FormField[]`, `submitLabel?: string`  |
+| `FollowUpSuggestions` | Clickable follow-up prompts | `suggestions: string[]`  |
+| `IFCViewer` | 3D IFC model viewer | `url: string` | name unconfirmed, verify before use |
+| `CollapsibleJson` | Raw JSON inspection | `data: object`, `label?: string`  |
 
 #### Example: PlanViewer
 ```python
