@@ -4,31 +4,17 @@ A2A JSON-RPC client for communicating with the client-agent.
 import asyncio
 import json
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import httpx
 
-
-@dataclass
-class ConversationResponse:
-    """Parsed response from the client-agent."""
-
-    conversation_id: str
-    # "needs_info" | "plan_ready" | "executing" | "completed" | "recommendation"
-    # | "answer" | "backgrounded"
-    status: str
-    message: Optional[str] = None
-    followup_questions: Optional[List[Dict]] = None
-    plan: Optional[Dict] = None
-    report: Optional[str] = None
-    tool_results: Optional[Dict] = None
-    response_text: Optional[str] = None
-    recommended_materials: Optional[List[str]] = None
-    artifacts: Optional[List[Dict[str, Any]]] = None  # full conversation catalog
-    new_artifacts: Optional[List[Dict[str, Any]]] = None  # only produced this turn
-    message_metadata: Optional[Dict[str, Any]] = None
+# Canonical wire contract shared with the client-agent. Re-exported here so
+# frontend modules keep importing ConversationResponse from utils.a2a_client.
+from prometheus_api.contract import (  # noqa: F401
+    ConversationResponse,
+    ConversationStatus,
+)
 
 
 def response_from_payload(data: Dict[str, Any]) -> ConversationResponse:
@@ -36,20 +22,7 @@ def response_from_payload(data: Dict[str, Any]) -> ConversationResponse:
 
     Shared by the streaming parser and the background-task notifier (which
     renders a persisted result payload after a detached turn completes)."""
-    return ConversationResponse(
-        conversation_id=data.get("conversation_id", ""),
-        status=data.get("status", "answer"),
-        message=data.get("message"),
-        followup_questions=data.get("followup_questions"),
-        plan=data.get("plan"),
-        report=data.get("report"),
-        tool_results=data.get("tool_results"),
-        response_text=data.get("response_text"),
-        recommended_materials=data.get("recommended_materials"),
-        artifacts=data.get("artifacts"),
-        new_artifacts=data.get("new_artifacts"),
-        message_metadata=data.get("message_metadata"),
-    )
+    return ConversationResponse.from_payload(data)
 
 
 class A2AClient:
@@ -147,7 +120,8 @@ class A2AClient:
                     "contextId": conversation_id,
                     "parts": [
                         {
-                            "type": "text",
+                            # "kind" is the A2A SDK part discriminator
+                            "kind": "text",
                             "text": json.dumps(payload),
                         }
                     ],
@@ -274,7 +248,7 @@ class A2AClient:
             if not isinstance(part, dict):
                 continue
             root = part.get("root") if isinstance(part.get("root"), dict) else None
-            part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+            part_kind = str(part.get("kind") or (root or {}).get("kind") or "").strip().lower()
             if part_kind != "text":
                 continue
             text = part.get("text")
@@ -333,7 +307,7 @@ class A2AClient:
             if not isinstance(part, dict):
                 continue
             root = part.get("root") if isinstance(part.get("root"), dict) else None
-            part_kind = str(part.get("kind") or part.get("type") or (root or {}).get("kind") or "").strip().lower()
+            part_kind = str(part.get("kind") or (root or {}).get("kind") or "").strip().lower()
             if part_kind != "text":
                 continue
             text = part.get("text")

@@ -37,9 +37,9 @@ def test_frontend_serves_on_port(frontend_base_url):
 
 
 def test_frontend_shared_mount_visible(docker_compose_up):
-    """The bind mount for shared/ should make a2a_protocol.py visible inside the container."""
+    """The bind mount for shared/ should be visible inside the container."""
     result = subprocess.run(
-        ["docker", "exec", "chainlit-frontend", "ls", "/app/shared/a2a_protocol.py"],
+        ["docker", "exec", "chainlit-frontend", "ls", "/app/shared/__init__.py"],
         capture_output=True,
         text=True,
     )

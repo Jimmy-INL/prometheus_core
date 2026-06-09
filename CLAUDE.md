@@ -100,7 +100,7 @@ Custom React/JSX components live in `frontend/public/elements/` (MeshViewer, IFC
 
 ### Shared protocol types
 
-`shared/a2a_protocol.py` holds Pydantic models for the A2A wire format and is mounted into every container at `/app/shared` via the `*common-volumes` anchor in `docker-compose.yml`. Changes here ripple to every agent on next restart.
+The frontend ↔ client-agent wire contract (`ConversationRequest`, `ConversationResponse`, `ConversationStatus`) lives in `prometheus_api.contract` (in the `prometheus_api` repo, available in every container via the base image). The frontend re-exports it from `frontend/utils/a2a_client.py` and the client-agent from `orchestrator/models.py` — change it in `prometheus_api`, not here. The raw A2A wire types (messages, parts, tasks) come from the `a2a-sdk`. The `shared/` directory is still mounted into every container at `/app/shared` via the `*common-volumes` anchor in `docker-compose.yml`, but only as a scratch file-exchange area (e.g. `shared/artifact-debug/`).
 
 ## Configuration & secrets
 

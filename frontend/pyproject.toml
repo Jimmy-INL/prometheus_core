@@ -24,7 +24,14 @@ dev = [
     "types-pyyaml>=6.0.12.20250915",
     "types-requests>=2.32.4.20260107",
     "respx>=0.22.0",
+    # Local dev/tests import prometheus_api.contract; in Docker the package
+    # comes preinstalled from the prometheus_api base image (--no-dev skips
+    # this entry, so the sibling checkout is not needed at image build time).
+    "prometheus-api",
 ]
+
+[tool.uv.sources]
+prometheus-api = { path = "../../prometheus_api", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

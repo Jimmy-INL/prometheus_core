@@ -7,12 +7,7 @@ import sys
 from pathlib import Path
 import types
 
-CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
-if str(CLIENT_AGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CLIENT_AGENT_DIR))
-PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
-if str(PROMETHEUS_API_DIR) not in sys.path:
-    sys.path.insert(0, str(PROMETHEUS_API_DIR))
+# sys.path setup (client-agent dir + prometheus_api contract) lives in conftest.py
 
 if "langchain_core.tools" not in sys.modules:
     tools_module = types.ModuleType("langchain_core.tools")

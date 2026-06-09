@@ -175,8 +175,8 @@ prometheus_platform/
     (debug) material-data-agent/    # Material data retrieval
     (debug) synthesis-agent/        # Report synthesis
 
-  shared/
-    a2a_protocol.py         # Pydantic models for A2A protocol (mounted into every agent)
+  shared/                   # Scratch file-exchange area (mounted into every agent);
+                            # wire-contract models live in prometheus_api.contract
 
   tests/                    # Infrastructure / integration tests for the full stack
   docs/                     # Project documentation (Zensical site)

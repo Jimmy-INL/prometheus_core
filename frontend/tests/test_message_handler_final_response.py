@@ -47,7 +47,7 @@ def test_handle_final_response_renders_artifacts_from_artifacts_list(monkeypatch
 
     response = ConversationResponse(
         conversation_id="conv-1",
-        status="success",
+        status="completed",
         message=json.dumps(
             {
                 "status": "success",

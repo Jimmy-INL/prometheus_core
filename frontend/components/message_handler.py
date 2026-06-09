@@ -267,7 +267,7 @@ async def _handle_response(
         await _handle_needs_info(client, response, original_query, conversation_id, _depth=_depth)
     elif response.status == "plan_ready":
         await _handle_plan_ready(client, response, original_query, conversation_id)
-    elif response.status in ("completed", "answer", "recommendation", "success"):
+    elif response.status in ("completed", "answer", "recommendation"):
         await _handle_final_response(response)
     elif response.status == "executing":
         await cl.Message(content=response.message or "Agent is executing the plan…").send()
