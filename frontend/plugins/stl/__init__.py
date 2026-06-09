@@ -17,7 +17,9 @@ from plugins import (
 )
 
 MIMETYPES = [
-    "model/stl",
+    "model/stl",  # registered IANA type
+    "application/stl",  # common informal type (e.g. emitted by agents)
+    "application/x-stl",
     "application/sla",
     "application/vnd.ms-pki.stl",
     "model/x.stl-binary",

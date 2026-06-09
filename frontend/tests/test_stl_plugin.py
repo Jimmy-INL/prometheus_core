@@ -81,9 +81,21 @@ def test_inspect_stl_counts_and_rejects_non_stl(tmp_path: Path) -> None:
 # --- plugin routing ----------------------------------------------------------
 
 
-def test_stl_plugin_registered_for_mime() -> None:
-    plugin = plugins.find_plugin_for_artifact({"mime_type": "model/stl"})
-    assert plugin is not None
+@pytest.mark.parametrize(
+    "mime",
+    [
+        "model/stl",
+        "application/stl",  # what agents commonly emit (regression: was "no viewer available")
+        "application/x-stl",
+        "application/sla",
+        "application/vnd.ms-pki.stl",
+    ],
+)
+def test_stl_plugin_registered_for_mime(mime: str) -> None:
+    # Agent-emitted artifacts dispatch purely by mime_type, so every STL mime
+    # variant we accept must route to the viewer.
+    plugin = plugins.find_plugin_for_artifact({"mime_type": mime})
+    assert plugin is not None, f"no plugin for {mime}"
     assert plugin.COMPONENT_NAME == "MeshViewer"  # reuses the shared viewer
 
 
