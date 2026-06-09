@@ -592,7 +592,7 @@ You don't normally need to build manually — `docker compose up` does it. But t
 
 ```bash
 # Get the current hash from prometheus_platform/Makefile or your .env
-export PROMETHEUS_API_BASE_IMAGE_HASH=ebec194
+export PROMETHEUS_API_BASE_IMAGE_HASH=2b3dbcf
 
 docker build \
   --build-arg PROMETHEUS_API_BASE_IMAGE_HASH=$PROMETHEUS_API_BASE_IMAGE_HASH \
