@@ -25,5 +25,5 @@ Prometheus is a multi-agent analysis platform for nuclear engineering, built as 
 - [Adding agents](dev-docs/adding-agents.md) -- How to create and register new specialist agents
 - [Artifacts](dev-docs/artifacts.md) -- Artifact types, handling, and rendering
 - [Message and artifact requirements](dev-docs/message-artifact-requirements.md) -- Target wire-format requirements for multi-agent messaging and artifact rendering
-- [Visualization plugins](dev-docs/visualization-plugins.md) -- ExodusViewer, IFCViewer, MermaidViewer, DynamicForm, PlanViewer
+- [Visualization plugins](dev-docs/visualization-plugins.md) -- MeshViewer (Exodus/STL), IFCViewer, MermaidViewer, DynamicForm, PlanViewer
 - [Migration guide](dev-docs/migration.md) -- What changed from the original projects and why
