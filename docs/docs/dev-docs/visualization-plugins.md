@@ -2,6 +2,9 @@
 
 The Chainlit frontend includes custom React elements for rendering specialized content. These are located in `frontend/public/elements/` and are rendered via Chainlit's `cl.CustomElement` API.
 
+> **Future:** letting *agents* ship their own viewers (rendered in a sandboxed iframe, not baked into the
+> frontend) is designed in [`agent-provided-plugins.md`](../../dev-docs/agent-provided-plugins.md).
+
 ## ExodusViewer
 
 Renders Exodus II simulation meshes using VTK.js.
