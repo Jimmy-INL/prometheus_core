@@ -1,7 +1,6 @@
 {
   "name": "Artifact Debug Agent",
   "description": "Creates and converts debug artifacts so artifact references, routing, and UI rendering can be validated end-to-end.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,

@@ -1,7 +1,6 @@
 {
   "name": "Thermal Analysis Agent",
   "description": "Specialist agent for thermal analysis of nuclear reactor materials. Evaluates thermal fatigue, creep behavior, thermal conductivity degradation, and temperature distribution effects on material performance.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
