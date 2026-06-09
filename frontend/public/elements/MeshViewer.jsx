@@ -532,9 +532,13 @@ function Colorbar({ styles, preset, min, max, variable, compact = false }) {
 }
 
 /**
- * ExodusViewer - VTK.js based viewer for Exodus II datasets.
+ * MeshViewer - VTK.js based viewer for VTP mesh datasets (Exodus, STL, …).
+ *
+ * Source-agnostic: driven by a manifest of VTP files. With multiple timesteps it
+ * shows playback controls; with field variables it shows a variable selector and
+ * colorbar; with neither (e.g. an STL) it just renders the geometry.
  */
-export default function ExodusViewer() {
+export default function MeshViewer() {
   const containerRef = useRef(null);
   const viewerContainerRef = useRef(null);
   const vtkState = useRef(null);
@@ -905,7 +909,7 @@ export default function ExodusViewer() {
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.title}>
-          <span>Exodus Viewer</span>
+          <span>{props.title || 'Mesh Viewer'}</span>
           <span style={styles.badge}>{datasetId}</span>
         </div>
         <div style={styles.headerButtons}>

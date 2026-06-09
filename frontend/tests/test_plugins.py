@@ -42,7 +42,7 @@ async def test_inspect_upload_uses_mime_type_for_temp_paths(tmp_path: Path) -> N
 
     assert match is not None
     assert match.mime_type == "application/x-exodus"
-    assert match.plugin.COMPONENT_NAME == "ExodusViewer"
+    assert match.plugin.COMPONENT_NAME == "MeshViewer"
 
 
 @pytest.mark.asyncio

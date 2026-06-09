@@ -3,15 +3,13 @@
 STL is the simplest case of the existing Exodus VTK pipeline: a single static
 surface with no timesteps and no field variables. So an STL file is converted to
 exactly the same VTP + ``manifest.json`` + ``meta.json`` output the Exodus path
-produces and rendered by the **same** ``ExodusViewer`` element (which already
+produces and rendered by the **same** ``MeshViewer`` element (which already
 degrades to "one timestep, no variables" — it just shows the geometry).
 
 This module reuses the Exodus pipeline's polydata helpers (`clean_polydata`,
-`compute_normals`, `write_vtp`), the content-hash cache, and the `ExodusDataset`
-wrapper; it only swaps the reader (`vtkSTLReader`) and the metadata extraction.
-
-(Step B will generalize the Exodus-named types into a neutral mesh viewer; this
-module deliberately reuses them as-is for now.)
+`compute_normals`, `write_vtp`), the content-hash cache, and the shared
+`MeshDataset` wrapper; it only swaps the reader (`vtkSTLReader`) and the metadata
+extraction.
 """
 
 import asyncio
@@ -25,7 +23,7 @@ from utils.settings import settings
 
 from .exodus.cache import compute_dataset_id, get_cache_path, is_cached
 from .exodus.vtk_pipeline import clean_polydata, compute_normals, write_vtp
-from .exodus_integration import ExodusDataset, _vtk_executor
+from .mesh_view import MeshDataset, _vtk_executor
 
 
 class InvalidSTLFileError(Exception):
@@ -112,7 +110,7 @@ def _convert_stl_sync(file_path: Path, output_dir: Path) -> dict:
     """Convert an STL file to a single VTP plus manifest/meta. Returns the metadata.
 
     Mirrors the output contract of ``exodus.vtk_pipeline.run_conversion`` so the
-    result renders identically in ``ExodusViewer``.
+    result renders identically in the shared ``MeshViewer``.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     polydata = _read_stl_polydata(file_path)
@@ -134,16 +132,16 @@ async def process_stl_upload(
     file_path: Path,
     output_dir: Path | None = None,
     cache: bool = True,
-) -> ExodusDataset:
+) -> MeshDataset:
     """Convert an STL file (upload or agent artifact) into a renderable dataset.
 
     Runs the VTK conversion off the event loop in the shared thread pool, reuses
-    the content-hash cache, and returns an ``ExodusDataset`` whose
-    ``to_chainlit_element()`` yields the shared ``ExodusViewer``.
+    the content-hash cache, and returns a ``MeshDataset`` whose
+    ``to_chainlit_element()`` yields the shared ``MeshViewer``.
     """
     file_path = Path(file_path)
 
-    cache_root = settings.exodus_data_dir if cache else None
+    cache_root = settings.mesh_data_dir if cache else None
     if cache_root is not None:
         dataset_id = compute_dataset_id(file_path, {"type": "stl"})
         resolved_dir = get_cache_path(cache_root, dataset_id)
@@ -152,26 +150,28 @@ async def process_stl_upload(
                 manifest = json.load(f)
             with open(resolved_dir / "meta.json") as f:
                 metadata = json.load(f)
-            return ExodusDataset(
+            return MeshDataset(
                 dataset_id=dataset_id,
                 source_path=file_path,
                 output_dir=resolved_dir,
                 metadata=metadata,
                 manifest=manifest,
+                title="STL Viewer",
             )
     else:
         dataset_id = str(uuid.uuid4())[:8]
-        resolved_dir = output_dir or (settings.exodus_data_dir / dataset_id)
+        resolved_dir = output_dir or (settings.mesh_data_dir / dataset_id)
 
     loop = asyncio.get_event_loop()
     metadata = await loop.run_in_executor(_vtk_executor, lambda: _convert_stl_sync(file_path, resolved_dir))
     with open(resolved_dir / "manifest.json") as f:
         manifest = json.load(f)
 
-    return ExodusDataset(
+    return MeshDataset(
         dataset_id=dataset_id,
         source_path=file_path,
         output_dir=resolved_dir,
         metadata=metadata,
         manifest=manifest,
+        title="STL Viewer",
     )

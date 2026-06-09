@@ -1,8 +1,8 @@
 """STL mesh visualization plugin.
 
-Renders STL files through the shared VTK→VTP→``ExodusViewer`` pipeline (see
+Renders STL files through the shared VTK→VTP→``MeshViewer`` pipeline (see
 ``components/stl_integration.py``). Handles both user uploads and agent-emitted
-STL artifacts. No JSX of its own — it reuses ``ExodusViewer``.
+STL artifacts. No JSX of its own — it reuses the shared ``MeshViewer``.
 """
 
 from pathlib import Path
@@ -24,7 +24,7 @@ MIMETYPES = [
     "model/x.stl-ascii",
 ]
 UPLOAD_EXTENSIONS = [".stl"]
-COMPONENT_NAME = "ExodusViewer"  # reuse the shared VTK viewer
+COMPONENT_NAME = "MeshViewer"  # shared VTK viewer (public/elements/MeshViewer.jsx)
 
 
 def _resolve_path(uri: str) -> Optional[Path]:

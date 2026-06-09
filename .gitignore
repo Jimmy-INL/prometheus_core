@@ -5,7 +5,7 @@
 */.venv
 
 frontend/.files/
-frontend/public/exodus-data/*/*
+frontend/public/mesh-data/*/*
 frontend/public/ifc-data/*/*
 
 *.py[oc]

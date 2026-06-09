@@ -1,4 +1,4 @@
-"""Tests for STL rendering via the shared VTK/ExodusViewer pipeline."""
+"""Tests for STL rendering via the shared VTK/MeshViewer pipeline."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def test_inspect_stl_counts_and_rejects_non_stl(tmp_path: Path) -> None:
 def test_stl_plugin_registered_for_mime() -> None:
     plugin = plugins.find_plugin_for_artifact({"mime_type": "model/stl"})
     assert plugin is not None
-    assert plugin.COMPONENT_NAME == "ExodusViewer"  # reuses the shared viewer
+    assert plugin.COMPONENT_NAME == "MeshViewer"  # reuses the shared viewer
 
 
 @pytest.mark.asyncio
@@ -101,7 +101,7 @@ async def test_inspect_upload_matches_declared_stl_mime(tmp_path: Path) -> None:
     )
     assert match is not None
     assert match.mime_type == "model/stl"
-    assert match.plugin is not None and match.plugin.COMPONENT_NAME == "ExodusViewer"
+    assert match.plugin is not None and match.plugin.COMPONENT_NAME == "MeshViewer"
 
 
 @pytest.mark.asyncio
