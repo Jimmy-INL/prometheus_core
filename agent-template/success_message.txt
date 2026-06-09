@@ -10,16 +10,22 @@ Next steps:
   3. Edit agent_card.json (description, inputSchema) and agent.py (_execute)
 
 Run locally (fast iteration):
-  uv venv && source .venv/bin/activate
-  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git
-  uv pip install -e .            # install your extra dependencies, if any
+  uv sync                        # creates .venv with your deps + dev tools
+  source .venv/bin/activate
+  # Install prometheus_api pinned to the platform's base image hash
+  # (PROMETHEUS_API_BASE_IMAGE_HASH in your .env), so local dev matches
+  # what runs in the container:
+  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git@<hash>
   AGENT_SECRET_REQUIRED=false python agent.py
+
+Run the tests (extend tests/test_agent.py as you implement your logic):
+  uv run pytest
+  uv run ruff check .
 
 Run with Docker (integration testing / deployment):
   # Set PROMETHEUS_API_BASE_IMAGE_HASH in .env first.
   docker compose up --build
 
 Edit the network block in docker-compose.yml to match your deployment
-(external repo vs. in-tree).  See TUTORIAL.md for the full walkthrough.
-
-For more information, see the README.md in your agent directory.
+(external repo vs. in-tree).  See the full walkthrough:
+https://github.inl.gov/genesis/prometheus_agent_template/blob/main/TUTORIAL.md

@@ -25,9 +25,13 @@ base image — do **not** add them to `pyproject.toml`.
 ```bash
 cp .env.example .env          # then fill in real values
 
-uv venv && source .venv/bin/activate
-uv pip install git+https://github.inl.gov/genesis/prometheus_api.git
-uv pip install -e .           # your extra dependencies, if any
+uv sync                       # creates .venv with your deps + dev tools (pytest, ruff)
+source .venv/bin/activate
+
+# Install prometheus_api pinned to the platform's base image hash
+# (PROMETHEUS_API_BASE_IMAGE_HASH in your .env) so local dev matches the
+# container. Re-run this when the platform bumps the hash.
+uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@$(grep -E '^PROMETHEUS_API_BASE_IMAGE_HASH=' .env | cut -d= -f2)"
 
 AGENT_SECRET_REQUIRED=false python agent.py
 ```
@@ -46,15 +50,24 @@ curl -s -X POST http://localhost:8000 \
       "message": {
         "messageId": "msg-1",
         "role": "user",
-        "parts": [{"kind": "text", "text": "{\"input_data\": \"hello\"}"}]
-      },
-      "metadata": {"skillId": "TEMPLATE_SKILL_ID"}
+        "parts": [{"kind": "text", "text": "{\"input_data\": \"hello\"}"}],
+        "metadata": {"skillId": "TEMPLATE_SKILL_ID"}
+      }
     }
   }' | python -m json.tool
 ```
 
+(`skillId` lives in `message.metadata` — that is where the base class reads it.)
+
 Without Redis, per-conversation state and the artifact registry fall back to an
 in-memory dict — fine for local development.
+
+## Run the tests
+
+```bash
+uv run pytest                 # tests/ — extend as you implement _execute
+uv run ruff check .           # lint
+```
 
 ## Run with Docker
 
