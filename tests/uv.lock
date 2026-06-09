@@ -801,8 +801,8 @@ wheels = [
 
 [[package]]
 name = "prometheus-api"
-version = "0.7.0"
-source = { git = "https://github.inl.gov/genesis/prometheus_api.git?branch=fable5_review#ebec1943a7fbd0a2c9addf110d7cc3d351b9cc70" }
+version = "0.8.0"
+source = { git = "https://github.inl.gov/genesis/prometheus_api.git?branch=fable5_review#2b3dbcf341df505bae24b46cf336b2d4428f52cd" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "fsspec" },
@@ -812,6 +812,7 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "redis" },
     { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
 ]

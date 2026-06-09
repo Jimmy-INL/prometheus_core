@@ -125,6 +125,8 @@ if "prometheus_api.agent" not in sys.modules:
     sys.modules["prometheus_api"] = prometheus_api_module
     sys.modules["prometheus_api.agent"] = agent_module
 
+import prometheus_api.a2a_stream as a2a_stream
+
 import tool_discovery
 
 
@@ -598,7 +600,7 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
                 sse_lines.append("")
             return _FakeStreamingResponse(sse_lines, content_type="text/event-stream")
 
-    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+    monkeypatch.setattr(a2a_stream.httpx, "AsyncClient", _StreamingClient)
 
     result = asyncio.run(
         tool_discovery.call_a2a_agent(
@@ -685,7 +687,7 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
         def stream(self, method, url, **kwargs):
             return _FakeStreamingResponse(streamed_lines, content_type="application/x-ndjson")
 
-    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+    monkeypatch.setattr(a2a_stream.httpx, "AsyncClient", _StreamingClient)
 
     result = asyncio.run(
         tool_discovery.call_a2a_agent(
@@ -720,7 +722,7 @@ def test_apply_stream_event_fires_background_callback_on_flag() -> None:
         }
     }
     asyncio.run(
-        tool_discovery._apply_a2a_stream_event(
+        a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg
         )
     )
@@ -738,7 +740,7 @@ def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
 
     envelope = {"result": {"kind": "status-update", "metadata": {"heartbeat": True, "background": True}}}
     asyncio.run(
-        tool_discovery._apply_a2a_stream_event(
+        a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg
         )
     )

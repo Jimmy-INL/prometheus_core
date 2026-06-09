@@ -13,6 +13,7 @@ import httpx
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, create_model
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
+from prometheus_api.a2a_stream import stream_a2a_request
 
 logger = logging.getLogger(__name__)
 
@@ -40,165 +41,6 @@ def _litellm_headers() -> Dict[str, str]:
 
 def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
-
-
-def _extract_status_message_text(status_payload: Dict[str, Any]) -> str:
-    """Extract plain text from a status.message payload."""
-    message = status_payload.get("message", {}) if isinstance(status_payload, dict) else {}
-    parts = message.get("parts", []) if isinstance(message, dict) else []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        if str(part.get("kind") or "").strip().lower() == "text":
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-    return ""
-
-
-def _merge_a2a_artifacts(
-    existing: List[Dict[str, Any]],
-    incoming: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Merge artifacts while preserving order and avoiding duplicates."""
-    merged: List[Dict[str, Any]] = list(existing or [])
-    seen = {
-        str(item.get("artifactId") or item.get("name") or "")
-        for item in merged
-        if isinstance(item, dict)
-    }
-    for artifact in incoming or []:
-        if not isinstance(artifact, dict):
-            continue
-        key = str(artifact.get("artifactId") or artifact.get("name") or "")
-        if key and key in seen:
-            continue
-        if key:
-            seen.add(key)
-        merged.append(artifact)
-    return merged
-
-
-async def _apply_a2a_stream_event(
-    a2a_result: Dict[str, Any],
-    envelope: Dict[str, Any],
-    status_callback: Optional[StatusCallback] = None,
-    background_callback: Optional[BackgroundCallback] = None,
-) -> Dict[str, Any]:
-    if "error" in envelope:
-        logger.error("[A2A] Agent returned stream error: %s", envelope["error"])
-        raise Exception(f"Agent error: {envelope['error']}")
-
-    event = envelope.get("result", {})
-    if not isinstance(event, dict):
-        return a2a_result
-
-    # Heartbeat keepalives exist only to hold the connection open; they carry no
-    # payload, so skip them before they can overwrite accumulated status/artifacts.
-    event_metadata = event.get("metadata")
-    if isinstance(event_metadata, dict) and event_metadata.get("heartbeat"):
-        return a2a_result
-
-    # declare_long_running: the agent asks the orchestrator to detach this turn.
-    if background_callback and isinstance(event_metadata, dict) and event_metadata.get("background"):
-        await background_callback(event_metadata)
-
-    kind = str(event.get("kind") or "").strip().lower()
-    if kind == "status-update":
-        a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
-        a2a_result["contextId"] = event.get("contextId") or a2a_result.get("contextId")
-        a2a_result["status"] = event.get("status", {})
-        status_text = _extract_status_message_text(a2a_result["status"])
-        if status_callback and status_text and not bool(event.get("final")):
-            await status_callback(status_text)
-    elif kind == "artifact-update":
-        artifact = event.get("artifact")
-        if isinstance(artifact, dict):
-            a2a_result["artifacts"] = _merge_a2a_artifacts(
-                a2a_result.get("artifacts", []),
-                [artifact],
-            )
-
-    return a2a_result
-
-
-async def _stream_a2a_agent(
-    endpoint: str,
-    message: Dict[str, Any],
-    headers: Dict[str, str],
-    timeout_seconds: float,
-    status_callback: Optional[StatusCallback] = None,
-    background_callback: Optional[BackgroundCallback] = None,
-) -> Dict[str, Any]:
-    """Stream A2A task updates and collapse them into a final task payload."""
-    a2a_result: Dict[str, Any] = {
-        "kind": "task",
-        "artifacts": [],
-    }
-
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        stream_headers = {
-            **headers,
-            "Accept": "text/event-stream, application/x-ndjson",
-        }
-        async with client.stream(
-            "POST",
-            endpoint,
-            json=message,
-            headers=stream_headers,
-        ) as response:
-            logger.debug("[A2A] Stream response status: %s", response.status_code)
-            response.raise_for_status()
-
-            content_type = str(response.headers.get("content-type") or "").lower()
-
-            if "application/x-ndjson" in content_type:
-                async for line in response.aiter_lines():
-                    payload = str(line or "").strip()
-                    if not payload:
-                        continue
-                    envelope = json.loads(payload)
-                    a2a_result = await _apply_a2a_stream_event(
-                        a2a_result,
-                        envelope,
-                        status_callback=status_callback,
-                        background_callback=background_callback,
-                    )
-            elif "text/event-stream" in content_type:
-                data_lines: List[str] = []
-                async for line in response.aiter_lines():
-                    raw_line = str(line or "")
-                    stripped = raw_line.strip()
-                    if not stripped:
-                        if data_lines:
-                            envelope = json.loads("\n".join(data_lines))
-                            a2a_result = await _apply_a2a_stream_event(
-                                a2a_result,
-                                envelope,
-                                status_callback=status_callback,
-                                background_callback=background_callback,
-                            )
-                            data_lines = []
-                        continue
-                    if stripped.startswith(":"):
-                        continue
-                    if stripped.startswith("data:"):
-                        data_lines.append(stripped[5:].lstrip())
-
-                if data_lines:
-                    envelope = json.loads("\n".join(data_lines))
-                    a2a_result = await _apply_a2a_stream_event(
-                        a2a_result,
-                        envelope,
-                        status_callback=status_callback,
-                        background_callback=background_callback,
-                    )
-            else:
-                raise Exception(
-                    f"Unsupported streaming content type from A2A proxy: {content_type or 'unknown'}"
-                )
-
-    return a2a_result
 
 
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
@@ -546,11 +388,11 @@ async def call_a2a_agent(
             # /message/stream sub-route.
             stream_endpoint = agent_url.rstrip("/")
             logger.debug("[A2A] Using streaming invocation via %s", stream_endpoint)
-            a2a_result = await _stream_a2a_agent(
+            a2a_result = await stream_a2a_request(
                 stream_endpoint,
                 stream_message,
-                headers,
-                timeout_seconds,
+                headers=headers,
+                timeout_seconds=timeout_seconds,
                 status_callback=_status_callback if callable(_status_callback) else None,
                 background_callback=_background_callback if callable(_background_callback) else None,
             )

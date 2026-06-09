@@ -13,21 +13,29 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-try:
+def _import_light_modules() -> None:
+    # The dependency-light prometheus_api modules the client-agent imports at
+    # module level (the heavy agent runtime is stubbed by individual tests).
+    import prometheus_api.a2a_stream  # noqa: F401
     import prometheus_api.contract  # noqa: F401
+    import prometheus_api.redis_utils  # noqa: F401
+
+
+try:
+    _import_light_modules()
 except ImportError:
     # Convenience fallback for a side-by-side checkout of prometheus_api.
-    # prometheus_api.contract is dependency-light (pydantic only), so this
-    # works without the agent runtime (a2a-sdk, litellm) installed.
+    # These modules need only pydantic/httpx/redis, so this works without the
+    # agent runtime (a2a-sdk, litellm) installed.
     _SIBLING = Path(__file__).resolve().parents[4] / "prometheus_api"
     if _SIBLING.is_dir():
         sys.path.insert(0, str(_SIBLING))
     try:
-        import prometheus_api.contract  # noqa: F401
+        _import_light_modules()
     except ImportError as exc:  # no sibling checkout either — tell the dev what to do
         raise ImportError(
-            "client-agent tests need the prometheus_api package (for "
-            "prometheus_api.contract). Install it into your test environment:\n"
+            "client-agent tests need the prometheus_api package. Install it "
+            "into your test environment:\n"
             "  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git\n"
             "or clone prometheus_api next to this repository."
         ) from exc
