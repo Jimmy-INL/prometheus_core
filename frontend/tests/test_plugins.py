@@ -26,6 +26,32 @@ def test_find_plugin_for_typed_thermal_analysis_json_artifact() -> None:
     assert plugin.COMPONENT_NAME == "ThermalAnalysisViewer"
 
 
+def test_extension_fallback_routes_mislabeled_stl_by_name() -> None:
+    # No json_type, an unregistered/informal MIME — must still route via the
+    # .stl extension on the artifact name.
+    plugin = plugins.find_plugin_for_artifact(
+        {"name": "equipment_abc.stl", "mime_type": "application/octet-stream", "uri": "file:///x"}
+    )
+    assert plugin is not None and plugin.COMPONENT_NAME == "MeshViewer"
+
+
+def test_extension_fallback_routes_by_uri_when_name_has_no_suffix() -> None:
+    plugin = plugins.find_plugin_for_artifact(
+        {"name": "mesh", "uri": "deeplynx://organizations/o/items/part.stl?v=2"}
+    )
+    assert plugin is not None and plugin.COMPONENT_NAME == "MeshViewer"
+
+
+def test_mime_takes_precedence_over_extension() -> None:
+    # A registered MIME wins even if the extension would map elsewhere.
+    plugin = plugins.find_plugin_for_artifact({"name": "thing.stl", "mime_type": "application/ifc"})
+    assert plugin is not None and plugin.COMPONENT_NAME == "IFCViewer"
+
+
+def test_unknown_extension_returns_none() -> None:
+    assert plugins.find_plugin_for_artifact({"name": "data.json", "mime_type": "application/json"}) is None
+
+
 @pytest.mark.asyncio
 async def test_inspect_upload_uses_mime_type_for_temp_paths(tmp_path: Path) -> None:
     upload_path = tmp_path / "chainlit-upload"
