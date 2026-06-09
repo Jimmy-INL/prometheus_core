@@ -14,7 +14,11 @@ services:
       - agent-network
     environment:
       AGENT_PORT: 8000
-      AGENT_HOST: TEMPLATE_SLUG-agent
+      # The agent registers http://{container hostname}:{AGENT_PORT}; Docker
+      # Compose sets the hostname to the service name, which resolves on
+      # agent-network. Set EXTERNAL_AGENT_URL only if the agent is port-mapped
+      # or reachable at a different address than its container hostname.
+      # EXTERNAL_AGENT_URL: http://my-host.example.gov:8042
       AGENT_SECRET: ${AGENT_SECRET}
       AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
       REGISTRY_URL: ${REGISTRY_URL:-}

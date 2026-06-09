@@ -1,7 +1,6 @@
 {
   "name": "TEMPLATE_NAME Agent",
   "description": "TEMPLATE_DESCRIPTION",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,

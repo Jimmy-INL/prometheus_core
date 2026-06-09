@@ -93,7 +93,7 @@ multiple skills, and DeepLynx file storage.
 | Variable | Purpose |
 |----------|---------|
 | `AGENT_PORT` | Port the agent listens on (default `8000`). |
-| `AGENT_HOST` | Hostname advertised in the agent card (Docker service name when containerized). |
+| `EXTERNAL_AGENT_URL` | Optional full URL the registry uses to reach this agent. Defaults to `http://{container hostname}:{AGENT_PORT}` (the Docker service name), which is right for in-network deployments; set it only when port-mapped or on another host. |
 | `AGENT_SECRET` | Shared bearer token for A2A auth. Must match the platform's. |
 | `AGENT_SECRET_REQUIRED` | Set `false` to disable auth — local development only. |
 | `REGISTRY_URL` | LiteLLM proxy URL where the agent registers on startup. |

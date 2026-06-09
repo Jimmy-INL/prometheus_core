@@ -99,7 +99,6 @@ The agent card is a JSON file that tells the orchestrator everything it needs to
 {
   "name": "My Agent",
   "description": "One sentence description used by the orchestrator to route requests.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -115,9 +114,15 @@ The agent card is a JSON file that tells the orchestrator everything it needs to
 |-------|-----------------|
 | `name` | Human-readable name shown in the UI. |
 | `description` | **One sentence** used by the LLM orchestrator when deciding which agent to call. Write it as a capability statement: *"Analyzes corrosion rates for stainless steel alloys given temperature and pH."* |
-| `url` | Leave as `"http://localhost:8000"`. The base class overwrites this at runtime with the container's actual hostname. |
 | `version` | Semantic version of your agent. Increment when the skill interface changes. |
 | `capabilities.streaming` | Set `true` only if your agent emits streaming partial responses (rare; not needed for most agents). |
+
+There is no `url` field: the base class sets the registered URL at startup —
+`EXTERNAL_AGENT_URL` if set, otherwise `http://{container hostname}:{AGENT_PORT}`.
+Inside Docker Compose the hostname is the service name, which resolves on
+`agent-network`, so you normally don't need to configure anything. Set
+`EXTERNAL_AGENT_URL` only when the agent is port-mapped or runs on a different
+host than the platform.
 
 ### Skills
 
