@@ -515,8 +515,15 @@ async def call_a2a_agent(
                 },
             }
         )
-    if kwargs.get("_a2a_context_id"):
-        message["params"]["message"]["contextId"] = kwargs["_a2a_context_id"]
+    # Propagate the conversation scope as the A2A contextId so downstream
+    # agents see RequestContext.context_id == conversation_id. This is what
+    # scopes the ArtifactRegistry and ContextStateStore on the specialist
+    # side. The INPUT_REQUIRED resume path overrides it with the contextId
+    # echoed by the downstream agent, which is the same value once the
+    # initial call carried it.
+    a2a_context_id = kwargs.get("_a2a_context_id") or kwargs.get("conversation_id")
+    if a2a_context_id:
+        message["params"]["message"]["contextId"] = str(a2a_context_id)
     if kwargs.get("_a2a_task_id"):
         message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 

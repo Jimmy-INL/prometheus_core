@@ -142,6 +142,9 @@ class A2AClient:
                 "message": {
                     "messageId": message_id,
                     "role": "user",
+                    # contextId is the A2A-spec conversation scope; the a2a-sdk
+                    # exposes it to the client-agent as RequestContext.context_id.
+                    "contextId": conversation_id,
                     "parts": [
                         {
                             "type": "text",
@@ -150,9 +153,6 @@ class A2AClient:
                     ],
                 },
                 "configuration": {"blocking": True},
-                "context": {
-                    "conversationId": conversation_id,
-                },
             },
         }
 

@@ -388,6 +388,52 @@ def test_call_a2a_agent_preserves_error_payload_from_final_status(monkeypatch) -
     assert result == {"error": "context.temperature_c is required"}
 
 
+def test_call_a2a_agent_propagates_conversation_id_as_context_id(monkeypatch) -> None:
+    a2a_payload = {
+        "result": {
+            "status": {
+                "message": {
+                    "parts": [
+                        {"kind": "text", "text": json.dumps({"status": "completed"})}
+                    ]
+                }
+            }
+        }
+    }
+    captured: dict = {}
+
+    class _CapturingClient(_FakeAsyncClient):
+        async def post(self, endpoint, json=None, headers=None):
+            captured["message"] = json
+            return _FakeResponse(self._payload)
+
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _CapturingClient(payload=a2a_payload, **kwargs),
+    )
+
+    asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/thermal-analysis-agent",
+            "analyze_thermal",
+            conversation_id="conv-42",
+        )
+    )
+    assert captured["message"]["params"]["message"]["contextId"] == "conv-42"
+
+    # The INPUT_REQUIRED resume path overrides with the downstream-echoed contextId.
+    asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/thermal-analysis-agent",
+            "analyze_thermal",
+            conversation_id="conv-42",
+            _a2a_context_id="downstream-ctx",
+        )
+    )
+    assert captured["message"]["params"]["message"]["contextId"] == "downstream-ctx"
+
+
 def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
     async def fake_discover_agents():
         return [
