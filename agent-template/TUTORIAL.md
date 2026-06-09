@@ -592,7 +592,7 @@ You don't normally need to build manually — `docker compose up` does it. But t
 
 ```bash
 # Get the current hash from prometheus_platform/Makefile or your .env
-export PROMETHEUS_API_BASE_IMAGE_HASH=dd30466
+export PROMETHEUS_API_BASE_IMAGE_HASH=ebec194
 
 docker build \
   --build-arg PROMETHEUS_API_BASE_IMAGE_HASH=$PROMETHEUS_API_BASE_IMAGE_HASH \
@@ -920,6 +920,12 @@ self.save_context_state(str(context.context_id), state)
 
 State is backed by Redis when `REDIS_URL` is set, with an in-memory fallback for local development.
 
+As of prometheus_api 0.7.0, `context.context_id` is the **stable conversation
+ID** propagated by the orchestrator: state saved in one call is visible to
+later calls — including calls to *other* skills of your agent — within the
+same conversation. If you need per-invocation scoping instead, key by
+`context.task_id` (see the [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md)).
+
 ---
 
 ## Further reading
@@ -928,6 +934,7 @@ State is backed by Redis when `REDIS_URL` is set, with an in-memory fallback for
 |----------|-------------|
 | [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
 | [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
+| [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md) | **Check this when bumping `PROMETHEUS_API_BASE_IMAGE_HASH`** — behavior changes per prometheus_api version, with migration steps |
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
 | [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman and corporate CA bundles |
