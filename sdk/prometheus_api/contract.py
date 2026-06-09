@@ -6,8 +6,11 @@ text part of A2A ``message/stream`` calls. These models are the single source
 of truth for that payload; both sides must import them from here instead of
 maintaining local copies.
 
-Intentionally dependency-light: only pydantic, so any consumer of
-``prometheus_api`` can use it without pulling in the agent runtime.
+Intentionally dependency-light and at the package top level: importing
+``prometheus_api.contract`` requires only pydantic, so consumers like the
+Chainlit frontend can use it without pulling in the agent runtime
+(a2a-sdk, starlette, litellm). The models are also re-exported from
+``prometheus_api.agent`` for agent-side convenience.
 """
 
 from __future__ import annotations

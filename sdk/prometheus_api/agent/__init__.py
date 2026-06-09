@@ -9,7 +9,7 @@ from .base import (
 )
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
-from .contract import ConversationRequest, ConversationResponse, ConversationStatus
+from ..contract import ConversationRequest, ConversationResponse, ConversationStatus
 from .task_store import RedisTaskStore
 from .registry import AgentRegistryClient
 from .worker import PrometheusWorker

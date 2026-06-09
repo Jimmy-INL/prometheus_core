@@ -5,11 +5,19 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from prometheus_api.agent.contract import (
+from prometheus_api.contract import (
     ConversationRequest,
     ConversationResponse,
     ConversationStatus,
 )
+
+
+def test_contract_is_reexported_from_agent_package():
+    from prometheus_api import agent
+
+    assert agent.ConversationResponse is ConversationResponse
+    assert agent.ConversationRequest is ConversationRequest
+    assert agent.ConversationStatus is ConversationStatus
 
 
 def test_status_values_are_exhaustive():
