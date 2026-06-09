@@ -24,10 +24,7 @@ import os
 import threading
 from typing import Any, Dict, Optional
 
-try:  # redis is an optional-at-runtime dependency, matching artifacts.py
-    import redis  # type: ignore
-except Exception:  # pragma: no cover - exercised only when redis is absent
-    redis = None  # type: ignore
+from ..redis_utils import create_redis_client
 
 from a2a.server.tasks import TaskStore
 from a2a.types import Task, TaskState
@@ -81,19 +78,9 @@ class RedisTaskStore(TaskStore):
 
     @property
     def redis_client(self):
-        if self._redis is not None:
-            return self._redis
-        if redis is None:
-            return None
-        try:
-            self._redis = redis.Redis.from_url(
-                self.redis_url, password=self.redis_password, decode_responses=True
-            )
-            self._redis.ping()
-            return self._redis
-        except Exception:
-            self._redis = None
-            return None
+        if self._redis is None:
+            self._redis = create_redis_client(self.redis_url, password=self.redis_password)
+        return self._redis
 
     # --- TaskStore interface ------------------------------------------------
 

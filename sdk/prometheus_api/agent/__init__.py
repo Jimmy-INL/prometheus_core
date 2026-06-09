@@ -7,6 +7,7 @@ from .base import (
     PrometheusAgent,
     PrometheusAgentExecutor,
 )
+from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from ..contract import ConversationRequest, ConversationResponse, ConversationStatus
@@ -35,6 +36,7 @@ __all__ = [
     "PrometheusWorker",
     "ArtifactReference",
     "ArtifactRegistry",
+    "ArtifactResolver",
     "AgentRegistryClient",
     "ContextStateStore",
     "ConversationRequest",

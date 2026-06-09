@@ -4,6 +4,48 @@ This document is the running migration log for `PrometheusAgent` behavior change
 When a base-agent change requires downstream agent updates, add a short section here
 under the relevant version heading with migration steps and a minimal code example.
 
+## 0.8.0
+
+### Shared Client-Side Helpers — Stop Copying Stream/Redis Boilerplate
+
+Three pieces of logic that downstream code tended to copy now have single
+canonical implementations:
+
+- `prometheus_api.a2a_stream` — consume A2A `message/stream` responses
+  (SSE/NDJSON parsing, heartbeat skipping, status/background callbacks,
+  artifact merge/dedup). Use `stream_a2a_request(...)` for a full call or
+  `consume_stream_response(...)` on an open httpx stream.
+- `prometheus_api.redis_utils.create_redis_client(...)` — the platform-wide
+  Redis connection recipe (`REDIS_URL`/`REDIS_PASSWORD` env defaults,
+  `decode_responses=True`, fail-fast ping, returns `None` with a logged
+  warning on failure). `redis` is now a declared dependency of
+  `prometheus-api` instead of optional-at-runtime.
+- `prometheus_api.agent.ArtifactResolver` — artifact-to-local-file
+  resolution, extracted from `PrometheusAgent`. The public
+  `PrometheusAgent.get_artifact_file_path(...)` API is unchanged; only the
+  private helpers (`_materialize_inline_artifact`, `_download_artifact_uri_to_cache`,
+  `_artifact_cache_path`, …) moved.
+
+Migration steps:
+
+1. If your agent or client code copied the SSE/NDJSON stream-parsing pattern,
+   replace it with `prometheus_api.a2a_stream`. Note error envelopes now raise
+   `a2a_stream.A2AStreamError` (an `Exception` subclass).
+2. Replace hand-rolled `redis.Redis.from_url(...)` setup with
+   `create_redis_client()`. If you relied on the password being embedded in
+   `REDIS_URL`, that still works; a separate `REDIS_PASSWORD` overrides it.
+3. If you called private `PrometheusAgent._*` artifact helpers (you should
+   not have), call them on `agent.artifact_resolver` instead.
+
+```python
+from prometheus_api.a2a_stream import stream_a2a_request
+from prometheus_api.redis_utils import create_redis_client
+
+result = await stream_a2a_request(endpoint, message, headers=headers,
+                                  status_callback=on_status)
+client = create_redis_client()  # REDIS_URL/REDIS_PASSWORD from env
+```
+
 ## 0.7.0
 
 ### Context State Is Now Conversation-Scoped — Not Per-Task

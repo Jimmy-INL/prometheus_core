@@ -7,10 +7,7 @@ import os
 import threading
 from typing import Any, Dict, Optional
 
-try:
-    import redis
-except Exception:  # pragma: no cover - optional dependency in some test envs
-    redis = None
+from ..redis_utils import create_redis_client
 
 
 class ContextStateStore:
@@ -40,19 +37,9 @@ class ContextStateStore:
 
     @property
     def redis_client(self):
-        if self._redis is not None:
-            return self._redis
-        if redis is None:
-            return None
-        try:
-            self._redis = redis.Redis.from_url(
-                self.redis_url, password=self.redis_password, decode_responses=True
-            )
-            self._redis.ping()
-            return self._redis
-        except Exception:
-            self._redis = None
-            return None
+        if self._redis is None:
+            self._redis = create_redis_client(self.redis_url, password=self.redis_password)
+        return self._redis
 
     def _key(self, agent_id: str, context_id: str) -> str:
         return f"agent_ctx:{agent_id}:{context_id}"
