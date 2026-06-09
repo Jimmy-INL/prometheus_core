@@ -61,9 +61,13 @@ cd my-agent
 cp .env.example .env          # fill in real values
 
 # Local (fast iteration):
-uv venv && source .venv/bin/activate
-uv pip install git+https://github.inl.gov/genesis/prometheus_api.git
+uv sync && source .venv/bin/activate
+# Pin prometheus_api to the platform's base image hash (see .env):
+uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@2b3dbcf"
 AGENT_SECRET_REQUIRED=false python agent.py
+
+# Tests / lint:
+uv run pytest && uv run ruff check .
 
 # Or with Docker (set PROMETHEUS_API_BASE_IMAGE_HASH in .env first):
 docker compose up --build
