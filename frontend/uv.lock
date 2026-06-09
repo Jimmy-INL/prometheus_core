@@ -1844,8 +1844,8 @@ wheels = [
 
 [[package]]
 name = "prometheus-api"
-version = "0.6.0"
-source = { editable = "../../prometheus_api" }
+version = "0.7.0"
+source = { git = "https://github.inl.gov/genesis/prometheus_api.git?branch=fable5_review#ebec1943a7fbd0a2c9addf110d7cc3d351b9cc70" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "fsspec" },
@@ -1857,30 +1857,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.23,<1" },
-    { name = "fsspec", specifier = ">=2026.2.0" },
-    { name = "httpx", specifier = ">=0.26.0" },
-    { name = "litellm", specifier = ">=1.80,<2" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "python-dateutil", specifier = ">=2.8.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "starlette", specifier = ">=0.35.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.0.0" },
-    { name = "pre-commit", specifier = ">=4.6.0" },
-    { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.21.0" },
-    { name = "pytest-cov", specifier = ">=4.0.0" },
-    { name = "ruff", specifier = ">=0.1.0" },
 ]
 
 [[package]]
@@ -1925,7 +1901,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.15" },
-    { name = "prometheus-api", editable = "../../prometheus_api" },
+    { name = "prometheus-api", git = "https://github.inl.gov/genesis/prometheus_api.git?branch=fable5_review" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
     { name = "respx", specifier = ">=0.22.0" },

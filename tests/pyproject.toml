@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-prometheus-api = { path = "../../prometheus_api", editable = true }
+# TODO: re-pin to main (or a version tag) once prometheus_api fable5_review merges.
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", branch = "fable5_review" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
