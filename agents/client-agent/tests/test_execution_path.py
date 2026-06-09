@@ -823,3 +823,136 @@ def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
     assert question["field"] == "temperature_c"
     assert question["type"] == "number"
     assert result["missing_info"] == ["temperature_c"]
+
+
+def test_invoke_agent_generic_parallel_preserves_partial_results_on_exception(monkeypatch) -> None:
+    """One skill raising must not cancel siblings or discard their results."""
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        if skill_id == "bad_skill":
+            raise RuntimeError("boom")
+        return {"skill_id": skill_id, "result": {"ok": True}}
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "good_skill",
+            "supporting_skills": ["bad_skill"],
+            "workflow_type": "parallel",
+            "extracted_params": {},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert result["tool_results"]["good_skill"] == {"ok": True}
+    assert "boom" in result["tool_results"]["bad_skill"]["error"]
+
+
+def test_chat_plan_rejection_clears_pending_plan(monkeypatch) -> None:
+    stored = {}
+    existing_state = {
+        "conversation_id": "conv-1",
+        "awaiting_approval": True,
+        "routing_decision": {"workflow_type": "single", "primary_skill": "analyze_thermal"},
+        "plan": {"intent": "thermal analysis"},
+        "missing_info": [],
+        "pending_subagent_requests": [],
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    async def should_not_execute(*args, **kwargs):
+        raise AssertionError("Plan rejection must not execute the plan.")
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module, "store_conversation", lambda conversation_id, state: stored.update({conversation_id: state})
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent_module, "execute_approved_plan", should_not_execute)
+    monkeypatch.setattr(agent_module, "execute_current_plan", should_not_execute)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(conversation_id="conv-1", plan_rejected=True)
+        )
+    )
+
+    assert response.status == "answer"
+    assert "rejected" in (response.message or "").lower()
+    saved = stored["conv-1"]
+    assert saved["awaiting_approval"] is False
+    assert saved["routing_decision"] is None
+    assert saved["plan"] is None
+    assert saved["pending_subagent_requests"] == []
+
+
+def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> None:
+    """Multiple INPUT_REQUIRED workflow steps must all reach the user at once."""
+    workflow = SimpleNamespace(
+        definition=SimpleNamespace(
+            id="wf",
+            version="1.0.0",
+            steps=[
+                SimpleNamespace(id="step-1", skill_id="skill_a"),
+                SimpleNamespace(id="step-2", skill_id="skill_b"),
+            ],
+        )
+    )
+    registry = SimpleNamespace(get=lambda workflow_id, version=None: workflow)
+
+    async def fake_execute_workflow(**kwargs):
+        return {
+            "final_output": None,
+            "step_statuses": {"step-1": "input_required", "step-2": "input_required"},
+            "step_results": {},
+            "input_required_steps": [
+                {
+                    "step_id": "step-1",
+                    "skill_id": "skill_a",
+                    "input_required": {
+                        "missing_inputs": [{"name": "temperature_c", "type": "number"}],
+                        "hint": "Need temperature",
+                    },
+                },
+                {
+                    "step_id": "step-2",
+                    "skill_id": "skill_b",
+                    "input_required": {
+                        "missing_inputs": [{"name": "pressure_mpa", "type": "number"}],
+                        "hint": "Need pressure",
+                    },
+                },
+            ],
+        }
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "execute_workflow", fake_execute_workflow)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "workflow_type": "workflow_template",
+            "workflow_id": "wf",
+            "workflow_version": "1.0.0",
+            "extracted_params": {},
+        },
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    result = asyncio.run(agent_module.execute_current_plan(state, start_message="go"))
+
+    pending = result["pending_subagent_requests"]
+    assert [entry["skill_id"] for entry in pending] == ["skill_a", "skill_b"]
+    assert result["missing_info"] == ["temperature_c", "pressure_mpa"]

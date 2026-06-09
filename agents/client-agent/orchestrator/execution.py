@@ -88,10 +88,21 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
     try:
         # Execute skills based on workflow type
         if workflow_type == "parallel" and len(selected_skills) > 1:
-            # Parallel: invoke all skills concurrently
-            invocation_results = await asyncio.gather(
-                *[invoke_skill(skill_id, params, conversation_id) for skill_id in selected_skills]
+            # Parallel: invoke all skills concurrently. return_exceptions=True so
+            # one failing skill cannot cancel its siblings and discard their
+            # partial results; escaped exceptions are folded into per-skill
+            # error items (invoke_skill already returns error dicts for the
+            # common failure paths).
+            gathered = await asyncio.gather(
+                *[invoke_skill(skill_id, params, conversation_id) for skill_id in selected_skills],
+                return_exceptions=True,
             )
+            invocation_results = [
+                item
+                if not isinstance(item, BaseException)
+                else {"skill_id": skill_id, "error": str(item)}
+                for skill_id, item in zip(selected_skills, gathered)
+            ]
         elif workflow_type == "sequential" and len(selected_skills) > 1:
             # Sequential: invoke skills in order, passing results between them
             invocation_results = []
@@ -591,40 +602,55 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
 
         ir_steps = execution_result.get("input_required_steps") or []
         if ir_steps:
-            ir = ir_steps[0]
-            ir_payload = ir.get("input_required", {}) or {}
-            missing_inputs = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
-            auto_resolved, unresolved = resolve_missing_inputs_from_state(state, missing_inputs)
+            # Handle every blocked step, not just the first: auto-resolve what
+            # the conversation state already answers, resume those steps, and
+            # collect the rest into one combined follow-up round so the user
+            # is asked everything at once instead of one question per turn.
+            still_pending: List[Dict[str, Any]] = []
+            for ir in ir_steps:
+                ir_payload = ir.get("input_required", {}) or {}
+                missing_inputs = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
+                auto_resolved, unresolved = resolve_missing_inputs_from_state(state, missing_inputs)
 
-            if auto_resolved and not unresolved:
-                resumed = await invoke_skill(
-                    ir["skill_id"],
-                    {**input_params, "provided_inputs": auto_resolved},
-                    conversation_id,
-                )
-                if not resumed.get("input_required"):
-                    tool_results[ir["skill_id"]] = resumed.get("result")
-                    state["tool_results"] = tool_results
-                    state["missing_info"] = []
-                else:
+                if auto_resolved and not unresolved:
+                    resumed = await invoke_skill(
+                        ir["skill_id"],
+                        {**input_params, "provided_inputs": auto_resolved},
+                        conversation_id,
+                    )
+                    if not resumed.get("input_required"):
+                        tool_results[ir["skill_id"]] = resumed.get("result")
+                        continue
                     ir_payload = resumed.get("input_required", {}) or {}
                     unresolved = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
+                    ir = {**ir,
+                          "_a2a_context_id": resumed.get("_a2a_context_id") or ir.get("_a2a_context_id"),
+                          "_a2a_task_id": resumed.get("_a2a_task_id") or ir.get("_a2a_task_id")}
 
-            if unresolved:
-                state["pending_subagent_requests"] = [{
-                    "skill_id": ir["skill_id"],
-                    "a2a_context_id": ir.get("_a2a_context_id"),
-                    "a2a_task_id": ir.get("_a2a_task_id"),
-                    "missing_inputs": unresolved,
-                    "hint": ir_payload.get("hint"),
-                }]
-                state["missing_info"] = [str(item.get("name") or "") for item in unresolved if item.get("name")]
-                state["tool_results"] = tool_results
+                if unresolved:
+                    still_pending.append({
+                        "skill_id": ir["skill_id"],
+                        "a2a_context_id": ir.get("_a2a_context_id"),
+                        "a2a_task_id": ir.get("_a2a_task_id"),
+                        "missing_inputs": unresolved,
+                        "hint": ir_payload.get("hint") if isinstance(ir_payload, dict) else None,
+                    })
+
+            state["tool_results"] = tool_results
+            if still_pending:
+                state["pending_subagent_requests"] = still_pending
+                state["missing_info"] = [
+                    str(item.get("name") or "")
+                    for pending in still_pending
+                    for item in pending["missing_inputs"]
+                    if item.get("name")
+                ]
                 runtime.store_status_update(
                     conversation_id,
                     "Additional parameters are required before execution can continue.",
                 )
                 return state
+            state["missing_info"] = []
     else:
         invoke_update = await invoke_agent_generic(state)
         for key, value in invoke_update.items():

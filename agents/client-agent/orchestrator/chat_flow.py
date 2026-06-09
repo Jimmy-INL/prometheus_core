@@ -130,6 +130,22 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
         if request_artifacts:
             state["context"] = merge_artifacts_into_context(state.get("context", {}), request_artifacts)
 
+        if request.plan_rejected:
+            # Clear the pending plan so the next message starts a fresh
+            # planning turn instead of dead-ending in the continuation path.
+            state["awaiting_approval"] = False
+            state["routing_decision"] = None
+            state["plan"] = None
+            state["missing_info"] = []
+            state["pending_subagent_requests"] = []
+            store_conversation(conv_id, state)
+            runtime.store_status_update(conv_id, "Plan rejected by user.", final=True)
+            return ConversationResponse(
+                conversation_id=conv_id,
+                status="answer",
+                message="Plan rejected. Tell me how you'd like to proceed.",
+            )
+
         if request.plan_approved:
             state["awaiting_approval"] = False
             try:

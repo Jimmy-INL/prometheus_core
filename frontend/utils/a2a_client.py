@@ -82,6 +82,7 @@ class A2AClient:
         artifacts: Optional[List[Dict]] = None,
         followup_answers: Optional[Dict] = None,
         plan_approved: Optional[bool] = False,
+        plan_rejected: Optional[bool] = False,
         workflow_id: Optional[str] = None,
         uploaded_files: Optional[List[Dict]] = None,
         on_status: Optional[Callable[[str], Coroutine]] = None,
@@ -101,6 +102,8 @@ class A2AClient:
             payload["followup_answers"] = followup_answers
         if plan_approved:
             payload["plan_approved"] = True
+        if plan_rejected:
+            payload["plan_rejected"] = True
         if workflow_id:
             payload["workflow_id"] = workflow_id
         if uploaded_files:

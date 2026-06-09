@@ -526,7 +526,19 @@ async def _handle_plan_ready(
         approved = True
 
     if not approved:
-        await cl.Message(content="Plan rejected.").send()
+        # Tell the server so it clears awaiting_approval and the pending
+        # routing decision; otherwise the conversation's next message
+        # dead-ends in the continuation path.
+        try:
+            response = await client.send(
+                query="",
+                conversation_id=conversation_id,
+                plan_rejected=True,
+            )
+            await cl.Message(content=response.message or "Plan rejected.").send()
+        except Exception as exc:
+            logger.warning("Failed to notify server of plan rejection: %s", exc)
+            await cl.Message(content="Plan rejected.").send()
         return
 
     artifacts_catalog = cl.user_session.get("artifacts", [])
