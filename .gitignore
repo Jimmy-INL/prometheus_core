@@ -39,3 +39,6 @@ docker-compose.override.yml
 # ignore agents that have their own repos
 agents/requirements_agent
 agents/bim_agent
+
+# Generated at startup by plugins/_install_jsx from the plugin source
+frontend/public/elements/IFCViewer.jsx
