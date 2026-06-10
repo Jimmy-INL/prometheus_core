@@ -1066,3 +1066,85 @@ def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) 
     # And upstream results were forwarded as before.
     assert "upstream_results" in captured_params["convert_svg_to_png"]
     assert "error" not in result["tool_results"]["convert_svg_to_png"]
+
+
+def test_sequential_execution_overrides_stale_planning_time_artifact_binding(monkeypatch) -> None:
+    """Regression: 'revise the valve, then mesh it' meshed the ORIGINAL valve.
+    Planning-time artifact resolution correctly bound the existing valve for
+    step 1 (revise), but the shared params dict leaked that binding into step
+    2 (mesh), and already-filled refs were not overridden with the chain's
+    own output."""
+    captured_params: dict = {}
+
+    revise_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "x_artifact_ref": "single"},
+            "instructions": {"type": "string"},
+        },
+        "required": ["artifact_id", "instructions"],
+    }
+    mesh_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "x_artifact_ref": "single"},
+            "element_type": {"type": "string"},
+        },
+        "required": ["artifact_id"],
+    }
+    schemas = {"revise_model": revise_schema, "mesh_model": mesh_schema}
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured_params[skill_id] = params
+        if skill_id == "revise_model":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "status": "success",
+                    "artifacts": [
+                        {"artifact_id": "valve-revised", "name": "valve_rev2.step"},
+                        {"artifact_id": "revision-report", "name": "changes.json"},
+                    ],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "success"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        schema = schemas.get(skill_id)
+        return SimpleNamespace(input_schema=schema, provides=None) if schema else None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "revise_model",
+            "supporting_skills": ["mesh_model"],
+            "workflow_type": "sequential",
+            # Planning-time resolution bound the EXISTING valve (right for step 1).
+            "extracted_params": {
+                "artifact_id": "valve-original",
+                "instructions": "reduce to 8 holes, five times larger",
+                "element_type": "tet",
+            },
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    asyncio.run(agent_module.invoke_agent_generic(state))
+
+    # Step 1 revised the original valve...
+    assert captured_params["revise_model"]["artifact_id"] == "valve-original"
+    # ...and step 2 meshed the chain's own output — the revised model, not the
+    # inherited original and not the side-artifact report.
+    assert captured_params["mesh_model"]["artifact_id"] == "valve-revised"

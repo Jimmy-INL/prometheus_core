@@ -150,15 +150,24 @@ def bind_produced_artifacts(
     params: Dict[str, Any],
     input_schema: Optional[Dict[str, Any]],
     produced_artifact_ids: List[str],
+    latest_artifact_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fill unfilled artifact-reference params from earlier sequential steps.
+    """Bind artifact-reference params to artifacts produced by earlier steps.
 
-    In a sequential plan, a downstream skill's `x_artifact_ref` inputs are
-    typically produced by an upstream step in the same plan (e.g. create an
-    SVG, then convert it to PNG). The planner defers these at planning time
-    (`deferred_runtime_paths`); this binds them just before invocation:
-    single-mode paths get the most recently produced artifact id, multi-mode
-    paths get all of them. Already-filled paths are left untouched.
+    In a sequential plan, a downstream skill's `x_artifact_ref` inputs refer
+    to the chain's own dataflow (e.g. revise a CAD model, then mesh *it*).
+    Planning-time artifact resolution binds catalog artifacts for the FIRST
+    step (correct: "revise the valve" needs the existing valve), but the
+    extracted params are shared by every step — so once an upstream step has
+    produced artifacts, an inherited planning-time value on a later step is
+    stale by construction and meshing/converting it would silently operate on
+    the pre-chain artifact.
+
+    Single-mode paths are therefore OVERRIDDEN with `latest_artifact_id`
+    (the first artifact of the most recent producing step) unless the current
+    value is itself chain-produced. Multi-mode paths are filled only when
+    empty. Chains needing richer dataflow (step 3 consuming step 1's output)
+    should use a workflow template with explicit bindings.
     """
     if not produced_artifact_ids or not isinstance(input_schema, dict):
         return params
@@ -166,14 +175,16 @@ def bind_produced_artifacts(
     if not artifact_paths:
         return params
 
+    preferred = latest_artifact_id or produced_artifact_ids[-1]
     resolved = dict(params or {})
     for path, mode in artifact_paths.items():
-        if get_nested_value(resolved, path) is not None:
-            continue
+        current = get_nested_value(resolved, path)
         if mode == "multiple":
-            set_nested_value(resolved, path, list(produced_artifact_ids))
-        else:
-            set_nested_value(resolved, path, produced_artifact_ids[-1])
+            if current is None:
+                set_nested_value(resolved, path, list(produced_artifact_ids))
+            continue
+        if current is None or str(current) not in produced_artifact_ids:
+            set_nested_value(resolved, path, preferred)
     return resolved
 
 

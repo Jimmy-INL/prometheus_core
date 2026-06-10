@@ -109,6 +109,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
             invocation_results = []
             previous_results: Dict[str, Any] = {}
             produced_artifact_ids: List[str] = []
+            latest_artifact_id: str | None = None
             cache = get_capability_cache()
             for skill_id in selected_skills:
                 invoke_params = dict(params)
@@ -116,14 +117,16 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     # Pass upstream results to downstream skills
                     invoke_params["upstream_results"] = previous_results
                 if produced_artifact_ids:
-                    # Sequential dataflow: fill this step's unfilled
-                    # artifact-reference inputs (deferred at planning time)
-                    # from artifacts produced by earlier steps.
+                    # Sequential dataflow: bind this step's artifact-reference
+                    # inputs to the chain's own output (deferred at planning
+                    # time; planning-time catalog bindings are overridden —
+                    # they belong to the first step and are stale here).
                     capability = await cache.get_capability_by_skill_id(skill_id)
                     invoke_params = bind_produced_artifacts(
                         invoke_params,
                         capability.input_schema if capability else None,
                         produced_artifact_ids,
+                        latest_artifact_id,
                     )
                 item = await invoke_skill(skill_id, invoke_params, conversation_id)
                 invocation_results.append(item)
@@ -131,6 +134,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     previous_results[skill_id] = item["result"]
                     result_payload = item["result"]
                     if isinstance(result_payload, dict):
+                        step_artifact_ids: List[str] = []
                         for artifact in result_payload.get("artifacts", []) or []:
                             if not isinstance(artifact, dict):
                                 continue
@@ -139,6 +143,12 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                             ).strip()
                             if artifact_id and artifact_id not in produced_artifact_ids:
                                 produced_artifact_ids.append(artifact_id)
+                                step_artifact_ids.append(artifact_id)
+                        if step_artifact_ids:
+                            # First artifact of the most recent producing step:
+                            # the primary output (side artifacts like reports
+                            # come after it).
+                            latest_artifact_id = step_artifact_ids[0]
         else:
             # Single: invoke skills one by one (no result passing)
             invocation_results = []
