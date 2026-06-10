@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage
 
+from artifact_handling import bind_produced_artifacts
 from capability_cache import get_capability_cache
 from param_schema import flatten_schema_properties, get_nested_value, has_param_path
 from workflow_library import execute_workflow, get_workflow_registry
@@ -107,15 +108,37 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
             # Sequential: invoke skills in order, passing results between them
             invocation_results = []
             previous_results: Dict[str, Any] = {}
+            produced_artifact_ids: List[str] = []
+            cache = get_capability_cache()
             for skill_id in selected_skills:
                 invoke_params = dict(params)
                 if previous_results:
                     # Pass upstream results to downstream skills
                     invoke_params["upstream_results"] = previous_results
+                if produced_artifact_ids:
+                    # Sequential dataflow: fill this step's unfilled
+                    # artifact-reference inputs (deferred at planning time)
+                    # from artifacts produced by earlier steps.
+                    capability = await cache.get_capability_by_skill_id(skill_id)
+                    invoke_params = bind_produced_artifacts(
+                        invoke_params,
+                        capability.input_schema if capability else None,
+                        produced_artifact_ids,
+                    )
                 item = await invoke_skill(skill_id, invoke_params, conversation_id)
                 invocation_results.append(item)
                 if "result" in item:
                     previous_results[skill_id] = item["result"]
+                    result_payload = item["result"]
+                    if isinstance(result_payload, dict):
+                        for artifact in result_payload.get("artifacts", []) or []:
+                            if not isinstance(artifact, dict):
+                                continue
+                            artifact_id = str(
+                                artifact.get("artifact_id") or artifact.get("artifactId") or ""
+                            ).strip()
+                            if artifact_id and artifact_id not in produced_artifact_ids:
+                                produced_artifact_ids.append(artifact_id)
         else:
             # Single: invoke skills one by one (no result passing)
             invocation_results = []

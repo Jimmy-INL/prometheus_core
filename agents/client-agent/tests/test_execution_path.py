@@ -1000,3 +1000,69 @@ def test_plan_approval_persists_state_before_execution(monkeypatch) -> None:
     )
 
     assert response.status == "completed"
+
+
+def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) -> None:
+    """Sequential dataflow: a downstream skill's unfilled x_artifact_ref param
+    is bound to the artifact produced by the previous step (create SVG ->
+    convert to PNG)."""
+    captured_params: dict = {}
+
+    convert_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {
+                "type": "string",
+                "x_artifact_ref": "single",
+            }
+        },
+        "required": ["artifact_id"],
+    }
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured_params[skill_id] = params
+        if skill_id == "create_svg_artifact":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "status": "success",
+                    "artifacts": [{"artifact_id": "svg-123", "name": "image.svg"}],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "success"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        if skill_id == "convert_svg_to_png":
+            return SimpleNamespace(input_schema=convert_schema, provides=None)
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,  # sync lookup used by skill ordering
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "create_svg_artifact",
+            "supporting_skills": ["convert_svg_to_png"],
+            "workflow_type": "sequential",
+            "extracted_params": {"word": "LBNL is a cool lab"},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    # Step 2 received the artifact produced by step 1.
+    assert captured_params["convert_svg_to_png"]["artifact_id"] == "svg-123"
+    # And upstream results were forwarded as before.
+    assert "upstream_results" in captured_params["convert_svg_to_png"]
+    assert "error" not in result["tool_results"]["convert_svg_to_png"]

@@ -82,9 +82,17 @@ def _stub_langchain_if_missing() -> None:
         tools_module = types.ModuleType("langchain_core.tools")
 
         class _StructuredTool:
-            @staticmethod
-            def from_function(*args, **kwargs):
-                return None
+            """Functional stub: preserves name/func so planner tools stay testable."""
+
+            def __init__(self, **kwargs):
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+
+            @classmethod
+            def from_function(cls, func=None, coroutine=None, name="", description="", **kwargs):
+                return cls(
+                    func=func, coroutine=coroutine, name=name, description=description, **kwargs
+                )
 
         tools_module.StructuredTool = _StructuredTool
         sys.modules["langchain_core.tools"] = tools_module

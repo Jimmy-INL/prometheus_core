@@ -146,6 +146,37 @@ def extract_artifact_field_paths(
     return result
 
 
+def bind_produced_artifacts(
+    params: Dict[str, Any],
+    input_schema: Optional[Dict[str, Any]],
+    produced_artifact_ids: List[str],
+) -> Dict[str, Any]:
+    """Fill unfilled artifact-reference params from earlier sequential steps.
+
+    In a sequential plan, a downstream skill's `x_artifact_ref` inputs are
+    typically produced by an upstream step in the same plan (e.g. create an
+    SVG, then convert it to PNG). The planner defers these at planning time
+    (`deferred_runtime_paths`); this binds them just before invocation:
+    single-mode paths get the most recently produced artifact id, multi-mode
+    paths get all of them. Already-filled paths are left untouched.
+    """
+    if not produced_artifact_ids or not isinstance(input_schema, dict):
+        return params
+    artifact_paths = extract_artifact_field_paths(input_schema)
+    if not artifact_paths:
+        return params
+
+    resolved = dict(params or {})
+    for path, mode in artifact_paths.items():
+        if get_nested_value(resolved, path) is not None:
+            continue
+        if mode == "multiple":
+            set_nested_value(resolved, path, list(produced_artifact_ids))
+        else:
+            set_nested_value(resolved, path, produced_artifact_ids[-1])
+    return resolved
+
+
 def resolve_artifact_inputs(
     params: Dict[str, Any],
     query: str,
