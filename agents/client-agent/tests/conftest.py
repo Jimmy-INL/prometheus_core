@@ -39,3 +39,56 @@ except ImportError:
             "  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git\n"
             "or clone prometheus_api next to this repository."
         ) from exc
+
+
+def _stub_langchain_if_missing() -> None:
+    """Install minimal langchain stubs when the real packages are absent.
+
+    Shared here (instead of per test file) so every module gets functional
+    message classes — `HumanMessage(content=...)` must be constructible
+    because production code builds messages before invoking the (mocked) LLM.
+    """
+    import types
+
+    try:
+        import langchain_anthropic  # noqa: F401
+    except ImportError:
+        module = types.ModuleType("langchain_anthropic")
+        module.ChatAnthropic = object
+        sys.modules["langchain_anthropic"] = module
+
+    try:
+        import langchain_core.messages  # noqa: F401
+    except ImportError:
+        langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
+        messages_module = types.ModuleType("langchain_core.messages")
+
+        class _StubMessage:
+            def __init__(self, content="", **kwargs):
+                self.content = content
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+
+        messages_module.HumanMessage = type("HumanMessage", (_StubMessage,), {})
+        messages_module.SystemMessage = type("SystemMessage", (_StubMessage,), {})
+        messages_module.ToolMessage = type("ToolMessage", (_StubMessage,), {})
+        sys.modules["langchain_core.messages"] = messages_module
+        langchain_core.messages = messages_module
+
+    try:
+        import langchain_core.tools  # noqa: F401
+    except ImportError:
+        langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
+        tools_module = types.ModuleType("langchain_core.tools")
+
+        class _StructuredTool:
+            @staticmethod
+            def from_function(*args, **kwargs):
+                return None
+
+        tools_module.StructuredTool = _StructuredTool
+        sys.modules["langchain_core.tools"] = tools_module
+        langchain_core.tools = tools_module
+
+
+_stub_langchain_if_missing()

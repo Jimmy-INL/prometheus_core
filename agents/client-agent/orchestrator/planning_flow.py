@@ -7,7 +7,13 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage
 
 from capability_cache import get_capability_cache
-from param_schema import extract_required_param_paths, flatten_schema_properties, has_param_path, is_user_input_schema
+from param_schema import (
+    extract_required_param_paths,
+    flatten_schema_properties,
+    get_nested_value,
+    has_param_path,
+    is_user_input_schema,
+)
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
 from workflow_library import get_workflow_registry, match_workflows
 

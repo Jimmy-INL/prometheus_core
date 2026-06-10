@@ -956,3 +956,47 @@ def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> 
     pending = result["pending_subagent_requests"]
     assert [entry["skill_id"] for entry in pending] == ["skill_a", "skill_b"]
     assert result["missing_info"] == ["temperature_c", "pressure_mpa"]
+
+
+def test_plan_approval_persists_state_before_execution(monkeypatch) -> None:
+    """Regression: approval only cleared awaiting_approval in memory; when
+    execution detached to the background, Redis kept awaiting_approval=True
+    for the whole run, so a new query (e.g. an unrelated question typed while
+    waiting) was misrouted into the plan-refinement branch."""
+    import copy
+
+    stored: list = []
+    existing_state = {
+        "conversation_id": "conv-1",
+        "awaiting_approval": True,
+        "routing_decision": {"workflow_type": "single", "primary_skill": "analyze_thermal"},
+        "plan": {"intent": "thermal analysis"},
+        "missing_info": [],
+        "pending_subagent_requests": [],
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    async def fake_execute_approved_plan(state):
+        # By the time execution starts, the approval must already be durable.
+        assert stored, "state was not persisted before execute_approved_plan"
+        assert stored[-1]["awaiting_approval"] is False
+        return {**state, "final_report": "done", "tool_results": {"analyze_thermal": {"ok": True}}}
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module,
+        "store_conversation",
+        lambda conversation_id, state: stored.append(copy.deepcopy(state)),
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent_module, "execute_approved_plan", fake_execute_approved_plan)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(conversation_id="conv-1", plan_approved=True)
+        )
+    )
+
+    assert response.status == "completed"

@@ -148,6 +148,13 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
 
         if request.plan_approved:
             state["awaiting_approval"] = False
+            # Persist the transition BEFORE executing. Execution can detach to
+            # the background (declare_long_running / soft deadline), in which
+            # case nothing else stores state until the detached run finishes —
+            # and a new query arriving meanwhile would read the stale
+            # awaiting_approval=True and be misrouted into the plan-refinement
+            # branch instead of starting a fresh planning turn.
+            store_conversation(conv_id, state)
             try:
                 final_state = await execute_approved_plan(state)
                 if final_state.get("missing_info"):
