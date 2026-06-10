@@ -6,11 +6,9 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 
-from artifact_handling import extract_artifact_field_paths
+from artifact_handling import collect_chain_required_paths
 from capability_cache import get_capability_cache
 from param_schema import (
-    extract_required_param_paths,
-    flatten_schema_properties,
     get_nested_value,
     has_param_path,
     is_user_input_schema,
@@ -22,6 +20,8 @@ from . import runtime
 from .models import AgentState
 from .parameters import (
     build_plan_param_metadata,
+    collect_selected_skill_properties,
+    filter_missing_params,
     get_selected_skills,
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
@@ -309,27 +309,16 @@ async def compile_query_plan(
     requires_approval = False
     if selected_workflow and selected_workflow.definition.metadata.requires_approval:
         requires_approval = True
-    for index, skill_id in enumerate(selected_skills):
-        cap = capabilities_by_skill.get(skill_id)
-        if not cap:
-            continue
-        if selected_workflow is None:
-            user_required = set(extract_required_param_paths(cap.input_schema))
-            all_required = set(extract_required_param_paths(cap.input_schema, include_internal=True))
-            # Sequential dataflow (mirrors the planner's get_requirement_status):
-            # artifact-reference inputs of downstream skills are produced by
-            # earlier steps at runtime — they must not be asked from the user
-            # or counted as missing here, or the approved plan immediately
-            # bounces back as INPUT_REQUIRED.
-            if planning_result.workflow_type == "sequential" and index > 0:
-                artifact_paths = set(extract_artifact_field_paths(cap.input_schema))
-                deferred = (user_required | all_required) & artifact_paths
-                user_required -= deferred
-                all_required -= deferred
-            required_params_set.update(user_required)
-            runtime_required_params_set.update(all_required - user_required)
-        if cap.requires_approval:
-            requires_approval = True
+    chain_capabilities = [capabilities_by_skill.get(skill_id) for skill_id in selected_skills]
+    if selected_workflow is None:
+        # Sequential artifact-reference inputs of downstream skills are
+        # runtime-produced — deferring them here keeps the approved plan from
+        # immediately bouncing back as INPUT_REQUIRED.
+        chain = collect_chain_required_paths(chain_capabilities, planning_result.workflow_type)
+        required_params_set.update(chain.user_paths)
+        runtime_required_params_set.update(chain.runtime_paths)
+    if any(cap and cap.requires_approval for cap in chain_capabilities):
+        requires_approval = True
 
     required_params = sorted(required_params_set)
     runtime_required_params = sorted(runtime_required_params_set)
@@ -490,12 +479,7 @@ async def extract_refinement_param_updates(
         return {}
 
     selected_skills = get_selected_skills(routing_decision)
-    cache = get_capability_cache()
-    properties: Dict[str, Any] = {}
-    for skill_id in selected_skills:
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if capability:
-            properties.update(flatten_schema_properties(capability.input_schema))
+    properties = await collect_selected_skill_properties(selected_skills)
 
     candidate_paths: List[str] = []
     workflow_type = routing_decision.get("workflow_type")
@@ -627,9 +611,13 @@ def plan_analysis(state: AgentState) -> Dict:
     if isinstance(existing_plan, dict) and existing_plan.get("steps"):
         provided_params = routing_decision.get("extracted_params", {}) or {}
         required_params = existing_plan.get("required_params") or routing_decision.get("required_params", []) or []
-        missing = [param for param in required_params if not has_param_path(provided_params, param)]
-        if not missing:
-            missing = routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+        missing = filter_missing_params(
+            required_params,
+            provided_params,
+            fallback_missing=(
+                routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+            ),
+        )
 
         preserved_plan = dict(existing_plan)
         preserved_plan["missing_info"] = missing
@@ -646,9 +634,13 @@ def plan_analysis(state: AgentState) -> Dict:
     selected_skills = order_skills_for_workflow(routing_decision)
     provided_params = routing_decision.get("extracted_params", {}) or {}
     required_params = routing_decision.get("required_params", []) or []
-    missing = [param for param in required_params if not has_param_path(provided_params, param)]
-    if not missing:
-        missing = routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+    missing = filter_missing_params(
+        required_params,
+        provided_params,
+        fallback_missing=(
+            routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+        ),
+    )
 
     # Build plan steps from capability metadata
     capability_cache = get_capability_cache()

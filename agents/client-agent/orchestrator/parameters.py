@@ -3,7 +3,11 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, List, Optional
 
-from artifact_handling import resolve_artifact_inputs, summarize_artifacts_for_context
+from artifact_handling import (
+    collect_chain_required_paths,
+    resolve_artifact_inputs,
+    summarize_artifacts_for_context,
+)
 from capability_cache import get_capability_cache
 from param_schema import (
     extract_required_param_paths,
@@ -46,16 +50,51 @@ async def resolve_user_required_params(routing_decision: Optional[Dict[str, Any]
             return sorted(set(workflow.required_input_paths))
 
     cache = get_capability_cache()
-    required: set[str] = set()
-    for skill_id in get_selected_skills(routing_decision):
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if not capability:
-            continue
-        required.update(extract_required_param_paths(capability.input_schema))
+    capabilities = [
+        await cache.get_capability_by_skill_id(skill_id)
+        for skill_id in get_selected_skills(routing_decision)
+    ]
+    # Chain-aware: sequential downstream artifact refs are runtime-produced
+    # and must not resurface as user-required when requirements are
+    # recomputed in the follow-up flow.
+    chain = collect_chain_required_paths(capabilities, routing_decision.get("workflow_type"))
 
-    if required:
-        return sorted(required)
+    if chain.user_paths:
+        return sorted(chain.user_paths)
     return sorted(set(routing_decision.get("required_params", []) or []))
+
+
+def filter_missing_params(
+    required_params: List[str],
+    provided_params: Dict[str, Any],
+    fallback_missing: Optional[List[str]] = None,
+) -> List[str]:
+    """Required params not yet provided; an empty result yields the fallback."""
+    missing = [param for param in required_params if not has_param_path(provided_params, param)]
+    if not missing and fallback_missing:
+        missing = [str(param) for param in fallback_missing]
+    return missing
+
+
+async def compute_required_and_missing(
+    routing_decision: Dict[str, Any],
+    fallback_missing: Optional[List[str]] = None,
+) -> tuple[List[str], List[str]]:
+    """Required params for the routing decision, and those not yet provided."""
+    required = await resolve_user_required_params(routing_decision)
+    provided = routing_decision.get("extracted_params", {}) or {}
+    return required, filter_missing_params(required, provided, fallback_missing)
+
+
+async def collect_selected_skill_properties(selected_skills: List[str]) -> Dict[str, Any]:
+    """Merge flattened input-schema properties across the selected skills."""
+    cache = get_capability_cache()
+    properties: Dict[str, Any] = {}
+    for skill_id in selected_skills:
+        capability = await cache.get_capability_by_skill_id(skill_id)
+        if capability:
+            properties.update(flatten_schema_properties(capability.input_schema))
+    return properties
 
 
 def order_skills_for_workflow(routing_decision: Optional[Dict[str, Any]]) -> List[str]:

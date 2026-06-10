@@ -9,19 +9,20 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage
 
 from capability_cache import get_capability_cache
-from param_schema import flatten_schema_properties, get_nested_value, has_param_path
+from param_schema import get_nested_value, has_param_path
 from workflow_library import execute_workflow, get_workflow_registry
 
 from . import runtime
 from .models import AgentState
 from .parameters import (
     attach_artifact_context,
+    collect_selected_skill_properties,
+    compute_required_and_missing,
     extract_provided_context_maps,
     get_selected_skills,
     merge_context_map,
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
-    resolve_user_required_params,
 )
 from .skills import invoke_skill
 from .step_transition import resolve_step_transition_params
@@ -370,11 +371,10 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         }
 
     routing_decision = state.get("routing_decision", {})
-    required_params = await resolve_user_required_params(routing_decision)
-    provided_params = routing_decision.get("extracted_params", {}) or {}
-    missing_params = [param for param in required_params if not has_param_path(provided_params, param)]
-    if not missing_params:
-        missing_params = routing_decision.get("missing_required_params", [])
+    required_params, missing_params = await compute_required_and_missing(
+        routing_decision,
+        fallback_missing=routing_decision.get("missing_required_params", []),
+    )
     routing_decision["required_params"] = required_params
     routing_decision["missing_required_params"] = missing_params
     state["routing_decision"] = routing_decision
@@ -389,18 +389,11 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         }
 
     # Gather parameter schemas from all selected skills
-    cache = get_capability_cache()
-    properties: Dict[str, Any] = {}
-    for skill_id in selected_skills:
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if capability:
-            properties.update(flatten_schema_properties(capability.input_schema))
+    properties = await collect_selected_skill_properties(selected_skills)
 
     # Fallback to primary capability only if selected_skills metadata is unavailable
     if not properties and routing_decision.get("primary_skill"):
-        capability = await cache.get_capability_by_skill_id(routing_decision["primary_skill"])
-        if capability:
-            properties = flatten_schema_properties(capability.input_schema)
+        properties = await collect_selected_skill_properties([routing_decision["primary_skill"]])
 
     # Overlay param_metadata (from workflow ui.input_overrides) to fill gaps for
     # skills that have no inputSchema (e.g. those using INPUT_REQUIRED instead).
@@ -467,21 +460,17 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
     Uses selected capability schemas and current missing params from routing_decision.
     """
     routing_decision = state.get("routing_decision", {}) or {}
-    required_params = await resolve_user_required_params(routing_decision)
-    provided_params = routing_decision.get("extracted_params", {}) or {}
-    missing_params = [param for param in required_params if not has_param_path(provided_params, param)]
-    if not missing_params:
-        missing_params = routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+    _, missing_params = await compute_required_and_missing(
+        routing_decision,
+        fallback_missing=(
+            routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+        ),
+    )
     if not missing_params:
         return {}
 
     selected_skills = get_selected_skills(routing_decision)
-    cache = get_capability_cache()
-    properties: Dict[str, Any] = {}
-    for skill_id in selected_skills:
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if capability:
-            properties.update(flatten_schema_properties(capability.input_schema))
+    properties = await collect_selected_skill_properties(selected_skills)
 
     param_schema = {param: properties.get(param, {"type": "string"}) for param in missing_params}
 
@@ -568,13 +557,11 @@ async def apply_followup_answers_to_state(
     )
 
     routing_decision["extracted_params"] = extracted_params
-    required_params = await resolve_user_required_params(routing_decision)
+    required_params, missing_params = await compute_required_and_missing(routing_decision)
     routing_decision["required_params"] = required_params
-    routing_decision["missing_required_params"] = [
-        param for param in required_params if not has_param_path(extracted_params, param)
-    ]
+    routing_decision["missing_required_params"] = missing_params
     state["routing_decision"] = routing_decision
-    state["missing_info"] = routing_decision["missing_required_params"]
+    state["missing_info"] = missing_params
 
     if extracted_params.get("material_id"):
         state["material_id"] = extracted_params.get("material_id")
