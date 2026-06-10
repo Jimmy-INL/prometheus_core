@@ -146,11 +146,86 @@ def extract_artifact_field_paths(
     return result
 
 
+_BIND_STOPWORDS = {
+    "a", "an", "and", "artifact", "artifacts", "file", "for", "from", "id", "ids",
+    "input", "of", "or", "output", "the", "this", "to", "with",
+}
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _binding_tokens(*texts: Any) -> set:
+    tokens: set = set()
+    for text in texts:
+        if text is None:
+            continue
+        if isinstance(text, (list, tuple)):
+            tokens |= _binding_tokens(*text)
+            continue
+        tokens |= set(_TOKEN_RE.findall(str(text).lower()))
+    return tokens - _BIND_STOPWORDS
+
+
+def _param_mime_hints(prop: Dict[str, Any]) -> List[str]:
+    raw = prop.get("x_artifact_mime") or prop.get("x-artifact-mime") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(item).strip().lower() for item in raw if str(item).strip()]
+
+
+def _score_artifact_for_param(
+    path: str,
+    prop: Dict[str, Any],
+    artifact: Dict[str, Any],
+    order_index: int,
+) -> Optional[float]:
+    """Score how well a produced artifact fits an artifact-ref param.
+
+    Returns None when an explicit ``x_artifact_mime`` hint on the param
+    disqualifies the artifact outright.
+    """
+    mime = str(artifact.get("mime_type") or "").strip().lower()
+    hints = _param_mime_hints(prop)
+    score = 0.0
+    if hints:
+        if mime and any(mime == hint or mime.startswith(hint) for hint in hints):
+            score += 100.0
+        else:
+            return None
+
+    name = str(artifact.get("name") or "")
+    extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    artifact_tokens = _binding_tokens(
+        name, artifact.get("description"), mime, artifact.get("tags"), extension
+    )
+    param_tokens = _binding_tokens(path, prop.get("description"))
+    score += 10.0 * len(param_tokens & artifact_tokens)
+
+    # Recency: prefer later steps; within equal description fit, the primary
+    # (first-emitted) artifact of a step beats its side artifacts.
+    score += float(artifact.get("_step") or 0) * 2.0
+    if artifact.get("_primary"):
+        score += 1.0
+    # Stable tiebreak toward more recently emitted artifacts.
+    score += order_index * 0.01
+    return score
+
+
+def _default_chain_artifact(produced_artifacts: List[Dict[str, Any]]) -> Optional[str]:
+    """The primary (first-emitted) artifact of the most recent producing step."""
+    if not produced_artifacts:
+        return None
+    last_step = max(int(a.get("_step") or 0) for a in produced_artifacts)
+    for artifact in produced_artifacts:
+        if int(artifact.get("_step") or 0) == last_step and artifact.get("_primary"):
+            return str(artifact.get("artifact_id") or "") or None
+    return str(produced_artifacts[-1].get("artifact_id") or "") or None
+
+
 def bind_produced_artifacts(
     params: Dict[str, Any],
     input_schema: Optional[Dict[str, Any]],
-    produced_artifact_ids: List[str],
-    latest_artifact_id: Optional[str] = None,
+    produced_artifacts: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Bind artifact-reference params to artifacts produced by earlier steps.
 
@@ -160,31 +235,67 @@ def bind_produced_artifacts(
     step (correct: "revise the valve" needs the existing valve), but the
     extracted params are shared by every step — so once an upstream step has
     produced artifacts, an inherited planning-time value on a later step is
-    stale by construction and meshing/converting it would silently operate on
-    the pre-chain artifact.
+    stale by construction.
 
-    Single-mode paths are therefore OVERRIDDEN with `latest_artifact_id`
-    (the first artifact of the most recent producing step) unless the current
-    value is itself chain-produced. Multi-mode paths are filled only when
-    empty. Chains needing richer dataflow (step 3 consuming step 1's output)
-    should use a workflow template with explicit bindings.
+    Single-mode paths are therefore OVERRIDDEN (unless the current value is
+    itself chain-produced) with the best-matching produced artifact:
+    each candidate is scored by the param's optional ``x_artifact_mime``
+    hint, token overlap between the param's name/description and the
+    artifact's name/description/mime/tags/extension, and recency (later
+    steps win; a step's first-emitted artifact beats its side artifacts).
+    So "Exodus mesh artifact to post-process" selects the .e mesh even when
+    a visualization artifact was emitted first, and two params with distinct
+    descriptions can each bind to a different upstream step's output.
+
+    ``produced_artifacts`` entries carry artifact_id/name/description/
+    mime_type/tags plus ``_step`` (producing step index) and ``_primary``
+    (first-emitted in its step). Multi-mode paths are filled (only when
+    empty) with every produced id, in order.
     """
-    if not produced_artifact_ids or not isinstance(input_schema, dict):
+    if not produced_artifacts or not isinstance(input_schema, dict):
         return params
     artifact_paths = extract_artifact_field_paths(input_schema)
     if not artifact_paths:
         return params
 
-    preferred = latest_artifact_id or produced_artifact_ids[-1]
+    properties = input_schema.get("properties", {}) or {}
+    produced_ids = [str(a.get("artifact_id") or "") for a in produced_artifacts]
+    fallback = _default_chain_artifact(produced_artifacts)
+
+    def _prop_for(path: str) -> Dict[str, Any]:
+        node: Any = {"properties": properties}
+        for part in path.split("."):
+            node = (node.get("properties", {}) or {}).get(part, {})
+            if not isinstance(node, dict):
+                return {}
+        return node
+
     resolved = dict(params or {})
     for path, mode in artifact_paths.items():
         current = get_nested_value(resolved, path)
         if mode == "multiple":
             if current is None:
-                set_nested_value(resolved, path, list(produced_artifact_ids))
+                set_nested_value(resolved, path, [aid for aid in produced_ids if aid])
             continue
-        if current is None or str(current) not in produced_artifact_ids:
-            set_nested_value(resolved, path, preferred)
+        if current is not None and str(current) in produced_ids:
+            continue  # already bound to chain output (or planner anticipated it)
+
+        prop = _prop_for(path)
+        best_id: Optional[str] = None
+        best_score: Optional[float] = None
+        for order_index, artifact in enumerate(produced_artifacts):
+            artifact_id = str(artifact.get("artifact_id") or "")
+            if not artifact_id:
+                continue
+            score = _score_artifact_for_param(path, prop, artifact, order_index)
+            if score is None:
+                continue
+            if best_score is None or score > best_score:
+                best_score = score
+                best_id = artifact_id
+        chosen = best_id or fallback
+        if chosen:
+            set_nested_value(resolved, path, chosen)
     return resolved
 
 

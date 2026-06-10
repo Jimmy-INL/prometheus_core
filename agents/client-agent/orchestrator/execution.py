@@ -108,25 +108,24 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
             # Sequential: invoke skills in order, passing results between them
             invocation_results = []
             previous_results: Dict[str, Any] = {}
-            produced_artifact_ids: List[str] = []
-            latest_artifact_id: str | None = None
+            produced_artifacts: List[Dict[str, Any]] = []
             cache = get_capability_cache()
-            for skill_id in selected_skills:
+            for step_index, skill_id in enumerate(selected_skills):
                 invoke_params = dict(params)
                 if previous_results:
                     # Pass upstream results to downstream skills
                     invoke_params["upstream_results"] = previous_results
-                if produced_artifact_ids:
+                if produced_artifacts:
                     # Sequential dataflow: bind this step's artifact-reference
                     # inputs to the chain's own output (deferred at planning
-                    # time; planning-time catalog bindings are overridden —
-                    # they belong to the first step and are stale here).
+                    # time; stale planning-time catalog bindings are
+                    # overridden). Candidates are matched on the param's
+                    # description/mime hints against artifact metadata.
                     capability = await cache.get_capability_by_skill_id(skill_id)
                     invoke_params = bind_produced_artifacts(
                         invoke_params,
                         capability.input_schema if capability else None,
-                        produced_artifact_ids,
-                        latest_artifact_id,
+                        produced_artifacts,
                     )
                 item = await invoke_skill(skill_id, invoke_params, conversation_id)
                 invocation_results.append(item)
@@ -134,21 +133,30 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     previous_results[skill_id] = item["result"]
                     result_payload = item["result"]
                     if isinstance(result_payload, dict):
-                        step_artifact_ids: List[str] = []
+                        known_ids = {a["artifact_id"] for a in produced_artifacts}
+                        first_in_step = True
                         for artifact in result_payload.get("artifacts", []) or []:
                             if not isinstance(artifact, dict):
                                 continue
                             artifact_id = str(
                                 artifact.get("artifact_id") or artifact.get("artifactId") or ""
                             ).strip()
-                            if artifact_id and artifact_id not in produced_artifact_ids:
-                                produced_artifact_ids.append(artifact_id)
-                                step_artifact_ids.append(artifact_id)
-                        if step_artifact_ids:
-                            # First artifact of the most recent producing step:
-                            # the primary output (side artifacts like reports
-                            # come after it).
-                            latest_artifact_id = step_artifact_ids[0]
+                            if not artifact_id or artifact_id in known_ids:
+                                continue
+                            produced_artifacts.append(
+                                {
+                                    "artifact_id": artifact_id,
+                                    "name": artifact.get("name"),
+                                    "description": artifact.get("description"),
+                                    "mime_type": artifact.get("mime_type")
+                                    or artifact.get("mimeType"),
+                                    "tags": artifact.get("tags"),
+                                    "_step": step_index,
+                                    "_primary": first_in_step,
+                                }
+                            )
+                            known_ids.add(artifact_id)
+                            first_in_step = False
         else:
             # Single: invoke skills one by one (no result passing)
             invocation_results = []
