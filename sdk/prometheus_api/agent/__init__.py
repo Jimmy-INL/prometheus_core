@@ -7,8 +7,11 @@ from .base import (
     PrometheusAgent,
     PrometheusAgentExecutor,
 )
+from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
+from ..contract import ConversationRequest, ConversationResponse, ConversationStatus
+from .task_store import RedisTaskStore
 from .registry import AgentRegistryClient
 from .worker import PrometheusWorker
 
@@ -33,8 +36,13 @@ __all__ = [
     "PrometheusWorker",
     "ArtifactReference",
     "ArtifactRegistry",
+    "ArtifactResolver",
     "AgentRegistryClient",
     "ContextStateStore",
+    "ConversationRequest",
+    "ConversationResponse",
+    "ConversationStatus",
+    "RedisTaskStore",
     # A2A types
     "RequestContext",
     "EventQueue",

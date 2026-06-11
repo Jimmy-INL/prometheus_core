@@ -9,6 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **`prometheus_api.storage_client`** — Pydantic-typed sync (`StorageClient`) and async (`AsyncStorageClient`) HTTP clients for items, files (incl. chunked uploads), relationships, search, tags, timeseries. Also registers a `deeplynx://` fsspec filesystem (`DeepLynxFileSystem`) via the `fsspec.specs` entry point.
 2. **`prometheus_api.agent`** — `PrometheusAgent` base class for A2A-protocol agents (built on `a2a-sdk` + Starlette/uvicorn). Subclasses override `async _execute(params, context, event_queue)` and the base handles agent-card loading, bearer-token auth, registry registration, status/artifact emission, and per-`contextId` state persistence.
 
+`prometheus_api.contract` (package top level, importable with only pydantic — no agent runtime) holds the canonical frontend ↔ client-agent wire contract (`ConversationRequest`, `ConversationResponse`, `ConversationStatus`) — the JSON payload exchanged in A2A text parts. The Prometheus platform's frontend and client-agent must import these models rather than redefining them; change them here and the change propagates to both sides. They are also re-exported from `prometheus_api.agent`.
+
+Two more shared, dependency-light top-level modules (do not copy their logic into consumers):
+- `prometheus_api.a2a_stream` — client-side consumption of A2A `message/stream` responses (SSE/NDJSON parsing, heartbeat skipping, status/background callbacks, artifact merge). Used by the platform frontend and client-agent.
+- `prometheus_api.redis_utils` — `create_redis_client()`, the single Redis connection recipe (`REDIS_URL`/`REDIS_PASSWORD`, `decode_responses=True`, fail-fast ping, logged `None` on failure). The agent stores (`ArtifactRegistry`, `ContextStateStore`, `RedisTaskStore`) build their connections through it.
+
+Artifact-to-file resolution (cache layout, allowed local roots, fsspec downloads, inline materialization) lives in `prometheus_api.agent.artifact_resolver.ArtifactResolver`; `PrometheusAgent.get_artifact_file_path` is a thin delegate bound to the agent's registry.
+
 The agent component depends on the storage client (used internally for `ContextStateStore` and artifact persistence). The A2A server stack (`a2a-sdk[http-server]`, `starlette`, `uvicorn`) is part of the base `dependencies` — there is no `[agent]` extra.
 
 ## Common Commands

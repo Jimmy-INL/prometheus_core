@@ -10,15 +10,12 @@ import json
 import logging
 import uuid
 import asyncio
-import hashlib
-import re
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict, dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional
 from typing import Sequence, cast
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 from starlette.responses import JSONResponse
 
 from a2a.server.agent_execution import AgentExecutor
@@ -27,6 +24,8 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+
+from .task_store import RedisTaskStore
 from a2a.types import (
     AgentCard,
     AgentCapabilities,
@@ -45,6 +44,7 @@ from a2a.types import (
     TextPart,
 )
 from .middleware import BearerTokenMiddleware
+from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
 from .debug_routes import add_debug_chat_route
@@ -207,9 +207,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         raw = (os.getenv("PROMETHEUS_HEARTBEAT_INTERVAL") or "15").strip()
         value = float(raw)
         if value <= 0:
-            raise ValueError(
-                "PROMETHEUS_HEARTBEAT_INTERVAL must be a positive number of seconds"
-            )
+            raise ValueError("PROMETHEUS_HEARTBEAT_INTERVAL must be a positive number of seconds")
         return value
 
     async def _execute_with_heartbeat(
@@ -454,6 +452,7 @@ class PrometheusAgent:
         self.agent_card_dict: Optional[Dict[str, Any]] = None  # Raw dict for registry registration
         self.executor: Optional[PrometheusAgentExecutor] = None
         self.artifact_registry = ArtifactRegistry()
+        self.artifact_resolver = ArtifactResolver(self.artifact_registry)
         self.context_state_store = ContextStateStore()
 
     def get_raw_agent_card(self) -> Dict[str, Any]:
@@ -703,16 +702,9 @@ class PrometheusAgent:
     ) -> Path:
         """Resolve an artifact ID to a reachable local file path.
 
-        URI-backed artifacts are downloaded through fsspec into a deterministic
-        cache path, except for ``file://`` artifacts which are validated in place
-        against allowed local roots. Inline JSON and text artifacts are
-        materialized as UTF-8 cache files so downstream code can consume all
-        artifact kinds through one file-path workflow.
+        Delegates to :class:`ArtifactResolver`; see its docs for cache layout,
+        local-file validation, and inline materialization semantics.
         """
-        normalized_artifact_id = str(artifact_id or "").strip()
-        if not normalized_artifact_id:
-            raise ValueError("artifact_id is required")
-
         resolved_conversation_id = str(
             conversation_id
             or (self._context_conversation_id(context) if context is not None else "")
@@ -720,291 +712,14 @@ class PrometheusAgent:
         if not resolved_conversation_id:
             raise ValueError("conversation_id or context is required")
 
-        reference = self._resolve_artifact_for_retrieval(
+        return await self.artifact_resolver.get_artifact_file_path(
+            artifact_id,
             conversation_id=resolved_conversation_id,
-            artifact_id=normalized_artifact_id,
             artifacts=artifacts,
-        )
-        if reference is None:
-            raise FileNotFoundError(
-                f"Artifact '{normalized_artifact_id}' was not found in conversation "
-                f"'{resolved_conversation_id}'."
-            )
-
-        root = self._artifact_cache_root(cache_dir)
-        uri = str(reference.uri or "").strip()
-        if uri:
-            if self._is_local_file_uri(uri):
-                return self._resolve_local_artifact_file(
-                    uri,
-                    cache_root=root,
-                    allowed_file_roots=allowed_file_roots,
-                    expected_size=reference.size_bytes,
-                )
-            return await asyncio.to_thread(
-                self._download_artifact_uri_to_cache,
-                reference,
-                cache_root=root,
-                force_download=force_download,
-            )
-
-        return self._materialize_inline_artifact(
-            reference,
-            cache_root=root,
+            cache_dir=cache_dir,
+            allowed_file_roots=allowed_file_roots,
             force_download=force_download,
         )
-
-    def _resolve_artifact_for_retrieval(
-        self,
-        *,
-        conversation_id: str,
-        artifact_id: str,
-        artifacts: Optional[Sequence[Mapping[str, Any]]],
-    ) -> Optional[ArtifactReference]:
-        """Resolve a catalog artifact from Redis/memory or a provided catalog."""
-        reference = self.resolve_artifact_reference(conversation_id, artifact_id)
-        if reference is not None:
-            return reference
-
-        for artifact in artifacts or []:
-            if not isinstance(artifact, Mapping):
-                continue
-            candidate_id = str(artifact.get("artifact_id") or "").strip()
-            if candidate_id != artifact_id:
-                continue
-            try:
-                reference = ArtifactReference.from_any(
-                    dict(artifact),
-                    conversation_id=conversation_id,
-                )
-            except Exception:
-                reference = None
-            if reference is None:
-                continue
-            if not reference.conversation_id:
-                reference.conversation_id = conversation_id
-            try:
-                self.artifact_registry.register(reference)
-            except Exception as exc:
-                logger.debug("Failed to cache artifact reference %s: %s", artifact_id, exc)
-            return reference
-
-        return None
-
-    @staticmethod
-    def _artifact_cache_root(cache_dir: Optional[Path]) -> Path:
-        configured = cache_dir or Path(
-            os.getenv("PROMETHEUS_ARTIFACT_CACHE_DIR", "/tmp/prometheus-artifact-cache")
-        )
-        root = Path(configured).expanduser().resolve()
-        root.mkdir(parents=True, exist_ok=True)
-        return root
-
-    @staticmethod
-    def _is_local_file_uri(uri: str) -> bool:
-        parsed = urlparse(uri)
-        if parsed.scheme == "file":
-            return True
-        return parsed.scheme == "" and Path(uri).is_absolute()
-
-    @staticmethod
-    def _safe_artifact_filename(name: str, *, fallback: str, suffix: str = "") -> str:
-        basename = Path(str(name or "")).name
-        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", basename).strip("._-")
-        if not cleaned:
-            cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", fallback).strip("._-")
-        if not cleaned:
-            cleaned = "artifact"
-        if suffix and not Path(cleaned).suffix:
-            cleaned = f"{cleaned}{suffix}"
-        return cleaned
-
-    @staticmethod
-    def _cache_digest(reference: ArtifactReference, inline_bytes: Optional[bytes] = None) -> str:
-        payload = {
-            "artifact_id": reference.artifact_id,
-            "uri": reference.uri,
-            "created_at": reference.created_at,
-            "size_bytes": reference.size_bytes,
-            "json_type": reference.json_type,
-            "mime_type": reference.mime_type,
-        }
-        if inline_bytes is not None:
-            payload["inline_sha256"] = hashlib.sha256(inline_bytes).hexdigest()
-        raw = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-        return hashlib.sha256(raw).hexdigest()[:16]
-
-    def _artifact_cache_path(
-        self,
-        reference: ArtifactReference,
-        *,
-        cache_root: Path,
-        suffix: str = "",
-        inline_bytes: Optional[bytes] = None,
-    ) -> Path:
-        safe_id = self._safe_artifact_filename(reference.artifact_id, fallback="artifact")
-        safe_name = self._safe_artifact_filename(
-            reference.name,
-            fallback=reference.artifact_id,
-            suffix=suffix,
-        )
-        digest = self._cache_digest(reference, inline_bytes=inline_bytes)
-        return cache_root / safe_id / f"{digest}-{safe_name}"
-
-    def _allowed_local_file_roots(
-        self,
-        *,
-        cache_root: Path,
-        allowed_file_roots: Optional[Sequence[Path | str]],
-    ) -> List[Path]:
-        raw_roots: List[Path | str] = []
-        if allowed_file_roots is not None:
-            raw_roots.extend(allowed_file_roots)
-        else:
-            configured = os.getenv("PROMETHEUS_ARTIFACT_FILE_ALLOWED_ROOTS", "").strip()
-            if configured:
-                raw_roots.extend(item for item in configured.split(os.pathsep) if item)
-
-        raw_roots.append(cache_root)
-        roots: List[Path] = []
-        for root in raw_roots:
-            try:
-                roots.append(Path(root).expanduser().resolve())
-            except Exception:
-                continue
-        return roots
-
-    @staticmethod
-    def _ensure_readable_file(path: Path, *, expected_size: Optional[int] = None) -> Path:
-        resolved = path.expanduser().resolve(strict=True)
-        if not resolved.is_file():
-            raise FileNotFoundError(f"Artifact path is not a file: {resolved}")
-        try:
-            stat = resolved.stat()
-            with open(resolved, "rb"):
-                pass
-        except OSError as exc:
-            raise PermissionError(f"Artifact path is not readable: {resolved}") from exc
-        if expected_size is not None and stat.st_size != int(expected_size):
-            raise ValueError(
-                f"Artifact cache size mismatch for {resolved}: "
-                f"expected {expected_size}, got {stat.st_size}"
-            )
-        return resolved
-
-    @staticmethod
-    def _is_relative_to(path: Path, root: Path) -> bool:
-        try:
-            path.relative_to(root)
-            return True
-        except ValueError:
-            return False
-
-    def _resolve_local_artifact_file(
-        self,
-        uri: str,
-        *,
-        cache_root: Path,
-        allowed_file_roots: Optional[Sequence[Path | str]],
-        expected_size: Optional[int],
-    ) -> Path:
-        parsed = urlparse(uri)
-        if parsed.scheme == "file":
-            if parsed.netloc and parsed.netloc not in {"localhost", "127.0.0.1"}:
-                raise ValueError(f"Remote file URI hosts are not supported: {uri}")
-            candidate = Path(unquote(parsed.path))
-        else:
-            candidate = Path(uri)
-
-        resolved = self._ensure_readable_file(candidate, expected_size=expected_size)
-        allowed_roots = self._allowed_local_file_roots(
-            cache_root=cache_root,
-            allowed_file_roots=allowed_file_roots,
-        )
-        if not any(self._is_relative_to(resolved, root) for root in allowed_roots):
-            configured_hint = "PROMETHEUS_ARTIFACT_FILE_ALLOWED_ROOTS"
-            raise PermissionError(
-                f"Local artifact path is outside allowed roots: {resolved}. "
-                f"Configure {configured_hint} or pass allowed_file_roots."
-            )
-        return resolved
-
-    def _download_artifact_uri_to_cache(
-        self,
-        reference: ArtifactReference,
-        *,
-        cache_root: Path,
-        force_download: bool,
-    ) -> Path:
-        uri = str(reference.uri or "").strip()
-        destination = self._artifact_cache_path(reference, cache_root=cache_root)
-        if destination.exists() and not force_download:
-            try:
-                return self._ensure_readable_file(
-                    destination,
-                    expected_size=reference.size_bytes,
-                )
-            except ValueError:
-                pass
-
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            import fsspec
-
-            fs, path = fsspec.core.url_to_fs(uri)
-            fs.get(path, str(temporary))
-            os.replace(temporary, destination)
-            return self._ensure_readable_file(
-                destination,
-                expected_size=reference.size_bytes,
-            )
-        except Exception:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
-            raise
-
-    def _materialize_inline_artifact(
-        self,
-        reference: ArtifactReference,
-        *,
-        cache_root: Path,
-        force_download: bool,
-    ) -> Path:
-        if reference.json_body is not None:
-            content = json.dumps(reference.json_body, indent=2, sort_keys=True).encode("utf-8")
-            suffix = ".json"
-        elif reference.text_body is not None:
-            content = str(reference.text_body).encode("utf-8")
-            suffix = ".txt"
-        else:
-            raise ValueError(
-                f"Artifact '{reference.artifact_id}' has neither a URI nor inline content."
-            )
-
-        destination = self._artifact_cache_path(
-            reference,
-            cache_root=cache_root,
-            suffix=suffix,
-            inline_bytes=content,
-        )
-        if destination.exists() and not force_download:
-            return self._ensure_readable_file(destination, expected_size=len(content))
-
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            temporary.write_bytes(content)
-            os.replace(temporary, destination)
-            return self._ensure_readable_file(destination, expected_size=len(content))
-        except Exception:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
-            raise
 
     def load_agent_card(self) -> AgentCard:
         """
@@ -1228,6 +943,47 @@ class PrometheusAgent:
             final=final,
             message=message,
             metadata=metadata,
+        )
+
+    async def declare_long_running(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        *,
+        estimate_seconds: Optional[float] = None,
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Declare up front that this skill will run for a long time.
+
+        Emits a non-final ``working`` status tagged ``metadata.background = True``
+        so the orchestrator can *proactively* detach the turn — handing control
+        back to the user immediately instead of waiting out its soft deadline —
+        and deliver the result out-of-band when the work finishes. Call this near
+        the start of ``_execute`` for simulation-class skills that you know will
+        outlive a normal request.
+
+        The task itself keeps running exactly as before; this only flags it as a
+        background candidate. ``estimate_seconds`` (if given) is forwarded in the
+        event metadata as a hint for UI/scheduling.
+        """
+        payload: Dict[str, Any] = {"background": True}
+        if estimate_seconds is not None:
+            payload["estimate_seconds"] = float(estimate_seconds)
+        if metadata:
+            payload.update(metadata)
+        if message is None:
+            if estimate_seconds is not None:
+                message = f"Running in the background (estimated ~{int(estimate_seconds)}s)."
+            else:
+                message = "Running in the background."
+        await emit_status_update(
+            context=context,
+            event_queue=event_queue,
+            state=TaskState.working,
+            final=False,
+            message=message,
+            metadata=payload,
         )
 
     async def run_worker(
@@ -1641,10 +1397,19 @@ class PrometheusAgent:
         executor = self.create_executor()
         self.executor = executor
 
-        # Create request handler
-        request_handler = DefaultRequestHandler(
-            agent_executor=executor, task_store=InMemoryTaskStore()
-        )
+        # Create request handler. Tasks are persisted in Redis by default so
+        # background / long-running tasks survive an agent restart and can be
+        # re-attached to. RedisTaskStore degrades to an in-process dict when
+        # Redis is unavailable; set PROMETHEUS_TASK_STORE=memory to force the
+        # SDK's volatile in-memory store. See docs/dev-docs/background-tasks.md.
+        task_store_kind = os.getenv("PROMETHEUS_TASK_STORE", "redis").strip().lower()
+        if task_store_kind == "memory":
+            task_store: Any = InMemoryTaskStore()
+            logger.info("Using in-memory task store (PROMETHEUS_TASK_STORE=memory)")
+        else:
+            task_store = RedisTaskStore()
+            logger.info("Using Redis-backed task store")
+        request_handler = DefaultRequestHandler(agent_executor=executor, task_store=task_store)
 
         # Create A2A application builder
         builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)

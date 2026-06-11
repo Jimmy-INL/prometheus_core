@@ -882,3 +882,52 @@ class TestPrometheusWorker:
         worker = PrometheusWorker()
         with pytest.raises(RuntimeError, match="not bound"):
             worker.emit_status_update("nope")
+
+
+class TestDeclareLongRunning:
+    """Tests for PrometheusAgent.declare_long_running (proactive detach signal)."""
+
+    def _context(self):
+        ctx = MagicMock(spec=RequestContext)
+        ctx.task_id = "task-1"
+        ctx.context_id = "conv-1"
+        return ctx
+
+    class _RecordingQueue:
+        def __init__(self):
+            self.events = []
+
+        async def enqueue_event(self, event):
+            self.events.append(event)
+
+    def test_emits_nonfinal_working_with_background_metadata(self):
+        agent = PrometheusAgent(agent_name="Long Agent")
+        queue_ = self._RecordingQueue()
+        asyncio.run(
+            agent.declare_long_running(self._context(), queue_, estimate_seconds=120)
+        )
+        assert len(queue_.events) == 1
+        event = queue_.events[0]
+        assert event.status.state == TaskState.working
+        assert event.final is False
+        assert event.metadata["background"] is True
+        assert event.metadata["estimate_seconds"] == 120.0
+        # A default message naming the estimate is emitted.
+        assert "120" in event.status.message.parts[0].root.text
+
+    def test_custom_message_and_extra_metadata_merge(self):
+        agent = PrometheusAgent(agent_name="Long Agent")
+        queue_ = self._RecordingQueue()
+        asyncio.run(
+            agent.declare_long_running(
+                self._context(),
+                queue_,
+                message="custom",
+                metadata={"job_kind": "sim"},
+            )
+        )
+        event = queue_.events[0]
+        assert event.metadata["background"] is True
+        assert event.metadata["job_kind"] == "sim"
+        assert "estimate_seconds" not in event.metadata
+        assert event.status.message.parts[0].root.text == "custom"

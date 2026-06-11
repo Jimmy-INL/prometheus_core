@@ -17,10 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-try:
-    import redis  # type: ignore
-except Exception:  # pragma: no cover - optional dependency in some environments
-    redis = None
+from ..redis_utils import create_redis_client
 
 
 def _utc_now_iso() -> str:
@@ -297,20 +294,9 @@ class ArtifactRegistry:
 
     @property
     def redis_client(self):
-        if self._redis is not None:
-            return self._redis
-        if redis is None:
-            return None
-        try:
-            self._redis = redis.Redis.from_url(
-                self.redis_url, password=self.redis_password, decode_responses=True
-            )
-            # Light ping once to fail fast on unreachable endpoints.
-            self._redis.ping()
-            return self._redis
-        except Exception:
-            self._redis = None
-            return None
+        if self._redis is None:
+            self._redis = create_redis_client(self.redis_url, password=self.redis_password)
+        return self._redis
 
     @staticmethod
     def _timestamp_score(created_at: str) -> float:
