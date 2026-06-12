@@ -15,7 +15,7 @@ from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 
 # Read secrets and configuration from environment variables.
 # Never hard-code API keys or URLs here.
-# Example:
+# Example (add `import os` to the imports above):
 #   MY_API_KEY = os.getenv("MY_API_KEY")
 
 logging.basicConfig(

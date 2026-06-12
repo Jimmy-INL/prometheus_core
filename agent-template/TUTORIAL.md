@@ -71,7 +71,7 @@ my-agent/
 > replace the `TEMPLATE_*` placeholders (`TEMPLATE_NAME`, `TEMPLATE_DESCRIPTION`,
 > `TEMPLATE_CLASS`, `TEMPLATE_SLUG`, `TEMPLATE_SKILL_ID`, `TEMPLATE_SKILL_NAME`,
 > `TEMPLATE_SKILL_DESCRIPTION`) yourself. The walkthrough below uses concrete
-> example values (`My Agent`, `my_skill`, `input_text`) to show what to put.
+> example values (`My Agent`, `my_skill`, `input_data`) to show what to put.
 
 Move into your new agent directory and create your `.env` (it holds your secrets
 and is never committed):
@@ -84,10 +84,21 @@ cp .env.example .env
 Then set up a local Python environment for development:
 
 ```bash
-uv venv
+uv sync                            # creates .venv with your deps + dev tools (pytest, ruff)
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-uv pip install git+https://github.inl.gov/genesis/prometheus_api.git
+
+# Install prometheus_api PINNED to the platform's base image hash, so what
+# you develop against locally matches what runs in the container. Find the
+# hash in your .env (PROMETHEUS_API_BASE_IMAGE_HASH) or the platform Makefile,
+# and re-run this when the platform bumps it:
+uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@2b3dbcf"
 ```
+
+> **Why pin?** `prometheus_api` evolves without backward-compatibility
+> guarantees. An unpinned install tracks `main` and can silently break your
+> agent; the pin keeps local dev and the Docker base image on the same
+> version. When you bump the hash, read the
+> [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md).
 
 ---
 
@@ -99,7 +110,6 @@ The agent card is a JSON file that tells the orchestrator everything it needs to
 {
   "name": "My Agent",
   "description": "One sentence description used by the orchestrator to route requests.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -115,9 +125,15 @@ The agent card is a JSON file that tells the orchestrator everything it needs to
 |-------|-----------------|
 | `name` | Human-readable name shown in the UI. |
 | `description` | **One sentence** used by the LLM orchestrator when deciding which agent to call. Write it as a capability statement: *"Analyzes corrosion rates for stainless steel alloys given temperature and pH."* |
-| `url` | Leave as `"http://localhost:8000"`. The base class overwrites this at runtime with the container's actual hostname. |
 | `version` | Semantic version of your agent. Increment when the skill interface changes. |
 | `capabilities.streaming` | Set `true` only if your agent emits streaming partial responses (rare; not needed for most agents). |
+
+There is no `url` field: the base class sets the registered URL at startup —
+`EXTERNAL_AGENT_URL` if set, otherwise `http://{container hostname}:{AGENT_PORT}`.
+Inside Docker Compose the hostname is the service name, which resolves on
+`agent-network`, so you normally don't need to configure anything. Set
+`EXTERNAL_AGENT_URL` only when the agent is port-mapped or runs on a different
+host than the platform.
 
 ### Skills
 
@@ -256,6 +272,20 @@ return {
 }
 ```
 
+**Errors — return vs raise.** Two distinct failure modes:
+
+- **User/input errors** (missing or invalid parameters, nothing to analyze):
+  `return {"status": "error", "error": "<what the user can fix>"}`. The task
+  still completes; the orchestrator sees a structured error it can relay or
+  recover from (e.g. by asking the user a follow-up).
+- **Infrastructure failures** (downstream service unreachable, unexpected
+  exception): just let the exception propagate (or `raise`). The base class
+  logs it and emits a final `failed` task status.
+
+Don't wrap your whole `_execute` in `try/except Exception` that converts
+crashes into `{"status": "error"}` — that hides real failures from the
+platform's task accounting.
+
 ---
 
 ## Step 4 — Adding your logic
@@ -327,6 +357,8 @@ class SummarizerAgent(PrometheusAgent):
 ### Example B: Calling an external HTTP API
 
 ```python
+import os
+
 import httpx
 
 class DataFetcherAgent(PrometheusAgent):
@@ -587,7 +619,7 @@ You don't normally need to build manually — `docker compose up` does it. But t
 
 ```bash
 # Get the current hash from prometheus_platform/Makefile or your .env
-export PROMETHEUS_API_BASE_IMAGE_HASH=dd30466
+export PROMETHEUS_API_BASE_IMAGE_HASH=2b3dbcf
 
 docker build \
   --build-arg PROMETHEUS_API_BASE_IMAGE_HASH=$PROMETHEUS_API_BASE_IMAGE_HASH \
@@ -737,9 +769,9 @@ curl -s -X POST http://localhost:8000 \
       "message": {
         "messageId": "msg-1",
         "role": "user",
-        "parts": [{"kind": "text", "text": "{\"input_text\": \"hello world\"}"}]
-      },
-      "metadata": {"skillId": "my_skill"}
+        "parts": [{"kind": "text", "text": "{\"input_data\": \"hello world\"}"}],
+        "metadata": {"skillId": "my_skill"}
+      }
     }
   }' | python -m json.tool
 ```
@@ -764,6 +796,33 @@ Stop with `Ctrl+C`, or in the background:
 docker compose up --build -d    # detached (runs in background)
 docker compose logs -f          # follow logs
 docker compose down             # stop and remove container
+```
+
+---
+
+## Testing your agent
+
+The scaffold includes a `tests/` directory wired for `pytest` (with
+`asyncio_mode = "auto"`, so async tests need no decorators). `RequestContext`
+and `EventQueue` are mocked in `tests/conftest.py`, which means `_execute` is
+tested directly — no HTTP server, Redis, or registry required:
+
+```bash
+uv run pytest
+uv run ruff check .
+```
+
+The starter tests cover the example skill's success and missing-input paths.
+As you implement your logic, give every input-validation branch and every
+distinct result shape its own test. To assert on emitted progress updates or
+artifacts, inspect `event_queue.enqueue_event` calls:
+
+```python
+async def test_emits_progress(context, event_queue):
+    agent = _make_agent()
+    await agent._execute({"input_data": "x"}, context, event_queue)
+    events = [call.args[0] for call in event_queue.enqueue_event.await_args_list]
+    assert events  # e.g. check TaskStatusUpdateEvent messages or artifacts
 ```
 
 ---
@@ -832,6 +891,63 @@ await self.send_artifact_reference(
 ```
 
 See [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) for the full artifact API including DeepLynx uploads.
+
+### Consuming artifacts from other agents
+
+In a multi-step plan, an upstream agent's output often reaches you as an
+`artifact_id` parameter (declare it in your `inputSchema` with
+`"x_input_source": "runtime"`). Turn it into a local file path with
+`get_artifact_file_path` — it transparently handles inline JSON/text
+artifacts, `file://` URIs, and `deeplynx://` URIs (downloaded through a
+deterministic cache):
+
+```python
+async def _execute(self, params, context, event_queue):
+    mesh_path = await self.get_artifact_file_path(
+        params["artifact_id"],
+        context=context,                      # supplies the conversation scope
+        artifacts=params.get("artifacts"),    # catalog passed by the orchestrator
+    )
+    result = analyze_mesh(mesh_path)          # a plain pathlib.Path
+    ...
+```
+
+You can also look records up directly: `self.resolve_artifact_reference(conversation_id, artifact_id)` or `self.resolve_artifact_by_name(conversation_id, name)`.
+
+### Conversation messages (vs status updates)
+
+`send_status_update` is transient progress UI; it disappears from view as new
+updates arrive. For user-facing text that should be part of the chat history
+(an intermediate finding, a caveat about the result), emit a durable
+conversation message instead:
+
+```python
+await self.send_conversation_message(
+    context, event_queue,
+    "Corrosion margin is within limits, but the dataset for 350 °C is sparse.",
+)
+```
+
+### Long-running skills: detach the turn (`declare_long_running`)
+
+For simulation-class skills that you *know* will outlive a normal request
+(minutes to hours), tell the orchestrator up front so it hands control back
+to the user immediately and delivers your result out-of-band when the work
+finishes:
+
+```python
+async def _execute(self, params, context, event_queue):
+    await self.declare_long_running(
+        context, event_queue,
+        estimate_seconds=1800,
+        message="Meshing and running the simulation — this takes ~30 minutes.",
+    )
+    # ...then do the work as usual; keep emitting status updates.
+```
+
+This composes with `PrometheusWorker` (Example C): declare first, then run the
+blocking work off-loop. Without the declaration, long tasks still work — the
+orchestrator just keeps the turn open until its own background deadline.
 
 ### Multi-turn input (`INPUT_REQUIRED`)
 
@@ -915,6 +1031,12 @@ self.save_context_state(str(context.context_id), state)
 
 State is backed by Redis when `REDIS_URL` is set, with an in-memory fallback for local development.
 
+As of prometheus_api 0.7.0, `context.context_id` is the **stable conversation
+ID** propagated by the orchestrator: state saved in one call is visible to
+later calls — including calls to *other* skills of your agent — within the
+same conversation. If you need per-invocation scoping instead, key by
+`context.task_id` (see the [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md)).
+
 ---
 
 ## Further reading
@@ -923,6 +1045,7 @@ State is backed by Redis when `REDIS_URL` is set, with an in-memory fallback for
 |----------|-------------|
 | [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
 | [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
+| [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md) | **Check this when bumping `PROMETHEUS_API_BASE_IMAGE_HASH`** — behavior changes per prometheus_api version, with migration steps |
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
 | [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman and corporate CA bundles |

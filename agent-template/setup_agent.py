@@ -79,7 +79,10 @@ def collect_agent_info() -> dict[str, str]:
     slug = get_user_input("\nAgent slug (used for directories and Docker)", default_slug)
 
     # Get class name
-    class_name = get_user_input("\nAgent class name (PascalCase)", default_class)
+    class_name = get_user_input(
+        "\nAgent class name (PascalCase, without an 'Agent' suffix — it is appended automatically)",
+        default_class,
+    )
 
     # Get skill information
     print("\n" + "-" * 70)
@@ -176,7 +179,7 @@ def process_file(file_path: Path, replacements: dict[str, str], output_dir: Path
     new_content = replace_placeholders(content, replacements)
 
     # Determine output path
-    relative_path = file_path.relative_to(Path("agent_template"))
+    relative_path = file_path.relative_to(Path(__file__).parent / "agent_template")
     output_path = output_dir / relative_path
 
     # Create output directory if needed
@@ -191,18 +194,21 @@ def process_file(file_path: Path, replacements: dict[str, str], output_dir: Path
 
 def create_agent(replacements: dict[str, str]) -> None:
     """Create a new agent from the template."""
-    template_dir = Path("agent_template")
+    template_dir = Path(__file__).parent / "agent_template"
     output_dir = Path(replacements["OUTPUT_DIR"])
 
     # Check if template exists
     if not template_dir.exists():
         print(f"\nError: Template directory '{template_dir}' not found.")
-        print("Make sure you're running this script from the project root.")
         sys.exit(1)
 
     # Check if output directory already exists
     if output_dir.exists():
-        overwrite = get_user_input(f"\nWarning: Directory '{output_dir}' already exists. Overwrite? (yes/no)", "no")
+        overwrite = get_user_input(
+            f"\nWarning: Directory '{output_dir}' already exists.\n"
+            f"Overwriting DELETES everything in it, including any code you have written. Overwrite? (yes/no)",
+            "no",
+        )
         if overwrite.lower() not in ["yes", "y"]:
             print("\nSetup cancelled.")
             sys.exit(0)
@@ -229,7 +235,7 @@ def create_agent(replacements: dict[str, str]) -> None:
         process_file(file_path, replacements, output_dir)
 
     # Strip comments from agent.py if requested
-    if replacements["TRIM_COMMENTS"].lower() == "true":
+    if replacements["TRIM_COMMENTS"].strip().lower() in {"true", "yes", "y", "1"}:
         agent_py = output_dir / "agent.py"
         if agent_py.exists():
             with open(agent_py, encoding="utf-8") as f:
