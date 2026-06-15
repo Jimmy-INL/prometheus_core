@@ -20,7 +20,7 @@ CLEAR_COMPOSE_FILES ?= $(COMPOSE_FILES_NG)
 
 # Bump this when a new prometheus_api base image is published.
 # Agent compose files have no hardcoded default and rely on this export.
-PROMETHEUS_API_BASE_IMAGE_HASH ?= dd30466
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 2522845
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include

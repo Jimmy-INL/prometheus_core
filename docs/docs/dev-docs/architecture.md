@@ -57,7 +57,7 @@ graph TD
 
 The frontend is a Python Chainlit application that provides:
 
-- Chat interface with status polling during long-running agent calls
+- Chat interface with streaming status updates during long-running agent calls
 - File upload handling (Exodus, IFC, PDF) with local processing
 - Custom React elements for visualization (ExodusViewer, IFCViewer, MermaidViewer, PlanViewer)
 - Authentication (password-based, OAuth-ready)
@@ -65,7 +65,7 @@ The frontend is a Python Chainlit application that provides:
 - Follow-up suggestion cards and DynamicForm for structured input
 - Conversation history browser backed by Redis state
 
-The frontend communicates with the client-agent via A2A JSON-RPC. During blocking A2A calls, the A2A client polls the agent's `/status/{conversation_id}` endpoint every 3 seconds and displays progress updates in a `cl.Step` element.
+The frontend communicates with the client-agent via A2A JSON-RPC `message/stream`. Streamed `status-update` events update a Chainlit `cl.Step`; the frontend does not poll a side-channel status endpoint.
 
 ### Client-agent (orchestrator)
 
@@ -131,7 +131,7 @@ sequenceDiagram
     participant R as Redis
 
     U->>CL: "Analyze SS316 corrosion at 300C"
-    CL->>CA: A2A message/send (query, conversation_id)
+    CL->>CA: A2A message/stream (query, conversation_id)
     CA->>R: Retrieve prior conversation state
     CA->>LLM: GET /v1/agents (find corrosion agent)
     CA->>CA: LLM classifies → "direct_invoke"
@@ -139,7 +139,7 @@ sequenceDiagram
     LLM->>SA: A2A message/send (params)
     SA-->>CA: Result + artifacts
     CA->>R: Store updated conversation state
-    CA-->>CL: ConversationResponse (status, artifacts)
+    CA-->>CL: Streamed status updates + final ConversationResponse
     CL-->>U: Render response + artifact viewers
 ```
 
@@ -166,7 +166,7 @@ All inter-agent communication uses JSON-RPC 2.0 over HTTP POST:
 
 Authentication uses Bearer tokens via the `Authorization` header, validated by `BearerTokenMiddleware` in the PrometheusAgent base class.
 
-**Current limitation:** The client-agent uses blocking mode (`blocking: true`), meaning it waits for the full specialist agent response before returning. There is no real-time streaming from specialist agents to the frontend.
+The client-agent streams frontend-facing status updates as A2A task events. Downstream specialist calls still use `message/send` unless the target agent advertises streaming support.
 
 ## LiteLLM integration
 

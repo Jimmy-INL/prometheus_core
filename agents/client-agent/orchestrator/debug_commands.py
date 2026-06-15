@@ -39,6 +39,13 @@ async def _collect_registered_agent_debug_entries() -> Tuple[List[Dict[str, Any]
     entries_by_id: Dict[str, Dict[str, Any]] = {}
     errors: List[str] = []
 
+    # Always force a fresh registry pull so the capability cache used by subsequent
+    # prompts reflects the current agent list.
+    try:
+        await get_capability_cache().refresh()
+    except Exception as exc:
+        errors.append(f"capability cache refresh failed: {exc}")
+
     try:
         for agent in await discover_agents():
             if not isinstance(agent, dict):

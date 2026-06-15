@@ -1163,7 +1163,7 @@ Return ONLY the JSON array."""
         log_progress("Formulating OSTI search query...")
         await send_status("Formulating OSTI search query...")
 
-        search_query = self.formulate_search_queries(question)
+        search_query = await asyncio.to_thread(self.formulate_search_queries, question)
         state["search_query"] = search_query
         log_progress(f"Search query: '{search_query}'")
         await send_status(f"OSTI search query: {search_query}")
@@ -1172,7 +1172,7 @@ Return ONLY the JSON array."""
         log_progress(f"Searching OSTI database...")
         await send_status(f"Searching OSTI database for: '{search_query}'...")
 
-        search_results = self.search_osti(search_query, max_results=15)
+        search_results = await asyncio.to_thread(self.search_osti, search_query, max_results=15)
         state["search_results"] = search_results
         state["status"] = "assessing"
 
@@ -1199,10 +1199,11 @@ Return ONLY the JSON array."""
 
             await send_status(f"Assessing abstract {i}/{len(search_results)}...")
 
-            assessment = self.assess_abstract(
+            assessment = await asyncio.to_thread(
+                self.assess_abstract,
                 question,
                 result["title"],
-                result["description"]
+                result["description"],
             )
 
             result["assessment"] = assessment
@@ -1236,7 +1237,7 @@ Return ONLY the JSON array."""
             # Download paper
             await send_status(f"Downloading paper {relevant_count}: {short_title}")
 
-            pdf_path = self.download_paper(result["osti_id"])
+            pdf_path = await asyncio.to_thread(self.download_paper, result["osti_id"])
 
             if not pdf_path:
                 result["download_failed"] = True
@@ -1274,10 +1275,11 @@ Return ONLY the JSON array."""
             # Extract answer
             await send_status(f"Extracting answer from paper {relevant_count}...")
 
-            answer_data = self.extract_answer_from_paper(
+            answer_data = await asyncio.to_thread(
+                self.extract_answer_from_paper,
                 question,
                 paper_text,
-                result["title"]
+                result["title"],
             )
 
             if answer_data.get("answered", False):
@@ -1328,7 +1330,8 @@ Return ONLY the JSON array."""
                 )
 
             log_progress(no_results_msg)
-            suggested_queries = self.suggest_followup_queries(
+            suggested_queries = await asyncio.to_thread(
+                self.suggest_followup_queries,
                 question=question,
                 answer=no_results_msg,
                 provenance=[],
@@ -1350,19 +1353,22 @@ Return ONLY the JSON array."""
         log_progress(f"Synthesizing answer from {len(state['answers_found'])} papers...")
         await send_status( f"Synthesizing answer from {len(state['answers_found'])} papers...")
 
-        final_answer = self.synthesize_final_answer(question, state["answers_found"])
+        final_answer = await asyncio.to_thread(
+            self.synthesize_final_answer, question, state["answers_found"]
+        )
 
         # Step 5: Extract and store facts
         log_progress("Storing facts in knowledge base...")
         await send_status( "Storing new facts in knowledge base...")
 
-        factoids_stored = self.extract_and_store_facts(
+        factoids_stored = await asyncio.to_thread(
+            self.extract_and_store_facts,
             question,
-            state["answers_found"]
+            state["answers_found"],
         )
 
         # Step 6: Cache the answer
-        self.cache_answer(question, final_answer, state["answers_found"])
+        await asyncio.to_thread(self.cache_answer, question, final_answer, state["answers_found"])
 
         elapsed = time.time() - start_time
         log_progress(f"Complete! ({elapsed:.1f}s total)")
@@ -1375,7 +1381,8 @@ Return ONLY the JSON array."""
 
         # Convert "Paper X" citations to clickable links using the mapping
         final_answer = linkify_paper_references(final_answer, provenance, paper_to_provenance)
-        suggested_queries = self.suggest_followup_queries(
+        suggested_queries = await asyncio.to_thread(
+            self.suggest_followup_queries,
             question=question,
             answer=final_answer,
             provenance=provenance,
@@ -1465,7 +1472,7 @@ Return ONLY the JSON array."""
         # Step 1: Check memory first
         await self._send_status(context, event_queue, "Checking knowledge base for existing answers...", False, conversation_id)
 
-        cached_answer = self.check_memory(question)
+        cached_answer = await asyncio.to_thread(self.check_memory, question)
         if cached_answer and cached_answer.get("sufficient", True):
             # Cached answers may reference original paper numbering; preserve that mapping
             # while deduplicating to keep links accurate.
@@ -1479,7 +1486,8 @@ Return ONLY the JSON array."""
                 "source": "knowledge_base",
                 "provenance": provenance,
                 "cached": True,
-                "suggested_queries": self.suggest_followup_queries(
+                "suggested_queries": await asyncio.to_thread(
+                    self.suggest_followup_queries,
                     question=question,
                     answer=answer,
                     provenance=provenance,

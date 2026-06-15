@@ -1,0 +1,6 @@
+[project]
+name = "thread-pattern-agent"
+version = "0.1.0"
+description = "Debug agent demonstrating the offload-and-observe pattern for long blocking work"
+requires-python = ">=3.12"
+dependencies = []

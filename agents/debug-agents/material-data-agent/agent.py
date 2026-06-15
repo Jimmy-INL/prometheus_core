@@ -154,6 +154,48 @@ MATERIAL_DATABASE = {
 }
 
 
+# Static records shared across the focused retrieval skills. In a real agent
+# these would be looked up per material; here they are fixed debug fixtures.
+INSPECTION_HISTORY = {
+    "last_inspection": "2023-04-10",
+    "inspection_type": "Ultrasonic Testing (UT)",
+    "result": "acceptable",
+    "inspections": [
+        {"date": "2020-04-15", "type": "UT", "result": "acceptable", "defects_found": 0},
+        {"date": "2021-10-20", "type": "VT", "result": "acceptable", "defects_found": 0},
+        {"date": "2023-04-10", "type": "UT", "result": "acceptable", "defects_found": 0},
+    ],
+}
+
+OPERATIONAL_HISTORY = {
+    "operating_hours": 125000,
+    "thermal_cycles": 1250,
+    "repairs": [],
+    "modifications": [],
+}
+
+REGULATORY_INFO = {
+    "applicable_codes": [
+        "ASME Section III",
+        "ASME Section XI",
+        "10 CFR 50.55a",
+        "10 CFR 50.61",
+    ],
+    "limits": {
+        "max_fluence_n_cm2": 1.0e20,
+        "max_dbtt_shift_c": 55.6,
+        "min_upper_shelf_energy_j": 68,
+        "max_flaw_size_mm": 6.35,
+        "max_creep_strain_percent": 1.0,
+    },
+    "inspection_requirements": {
+        "volumetric_interval_years": 10,
+        "surface_interval_years": 10,
+        "visual_interval_years": 3,
+    },
+}
+
+
 class MaterialDataAgent(PrometheusAgent):
     """Agent for material data retrieval."""
 
@@ -163,15 +205,14 @@ class MaterialDataAgent(PrometheusAgent):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> Dict[str, Any]:
-        """
-        Retrieve material data and provide intelligent interpretation using Claude.
+        """Route material-data requests on the invoked skill_id.
 
-        Supports two modes:
-        - list_materials: No material_id required, returns list of all materials
-        - get_material_data: Requires material_id, returns detailed data
-
-        Returns comprehensive material property data with AI-generated insights
-        about the material's characteristics and operational considerations.
+        Skills:
+        - list_materials        — catalog of all materials (no material_id)
+        - get_material_data      — full profile + AI interpretation
+        - get_material_properties — composition + mechanical + thermal only
+        - get_material_history   — inspection + operational history only
+        - get_regulatory_limits  — regulatory codes and limits only
         """
         await self.send_status_update(
             context=context,
@@ -181,95 +222,124 @@ class MaterialDataAgent(PrometheusAgent):
 
         material_id = params.get("material_id")
 
-        # If no material_id provided, list all available materials
+        # The base executor injects the invoked skill as params["skill_id"].
+        # When absent (direct call), default by presence of a material_id.
+        skill_id = str(params.get("skill_id") or "").strip()
+        if not skill_id:
+            skill_id = "list_materials" if not material_id else "get_material_data"
+
+        if skill_id == "list_materials":
+            return await self._list_materials(context, event_queue)
+
+        # Every other skill needs a known material_id.
         if not material_id:
-            await self.send_status_update(
-                context=context,
-                event_queue=event_queue,
-                message="Listing all available materials.",
-            )
-            materials = [
-                {
-                    "material_id": mat_id,
-                    "name": data["name"],
-                    "specification": data["specification"],
-                    "max_temp_c": data["operating_environment"]["temperature_range_c"][1],
-                    "applications": data["location"],
-                }
-                for mat_id, data in MATERIAL_DATABASE.items()
-            ]
             return {
-                "query_type": "list_materials",
-                "materials": materials,
-                "count": len(materials),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": "Parameter 'material_id' is required for this skill.",
+                "skill_id": skill_id,
+                "available_materials": list(MATERIAL_DATABASE.keys()),
             }
-
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message=f"Looking up data for material {material_id}.",
-        )
-
         if material_id not in MATERIAL_DATABASE:
             return {
                 "error": f"Material {material_id} not found",
+                "skill_id": skill_id,
                 "available_materials": list(MATERIAL_DATABASE.keys()),
             }
 
+        material = MATERIAL_DATABASE[material_id]
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            message="Building material profile response.",
+            message=f"Retrieving '{skill_id}' for material {material_id}.",
         )
 
-        material = MATERIAL_DATABASE[material_id]
+        if skill_id == "get_material_properties":
+            return self._material_properties(material_id, material)
+        if skill_id == "get_material_history":
+            return self._material_history(material_id)
+        if skill_id == "get_regulatory_limits":
+            return self._regulatory_limits(material_id)
+        # get_material_data (and any unknown skill) → full profile + interpretation.
+        return await self._material_data(material_id, material, context, event_queue)
 
-        # Build base response with historical data
+    async def _list_materials(
+        self, context: RequestContext, event_queue: EventQueue
+    ) -> Dict[str, Any]:
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message="Listing all available materials.",
+        )
+        materials = [
+            {
+                "material_id": mat_id,
+                "name": data["name"],
+                "specification": data["specification"],
+                "max_temp_c": data["operating_environment"]["temperature_range_c"][1],
+                "applications": data["location"],
+            }
+            for mat_id, data in MATERIAL_DATABASE.items()
+        ]
+        return {
+            "query_type": "list_materials",
+            "skill_id": "list_materials",
+            "materials": materials,
+            "count": len(materials),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    def _material_properties(material_id: str, material: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "query_type": "material_properties",
+            "skill_id": "get_material_properties",
+            "material_id": material_id,
+            "specification": material.get("specification"),
+            "composition": material.get("composition"),
+            "mechanical_properties": material.get("mechanical_properties"),
+            "thermal_properties": material.get("thermal_properties"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    def _material_history(material_id: str) -> Dict[str, Any]:
+        return {
+            "query_type": "material_history",
+            "skill_id": "get_material_history",
+            "material_id": material_id,
+            "inspection_history": INSPECTION_HISTORY,
+            "operational_history": OPERATIONAL_HISTORY,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    def _regulatory_limits(material_id: str) -> Dict[str, Any]:
+        return {
+            "query_type": "regulatory_limits",
+            "skill_id": "get_regulatory_limits",
+            "material_id": material_id,
+            "regulatory_info": REGULATORY_INFO,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def _material_data(
+        self,
+        material_id: str,
+        material: Dict[str, Any],
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> Dict[str, Any]:
+        """Full material profile plus an AI interpretation."""
         base_data = {
             "material_id": material_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "query_type": "material_data",
+            "skill_id": "get_material_data",
             "material_data": material,
-            "inspection_history": {
-                "last_inspection": "2023-04-10",
-                "inspection_type": "Ultrasonic Testing (UT)",
-                "result": "acceptable",
-                "inspections": [
-                    {"date": "2020-04-15", "type": "UT", "result": "acceptable", "defects_found": 0},
-                    {"date": "2021-10-20", "type": "VT", "result": "acceptable", "defects_found": 0},
-                    {"date": "2023-04-10", "type": "UT", "result": "acceptable", "defects_found": 0},
-                ],
-            },
-            "operational_history": {
-                "operating_hours": 125000,
-                "thermal_cycles": 1250,
-                "repairs": [],
-                "modifications": [],
-            },
-            "regulatory_info": {
-                "applicable_codes": [
-                    "ASME Section III",
-                    "ASME Section XI",
-                    "10 CFR 50.55a",
-                    "10 CFR 50.61",
-                ],
-                "limits": {
-                    "max_fluence_n_cm2": 1.0e20,
-                    "max_dbtt_shift_c": 55.6,
-                    "min_upper_shelf_energy_j": 68,
-                    "max_flaw_size_mm": 6.35,
-                    "max_creep_strain_percent": 1.0,
-                },
-                "inspection_requirements": {
-                    "volumetric_interval_years": 10,
-                    "surface_interval_years": 10,
-                    "visual_interval_years": 3,
-                },
-            },
+            "inspection_history": INSPECTION_HISTORY,
+            "operational_history": OPERATIONAL_HISTORY,
+            "regulatory_info": REGULATORY_INFO,
         }
 
-        # Use Claude to provide intelligent interpretation
         if ANTHROPIC_API_KEY:
             await self.send_status_update(
                 context=context,
@@ -297,15 +367,13 @@ class MaterialDataAgent(PrometheusAgent):
                 elif "```" in response_text:
                     response_text = response_text.split("```")[1].split("```")[0].strip()
 
-                interpretation = json.loads(response_text)
-                base_data["ai_interpretation"] = interpretation
+                base_data["ai_interpretation"] = json.loads(response_text)
                 base_data["model_used"] = MODEL_NAME
                 await self.send_status_update(
                     context=context,
                     event_queue=event_queue,
                     message="Expert interpretation complete.",
                 )
-
             except Exception as e:
                 base_data["ai_interpretation"] = {"error": f"Interpretation failed: {str(e)}"}
                 await self.send_status_update(
@@ -319,12 +387,6 @@ class MaterialDataAgent(PrometheusAgent):
                 event_queue=event_queue,
                 message="No model API key configured; returning base material data.",
             )
-
-        await self.send_status_update(
-            context=context,
-            event_queue=event_queue,
-            message="Finalizing material data response.",
-        )
 
         return base_data
 
