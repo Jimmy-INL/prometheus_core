@@ -58,8 +58,8 @@ graph TD
 The frontend is a Python Chainlit application that provides:
 
 - Chat interface with streaming status updates during long-running agent calls
-- File upload handling (Exodus, IFC, PDF) with local processing
-- Custom React elements for visualization (ExodusViewer, IFCViewer, MermaidViewer, PlanViewer)
+- File upload handling (Exodus, STL, IFC, PDF) with local processing
+- Custom React elements for visualization (MeshViewer, IFCViewer, MermaidViewer, PlanViewer)
 - Authentication (password-based, OAuth-ready)
 - Settings panel with agent toggles and debug tools
 - Follow-up suggestion cards and DynamicForm for structured input

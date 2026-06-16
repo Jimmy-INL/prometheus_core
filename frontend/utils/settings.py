@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     chat_suggestion_title: str = data["chat-suggestion-title"]
     chat_intro: str = data["chat-intro"]
     ifc_data_dir: Path = Path(__file__).parent.parent / "public" / "ifc-data"
-    exodus_data_dir: Path = Path(__file__).parent.parent / "public" / "exodus-data"
+    mesh_data_dir: Path = Path(__file__).parent.parent / "public" / "mesh-data"
     agent_url: str = os.environ.get("CLIENT_AGENT_URL", data.get("agent-url", "http://localhost:8001"))
     agent_secret: str = os.environ.get("AGENT_SECRET", data.get("agent-secret", ""))
     redis_url: str = os.environ.get("REDIS_URL", data.get("redis-url", "redis://localhost:6379"))

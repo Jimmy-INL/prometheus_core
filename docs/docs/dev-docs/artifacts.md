@@ -33,13 +33,14 @@ Artifact references are stored in Redis (conversation-scoped hashes) with in-mem
 |------|-----------|-------------|-------------|
 | JSON data | `application/json` | Text/table | Structured analysis results |
 | IFC model | `application/ifc` | IFCViewer | 3D building/component model |
-| Exodus mesh | `application/exodus` | ExodusViewer | VTK mesh with variables |
+| Exodus mesh | `application/exodus` | MeshViewer | VTK mesh with variables/timesteps |
+| STL mesh | `model/stl` | MeshViewer | VTK surface mesh (static geometry) |
 | PDF report | `application/pdf` | Inline PDF viewer | Generated reports |
 | Mermaid diagram | `text/mermaid` | MermaidViewer | Architecture/flow diagrams |
 | Plain text | `text/plain` | Text display | Narrative responses |
 | File | *(by extension)* | `cl.File` download | Downloadable files (`.csv`, `.xlsx`, `.zip`, `.tar`, `.gz`, `.txt`, `.log`, `.inp`, `.i`) |
 | Reference | *(by tags)* | Citation markdown | Literature references and citations with source, section, and page metadata |
-| Visualization | *(by tags)* | ExodusViewer / IFCViewer / MermaidViewer | Generic visualization artifacts routed to a viewer by tags |
+| Visualization | *(by tags)* | MeshViewer / IFCViewer / MermaidViewer | Generic visualization artifacts routed to a viewer by tags |
 
 ## Returning artifacts from an agent
 
@@ -149,13 +150,13 @@ async def process_analysis(self, params, context, event_queue):
 The frontend inspects artifact metadata and routes to the appropriate viewer:
 
 1. **IFC files**: Rendered with `IFCViewer.jsx` -- a ThatOpen/OBC-based 3D viewer with orbit controls, section planes, and property inspection
-2. **Exodus files**: Rendered with `ExodusViewer.jsx` -- a VTK.js-based mesh viewer with timestep playback, variable selection, and color presets
+2. **Mesh files (Exodus, STL)**: Rendered with `MeshViewer.jsx` -- a VTK.js-based mesh viewer. Exodus gets timestep playback, variable selection, and color presets; STL renders as static geometry (the viewer hides the timestep/variable controls when there are none)
 3. **PDF files**: Rendered inline using Chainlit's built-in `cl.Pdf` element
 4. **Mermaid diagrams**: Rendered with `MermaidViewer.jsx` using the Mermaid.js library
 5. **JSON/text data**: Displayed as formatted text in the chat message
 6. **File artifacts**: Rendered as a downloadable `cl.File` element for formats like `.csv`, `.xlsx`, `.zip`, `.log`, `.inp`
 7. **Reference artifacts**: Rendered as formatted markdown citations with bold name, description, and source/section/page metadata
-8. **Visualization artifacts**: Routed to ExodusViewer, IFCViewer, or MermaidViewer based on tags (`exodus`/`vtk`, `ifc`, `mermaid`)
+8. **Visualization artifacts**: Routed to MeshViewer, IFCViewer, or MermaidViewer based on tags (`exodus`/`stl`/`vtk`, `ifc`, `mermaid`)
 
 The mapping from artifact to viewer happens in the message handler's `_classify_artifact()` function, which checks (in order):
 

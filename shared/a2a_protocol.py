@@ -7,10 +7,21 @@ from enum import Enum
 from datetime import datetime
 
 class TaskStatus(str, Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
+    """Task lifecycle states, aligned with the A2A SDK ``TaskState`` vocabulary.
+
+    Terminal states are ``completed``, ``failed``, ``canceled`` and ``rejected``;
+    everything else is non-terminal. See ``docs/dev-docs/background-tasks.md``.
+    """
+
+    SUBMITTED = "submitted"
+    WORKING = "working"
+    INPUT_REQUIRED = "input-required"
     COMPLETED = "completed"
+    CANCELED = "canceled"
     FAILED = "failed"
+    REJECTED = "rejected"
+    AUTH_REQUIRED = "auth-required"
+    UNKNOWN = "unknown"
 
 class AgentCapability(BaseModel):
     name: str

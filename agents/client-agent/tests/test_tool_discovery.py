@@ -660,3 +660,45 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
     assert statuses == ["Rendering SVG..."]
     assert result["status"] == "completed"
     assert result["message"] == "SVG ready."
+
+
+def test_apply_stream_event_fires_background_callback_on_flag() -> None:
+    """A status event tagged metadata.background invokes the background callback
+    (declare_long_running → proactive detach)."""
+    fired: list = []
+
+    async def bg(meta):
+        fired.append(meta)
+
+    envelope = {
+        "result": {
+            "kind": "status-update",
+            "metadata": {"background": True, "estimate_seconds": 30},
+            "status": {},
+            "final": False,
+        }
+    }
+    asyncio.run(
+        tool_discovery._apply_a2a_stream_event(
+            {"kind": "task", "artifacts": []}, envelope, background_callback=bg
+        )
+    )
+    assert fired and fired[0]["background"] is True
+    assert fired[0]["estimate_seconds"] == 30
+
+
+def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
+    """Heartbeats short-circuit before the background check, so they never
+    trigger a detach even if (defensively) tagged."""
+    fired: list = []
+
+    async def bg(meta):
+        fired.append(meta)
+
+    envelope = {"result": {"kind": "status-update", "metadata": {"heartbeat": True, "background": True}}}
+    asyncio.run(
+        tool_discovery._apply_a2a_stream_event(
+            {"kind": "task", "artifacts": []}, envelope, background_callback=bg
+        )
+    )
+    assert fired == []

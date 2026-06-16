@@ -17,7 +17,7 @@ graph TD
   CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
   CA -->|state + factoids| RED[(Redis)]
   LLM -->|A2A| SA[Specialist Agents]
-  CL -->|renders| VIZ[ExodusViewer / IFCViewer / MermaidViewer]
+  CL -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
 ```
 
 The frontend communicates directly with the client-agent via A2A protocol. The client-agent discovers specialist agents from LiteLLM's agent directory, manages multi-turn conversation state in Redis, and dispatches analysis work through LiteLLM's A2A gateway.
@@ -116,7 +116,8 @@ The client-agent maintains conversation state in Redis. Each turn can:
 
 The frontend detects file type on upload and processes locally:
 
-- `.e` / `.exo` (Exodus) -- VTK processing, rendered with ExodusViewer
+- `.e` / `.exo` (Exodus) -- VTK processing, rendered with MeshViewer
+- `.stl` (STL) -- VTK processing (shared with Exodus), rendered with MeshViewer
 - `.ifc` -- Copied to `public/ifc-data/`, rendered with IFCViewer
 - `.pdf` -- Displayed inline
 
@@ -130,7 +131,7 @@ Located in `frontend/public/elements/`, rendered via Chainlit's `cl.CustomElemen
 |-----------|---------|
 | `DynamicForm.jsx` | Configurable forms with validation, timeout countdown, help text |
 | `IFCViewer.jsx` | 3D building model viewer (ThatOpen engine, THREE.js) |
-| `ExodusViewer.jsx` | VTK-based mesh visualization with playback controls and color presets |
+| `MeshViewer.jsx` | VTK-based mesh visualization (Exodus + STL) with playback controls and color presets |
 | `FollowUpSuggestions.jsx` | Clickable workflow suggestion cards |
 | `MermaidViewer.jsx` | Diagram renderer |
 

@@ -23,7 +23,7 @@ User attaches file(s) in Chainlit
 
 ## Frontend encoding
 
-`frontend/components/message_handler.py` streams each attached file to the client-agent's `/uploads/stage` endpoint, then includes the returned staged upload ID in the `uploaded_files` payload sent through A2A.  Files handled by a visualization plugin (e.g. IFC, Exodus, image, or SVG viewers) are processed locally for immediate rendering and **also** staged for DeepLynx upload.  The plugin path must not `continue` before `_capture_uploaded_file()` runs.
+`frontend/components/message_handler.py` streams each attached file to the client-agent's `/uploads/stage` endpoint, then includes the returned staged upload ID in the `uploaded_files` payload sent through A2A.  Files handled by a visualization plugin (e.g. IFC, Exodus, STL, image, or SVG viewers) are processed locally for immediate rendering and **also** staged for DeepLynx upload.  The plugin path must not `continue` before `_capture_uploaded_file()` runs.
 
 The upload is capped at `MAX_UPLOAD_BYTES` (100 MB) per file.  A2A carries only metadata, so large file bytes do not inflate the JSON-RPC request body.  Files are passed as:
 

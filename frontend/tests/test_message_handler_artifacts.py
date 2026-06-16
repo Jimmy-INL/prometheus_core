@@ -114,7 +114,7 @@ def test_render_artifacts_treats_step_as_downloadable_file(monkeypatch, tmp_path
 
 def test_render_artifacts_adds_download_for_plugin_viewer(monkeypatch, tmp_path: Path) -> None:
     created = []
-    viewer = SimpleNamespace(name="ExodusViewer")
+    viewer = SimpleNamespace(name="MeshViewer")
 
     class DummyFile:
         def __init__(self, *, name: str, path: str, display: str, mime: str = ""):

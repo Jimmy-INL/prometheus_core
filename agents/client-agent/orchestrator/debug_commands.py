@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import task_graph
 from artifact_handling import merge_artifact_catalogs, summarize_artifacts_for_context
 from capability_cache import get_capability_cache
 from tool_discovery import discover_agents
 
 from . import runtime
 from .models import ConversationRequest, ConversationResponse
+
+SUPPORTED_SLASH_COMMANDS = ["agents", "artifacts", "tasks"]
+
+_STATE_ICONS = {
+    "submitted": "•",
+    "working": "⏳",
+    "input-required": "⌨",
+    "completed": "✓",
+    "failed": "✗",
+    "canceled": "⊘",
+    "rejected": "⊘",
+}
 
 
 def _parse_slash_command(query: Optional[str]) -> Optional[Tuple[str, str]]:
@@ -197,6 +211,136 @@ def _format_artifacts_debug_response(artifacts: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _parse_iso(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _elapsed(node: Dict[str, Any]) -> Optional[str]:
+    """Human-readable elapsed time for a node (start → finish or now)."""
+    start = _parse_iso(node.get("started_at") or node.get("created_at"))
+    if start is None:
+        return None
+    end = _parse_iso(node.get("finished_at")) or datetime.now(timezone.utc)
+    seconds = max(0, int((end - start).total_seconds()))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+
+
+def _node_label(node: Dict[str, Any]) -> str:
+    state = str(node.get("state") or "unknown")
+    icon = _STATE_ICONS.get(state, "•")
+    title = str(node.get("title") or node.get("skill") or node.get("task_id") or "task")
+    short_id = str(node.get("task_id") or "")[:10]
+    parts = [f"{icon} {title}  [{state}]"]
+    elapsed = _elapsed(node)
+    if elapsed:
+        parts.append(f"({elapsed})")
+    if short_id:
+        parts.append(f"<{short_id}>")
+    line = "  ".join(parts)
+    message = str(node.get("last_status_message") or "").strip()
+    if message and state in ("working", "input-required"):
+        line += f" — {message}"
+    return line
+
+
+def _render_tree_lines(node: Dict[str, Any], depth: int = 0) -> List[str]:
+    indent = "  " * depth + ("└─ " if depth else "")
+    lines = [indent + _node_label(node)]
+    for child in node.get("children") or []:
+        lines.extend(_render_tree_lines(child, depth + 1))
+    return lines
+
+
+def _format_tasks_list(trees: List[Dict[str, Any]]) -> str:
+    active = sum(
+        1
+        for tree in trees
+        if str(tree.get("state")) not in task_graph.TERMINAL_STATES
+    )
+    header = f"Tasks ({len(trees)} total, {active} active)"
+    if not trees:
+        return header + "\n\nNo tasks have run in this conversation yet."
+    lines = [header, ""]
+    for tree in trees:
+        lines.extend(_render_tree_lines(tree))
+    lines.append("")
+    lines.append("Use `/tasks <id>` to inspect a task.")
+    return "\n".join(lines)
+
+
+def _format_task_detail(conversation_id: str, task_id: str) -> str:
+    # Allow short-id prefixes for convenience.
+    node = task_graph.get_node(conversation_id, task_id)
+    if node is None:
+        for candidate in task_graph.list_nodes(conversation_id):
+            if candidate.task_id.startswith(task_id):
+                node = candidate
+                break
+    if node is None:
+        return f"No task found matching '{task_id}' in this conversation."
+
+    data = node.to_dict()
+    lines = [f"Task {node.task_id}", ""]
+    lines.append(f"  state:   {node.state}")
+    if node.agent:
+        lines.append(f"  agent:   {node.agent}")
+    if node.skill:
+        lines.append(f"  skill:   {node.skill}")
+    if node.title:
+        lines.append(f"  title:   {node.title}")
+    elapsed = _elapsed(data)
+    if elapsed:
+        lines.append(f"  elapsed: {elapsed}")
+    if node.last_status_message:
+        lines.append(f"  status:  {node.last_status_message}")
+    if node.waiting_on:
+        lines.append(f"  waiting on: {', '.join(t[:10] for t in node.waiting_on)}")
+    if node.result_ref:
+        lines.append(f"  result:  {node.result_ref}")
+    if node.error:
+        lines.append(f"  error:   {node.error}")
+
+    subtree = next(
+        (t for t in task_graph.build_tree(conversation_id) if _find_in_tree(t, node.task_id)),
+        None,
+    )
+    rendered = _subtree_for(subtree, node.task_id) if subtree else None
+    if rendered and (rendered.get("children")):
+        lines.append("")
+        lines.append("  subtree:")
+        for child in rendered["children"]:
+            lines.extend("  " + ln for ln in _render_tree_lines(child, 1))
+    return "\n".join(lines)
+
+
+def _find_in_tree(tree: Dict[str, Any], task_id: str) -> bool:
+    if tree.get("task_id") == task_id:
+        return True
+    return any(_find_in_tree(c, task_id) for c in tree.get("children") or [])
+
+
+def _subtree_for(tree: Optional[Dict[str, Any]], task_id: str) -> Optional[Dict[str, Any]]:
+    if tree is None:
+        return None
+    if tree.get("task_id") == task_id:
+        return tree
+    for child in tree.get("children") or []:
+        found = _subtree_for(child, task_id)
+        if found is not None:
+            return found
+    return None
+
+
 async def _maybe_handle_slash_command(
     request: ConversationRequest,
     conv_id: str,
@@ -240,7 +384,24 @@ async def _maybe_handle_slash_command(
             },
         )
 
-    supported = "/agents, /artifacts"
+    if command == "tasks":
+        if _args:
+            message = _format_task_detail(conv_id, _args.split()[0])
+            metadata: Dict[str, Any] = {"slash_command": "tasks", "task_id": _args.split()[0]}
+        else:
+            trees = task_graph.build_tree(conv_id)
+            message = _format_tasks_list(trees)
+            metadata = {"slash_command": "tasks", "tasks": trees}
+        runtime.store_status_update(conv_id, "Handled /tasks slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata=metadata,
+        )
+
+    supported = ", ".join(f"/{cmd}" for cmd in SUPPORTED_SLASH_COMMANDS)
     message = f"Unknown slash command '/{command}'. Supported commands: {supported}."
     runtime.store_status_update(conv_id, f"Unknown slash command '/{command}'.", final=True)
     return ConversationResponse(
@@ -250,6 +411,6 @@ async def _maybe_handle_slash_command(
         response_text=message,
         message_metadata={
             "slash_command": command,
-            "supported_commands": ["agents", "artifacts"],
+            "supported_commands": list(SUPPORTED_SLASH_COMMANDS),
         },
     )

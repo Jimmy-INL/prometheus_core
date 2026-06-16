@@ -82,24 +82,24 @@ export function classifyElement(el: AnyElement): ElementKind {
 import { DynamicFormElement }                from "../../viewers/DynamicFormElement";
 // import { IFCViewerElement }            from "../../viewers/IFCViewerElement";
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
-// import { PdfViewerElement }            from "../../viewers/PdfViewerElement";
+import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
 // import { ImageViewerElement }          from "../../viewers/ImageViewerElement";
 // import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
-// import { FollowUpSuggestionsElement }  from "../../viewers/FollowUpSuggestionsElement";
-// import { PlanViewerElement }           from "../../viewers/PlanViewerElement";
+import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
+import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
 // import { MermaidElement }              from "../../viewers/MermaidElement";
 // import { ThermalAnalysisElement }      from "../../viewers/ThermalAnalysisElement";
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          null,  // → IFCViewerElement
   exodus:       null,  // → ExodusViewerElement
-  pdf:          null,  // → PdfViewerElement
+  pdf:          PdfViewerElement,
   file:         null,  // → FileDownloadElement
   image:        null,  // → ImageViewerElement
   json:         null,  // → CollapsibleJsonElement
-  suggestions:  null,  // → FollowUpSuggestionsElement  (needs onSend)
-  plan_viewer:  null,  // → PlanViewerElement
+  suggestions:  FollowUpSuggestionsElement,
+  plan_viewer:  PlanViewerElement,
   dynamic_form: DynamicFormElement,
   mermaid:      null,  // → MermaidElement
   thermal:      null,  // → ThermalAnalysisElement

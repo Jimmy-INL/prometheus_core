@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check } from "lucide-react";
+import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check, Paperclip, X, FileText, Loader2 } from "lucide-react";
 import {
   useChatMessages,
   useChatInteract,
@@ -7,6 +7,7 @@ import {
   actionState,
   askUserState,
   IAction,
+  IFileRef,
 } from "@chainlit/react-client";
 import { useRecoilValue } from "recoil";
 import ReactMarkdown from "react-markdown";
@@ -201,6 +202,26 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// File upload
+// ---------------------------------------------------------------------------
+
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+interface Attachment {
+  localId: string;
+  file: File;
+  uploading: boolean;
+  id?: string;
+  error?: string;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ---------------------------------------------------------------------------
 // Main Chat component
 // ---------------------------------------------------------------------------
 
@@ -218,7 +239,52 @@ export function Chat() {
   const [awaitingResponse, setAwaitingResponse] = useState(false);
 
   const { messages } = useChatMessages();
-  const { sendMessage, stopTask } = useChatInteract();
+  const { sendMessage, stopTask, uploadFile } = useChatInteract();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const uploadingCount = attachments.filter((a) => a.uploading).length;
+
+  const handlePickFiles = () => fileInputRef.current?.click();
+
+  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+
+    const next: Attachment[] = [];
+    for (const file of files) {
+      const localId = `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        next.push({ localId, file, uploading: false, error: "File exceeds 100 MB limit" });
+        continue;
+      }
+      const att: Attachment = { localId, file, uploading: true };
+      next.push(att);
+
+      const { promise } = uploadFile(file, () => {});
+      promise
+        .then(({ id }) => {
+          setAttachments((prev) =>
+            prev.map((a) => (a.localId === localId ? { ...a, uploading: false, id } : a)),
+          );
+        })
+        .catch((err: unknown) => {
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.localId === localId
+                ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                : a,
+            ),
+          );
+        });
+    }
+    setAttachments((prev) => [...prev, ...next]);
+  };
+
+  const removeAttachment = (localId: string) =>
+    setAttachments((prev) => prev.filter((a) => a.localId !== localId));
+
   const globalElements = useRecoilValue(elementState);
   const globalActions = useRecoilValue(actionState);
   const askUser = useRecoilValue(askUserState);
@@ -329,9 +395,14 @@ export function Chat() {
   };
 
   const handleSend = (content = input.trim()) => {
-    if (!content) return;
-    sendMessage({ name: "user", type: "user_message" as const, output: content }, []);
+    const readyRefs: IFileRef[] = attachments
+      .filter((a) => a.id && !a.error)
+      .map((a) => ({ id: a.id as string }));
+    if (!content && !readyRefs.length) return;
+    if (uploadingCount > 0) return;
+    sendMessage({ name: "user", type: "user_message" as const, output: content }, readyRefs);
     setInput("");
+    setAttachments([]);
     setAwaitingResponse(true);
   };
 
@@ -341,7 +412,7 @@ export function Chat() {
   };
 
   const handleAction = (action: IAction) => {
-    if (askUser?.spec.type === "action") {
+    if (askUser) {
       askUser.callback(action);
     } else {
       console.warn("Action ask is no longer active (timed out or cleared).");
@@ -488,29 +559,83 @@ export function Chat() {
       )}
 
       <div className="px-4 pt-3 pb-2">
-        <div className="relative flex items-end rounded-3xl border border-base-300 bg-base-200 shadow-sm focus-within:border-primary/60 focus-within:shadow-md transition-all">
-          <textarea
-            ref={textareaRef}
-            className="flex-1 bg-transparent resize-none outline-none px-5 py-4 pr-14 text-base leading-6 placeholder:text-base-content/50 max-h-50"
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Message..."
-            autoFocus
-          />
-          <button
-            className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
-            onClick={() => (awaitingResponse ? handleStop() : handleSend())}
-            disabled={!awaitingResponse && !input.trim()}
-            aria-label={awaitingResponse ? "Stop response" : "Send message"}
-          >
-            {awaitingResponse ? (
-              <Square size={14} fill="currentColor" />
-            ) : (
-              <ArrowUp size={18} />
-            )}
-          </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="*/*"
+          className="hidden"
+          onChange={handleFilesSelected}
+        />
+        <div className="rounded-3xl border border-base-300 bg-base-200 shadow-sm focus-within:border-primary/60 focus-within:shadow-md transition-all">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {attachments.map((a) => (
+                <div
+                  key={a.localId}
+                  className={`flex items-center gap-2 rounded-full pl-2 pr-1 py-1 text-xs ${
+                    a.error
+                      ? "bg-error/10 text-error"
+                      : "bg-base-300 text-base-content"
+                  }`}
+                  title={a.error ?? `${a.file.name} (${formatBytes(a.file.size)})`}
+                >
+                  {a.uploading ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <FileText size={12} />
+                  )}
+                  <span className="max-w-[180px] truncate">{a.file.name}</span>
+                  <span className="text-base-content/50">{formatBytes(a.file.size)}</span>
+                  <button
+                    onClick={() => removeAttachment(a.localId)}
+                    className="rounded-full p-0.5 hover:bg-base-100"
+                    aria-label={`Remove ${a.file.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="relative flex items-end">
+            <button
+              className="btn btn-ghost btn-circle btn-sm absolute bottom-2.5 left-2.5"
+              onClick={handlePickFiles}
+              disabled={awaitingResponse}
+              aria-label="Attach files"
+            >
+              <Paperclip size={16} />
+            </button>
+            <textarea
+              ref={textareaRef}
+              className="flex-1 bg-transparent resize-none outline-none pl-14 pr-14 py-4 text-base leading-6 placeholder:text-base-content/50 max-h-50"
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message..."
+              autoFocus
+            />
+            <button
+              className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
+              onClick={() => (awaitingResponse ? handleStop() : handleSend())}
+              disabled={
+                !awaitingResponse &&
+                !input.trim() &&
+                attachments.filter((a) => a.id && !a.error).length === 0
+              }
+              aria-label={awaitingResponse ? "Stop response" : "Send message"}
+            >
+              {awaitingResponse ? (
+                <Square size={14} fill="currentColor" />
+              ) : uploadingCount > 0 ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ArrowUp size={18} />
+              )}
+            </button>
+          </div>
         </div>
       </div>
       <p className="text-center text-xs text-base-content/70 pb-2">

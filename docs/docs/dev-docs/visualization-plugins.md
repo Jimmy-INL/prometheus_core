@@ -2,32 +2,39 @@
 
 The Chainlit frontend includes custom React elements for rendering specialized content. These are located in `frontend/public/elements/` and are rendered via Chainlit's `cl.CustomElement` API.
 
-## ExodusViewer
+> **Future:** letting *agents* ship their own viewers (rendered in a sandboxed iframe, not baked into the
+> frontend) is designed in [`agent-provided-plugins.md`](../../dev-docs/agent-provided-plugins.md).
 
-Renders Exodus II simulation meshes using VTK.js.
+## MeshViewer
 
-**File:** `public/elements/ExodusViewer.jsx`
+Renders 3D meshes using VTK.js. A single source-agnostic viewer for **Exodus II** and **STL** files (and any future format that converts to VTP).
 
-**What it does:** Displays 3D mesh data from Exodus II files with timestep animation, variable selection, color mapping, and interactive controls (orbit, zoom, pick).
+**File:** `public/elements/MeshViewer.jsx`
+
+**What it does:** Displays 3D mesh data with interactive controls (orbit, zoom, pick). It is driven by a manifest of VTP files and adapts to the source: with multiple timesteps it shows playback controls; with field variables it shows a variable selector and colorbar; with neither (e.g. an STL) it just renders the geometry with solid shading.
 
 **How to trigger it:**
 
-1. **File upload**: User uploads an `.exo` or `.e` file in the chat. The frontend processes it through `components/exodus_integration.py`, which converts the mesh to VTP format using VTK and creates the viewer element.
+1. **File upload**: A user uploads a mesh file in the chat:
+   - `.exo` / `.e` → converted via `components/exodus_integration.py`.
+   - `.stl` → converted via `components/stl_integration.py`.
+   Both convert the mesh to VTP using the shared VTK pipeline and create the viewer element.
 
-2. **Agent artifact**: An agent returns an artifact with `_type: "exodus_dataset"`. The message handler creates the viewer from the artifact metadata.
+2. **Agent artifact**: An agent returns an artifact. Either a converted-dataset result with `_type: "mesh_dataset"`, or a plain file artifact whose `mime_type` is recognized (`application/exodus` for Exodus, `model/stl` for STL) — the matching plugin converts it and creates the viewer.
 
-**Supported formats:** `.exo`, `.e` (Exodus II)
+**Supported formats:** `.exo`, `.e` (Exodus II); `.stl` (STL, ASCII or binary).
 
 **Props:**
 
 | Prop | Type | Description |
 |------|------|-------------|
 | `datasetId` | string | Unique dataset identifier |
-| `baseUrl` | string | URL prefix for VTP files (`/public/exodus-data/{id}`) |
-| `metadata` | object | Timesteps, variables, bounds |
+| `baseUrl` | string | URL prefix for VTP files (`/public/mesh-data/{id}`) |
+| `title` | string | Header label (e.g., `Exodus Viewer`, `STL Viewer`; defaults to `Mesh Viewer`) |
+| `metadata` | object | Timesteps, variables, bounds, counts |
 | `manifest` | object | File listing with VTP paths per timestep |
 | `initialTimestep` | number | Starting timestep index |
-| `initialVariable` | string | Initial variable to color by |
+| `initialVariable` | string | Initial variable to color by (`null` for variable-less meshes like STL) |
 | `initialColorPreset` | string | Color map name (e.g., `coolToWarm`) |
 | `height` | string | Viewer height (e.g., `500px`) |
 | `showControls` | boolean | Show playback and variable controls |
@@ -37,13 +44,16 @@ Renders Exodus II simulation meshes using VTK.js.
 
 ```python
 from components.exodus_integration import process_exodus_upload
+from components.stl_integration import process_stl_upload
 
-dataset = await process_exodus_upload(Path("model.exo"))
-viewer = dataset.to_chainlit_element()
+dataset = await process_exodus_upload(Path("model.exo"))   # or: process_stl_upload(Path("part.stl"))
+viewer = dataset.to_chainlit_element()                      # → a MeshViewer element
 await cl.Message(content="Mesh loaded", elements=[viewer]).send()
 ```
 
-**Processing pipeline:** The Exodus file goes through a VTK pipeline (`components/exodus/vtk_pipeline.py`) that extracts geometry, variables, and timesteps into VTP (VTK PolyData) format. A manifest JSON file is generated listing all output files. The VTP files are written to `public/exodus-data/{id}/` for web access.
+Both return a `MeshDataset` (`components/mesh_view.py`) whose `to_chainlit_element()` yields the shared `MeshViewer`.
+
+**Processing pipeline:** The input goes through a VTK pipeline that extracts geometry (and, for Exodus, variables/timesteps) into VTP (VTK PolyData) format, writing a `manifest.json` listing the output files. STL is the simplest case — a single static surface, one VTP, no variables. VTP files are written to `public/mesh-data/{id}/` for web access. Exodus conversion lives in `components/exodus/vtk_pipeline.py`; STL reuses its polydata helpers in `components/stl_integration.py`.
 
 ## IFCViewer
 
@@ -181,7 +191,12 @@ await cl.Message(content="Execution plan:", elements=[plan_viewer]).send()
 
 ```jsx
 // MyViewer.jsx
-export default function MyViewer({ data, height = "400px" }) {
+// NOTE: Chainlit injects `props` into scope as a global — it is NOT a function
+// argument. Do NOT write `function MyViewer(props)` / destructure args: a
+// parameter shadows the injected global and every prop reads as undefined.
+export default function MyViewer() {
+  const data = props.data;
+  const height = props.height || "400px";
   // Render your visualization
   return <div style={{ height }}>{/* ... */}</div>;
 }

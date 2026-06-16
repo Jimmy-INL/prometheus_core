@@ -3,7 +3,11 @@ import React, { useState } from 'react';
 const COLLAPSED_ROWS = 10;
 const LINE_HEIGHT_PX = 20; // approximate px per line in the monospace block
 
-export default function CollapsibleJson(props) {
+export default function CollapsibleJson() {
+  // `props` is injected into scope by Chainlit's custom-element runtime — it is
+  // NOT a function argument. Declaring `function CollapsibleJson(props)` shadows
+  // the injected global with `undefined`, which surfaced as a permanent
+  // "(no data)" render. Match the convention used by every other element here.
   const data = props?.data;
   const name = props?.name || 'JSON';
   const description = props?.description || '';

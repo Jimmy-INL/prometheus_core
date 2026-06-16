@@ -62,10 +62,10 @@ export function DynamicFormElement({ element }: ViewerProps) {
   const fields = props.fields ?? [];
 
   const ask = useRecoilValue(askUserState);
-  const matched =
-    ask?.spec.type === "element" && ask.spec.element_id === element.id
-      ? ask
-      : undefined;
+  // Match by spec.type alone — only one element-ask is active at a time, and the
+  // strict element_id check was failing intermittently (Chainlit 0.4.x sometimes
+  // ships the form element before the ask spec, or with a non-matching id).
+  const matched = ask?.spec.type === "element" ? ask : undefined;
 
   const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(fields));
   const [errors, setErrors] = useState<Record<string, string>>({});

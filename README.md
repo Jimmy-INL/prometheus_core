@@ -1,6 +1,6 @@
 # Prometheus Platform
 
-A multi-agent analysis platform for nuclear engineering. Users interact through a Chainlit chat UI that routes queries to specialist agents via a central client-agent orchestrator. The platform supports 3D visualization (Exodus, IFC), multi-step analysis workflows, conversation state, and a DeepLynx-backed artifact catalog.
+A multi-agent analysis platform for nuclear engineering. Users interact through a Chainlit chat UI that routes queries to specialist agents via a central client-agent orchestrator. The platform supports 3D visualization (Exodus, STL, IFC), multi-step analysis workflows, conversation state, and a DeepLynx-backed artifact catalog.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ graph TD
   LLM -->|A2A| SYNTH[Synthesis Agent]
   LLM -->|A2A| OSTI[OSTI Research Agent]
   LLM -->|A2A| FF[Form Filler Agent]
-  CL -->|renders| VIZ[ExodusViewer / IFCViewer / MermaidViewer]
+  CL -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
 ```
 
 **Request flow:** User sends a message in Chainlit. The frontend forwards it as an A2A JSON-RPC request to the client-agent. The client-agent classifies the query, discovers relevant specialist agents through LiteLLM's agent directory, collects any missing parameters, builds an execution plan, and dispatches work through LiteLLM's A2A gateway. Results (including artifacts) flow back through the client-agent to the frontend for rendering.
@@ -159,7 +159,7 @@ prometheus_platform/
     config.yml              # Application configuration
     components/             # Message handling, file processing, settings
     utils/                  # Settings loader, A2A client, conversation state client
-    plugins/                # Visualization plugin wrappers (exodus, ifc, mermaid, ...)
+    plugins/                # Visualization plugin wrappers (exodus, stl, ifc, mermaid, ...)
     public/elements/        # Custom React components (JSX)
     public/js/              # Bundled JS for IFC and VTK viewers
     tests/

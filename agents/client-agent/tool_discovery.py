@@ -26,6 +26,9 @@ SELF_AGENT_URL = (os.getenv("EXTERNAL_AGENT_URL") or f"http://{_socket.gethostna
 # agent_name key used when the client-agent registers with LiteLLM.
 _SELF_AGENT_ID = _socket.gethostname()
 StatusCallback = Callable[[str], Awaitable[None]]
+# Invoked once when a downstream agent emits a status tagged metadata.background
+# (declare_long_running). Receives the event metadata dict.
+BackgroundCallback = Callable[[Dict[str, Any]], Awaitable[None]]
 
 
 def _litellm_headers() -> Dict[str, str]:
@@ -80,6 +83,7 @@ async def _apply_a2a_stream_event(
     a2a_result: Dict[str, Any],
     envelope: Dict[str, Any],
     status_callback: Optional[StatusCallback] = None,
+    background_callback: Optional[BackgroundCallback] = None,
 ) -> Dict[str, Any]:
     if "error" in envelope:
         logger.error("[A2A] Agent returned stream error: %s", envelope["error"])
@@ -94,6 +98,10 @@ async def _apply_a2a_stream_event(
     event_metadata = event.get("metadata")
     if isinstance(event_metadata, dict) and event_metadata.get("heartbeat"):
         return a2a_result
+
+    # declare_long_running: the agent asks the orchestrator to detach this turn.
+    if background_callback and isinstance(event_metadata, dict) and event_metadata.get("background"):
+        await background_callback(event_metadata)
 
     kind = str(event.get("kind") or "").strip().lower()
     if kind == "status-update":
@@ -120,6 +128,7 @@ async def _stream_a2a_agent(
     headers: Dict[str, str],
     timeout_seconds: float,
     status_callback: Optional[StatusCallback] = None,
+    background_callback: Optional[BackgroundCallback] = None,
 ) -> Dict[str, Any]:
     """Stream A2A task updates and collapse them into a final task payload."""
     a2a_result: Dict[str, Any] = {
@@ -153,6 +162,7 @@ async def _stream_a2a_agent(
                         a2a_result,
                         envelope,
                         status_callback=status_callback,
+                        background_callback=background_callback,
                     )
             elif "text/event-stream" in content_type:
                 data_lines: List[str] = []
@@ -166,6 +176,7 @@ async def _stream_a2a_agent(
                                 a2a_result,
                                 envelope,
                                 status_callback=status_callback,
+                                background_callback=background_callback,
                             )
                             data_lines = []
                         continue
@@ -180,6 +191,7 @@ async def _stream_a2a_agent(
                         a2a_result,
                         envelope,
                         status_callback=status_callback,
+                        background_callback=background_callback,
                     )
             else:
                 raise Exception(
@@ -433,6 +445,7 @@ async def call_a2a_agent(
     *,
     _prefer_streaming: bool = False,
     _status_callback: Optional[StatusCallback] = None,
+    _background_callback: Optional[BackgroundCallback] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
@@ -532,6 +545,7 @@ async def call_a2a_agent(
                 headers,
                 timeout_seconds,
                 status_callback=_status_callback if callable(_status_callback) else None,
+                background_callback=_background_callback if callable(_background_callback) else None,
             )
         else:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:

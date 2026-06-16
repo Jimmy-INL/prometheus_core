@@ -92,11 +92,11 @@ Specialist agents currently in tree: `client-agent`, `corrosion-agent`, `radiati
 
 ### Artifacts
 
-Artifacts are conversation-scoped, tracked in Redis (with in-memory fallback) by `ArtifactReference` records (`artifact_id`, `uri`, `mime_type`, `tags`, etc.). The frontend's `message_handler.render_artifacts()` routes by `mime_type`/`tags` to ExodusViewer, IFCViewer, MermaidViewer, PDF viewer, citation markdown, or `cl.File`. Returning a plain dict from `process_analysis()` is auto-wrapped as JSON; for richer artifacts emit them explicitly via the event queue. See `docs/docs/dev-docs/artifacts.md`.
+Artifacts are conversation-scoped, tracked in Redis (with in-memory fallback) by `ArtifactReference` records (`artifact_id`, `uri`, `mime_type`, `tags`, etc.). The frontend's `message_handler.render_artifacts()` routes by `mime_type`/`tags` to MeshViewer (Exodus/STL), IFCViewer, MermaidViewer, PDF viewer, citation markdown, or `cl.File`. Returning a plain dict from `process_analysis()` is auto-wrapped as JSON; for richer artifacts emit them explicitly via the event queue. See `docs/docs/dev-docs/artifacts.md`.
 
 ### Visualization plugins
 
-Custom React/JSX components live in `frontend/public/elements/` (ExodusViewer, IFCViewer, MermaidViewer, PlanViewer, DynamicForm, FollowUpSuggestions). They receive props from Python via `cl.CustomElement` and have no protocol coupling. Exodus uploads run through a VTK pipeline (`frontend/components/exodus/vtk_pipeline.py`) that writes VTP files into `frontend/public/exodus-data/{id}/`. Plugin Python wrappers live under `frontend/plugins/` and are imported eagerly from `main.py` so element JSX is copied into `public/elements/` before Chainlit starts serving.
+Custom React/JSX components live in `frontend/public/elements/` (MeshViewer, IFCViewer, MermaidViewer, PlanViewer, DynamicForm, FollowUpSuggestions). They receive props from Python via `cl.CustomElement` and have no protocol coupling. Exodus and STL uploads run through a shared VTK pipeline (`frontend/components/exodus/vtk_pipeline.py`, reused by `frontend/components/stl_integration.py`) that writes VTP files into `frontend/public/mesh-data/{id}/` and renders them in the single `MeshViewer`. Plugin Python wrappers live under `frontend/plugins/` and are imported eagerly from `main.py` so element JSX is copied into `public/elements/` before Chainlit starts serving.
 
 ### Shared protocol types
 

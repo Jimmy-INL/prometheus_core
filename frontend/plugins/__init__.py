@@ -13,7 +13,9 @@ Plugin contract - each plugins/<name>/__init__.py must provide:
         Render an agent-produced artifact. Return None to fall through.
 
 Optional:
-    UPLOAD_EXTENSIONS: list[str]  Metadata for UI allowlists, not dispatch.
+    UPLOAD_EXTENSIONS: list[str]  File extensions (e.g. ".stl"). Used for UI
+        allowlists and as the artifact-dispatch fallback when json_type/mime_type
+        don't match (so agent-emitted artifacts render even with informal MIME).
     async def inspect_upload(context: UploadContext) -> UploadMatch | None
         Return a plugin MIME type and confidence for a user-uploaded file.
     async def process_upload(context: UploadContext) -> UploadRenderResult
@@ -42,6 +44,7 @@ ELEMENTS_DIR = PLUGINS_DIR.parent / "public" / "elements"
 
 _mimetype_registry: dict[str, Any] = {}
 _json_type_registry: dict[str, Any] = {}
+_extension_registry: dict[str, Any] = {}
 _upload_plugins: list[Any] = []
 
 
@@ -69,6 +72,8 @@ def _load_plugins() -> None:
             _mimetype_registry[normalize_mime_type(mime)] = module
         for json_type in getattr(module, "JSON_TYPES", []):
             _json_type_registry[json_type] = module
+        for ext in getattr(module, "UPLOAD_EXTENSIONS", []):
+            _extension_registry.setdefault(str(ext).lower(), module)
         if hasattr(module, "inspect_upload") or hasattr(module, "process_upload"):
             _upload_plugins.append(module)
 
@@ -76,8 +81,27 @@ def _load_plugins() -> None:
         logger.info("Loaded visualization plugin: %s", plugin_dir.name)
 
 
+def _artifact_suffix(artifact: dict) -> str:
+    """Best-effort file extension for an artifact, from its name or URI."""
+    for value in (artifact.get("name"), artifact.get("uri")):
+        if not value:
+            continue
+        # Strip any query/fragment before reading the suffix off the last segment.
+        path = str(value).split("?", 1)[0].split("#", 1)[0]
+        suffix = Path(path).suffix.lower()
+        if suffix:
+            return suffix
+    return ""
+
+
 def find_plugin_for_artifact(artifact: dict) -> Any | None:
-    """Return the plugin module that can handle a given artifact, or None."""
+    """Return the plugin module that can handle a given artifact, or None.
+
+    Dispatch order: explicit ``json_type``, then ``mime_type``, then a fallback on
+    the artifact's file extension (name/URI). The extension fallback makes
+    agent-emitted artifacts robust to mislabeled or informal MIME types — an agent
+    that returns ``foo.stl`` renders even if it tags it ``application/octet-stream``.
+    """
     json_type = artifact.get("json_type") or (artifact.get("metadata") or {}).get("json_type")
     if json_type and json_type in _json_type_registry:
         return _json_type_registry[json_type]
@@ -85,6 +109,10 @@ def find_plugin_for_artifact(artifact: dict) -> Any | None:
     mime = (artifact.get("mime_type") or "").lower()
     if mime and mime in _mimetype_registry:
         return _mimetype_registry[mime]
+
+    suffix = _artifact_suffix(artifact)
+    if suffix and suffix in _extension_registry:
+        return _extension_registry[suffix]
 
     return None
 
