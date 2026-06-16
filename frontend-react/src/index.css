@@ -216,7 +216,7 @@ html {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: text-shimmer 2.8s ease-in-out infinite;
+  animation: text-shimmer 3.0s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
