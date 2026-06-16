@@ -13,7 +13,7 @@ from plugins import (
 
 MIMETYPES = ["application/x-exodus", "application/exodus"]
 UPLOAD_EXTENSIONS = [".exo", ".e"]
-COMPONENT_NAME = "ExodusViewer"
+COMPONENT_NAME = "MeshViewer"  # shared VTK viewer (public/elements/MeshViewer.jsx)
 _EXODUS_CONTAINER_SIGNATURES = (b"CDF\x01", b"CDF\x02", b"\x89HDF\r\n\x1a\n")
 _EXODUS_CONTAINER_MIMETYPES = {"application/x-hdf5", "application/x-netcdf", "application/netcdf"}
 
