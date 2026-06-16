@@ -44,7 +44,17 @@ def test_expected_model_exists(a2a_module, model_name):
 
 def test_task_status_enum_values(a2a_module):
     TaskStatus = a2a_module.TaskStatus
-    expected = {"pending", "in_progress", "completed", "failed"}
+    expected = {
+        "submitted",
+        "working",
+        "input-required",
+        "completed",
+        "canceled",
+        "failed",
+        "rejected",
+        "auth-required",
+        "unknown",
+    }
     actual = {s.value for s in TaskStatus}
     assert actual == expected
 

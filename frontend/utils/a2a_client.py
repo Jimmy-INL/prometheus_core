@@ -16,7 +16,9 @@ class ConversationResponse:
     """Parsed response from the client-agent."""
 
     conversation_id: str
-    status: str  # "needs_info" | "plan_ready" | "executing" | "completed" | "recommendation" | "answer"
+    # "needs_info" | "plan_ready" | "executing" | "completed" | "recommendation"
+    # | "answer" | "backgrounded"
+    status: str
     message: Optional[str] = None
     followup_questions: Optional[List[Dict]] = None
     plan: Optional[Dict] = None
@@ -27,6 +29,27 @@ class ConversationResponse:
     artifacts: Optional[List[Dict[str, Any]]] = None  # full conversation catalog
     new_artifacts: Optional[List[Dict[str, Any]]] = None  # only produced this turn
     message_metadata: Optional[Dict[str, Any]] = None
+
+
+def response_from_payload(data: Dict[str, Any]) -> ConversationResponse:
+    """Build a ConversationResponse from a client-agent response payload dict.
+
+    Shared by the streaming parser and the background-task notifier (which
+    renders a persisted result payload after a detached turn completes)."""
+    return ConversationResponse(
+        conversation_id=data.get("conversation_id", ""),
+        status=data.get("status", "answer"),
+        message=data.get("message"),
+        followup_questions=data.get("followup_questions"),
+        plan=data.get("plan"),
+        report=data.get("report"),
+        tool_results=data.get("tool_results"),
+        response_text=data.get("response_text"),
+        recommended_materials=data.get("recommended_materials"),
+        artifacts=data.get("artifacts"),
+        new_artifacts=data.get("new_artifacts"),
+        message_metadata=data.get("message_metadata"),
+    )
 
 
 class A2AClient:
@@ -326,17 +349,4 @@ class A2AClient:
 
     def _dict_to_response(self, data: Dict) -> ConversationResponse:
         """Convert a dict to ConversationResponse."""
-        return ConversationResponse(
-            conversation_id=data.get("conversation_id", ""),
-            status=data.get("status", "answer"),
-            message=data.get("message"),
-            followup_questions=data.get("followup_questions"),
-            plan=data.get("plan"),
-            report=data.get("report"),
-            tool_results=data.get("tool_results"),
-            response_text=data.get("response_text"),
-            recommended_materials=data.get("recommended_materials"),
-            artifacts=data.get("artifacts"),
-            new_artifacts=data.get("new_artifacts"),
-            message_metadata=data.get("message_metadata"),
-        )
+        return response_from_payload(data)

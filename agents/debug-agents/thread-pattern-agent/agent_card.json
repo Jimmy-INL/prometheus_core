@@ -31,12 +31,12 @@
     },
     {
       "id": "run_background_task",
-      "name": "Run Background Task (scaffolded)",
-      "description": "SCAFFOLDED, NOT YET IMPLEMENTED. Intended to run the blocking task detached as an A2A background task: return immediately with a 'working' status and deliver a 'completed' status once the worker finishes. Currently returns a not-implemented response.",
-      "usage_notes": "Placeholder for the future background-task feature. Use run_blocking_task for the working demo.",
+      "name": "Run Background Task",
+      "description": "Run the blocking compute as an agent-declared long-running task. Calls declare_long_running up front so the orchestrator proactively detaches the turn: the user regains control immediately and the result is delivered out-of-band when the worker finishes. Reference exercise for the background-task path.",
+      "usage_notes": "Set duration_seconds to control how long the background worker blocks (defaults to 60). The orchestrator will hand control back almost immediately and post the result when done.",
       "requires_approval": false,
-      "expected_duration_seconds": 1,
-      "output_format": "JSON with status 'not_implemented' and an explanatory message",
+      "expected_duration_seconds": 60,
+      "output_format": "JSON with status, requested_seconds, elapsed_seconds, background:true, and a summary message",
       "inputSchema": {
         "type": "object",
         "properties": {

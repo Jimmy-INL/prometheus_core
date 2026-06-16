@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from prometheus_api.agent import ArtifactReference, EventQueue, PrometheusAgent, RequestContext
 from starlette.requests import Request
@@ -16,10 +16,15 @@ from capability_cache import get_capability_cache
 from conversation_store import get_conversation
 from workflow_library import get_workflow_registry
 
-from . import runtime
+from . import runtime, task_tracking
 from .chat_flow import chat
 from .debug_commands import _is_slash_command_query
 from .models import ConversationRequest, ConversationResponse
+
+# Strong references to detached background orchestration tasks, so the event
+# loop does not garbage-collect them while they run past the request that
+# started them.
+_BACKGROUND_TASKS: set = set()
 
 
 class OrchestratorAgent(PrometheusAgent):
@@ -517,16 +522,94 @@ class OrchestratorAgent(PrometheusAgent):
                 message=message,
             )
 
-        with runtime.status_stream(emit_chat_status) as status_tasks:
-            try:
-                response = await chat(chat_request)
-            finally:
-                await runtime.wait_for_status_stream(status_tasks)
-        return self._response_payload_with_artifacts(
-            conversation_id,
-            response,
-            artifact_ids_before_turn,
+        async def _run_chat() -> ConversationResponse:
+            with runtime.status_stream(emit_chat_status) as status_tasks:
+                try:
+                    return await chat(chat_request)
+                finally:
+                    await runtime.wait_for_status_stream(status_tasks)
+
+        task_tracking.begin_turn(conversation_id, chat_request.query or "request")
+        deadline = task_tracking.background_deadline_seconds()
+        background_evt = task_tracking.background_event()
+
+        # Detach is triggered by either the soft deadline (time-based promotion,
+        # gated by PROMETHEUS_BACKGROUND_DEADLINE_SECONDS) or an agent calling
+        # declare_long_running mid-turn (agent-driven, always active). With both
+        # disabled — no deadline and no signaling turn — this awaits chat() to
+        # completion, exactly the synchronous path.
+        chat_task = asyncio.create_task(_run_chat())
+        waiters: set = {chat_task}
+        bg_wait = asyncio.create_task(background_evt.wait()) if background_evt is not None else None
+        if bg_wait is not None:
+            waiters.add(bg_wait)
+        done, _pending = await asyncio.wait(
+            waiters,
+            timeout=deadline if deadline > 0 else None,
+            return_when=asyncio.FIRST_COMPLETED,
         )
+        if bg_wait is not None and not bg_wait.done():
+            bg_wait.cancel()
+
+        if chat_task in done:
+            response = chat_task.result()
+            task_tracking.finish_turn(getattr(response, "status", "") or "")
+            return self._response_payload_with_artifacts(
+                conversation_id, response, artifact_ids_before_turn
+            )
+
+        # Detach (soft deadline exceeded, or an agent declared itself long-running):
+        # the orchestration keeps running in a background task; the user regains
+        # control and is notified on completion.
+        root_id = task_tracking.ensure_background_root()
+        self._spawn_background_finisher(
+            chat_task, conversation_id, root_id, artifact_ids_before_turn
+        )
+        runtime.store_status_update(
+            conversation_id, "Task is now running in the background.", final=True
+        )
+        backgrounded = ConversationResponse(
+            conversation_id=conversation_id,
+            status="backgrounded",
+            message=(
+                "This is taking a while, so it's now running in the background. "
+                "I'll post the result here when it's ready — use /tasks to check progress."
+            ),
+            message_metadata={"task_id": root_id} if root_id else None,
+        )
+        return self._response_payload_with_artifacts(
+            conversation_id, backgrounded, artifact_ids_before_turn
+        )
+
+    def _spawn_background_finisher(
+        self,
+        chat_task: "asyncio.Task",
+        conversation_id: str,
+        root_id: Optional[str],
+        artifact_ids_before_turn: set,
+    ) -> None:
+        """Detach a slow orchestration task: await it in the background, finalize
+        its Task Graph root, and persist the result for delivery on completion."""
+
+        def _build_payload(response: ConversationResponse) -> Dict[str, Any]:
+            return self._response_payload_with_artifacts(
+                conversation_id, response, artifact_ids_before_turn
+            )
+
+        def _emit(message: str) -> None:
+            runtime.store_status_update(conversation_id, message, final=True)
+
+        bg = asyncio.create_task(
+            task_tracking.run_background_finish(
+                chat_task=chat_task,
+                conversation_id=conversation_id,
+                root_id=root_id,
+                build_payload=_build_payload,
+                on_status=_emit,
+            )
+        )
+        _BACKGROUND_TASKS.add(bg)
+        bg.add_done_callback(_BACKGROUND_TASKS.discard)
 
     def configure_app(self, app) -> None:
         """Add custom orchestrator endpoints."""
