@@ -194,6 +194,39 @@ html {
   --tab-bg: var(--color-base-200) !important;
 }
 
+/* Animated "working…" shimmer for in-progress tool steps.
+   A bright band sweeps across dimmed text so it reads as clearly alive,
+   mirroring the old Chainlit loader. */
+@keyframes text-shimmer {
+  0% { background-position: 150% center; }
+  100% { background-position: -50% center; }
+}
+
+.text-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--color-base-content) 35%, transparent) 0%,
+    color-mix(in oklch, var(--color-base-content) 35%, transparent) 40%,
+    var(--color-base-content) 50%,
+    color-mix(in oklch, var(--color-base-content) 35%, transparent) 60%,
+    color-mix(in oklch, var(--color-base-content) 35%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: text-shimmer 3.0s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer {
+    animation: none;
+    color: var(--color-base-content);
+    -webkit-text-fill-color: var(--color-base-content);
+  }
+}
+
 .text-oswald {
   font-family: "Oswald", sans-serif;
 }

@@ -106,7 +106,10 @@ const AssistantAvatar = () => (
 function ToolStep({ item }: { item: FlatItem }) {
   const [open, setOpen] = useState(false);
   const { step } = item;
-  const isDone = !step.waitForAnswer && step.end !== undefined;
+  // A running step arrives over the socket with `end: null` (JSON), not
+  // undefined — so compare against null to catch both. `end !== undefined`
+  // alone was always true for in-progress steps, so nothing ever animated.
+  const isDone = !step.waitForAnswer && step.end != null;
   const hasHistory = Boolean(step.output?.trim());
 
   return (
@@ -128,10 +131,9 @@ function ToolStep({ item }: { item: FlatItem }) {
           ) : (
             <span className="w-3.25" />
           )}
-          <span className={isDone ? "" : "italic"}>{step.name || "Processing…"}</span>
-          {!isDone && (
-            <span className="loading loading-dots loading-xs ml-1 text-base-content/40" />
-          )}
+          <span className={isDone ? "" : "italic text-shimmer"}>
+            {step.name || "Processing…"}
+          </span>
         </button>
         {open && hasHistory && (
           <pre className="text-xs text-base-content/40 bg-base-300 rounded p-2 whitespace-pre-wrap leading-5 mt-1">
