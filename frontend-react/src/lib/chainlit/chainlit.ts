@@ -20,12 +20,12 @@
  *   ✓ element pipeline — classifyElement() + VIEWER_REGISTRY in elements.ts
  *   ✓ element fallback — non-custom unregistered kinds show download card;
  *                        custom elements without a registered viewer are hidden
+ *   ✓ viewers — PDF, FollowUpSuggestions, PlanViewer
+ *   ✓ file upload UI — Paperclip button + multi-file picker, IFileRef wiring
  *
  * Not yet implemented:
  *   ✗ ask_plain (AskUserMessage)
- *   ✗ viewers — IFC, Exodus, PDF, file download, image, JSON, suggestions,
- *               PlanViewer, Mermaid, ThermalAnalysis
- *   ✗ file upload UI
+ *   ✗ viewers — IFC, Exodus, file download, image, JSON, Mermaid, ThermalAnalysis
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -75,8 +75,12 @@ export interface FlatItem {
 function classifyStep(step: IStepExtended): MessageKind {
   if (step.waitForAnswer) {
     if (step.actions?.length) return "ask_action";
-    if (step.type === "tool") return "ask_form";
-    return "ask_plain";
+    // Any wait-for-answer without actions is element-shaped (AskElementMessage
+    // → DynamicForm/PlanViewer). step.type is unreliable here — AskElementMessage
+    // arrives with wire type "assistant_message" in 0.4.x, not "tool".
+    // If there's no element attached, ElementList renders nothing and the text
+    // alone shows — same UX as a plain ask.
+    return "ask_form";
   }
   if (step.type === "user_message") return "user";
   if (step.type === "assistant_message") return "assistant";
@@ -124,37 +128,6 @@ export const isWaitingForInput  = (item: FlatItem) =>
   item.kind === "ask_action" || item.kind === "ask_form" || item.kind === "ask_plain";
 
 // ---------------------------------------------------------------------------
-// ─── TODO: FollowUpSuggestions viewer ───────────────────────────────────────
-//
-// Every final agent response sends these via metadata.follow_up_suggestions.
-// They arrive as CustomElement(name="FollowUpSuggestions", props={
-//   suggestions: string[], title: string
-// }) in step.elements[].
-//
-// Currently falls through to the NoViewerFallback card in ElementRenderer.
-// Fix: register FollowUpSuggestionsElement in VIEWER_REGISTRY (elements.ts).
-//   Render as a row of chip buttons. On click: onSend(suggestion).
-//   onSend is already threaded through ElementList → ElementRenderer → viewer.
-// ────────────────────────────────────────────────────────────────────────────
-
-// ---------------------------------------------------------------------------
-// ─── TODO: PlanViewer ───────────────────────────────────────────────────────
-//
-// Backend: message_handler.py → _handle_plan_ready()
-//   Step 1 — plan display:
-//     cl.Message(content=..., elements=[cl.CustomElement(name="PlanViewer",
-//       props={ plan: { steps: [...] }, stepStatuses: {} })])
-//     → lands in step.elements[], currently shows NoViewerFallback card.
-//     Fix: register PlanViewerElement in VIEWER_REGISTRY.
-//     Render ordered steps with running/completed/failed status badges.
-//     Note: stepStatuses live updates are not feasible without a separate
-//     mechanism — render statuses from props only (static at display time).
-//
-//   Step 2 — approve/reject: already handled by ask_action + ActionButtons ✓
-//   Step 3 — execution tool steps: already handled by ToolStep ✓
-// ────────────────────────────────────────────────────────────────────────────
-
-// ---------------------------------------------------------------------------
 // ─── TODO: Artifact viewers ──────────────────────────────────────────────────
 //
 // All arrive in step.elements[] and currently show NoViewerFallback.
@@ -162,43 +135,24 @@ export const isWaitingForInput  = (item: FlatItem) =>
 //
 // Priority order:
 //   1. FileDownloadElement  — cl.File; simple <a download> with mime badge
-//   2. PdfViewerElement     — cl.Pdf; native <embed> or <iframe>
-//   3. ImageViewerElement   — cl.Image; <img> with lightbox
-//   4. CollapsibleJsonElement — cl.CustomElement CollapsibleJson
-//   5. IFCViewerElement     — cl.CustomElement IFCViewer (nearly ready)
-//   6. ExodusViewerElement  — cl.CustomElement ExodusViewer
-//   7. MermaidElement       — cl.CustomElement Mermaid
-//   8. ThermalAnalysisElement — cl.CustomElement ThermalAnalysis (Plotly)
+//   2. ImageViewerElement   — cl.Image; <img> with lightbox
+//   3. CollapsibleJsonElement — cl.CustomElement CollapsibleJson
+//   4. IFCViewerElement     — cl.CustomElement IFCViewer (nearly ready)
+//   5. ExodusViewerElement  — cl.CustomElement ExodusViewer
+//   6. MermaidElement       — cl.CustomElement Mermaid
+//   7. ThermalAnalysisElement — cl.CustomElement ThermalAnalysis (Plotly)
 //
 // NOTE: Audit plugins/ folder to confirm CustomElement names before building
 //   IFC, Mermaid, and ThermalAnalysis viewers — names above are assumed.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
-// ─── TODO: File upload UI ────────────────────────────────────────────────────
-//
-// sendMessage() is currently called with [] as the attachments arg everywhere.
-// The backend's entire upload path (_capture_uploaded_file, CAD/PDF handling)
-// is unreachable until this is wired.
-//
-// Requirements:
-//   Attach button in chat input bar → opens file picker
-//   Multi-file support (message.elements is a list)
-//   100 MB per-file limit (MAX_UPLOAD_BYTES in backend) — show error if exceeded
-//   CAD file types must be accepted: .stp, .step (not in browser default lists)
-//   PDF files: backend renders inline via cl.Pdf — upload flow should reflect this
-//   All other files: staged by the Chainlit backend, then referenced in uploaded_files
-//   Attachment preview chips in the input bar before send
-//   Confirm IAttachment shape for @chainlit/react-client 0.4.2 sendMessage()
-// ────────────────────────────────────────────────────────────────────────────
-
-// ---------------------------------------------------------------------------
 // ─── TODO: ask_plain ────────────────────────────────────────────────────────
 //
 // cl.AskUserMessage — not currently used in message_handler.py but part of
-// the Chainlit API. Currently falls through to ToolStep (harmless for now).
-// When needed: render an inline text input + submit button beneath the message,
-// submit via sendMessage.
+// the Chainlit API. Currently collapses into ask_form (text + empty
+// ElementList = same UX as a plain ask). When a real text-input ask is
+// needed, split the classifier and render an inline <input>+submit.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------
