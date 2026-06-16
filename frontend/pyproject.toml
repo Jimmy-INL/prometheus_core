@@ -24,7 +24,17 @@ dev = [
     "types-pyyaml>=6.0.12.20250915",
     "types-requests>=2.32.4.20260107",
     "respx>=0.22.0",
+    # Local dev/tests import prometheus_api.contract; in Docker the package
+    # comes preinstalled from the prometheus_api base image (--no-dev skips
+    # this entry at image build time).
+    "prometheus-api",
 ]
+
+[tool.uv.sources]
+# TODO: re-pin to main (or a version tag) once prometheus_api fable5_review merges.
+# Working on prometheus_api locally? Override with:
+#   uv pip install -e /path/to/prometheus_api
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", branch = "fable5_review" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

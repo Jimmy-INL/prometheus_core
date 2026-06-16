@@ -589,7 +589,11 @@ async def resolve_params_via_capability_metadata(
             if not all(has_param_path(params, path) for path in required_paths):
                 continue
 
-            # Prefetch: invoke the provider skill
+            # Prefetch: invoke the provider skill. Imported lazily to keep
+            # parameters.py importable without dragging in the skill-invocation
+            # stack (and to match the late-binding the orchestrator shim uses).
+            from .skills import invoke_skill
+
             prefetched = await invoke_skill(
                 skill_id,
                 params,

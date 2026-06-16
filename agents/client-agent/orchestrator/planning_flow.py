@@ -6,8 +6,15 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 
+from artifact_handling import extract_artifact_field_paths
 from capability_cache import get_capability_cache
-from param_schema import extract_required_param_paths, flatten_schema_properties, has_param_path, is_user_input_schema
+from param_schema import (
+    extract_required_param_paths,
+    flatten_schema_properties,
+    get_nested_value,
+    has_param_path,
+    is_user_input_schema,
+)
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
 from workflow_library import get_workflow_registry, match_workflows
 
@@ -302,15 +309,25 @@ async def compile_query_plan(
     requires_approval = False
     if selected_workflow and selected_workflow.definition.metadata.requires_approval:
         requires_approval = True
-    for skill_id in selected_skills:
+    for index, skill_id in enumerate(selected_skills):
         cap = capabilities_by_skill.get(skill_id)
         if not cap:
             continue
         if selected_workflow is None:
-            user_required_paths = extract_required_param_paths(cap.input_schema)
-            all_required_paths = extract_required_param_paths(cap.input_schema, include_internal=True)
-            required_params_set.update(user_required_paths)
-            runtime_required_params_set.update(set(all_required_paths) - set(user_required_paths))
+            user_required = set(extract_required_param_paths(cap.input_schema))
+            all_required = set(extract_required_param_paths(cap.input_schema, include_internal=True))
+            # Sequential dataflow (mirrors the planner's get_requirement_status):
+            # artifact-reference inputs of downstream skills are produced by
+            # earlier steps at runtime — they must not be asked from the user
+            # or counted as missing here, or the approved plan immediately
+            # bounces back as INPUT_REQUIRED.
+            if planning_result.workflow_type == "sequential" and index > 0:
+                artifact_paths = set(extract_artifact_field_paths(cap.input_schema))
+                deferred = (user_required | all_required) & artifact_paths
+                user_required -= deferred
+                all_required -= deferred
+            required_params_set.update(user_required)
+            runtime_required_params_set.update(all_required - user_required)
         if cap.requires_approval:
             requires_approval = True
 

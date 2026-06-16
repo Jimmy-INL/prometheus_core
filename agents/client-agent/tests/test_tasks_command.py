@@ -13,9 +13,6 @@ import pytest
 CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
-PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
-if str(PROMETHEUS_API_DIR) not in sys.path:
-    sys.path.insert(0, str(PROMETHEUS_API_DIR))
 
 # Stub heavy LLM deps so the orchestrator import chain loads (mirrors
 # test_execution_path.py); the /tasks path never touches them.

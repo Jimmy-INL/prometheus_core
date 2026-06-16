@@ -200,7 +200,17 @@ async def execute_workflow(
             )
             for step in ready_steps
         ]
-        done = await asyncio.gather(*tasks, return_exceptions=False)
+        # return_exceptions=True so one step raising cannot cancel concurrently
+        # running sibling steps and abort the whole workflow run; escaped
+        # exceptions become failed step results handled by on_error policy.
+        done = [
+            item
+            if not isinstance(item, BaseException)
+            else StepRuntimeResult(step_id=step.id, status="failed", error=str(item))
+            for step, item in zip(
+                ready_steps, await asyncio.gather(*tasks, return_exceptions=True)
+            )
+        ]
 
         for item in done:
             step = step_map[item.step_id]

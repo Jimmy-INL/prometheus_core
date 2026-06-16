@@ -61,6 +61,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from artifact_handling import extract_artifact_field_paths
 from capability_cache import AgentCapability
 from file_upload_handler import mime_type_label
 from param_schema import (
@@ -98,7 +99,15 @@ cannot be collected from the user; choose a workflow template or different capab
 with set_extracted_params.
 - If no capability should run and intent is clear (e.g. a general question), use \
 fallback_to_chat to respond directly.
-- Prefer minimal, high-confidence plans. Avoid over-engineering.
+- MULTI-STEP REQUESTS: when the user chains operations ("X, then Y", "... and convert \
+the result", "afterwards export it"), select EVERY skill in the chain: primary_skill is \
+the first step, supporting_skills the later steps in order, workflow_type="sequential". \
+Artifact-reference parameters of later steps (marked "[accepts artifact id]") are filled \
+at runtime from earlier steps' outputs — get_requirement_status reports them as \
+deferred_runtime_paths. Never ask the user for them, and never drop a requested later \
+step just because its artifact id does not exist yet.
+- Prefer minimal, high-confidence plans. Avoid over-engineering — but minimal means \
+covering every operation the user asked for, not fewer.
 - Keep all user-facing messages concise and professional.
 - Every planning turn must end by calling finalize_plan or fallback_to_chat.
 
@@ -449,6 +458,7 @@ def _build_planning_tools(
 
         required_paths_set = set()
         runtime_required_paths_set = set()
+        deferred_runtime_paths_set = set()
         properties: Dict[str, Dict[str, Any]] = {}
         if selected_workflow:
             required_paths_set.update(selected_workflow.required_paths)
@@ -459,14 +469,26 @@ def _build_planning_tools(
                 if cap:
                     properties.update(flatten_schema_properties(cap.input_schema))
         else:
-            for skill_id in selected:
+            for index, skill_id in enumerate(selected):
                 cap = capabilities_by_skill.get(skill_id)
                 if not cap:
                     continue
-                user_required_paths = extract_required_param_paths(cap.input_schema)
-                all_required_paths = extract_required_param_paths(cap.input_schema, include_internal=True)
-                required_paths_set.update(user_required_paths)
-                runtime_required_paths_set.update(set(all_required_paths) - set(user_required_paths))
+                user_required = set(extract_required_param_paths(cap.input_schema))
+                all_required = set(
+                    extract_required_param_paths(cap.input_schema, include_internal=True)
+                )
+                # Sequential dataflow: artifact-reference inputs of downstream
+                # skills are produced by earlier steps at runtime. They cannot
+                # exist at planning time, so they must neither be asked from
+                # the user nor block finalize_plan.
+                if draft.workflow_type == "sequential" and index > 0:
+                    artifact_paths = set(extract_artifact_field_paths(cap.input_schema))
+                    deferred = (user_required | all_required) & artifact_paths
+                    deferred_runtime_paths_set.update(deferred)
+                    user_required -= deferred
+                    all_required -= deferred
+                required_paths_set.update(user_required)
+                runtime_required_paths_set.update(all_required - user_required)
                 properties.update(flatten_schema_properties(cap.input_schema))
 
         required_paths = sorted(required_paths_set)
@@ -496,6 +518,9 @@ def _build_planning_tools(
             "missing_paths": missing_paths,
             "runtime_required_paths": runtime_required_paths,
             "unresolved_runtime_paths": unresolved_runtime_paths,
+            # Filled at runtime from earlier sequential steps' outputs; do not
+            # ask the user for these and do not treat them as blocking.
+            "deferred_runtime_paths": sorted(deferred_runtime_paths_set),
             "details": details,
             "params": draft.extracted_params,
         }

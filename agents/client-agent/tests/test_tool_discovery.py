@@ -7,12 +7,7 @@ import sys
 from pathlib import Path
 import types
 
-CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
-if str(CLIENT_AGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CLIENT_AGENT_DIR))
-PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
-if str(PROMETHEUS_API_DIR) not in sys.path:
-    sys.path.insert(0, str(PROMETHEUS_API_DIR))
+# sys.path setup (client-agent dir + prometheus_api contract) lives in conftest.py
 
 if "langchain_core.tools" not in sys.modules:
     tools_module = types.ModuleType("langchain_core.tools")
@@ -129,6 +124,8 @@ if "prometheus_api.agent" not in sys.modules:
     prometheus_api_module.agent = agent_module
     sys.modules["prometheus_api"] = prometheus_api_module
     sys.modules["prometheus_api.agent"] = agent_module
+
+import prometheus_api.a2a_stream as a2a_stream
 
 import tool_discovery
 
@@ -388,6 +385,52 @@ def test_call_a2a_agent_preserves_error_payload_from_final_status(monkeypatch) -
     assert result == {"error": "context.temperature_c is required"}
 
 
+def test_call_a2a_agent_propagates_conversation_id_as_context_id(monkeypatch) -> None:
+    a2a_payload = {
+        "result": {
+            "status": {
+                "message": {
+                    "parts": [
+                        {"kind": "text", "text": json.dumps({"status": "completed"})}
+                    ]
+                }
+            }
+        }
+    }
+    captured: dict = {}
+
+    class _CapturingClient(_FakeAsyncClient):
+        async def post(self, endpoint, json=None, headers=None):
+            captured["message"] = json
+            return _FakeResponse(self._payload)
+
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _CapturingClient(payload=a2a_payload, **kwargs),
+    )
+
+    asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/thermal-analysis-agent",
+            "analyze_thermal",
+            conversation_id="conv-42",
+        )
+    )
+    assert captured["message"]["params"]["message"]["contextId"] == "conv-42"
+
+    # The INPUT_REQUIRED resume path overrides with the downstream-echoed contextId.
+    asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/thermal-analysis-agent",
+            "analyze_thermal",
+            conversation_id="conv-42",
+            _a2a_context_id="downstream-ctx",
+        )
+    )
+    assert captured["message"]["params"]["message"]["contextId"] == "downstream-ctx"
+
+
 def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
     async def fake_discover_agents():
         return [
@@ -557,7 +600,7 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
                 sse_lines.append("")
             return _FakeStreamingResponse(sse_lines, content_type="text/event-stream")
 
-    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+    monkeypatch.setattr(a2a_stream.httpx, "AsyncClient", _StreamingClient)
 
     result = asyncio.run(
         tool_discovery.call_a2a_agent(
@@ -644,7 +687,7 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
         def stream(self, method, url, **kwargs):
             return _FakeStreamingResponse(streamed_lines, content_type="application/x-ndjson")
 
-    monkeypatch.setattr(tool_discovery.httpx, "AsyncClient", _StreamingClient)
+    monkeypatch.setattr(a2a_stream.httpx, "AsyncClient", _StreamingClient)
 
     result = asyncio.run(
         tool_discovery.call_a2a_agent(
@@ -679,7 +722,7 @@ def test_apply_stream_event_fires_background_callback_on_flag() -> None:
         }
     }
     asyncio.run(
-        tool_discovery._apply_a2a_stream_event(
+        a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg
         )
     )
@@ -697,7 +740,7 @@ def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
 
     envelope = {"result": {"kind": "status-update", "metadata": {"heartbeat": True, "background": True}}}
     asyncio.run(
-        tool_discovery._apply_a2a_stream_event(
+        a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg
         )
     )

@@ -12,9 +12,6 @@ import pytest
 CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
-PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
-if str(PROMETHEUS_API_DIR) not in sys.path:
-    sys.path.insert(0, str(PROMETHEUS_API_DIR))
 
 if "langchain_anthropic" not in sys.modules:
     langchain_anthropic = types.ModuleType("langchain_anthropic")
@@ -826,3 +823,328 @@ def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
     assert question["field"] == "temperature_c"
     assert question["type"] == "number"
     assert result["missing_info"] == ["temperature_c"]
+
+
+def test_invoke_agent_generic_parallel_preserves_partial_results_on_exception(monkeypatch) -> None:
+    """One skill raising must not cancel siblings or discard their results."""
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        if skill_id == "bad_skill":
+            raise RuntimeError("boom")
+        return {"skill_id": skill_id, "result": {"ok": True}}
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "good_skill",
+            "supporting_skills": ["bad_skill"],
+            "workflow_type": "parallel",
+            "extracted_params": {},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert result["tool_results"]["good_skill"] == {"ok": True}
+    assert "boom" in result["tool_results"]["bad_skill"]["error"]
+
+
+def test_chat_plan_rejection_clears_pending_plan(monkeypatch) -> None:
+    stored = {}
+    existing_state = {
+        "conversation_id": "conv-1",
+        "awaiting_approval": True,
+        "routing_decision": {"workflow_type": "single", "primary_skill": "analyze_thermal"},
+        "plan": {"intent": "thermal analysis"},
+        "missing_info": [],
+        "pending_subagent_requests": [],
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    async def should_not_execute(*args, **kwargs):
+        raise AssertionError("Plan rejection must not execute the plan.")
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module, "store_conversation", lambda conversation_id, state: stored.update({conversation_id: state})
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent_module, "execute_approved_plan", should_not_execute)
+    monkeypatch.setattr(agent_module, "execute_current_plan", should_not_execute)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(conversation_id="conv-1", plan_rejected=True)
+        )
+    )
+
+    assert response.status == "answer"
+    assert "rejected" in (response.message or "").lower()
+    saved = stored["conv-1"]
+    assert saved["awaiting_approval"] is False
+    assert saved["routing_decision"] is None
+    assert saved["plan"] is None
+    assert saved["pending_subagent_requests"] == []
+
+
+def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> None:
+    """Multiple INPUT_REQUIRED workflow steps must all reach the user at once."""
+    workflow = SimpleNamespace(
+        definition=SimpleNamespace(
+            id="wf",
+            version="1.0.0",
+            steps=[
+                SimpleNamespace(id="step-1", skill_id="skill_a"),
+                SimpleNamespace(id="step-2", skill_id="skill_b"),
+            ],
+        )
+    )
+    registry = SimpleNamespace(get=lambda workflow_id, version=None: workflow)
+
+    async def fake_execute_workflow(**kwargs):
+        return {
+            "final_output": None,
+            "step_statuses": {"step-1": "input_required", "step-2": "input_required"},
+            "step_results": {},
+            "input_required_steps": [
+                {
+                    "step_id": "step-1",
+                    "skill_id": "skill_a",
+                    "input_required": {
+                        "missing_inputs": [{"name": "temperature_c", "type": "number"}],
+                        "hint": "Need temperature",
+                    },
+                },
+                {
+                    "step_id": "step-2",
+                    "skill_id": "skill_b",
+                    "input_required": {
+                        "missing_inputs": [{"name": "pressure_mpa", "type": "number"}],
+                        "hint": "Need pressure",
+                    },
+                },
+            ],
+        }
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "execute_workflow", fake_execute_workflow)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "workflow_type": "workflow_template",
+            "workflow_id": "wf",
+            "workflow_version": "1.0.0",
+            "extracted_params": {},
+        },
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    result = asyncio.run(agent_module.execute_current_plan(state, start_message="go"))
+
+    pending = result["pending_subagent_requests"]
+    assert [entry["skill_id"] for entry in pending] == ["skill_a", "skill_b"]
+    assert result["missing_info"] == ["temperature_c", "pressure_mpa"]
+
+
+def test_plan_approval_persists_state_before_execution(monkeypatch) -> None:
+    """Regression: approval only cleared awaiting_approval in memory; when
+    execution detached to the background, Redis kept awaiting_approval=True
+    for the whole run, so a new query (e.g. an unrelated question typed while
+    waiting) was misrouted into the plan-refinement branch."""
+    import copy
+
+    stored: list = []
+    existing_state = {
+        "conversation_id": "conv-1",
+        "awaiting_approval": True,
+        "routing_decision": {"workflow_type": "single", "primary_skill": "analyze_thermal"},
+        "plan": {"intent": "thermal analysis"},
+        "missing_info": [],
+        "pending_subagent_requests": [],
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    async def fake_execute_approved_plan(state):
+        # By the time execution starts, the approval must already be durable.
+        assert stored, "state was not persisted before execute_approved_plan"
+        assert stored[-1]["awaiting_approval"] is False
+        return {**state, "final_report": "done", "tool_results": {"analyze_thermal": {"ok": True}}}
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module,
+        "store_conversation",
+        lambda conversation_id, state: stored.append(copy.deepcopy(state)),
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent_module, "execute_approved_plan", fake_execute_approved_plan)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(conversation_id="conv-1", plan_approved=True)
+        )
+    )
+
+    assert response.status == "completed"
+
+
+def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) -> None:
+    """Sequential dataflow: a downstream skill's unfilled x_artifact_ref param
+    is bound to the artifact produced by the previous step (create SVG ->
+    convert to PNG)."""
+    captured_params: dict = {}
+
+    convert_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {
+                "type": "string",
+                "x_artifact_ref": "single",
+            }
+        },
+        "required": ["artifact_id"],
+    }
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured_params[skill_id] = params
+        if skill_id == "create_svg_artifact":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "status": "success",
+                    "artifacts": [{"artifact_id": "svg-123", "name": "image.svg"}],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "success"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        if skill_id == "convert_svg_to_png":
+            return SimpleNamespace(input_schema=convert_schema, provides=None)
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,  # sync lookup used by skill ordering
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "create_svg_artifact",
+            "supporting_skills": ["convert_svg_to_png"],
+            "workflow_type": "sequential",
+            "extracted_params": {"word": "LBNL is a cool lab"},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    # Step 2 received the artifact produced by step 1.
+    assert captured_params["convert_svg_to_png"]["artifact_id"] == "svg-123"
+    # And upstream results were forwarded as before.
+    assert "upstream_results" in captured_params["convert_svg_to_png"]
+    assert "error" not in result["tool_results"]["convert_svg_to_png"]
+
+
+def test_sequential_execution_overrides_stale_planning_time_artifact_binding(monkeypatch) -> None:
+    """Regression: 'revise the valve, then mesh it' meshed the ORIGINAL valve.
+    Planning-time artifact resolution correctly bound the existing valve for
+    step 1 (revise), but the shared params dict leaked that binding into step
+    2 (mesh), and already-filled refs were not overridden with the chain's
+    own output."""
+    captured_params: dict = {}
+
+    revise_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "x_artifact_ref": "single"},
+            "instructions": {"type": "string"},
+        },
+        "required": ["artifact_id", "instructions"],
+    }
+    mesh_schema = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "x_artifact_ref": "single"},
+            "element_type": {"type": "string"},
+        },
+        "required": ["artifact_id"],
+    }
+    schemas = {"revise_model": revise_schema, "mesh_model": mesh_schema}
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured_params[skill_id] = params
+        if skill_id == "revise_model":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "status": "success",
+                    "artifacts": [
+                        {"artifact_id": "valve-revised", "name": "valve_rev2.step"},
+                        {"artifact_id": "revision-report", "name": "changes.json"},
+                    ],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "success"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        schema = schemas.get(skill_id)
+        return SimpleNamespace(input_schema=schema, provides=None) if schema else None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "revise_model",
+            "supporting_skills": ["mesh_model"],
+            "workflow_type": "sequential",
+            # Planning-time resolution bound the EXISTING valve (right for step 1).
+            "extracted_params": {
+                "artifact_id": "valve-original",
+                "instructions": "reduce to 8 holes, five times larger",
+                "element_type": "tet",
+            },
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    asyncio.run(agent_module.invoke_agent_generic(state))
+
+    # Step 1 revised the original valve...
+    assert captured_params["revise_model"]["artifact_id"] == "valve-original"
+    # ...and step 2 meshed the chain's own output — the revised model, not the
+    # inherited original and not the side-artifact report.
+    assert captured_params["mesh_model"]["artifact_id"] == "valve-revised"

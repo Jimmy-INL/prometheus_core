@@ -54,15 +54,11 @@ def _get_status_redis_client():
     """Lazy Redis client for status history updates."""
     global _status_redis_client
     if _status_redis_client is None:
-        import redis
+        from prometheus_api.redis_utils import create_redis_client
 
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_password = os.getenv("REDIS_PASSWORD")
-        _status_redis_client = redis.Redis.from_url(
-            redis_url,
-            password=redis_password,
-            decode_responses=True
-        )
+        _status_redis_client = create_redis_client(ping=False)
+        if _status_redis_client is None:
+            raise RuntimeError("Redis client could not be created; check REDIS_URL/REDIS_PASSWORD")
     return _status_redis_client
 
 

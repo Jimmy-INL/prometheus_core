@@ -267,7 +267,7 @@ async def _handle_response(
         await _handle_needs_info(client, response, original_query, conversation_id, _depth=_depth)
     elif response.status == "plan_ready":
         await _handle_plan_ready(client, response, original_query, conversation_id)
-    elif response.status in ("completed", "answer", "recommendation", "success"):
+    elif response.status in ("completed", "answer", "recommendation"):
         await _handle_final_response(response)
     elif response.status == "executing":
         await cl.Message(content=response.message or "Agent is executing the plan…").send()
@@ -526,7 +526,19 @@ async def _handle_plan_ready(
         approved = True
 
     if not approved:
-        await cl.Message(content="Plan rejected.").send()
+        # Tell the server so it clears awaiting_approval and the pending
+        # routing decision; otherwise the conversation's next message
+        # dead-ends in the continuation path.
+        try:
+            response = await client.send(
+                query="",
+                conversation_id=conversation_id,
+                plan_rejected=True,
+            )
+            await cl.Message(content=response.message or "Plan rejected.").send()
+        except Exception as exc:
+            logger.warning("Failed to notify server of plan rejection: %s", exc)
+            await cl.Message(content="Plan rejected.").send()
         return
 
     artifacts_catalog = cl.user_session.get("artifacts", [])

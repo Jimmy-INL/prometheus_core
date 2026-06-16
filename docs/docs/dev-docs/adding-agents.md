@@ -57,7 +57,6 @@ The agent card defines the agent's identity, skills, and capabilities:
 {
   "name": "My Analysis Agent",
   "description": "Performs custom analysis for nuclear materials",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
@@ -105,6 +104,12 @@ Key fields for discovery and routing:
 - `skills[].inputSchema`: The client-agent uses this to determine what parameters to collect from the user
 - `skills[].tags`: Used by the client-agent when matching capabilities to a request
 - `skills[].requires_approval`: If `true`, the client-agent asks the user before invoking
+
+Do **not** put a `url` field in the card. `PrometheusAgent` sets the registered
+URL at startup: `EXTERNAL_AGENT_URL` if set, else
+`http://{container hostname}:{AGENT_PORT}` — inside Docker Compose the hostname
+is the service name, which resolves on `agent-network`. Set `EXTERNAL_AGENT_URL`
+only when the agent is port-mapped or runs on a different host.
 
 ### 3. Create environment and dependencies
 

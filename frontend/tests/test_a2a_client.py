@@ -186,6 +186,9 @@ def test_send_streams_sse_statuses_and_final_response(monkeypatch) -> None:
     assert captured["method"] == "POST"
     assert captured["url"] == "http://example.test"
     assert captured["json"]["method"] == "message/stream"
+    # conversationId must travel as the A2A-spec message.contextId so the
+    # client-agent's RequestContext.context_id matches the conversation.
+    assert captured["json"]["params"]["message"]["contextId"] == "conv-1"
     assert "application/x-ndjson" in captured["headers"]["Accept"]
     assert captured["headers"]["Authorization"] == "Bearer secret"
     assert response.status == "completed"

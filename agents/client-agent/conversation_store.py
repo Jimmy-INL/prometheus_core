@@ -1,10 +1,10 @@
 """Conversation state persistence for the client-agent."""
 
 import json
-import os
 from typing import Any, Dict, Optional
 
 import redis
+from prometheus_api.redis_utils import create_redis_client
 
 _conversation_store_client: Optional[redis.Redis] = None
 
@@ -13,13 +13,9 @@ def _get_conversation_store_client() -> redis.Redis:
     """Get or create the singleton Redis client for conversation storage."""
     global _conversation_store_client
     if _conversation_store_client is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_password = os.getenv("REDIS_PASSWORD")
-        _conversation_store_client = redis.Redis.from_url(
-            redis_url,
-            password=redis_password,
-            decode_responses=True
-        )
+        _conversation_store_client = create_redis_client(ping=False)
+        if _conversation_store_client is None:
+            raise RuntimeError("Redis client could not be created; check REDIS_URL/REDIS_PASSWORD")
     return _conversation_store_client
 
 

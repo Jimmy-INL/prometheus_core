@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 import redis
 from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent
+from prometheus_api.redis_utils import create_redis_client
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 
@@ -58,7 +59,7 @@ class FormFillerAgent(PrometheusAgent):
     def redis_client(self) -> redis.Redis:
         """Lazy initialization of Redis client."""
         if self._redis_client is None:
-            self._redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+            self._redis_client = create_redis_client(REDIS_URL, ping=False)
         return self._redis_client
 
     @property

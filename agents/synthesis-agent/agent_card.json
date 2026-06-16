@@ -1,7 +1,6 @@
 {
   "name": "Synthesis Agent",
   "description": "Specialist agent used to compile a cohesive final report from multiple specialist-agent outputs (data, radiation, corrosion, thermal, and related analyses).",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,

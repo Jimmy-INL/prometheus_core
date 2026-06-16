@@ -1,7 +1,6 @@
 {
   "name": "Thread Pattern Debug Agent",
   "description": "Reference/debug agent demonstrating how to run long blocking work off the event loop (asyncio.to_thread) while streaming progress observed from the _execute coroutine. Useful for validating heartbeats and streaming during long-running tasks.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,

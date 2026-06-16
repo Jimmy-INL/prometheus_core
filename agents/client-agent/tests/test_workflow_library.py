@@ -464,3 +464,78 @@ def test_executor_error_policy_fail_fast_vs_continue_with_partial() -> None:
     assert continue_result["step_statuses"]["first"] == "failed"
     assert continue_result["step_statuses"]["second"] == "succeeded"
     assert continue_result["step_statuses"]["third"] == "succeeded"
+
+
+def test_executor_converts_step_exception_to_failed_status() -> None:
+    """A step coroutine raising must not abort concurrently running siblings."""
+
+    async def invoke(skill_id: str, params: Dict[str, Any], conversation_id: str) -> Dict[str, Any]:
+        if skill_id == "raise_skill":
+            raise RuntimeError("kaboom")
+        return {"result": {"ok": skill_id}}
+
+    workflow = _compile(
+        {
+            "id": "parallel_exception",
+            "name": "Parallel Exception",
+            "version": "1.0.0",
+            "description": "test",
+            "matching": {"patterns": ["x"]},
+            "execution": {"mode": "parallel", "max_concurrency": 2, "on_error": "continue_with_partial"},
+            "steps": [
+                {"id": "bad", "skill_id": "raise_skill"},
+                {"id": "good", "skill_id": "ok_skill"},
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        execute_workflow(
+            workflow=workflow,
+            input_params={},
+            context={},
+            invoke_skill=invoke,
+            conversation_id="conv-1",
+        )
+    )
+
+    assert result["step_statuses"]["bad"] == "failed"
+    assert result["step_statuses"]["good"] == "succeeded"
+    assert any("kaboom" in err["error"] for err in result["errors"])
+
+
+def test_executor_collects_all_parallel_input_required_steps() -> None:
+    async def invoke(skill_id: str, params: Dict[str, Any], conversation_id: str) -> Dict[str, Any]:
+        return {
+            "input_required": {
+                "missing_inputs": [{"name": f"param_for_{skill_id}", "type": "string"}],
+            }
+        }
+
+    workflow = _compile(
+        {
+            "id": "parallel_ir",
+            "name": "Parallel Input Required",
+            "version": "1.0.0",
+            "description": "test",
+            "matching": {"patterns": ["x"]},
+            "execution": {"mode": "parallel", "max_concurrency": 2, "on_error": "continue_with_partial"},
+            "steps": [
+                {"id": "first", "skill_id": "skill_a"},
+                {"id": "second", "skill_id": "skill_b"},
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        execute_workflow(
+            workflow=workflow,
+            input_params={},
+            context={},
+            invoke_skill=invoke,
+            conversation_id="conv-1",
+        )
+    )
+
+    assert len(result["input_required_steps"]) == 2
+    assert {entry["step_id"] for entry in result["input_required_steps"]} == {"first", "second"}

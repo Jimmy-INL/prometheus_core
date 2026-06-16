@@ -48,11 +48,11 @@ def _client() -> redis.Redis:
     """Get or create the singleton Redis client for the task graph."""
     global _redis_client
     if _redis_client is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_password = os.getenv("REDIS_PASSWORD")
-        _redis_client = redis.Redis.from_url(
-            redis_url, password=redis_password, decode_responses=True
-        )
+        from prometheus_api.redis_utils import create_redis_client
+
+        _redis_client = create_redis_client(ping=False)
+        if _redis_client is None:
+            raise RuntimeError("Redis client could not be created; check REDIS_URL/REDIS_PASSWORD")
     return _redis_client
 
 
