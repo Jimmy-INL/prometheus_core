@@ -30,13 +30,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=/src/uv.lock \
     cd /src && \
     uv export --frozen --no-dev --no-emit-project > requirements.txt && \
-    uv pip install -r requirements.txt
+    uv pip install -r requirements.txt && \
+    rm requirements.txt
 
 # Install prometheus_api into python site-packages
 RUN --mount=type=bind,source=pyproject.toml,target=/src/pyproject.toml \
     --mount=type=bind,source=prometheus_api,target=/src/prometheus_api/ \
     cd /src && \
-    uv pip install --no-deps /src
+    uv pip install --no-deps /src && \
+    rm -rf /src/build *.egg-info
 
 # Default entrypoint is python
 CMD ["python"]
@@ -52,7 +54,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=/src/uv.lock \
     cd /src && \
     uv export --frozen --only-dev > requirements.txt && \
-    uv pip install -r requirements.txt
+    uv pip install -r requirements.txt && \
+    rm requirements.txt
 
 ################################################################################
 ## default target: Put this last so that "install" becomes the default
