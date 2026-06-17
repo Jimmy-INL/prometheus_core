@@ -119,7 +119,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
   return (
     <div
       ref={containerRef}
-      className="relative my-2 w-full max-w-full rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
+      className="ifc-viewer-root relative my-2 w-full max-w-full rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
       style={{ height }}
     >
       {/* Top-left: visibility panel */}
