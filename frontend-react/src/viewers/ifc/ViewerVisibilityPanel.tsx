@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Eye, EyeOff, Layers } from "lucide-react";
 
 type Item = { key: string; label: string };
@@ -16,6 +16,8 @@ type Props = {
   equipment?: SectionData;
   pipes?: SectionData;
   disabled?: boolean;
+  // Whole-panel open state — driven by viewer width (auto-collapses when narrow)
+  defaultOpen?: boolean;
 };
 
 const ViewerVisibilityPanel: React.FC<Props> = ({
@@ -25,13 +27,17 @@ const ViewerVisibilityPanel: React.FC<Props> = ({
   equipment,
   pipes,
   disabled = false,
+  defaultOpen = true,
 }) => {
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(defaultOpen);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     elements:  true,
     equipment: true,
     pipes:     true,
   });
+
+  // Follow width-driven changes (e.g. chat column ↔ full-width view)
+  useEffect(() => { setPanelOpen(defaultOpen); }, [defaultOpen]);
 
   const toggleSection = (id: string) =>
     setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));

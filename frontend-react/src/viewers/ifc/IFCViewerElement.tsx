@@ -36,6 +36,12 @@ export function IFCViewerElement({ element }: ViewerProps) {
   const height   = props.height ?? "560px";
 
   const ifcViewerRef = useRef<IFCViewerHandles>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-collapse the floating panels when the viewer is narrow (e.g. embedded
+  // in the chat column). They expand automatically in a wider/full-width view.
+  const PANEL_BREAKPOINT = 640;
+  const [panelsOpen, setPanelsOpen] = useState(true);
 
   const [showViewer, setShowViewer] = useState(false);
   const [visibility, setVisibility] = useState<Record<VisibilityCategory, boolean>>(defaultVisibility);
@@ -44,6 +50,17 @@ export function IFCViewerElement({ element }: ViewerProps) {
   const [equipmentVisibility, setEquipmentVisibility] = useState<Record<string, boolean>>({});
   const [pipeItems,           setPipeItems]           = useState<LabeledItem[]>([]);
   const [pipeVisibility,      setPipeVisibility]      = useState<Record<string, boolean>>({});
+
+  // Track viewer width → collapse panels below the breakpoint
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setPanelsOpen(entry.contentRect.width >= PANEL_BREAKPOINT);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Reset local state whenever the model URL changes
   useEffect(() => {
@@ -100,6 +117,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
 
   return (
     <div
+      ref={containerRef}
       className="relative my-2 rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
       style={{ height }}
     >
@@ -119,6 +137,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
             visibility: pipeVisibility,
             onToggle: handleTogglePipe,
           }}
+          defaultOpen={panelsOpen}
         />
       )}
 
@@ -132,6 +151,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
           disabled={!showViewer}
           downloadUrl={fileUrl}
           downloadName={filename}
+          defaultOpen={panelsOpen}
         />
       )}
 

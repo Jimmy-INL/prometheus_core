@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Video, Download, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Settings2, Video, Download, ChevronDown, ChevronRight } from "lucide-react";
 
 type Props = {
   // Camera
@@ -12,17 +12,59 @@ type Props = {
   // Download
   downloadUrl?: string | null;
   downloadName?: string;
+
+  // Whole-panel open state — driven by viewer width (auto-collapses when narrow)
+  defaultOpen?: boolean;
 };
 
 const ViewerControlPanel: React.FC<Props> = ({
   onReset, onTop, onFront, onSide, disabled,
   downloadUrl, downloadName = "model.ifc",
+  defaultOpen = true,
 }) => {
+  const [panelOpen,    setPanelOpen]    = useState(defaultOpen);
   const [cameraOpen,   setCameraOpen]   = useState(true);
   const [downloadOpen, setDownloadOpen] = useState(true);
 
+  // Follow width-driven changes (e.g. chat column ↔ full-width view)
+  useEffect(() => { setPanelOpen(defaultOpen); }, [defaultOpen]);
+
+  // Collapsed state — single header button, mirrors the visibility panel.
+  if (!panelOpen) {
+    return (
+      <div className="absolute top-2 right-2 z-20 w-56 bg-base-100/95 backdrop-blur rounded-md shadow-lg border border-base-300 overflow-hidden">
+        <button
+          type="button"
+          aria-label="Expand viewer controls"
+          className="w-full flex items-center justify-between px-3 py-2 bg-base-200 hover:bg-base-300 transition-colors"
+          onClick={() => setPanelOpen(true)}
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Settings2 size={14} />
+            Controls
+          </div>
+          <ChevronDown size={14} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute top-2 right-2 z-20 w-56 max-h-[calc(100%-1rem)] flex flex-col bg-base-100/95 backdrop-blur rounded-md shadow-lg border border-base-300 overflow-hidden">
+
+      {/* ── Panel header (collapse) ── */}
+      <button
+        type="button"
+        aria-label="Collapse viewer controls"
+        className="w-full flex items-center justify-between px-3 py-2 bg-base-200 border-b border-base-300 hover:bg-base-300 transition-colors"
+        onClick={() => setPanelOpen(false)}
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Settings2 size={14} />
+          Controls
+        </div>
+        <ChevronDown size={14} />
+      </button>
 
       {/* ── Camera section ── */}
       <button
