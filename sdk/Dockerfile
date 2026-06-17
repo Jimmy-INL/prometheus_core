@@ -1,8 +1,4 @@
-################################################################################
-## install target: Installed prometheus_api (default target)
-
-################################################################################
-FROM docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9 AS install
+FROM docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -42,22 +38,3 @@ RUN --mount=type=bind,source=pyproject.toml,target=/src/pyproject.toml \
 
 # Default entrypoint is python
 CMD ["python"]
-
-################################################################################
-## install-dev target: Installed prometheus_api + development dependencies
-################################################################################
-
-FROM install AS install-dev
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=/src/pyproject.toml \
-    --mount=type=bind,source=uv.lock,target=/src/uv.lock \
-    cd /src && \
-    uv export --frozen --only-dev > requirements.txt && \
-    uv pip install -r requirements.txt && \
-    rm requirements.txt
-
-################################################################################
-## default target: Put this last so that "install" becomes the default
-################################################################################
-FROM install AS default
