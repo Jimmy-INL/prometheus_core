@@ -61,7 +61,7 @@ jobs:
             "${{ steps.prepare.outputs.tag }}" \
             /bin/bash run.bash
 
-  test:
+  test-python:
     name: "Test python ${{ matrix.python }}"
     strategy:
       matrix:
