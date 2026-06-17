@@ -2,7 +2,7 @@
 ## install target: Installed prometheus_api (default target)
 
 ################################################################################
-FROM docker.io/python:3.12-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9 AS install
+FROM docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9 AS install
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

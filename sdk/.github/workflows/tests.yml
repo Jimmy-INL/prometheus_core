@@ -87,3 +87,31 @@ jobs:
             "${{ steps.prepare.outputs.tag }}" \
             pytest \
               --color=yes
+
+  test:
+    name: "Test python ${{ matrix.python }}"
+    strategy:
+      matrix:
+        include:
+          - python: 3.12
+            image: docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9
+          - python: 3.13
+            image: docker.io/python:3.13.13-slim@sha256:aa938a849bcb82dce8f49480f056ab82bf5c1c3ebc294f0430f37b6820e7f286
+          - python: 3.14
+            image: docker.io/python:3.14.6-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061
+    runs-on:
+      group: genesis
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Sync environment
+        run: uv sync
+      - name: Test
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest --color=yes
