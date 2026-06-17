@@ -10,3 +10,14 @@
 [data-thatopen-logo] {
   display: none !important;
 }
+
+/* The platform styles every <ul>/<ol> inside an assistant message as a
+   markdown list (Chat.tsx: [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2). Neutralize
+   that inside the viewer so panel lists don't render bullets or indentation.
+   !important + .ifc-viewer-root scope makes this order-independent and contained
+   to the viewer. */
+.ifc-viewer-root :is(ul, ol) {
+  list-style: none !important;
+  padding-left: 0 !important;
+  margin: 0 !important;
+}

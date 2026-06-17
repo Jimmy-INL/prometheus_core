@@ -80,10 +80,18 @@ export function classifyElement(el: AnyElement): ElementKind {
 // ---------------------------------------------------------------------------
 
 import { DynamicFormElement }                from "../../viewers/DynamicFormElement";
-// Lazy — pulls in @thatopen/components + three (~5 MB); kept out of the main
-// bundle and only fetched when an IFC element actually renders. ElementRenderer
-// already wraps every viewer in <Suspense>.
-const IFCViewerElement = lazy(() => import("../../viewers/ifc/IFCViewerElement"));
+// prod: lazy — @thatopen/components + three (~5 MB) stay in their own chunk,
+//   fetched only when an IFC element renders. ElementRenderer wraps every
+//   viewer in <Suspense>.
+// dev: eager-resolve the same dynamic import (top-level await) so there's no
+//   Suspense boundary to re-suspend on HMR. Re-suspending would remount and
+//   re-initialize the heavy WebGL/WASM engine, whose ThatOpen worker doesn't
+//   cleanly re-init mid-session → perpetual "Loading…" spinner.
+// Both branches use import() (no static import), so prod DCEs the dev branch
+// and the IFC chunk split is preserved (verified in build).
+const IFCViewerElement = import.meta.env.DEV
+  ? (await import("../../viewers/ifc/IFCViewerElement")).default
+  : lazy(() => import("../../viewers/ifc/IFCViewerElement"));
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
