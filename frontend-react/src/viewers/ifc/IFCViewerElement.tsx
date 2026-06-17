@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import "./ifc.css";
 import IfcViewer, { IFCViewerHandles } from "./IFCViewer";
 import ViewerVisibilityPanel from "./ViewerVisibilityPanel";
 import ViewerControlPanel from "./ViewerControlPanel";
