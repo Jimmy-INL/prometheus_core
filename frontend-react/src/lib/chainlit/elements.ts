@@ -10,7 +10,7 @@
  * Done. ElementRenderer handles the rest.
  */
 
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { IElement } from "@chainlit/react-client";
 
 // ---------------------------------------------------------------------------
@@ -80,7 +80,10 @@ export function classifyElement(el: AnyElement): ElementKind {
 // ---------------------------------------------------------------------------
 
 import { DynamicFormElement }                from "../../viewers/DynamicFormElement";
-// import { IFCViewerElement }            from "../../viewers/IFCViewerElement";
+// Lazy — pulls in @thatopen/components + three (~5 MB); kept out of the main
+// bundle and only fetched when an IFC element actually renders. ElementRenderer
+// already wraps every viewer in <Suspense>.
+const IFCViewerElement = lazy(() => import("../../viewers/ifc/IFCViewerElement"));
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
@@ -92,7 +95,7 @@ import { PlanViewerElement }               from "../../viewers/PlanViewerElement
 // import { ThermalAnalysisElement }      from "../../viewers/ThermalAnalysisElement";
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
-  ifc:          null,  // → IFCViewerElement
+  ifc:          IFCViewerElement,
   exodus:       null,  // → ExodusViewerElement
   pdf:          PdfViewerElement,
   file:         null,  // → FileDownloadElement
