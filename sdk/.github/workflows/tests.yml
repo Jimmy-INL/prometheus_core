@@ -1,0 +1,89 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  container-install:
+    name: "Container: install ${{ matrix.platform }}"
+    runs-on:
+      group: genesis
+    strategy:
+      matrix:
+        platform:
+          - amd64
+          - arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Prepare
+        id: prepare
+        run: |
+          value="tag=prometheus_api-install:${{ github.run_id }}"
+          echo "$value"
+          echo "$value" >> $GITHUB_OUTPUT
+          echo
+      - name: Build
+        run: |
+          TAG="${{ steps.prepare.outputs.tag }}"
+          test -n "$TAG"
+
+          docker build \
+            --target install \
+            --tag "$TAG" \
+            --platform "linux/${{ matrix.platform }}" \
+            .
+      - name: Test
+        run: |
+          docker run \
+            --platform "linux/${{ matrix.platform }}" \
+            --rm "${{ steps.prepare.outputs.tag }}" \
+            python -c "import prometheus_api"
+
+  container-install-dev:
+    name: "Container: install-dev ${{ matrix.platform }}"
+    runs-on:
+      group: genesis
+    strategy:
+      matrix:
+        platform:
+          - amd64
+          - arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Prepare
+        id: prepare
+        run: |
+          value="tag=prometheus_api-install-dev:${{ github.run_id }}"
+          echo "$value"
+          echo "$value" >> $GITHUB_OUTPUT
+          echo
+      - name: Build
+        run: |
+          TAG="${{ steps.prepare.outputs.tag }}"
+          test -n "$TAG"
+
+          docker build \
+            --target install-dev \
+            --tag "$TAG" \
+            --platform "linux/${{ matrix.platform }}" \
+            .
+      - name: Test
+        run: |
+          rm -rf "${{ github.workspace }}/prometheus_api"
+
+          docker run --rm \
+            --mount "type=bind,source=${{ github.workspace }},target=${{ github.workspace }}" \
+            --workdir "${{ github.workspace }}" \
+            --platform "linux/${{ matrix.platform }}" \
+            "${{ steps.prepare.outputs.tag }}" \
+            pytest \
+              --color=yes

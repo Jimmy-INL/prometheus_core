@@ -123,8 +123,8 @@ ifeq ($(PUSH_LATEST),true)
 endif
 
 build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, default: git short hash)
-	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
-	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
+	docker build --target install --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
+	docker build --target install --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
 	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
 
 build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>])
@@ -132,6 +132,7 @@ ifndef IMAGE_REPO
 	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=containers.github.inl.gov/genesis PUSH_LATEST=true)
 endif
 	docker buildx build \
+		--target install \
 		--platform linux/amd64,linux/arm64 \
 		--push \
 		$(BUILD_PUSH_TAGS) \
