@@ -64,7 +64,7 @@ def test_resolve_user_required_params_defers_sequential_artifact_refs(monkeypatc
     assert required == ["artifact_id", "element_size_mm"]
 
 
-def test_compute_required_and_missing_applies_fallback(monkeypatch) -> None:
+def test_compute_required_and_missing_params_applies_fallback(monkeypatch) -> None:
     _fake_cache(
         monkeypatch,
         {
@@ -85,7 +85,7 @@ def test_compute_required_and_missing_applies_fallback(monkeypatch) -> None:
     }
 
     required, missing = asyncio.run(
-        parameters.compute_required_and_missing(
+        parameters.compute_required_and_missing_params(
             routing_decision,
             fallback_missing=["stored_param"],
         )
@@ -96,5 +96,5 @@ def test_compute_required_and_missing_applies_fallback(monkeypatch) -> None:
     assert missing == ["stored_param"]
 
     routing_decision["extracted_params"] = {}
-    _, missing = asyncio.run(parameters.compute_required_and_missing(routing_decision))
+    _, missing = asyncio.run(parameters.compute_required_and_missing_params(routing_decision))
     assert missing == ["material_id"]

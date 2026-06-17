@@ -50,6 +50,8 @@ async def resolve_user_required_params(routing_decision: Optional[Dict[str, Any]
             return sorted(set(workflow.required_input_paths))
 
     cache = get_capability_cache()
+    # May contain None for skills missing from the cache; collect_chain_required_paths
+    # skips those entries while preserving chain positions.
     capabilities = [
         await cache.get_capability_by_skill_id(skill_id)
         for skill_id in get_selected_skills(routing_decision)
@@ -76,7 +78,7 @@ def filter_missing_params(
     return missing
 
 
-async def compute_required_and_missing(
+async def compute_required_and_missing_params(
     routing_decision: Dict[str, Any],
     fallback_missing: Optional[List[str]] = None,
 ) -> tuple[List[str], List[str]]:

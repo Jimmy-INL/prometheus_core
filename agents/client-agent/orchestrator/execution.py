@@ -17,7 +17,7 @@ from .models import AgentState
 from .parameters import (
     attach_artifact_context,
     collect_selected_skill_properties,
-    compute_required_and_missing,
+    compute_required_and_missing_params,
     extract_provided_context_maps,
     get_selected_skills,
     merge_context_map,
@@ -371,7 +371,7 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         }
 
     routing_decision = state.get("routing_decision", {})
-    required_params, missing_params = await compute_required_and_missing(
+    required_params, missing_params = await compute_required_and_missing_params(
         routing_decision,
         fallback_missing=routing_decision.get("missing_required_params", []),
     )
@@ -460,7 +460,7 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
     Uses selected capability schemas and current missing params from routing_decision.
     """
     routing_decision = state.get("routing_decision", {}) or {}
-    _, missing_params = await compute_required_and_missing(
+    _, missing_params = await compute_required_and_missing_params(
         routing_decision,
         fallback_missing=(
             routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
@@ -557,7 +557,7 @@ async def apply_followup_answers_to_state(
     )
 
     routing_decision["extracted_params"] = extracted_params
-    required_params, missing_params = await compute_required_and_missing(routing_decision)
+    required_params, missing_params = await compute_required_and_missing_params(routing_decision)
     routing_decision["required_params"] = required_params
     routing_decision["missing_required_params"] = missing_params
     state["routing_decision"] = routing_decision

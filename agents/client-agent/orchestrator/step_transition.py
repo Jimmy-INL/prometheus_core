@@ -32,6 +32,7 @@ from . import runtime
 
 MAX_STEP_TEXT_CHARS = 2000
 MAX_CATALOG_ARTIFACTS = 12
+MAX_ARTIFACT_DESC_CHARS = 200
 
 
 def _parse_param_updates(text: str) -> Optional[Dict[str, Any]]:
@@ -57,7 +58,7 @@ def _parse_param_updates(text: str) -> Optional[Dict[str, Any]]:
 
 def _format_artifact_line(artifact: Dict[str, Any]) -> str:
     mime = str(artifact.get("mime_type") or "unknown mime")
-    description = str(artifact.get("description") or "").strip()[:200]
+    description = str(artifact.get("description") or "").strip()[:MAX_ARTIFACT_DESC_CHARS]
     line = (
         f"- artifact_id: {artifact.get('artifact_id')}"
         f" | name: {artifact.get('name')}"
@@ -67,7 +68,13 @@ def _format_artifact_line(artifact: Dict[str, Any]) -> str:
 
 
 def _coerce_param_value(value: Any, prop: Dict[str, Any]) -> Optional[Any]:
-    """Coerce an LLM-supplied value to the schema property's type; None drops it."""
+    """Coerce an LLM-supplied value to the schema property's type.
+
+    Returns None to signal "drop this update" — when the value violates an
+    enum or cannot be converted to a declared numeric/boolean type, the param
+    is left unchanged rather than set to a malformed value. Unknown or missing
+    ``type`` falls through to a passthrough of the original value.
+    """
     enum = prop.get("enum")
     if isinstance(enum, list) and enum and value not in enum:
         return None
