@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test-docker:
-    name: "Test docker ${{ matrix.platform }}"
+  docker:
+    name: "Docker ${{ matrix.platform }}"
     runs-on:
       group: genesis
     strategy:
@@ -61,8 +61,8 @@ jobs:
             "${{ steps.prepare.outputs.tag }}" \
             /bin/bash run.bash
 
-  test-python:
-    name: "Test python ${{ matrix.python }}"
+  python:
+    name: "Python ${{ matrix.python }}"
     strategy:
       matrix:
         include:
