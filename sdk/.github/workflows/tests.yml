@@ -41,11 +41,26 @@ jobs:
             --platform "linux/${{ matrix.platform }}" \
             .
       - name: Test
+        shell: bash
         run: |
+          rm -rf prometheus_api
+
+          cat << 'EOF' > run.bash
+          #!/bin/bash
+          set -x
+          uv export --frozen --only-dev > requirements.txt
+          uv pip install -r requirements.txt
+          rm requirements.txt
+          pytest --color=yes
+          EOF
+
           docker run \
+            --mount "type=bind,source=${{ github.workspace }},target=${{ github.workspace }}" \
+            --workdir "${{ github.workspace }}" \
             --platform "linux/${{ matrix.platform }}" \
-            --rm "${{ steps.prepare.outputs.tag }}" \
-            python -c "import prometheus_api"
+            --rm \
+            "${{ steps.prepare.outputs.tag }}" \
+            /bin/bash run.bash
 
   container-install-dev:
     name: "Container: install-dev ${{ matrix.platform }}"
