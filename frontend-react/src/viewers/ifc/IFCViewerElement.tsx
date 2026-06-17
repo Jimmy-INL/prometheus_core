@@ -118,7 +118,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
   return (
     <div
       ref={containerRef}
-      className="relative my-2 rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
+      className="relative my-2 w-full max-w-full rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
       style={{ height }}
     >
       {/* Top-left: visibility panel */}
@@ -163,8 +163,10 @@ export function IFCViewerElement({ element }: ViewerProps) {
         </div>
       )}
 
-      {/* Viewer engine */}
-      <div className="w-full h-full">
+      {/* Viewer engine — absolutely positioned so the WebGL canvas never
+          contributes intrinsic width to the (min-width:auto) flex message
+          body; otherwise the renderer↔layout feedback loop grows it forever. */}
+      <div className="absolute inset-0">
         <IfcViewer
           ref={ifcViewerRef}
           modelUrl={fileUrl}
