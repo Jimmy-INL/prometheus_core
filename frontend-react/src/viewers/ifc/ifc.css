@@ -21,3 +21,10 @@
   padding-left: 0 !important;
   margin: 0 !important;
 }
+
+/* SimpleRenderer's <canvas> is display:inline by default, which leaves a
+   baseline gap below it (the bg-base-200/40 shows through) and keeps it from
+   filling its host. Block makes it sit flush to the viewer's edges. */
+.ifc-viewer-root canvas {
+  display: block;
+}
