@@ -14,6 +14,7 @@ jobs:
   python:
     name: "Python ${{ matrix.python }}"
     strategy:
+      fail-fast: false
       matrix:
         include:
           - python: 3.12
@@ -48,6 +49,7 @@ jobs:
       packages: write
     needs: [python]
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - amd64
