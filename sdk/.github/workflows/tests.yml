@@ -76,7 +76,7 @@ jobs:
       - name: Registry login
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-            podman login "$REGISTRY_URL" \
+            docker login "$REGISTRY_URL" \
               --username "${{ github.actor }}" \
               --password-stdin
       - name: Build
