@@ -8,23 +8,24 @@ from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage
 
-from artifact_handling import bind_produced_artifacts
 from capability_cache import get_capability_cache
-from param_schema import flatten_schema_properties, get_nested_value, has_param_path
+from param_schema import get_nested_value, has_param_path
 from workflow_library import execute_workflow, get_workflow_registry
 
 from . import runtime
 from .models import AgentState
 from .parameters import (
     attach_artifact_context,
+    collect_selected_skill_properties,
+    compute_required_and_missing_params,
     extract_provided_context_maps,
     get_selected_skills,
     merge_context_map,
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
-    resolve_user_required_params,
 )
 from .skills import invoke_skill
+from .step_transition import resolve_step_transition_params
 from .utils import (
     build_comparison_summary,
     collect_suggested_queries,
@@ -109,29 +110,35 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
             invocation_results = []
             previous_results: Dict[str, Any] = {}
             produced_artifacts: List[Dict[str, Any]] = []
+            chain_steps: List[Dict[str, Any]] = []
             cache = get_capability_cache()
             for step_index, skill_id in enumerate(selected_skills):
                 invoke_params = dict(params)
                 if previous_results:
                     # Pass upstream results to downstream skills
                     invoke_params["upstream_results"] = previous_results
-                if produced_artifacts:
-                    # Sequential dataflow: bind this step's artifact-reference
-                    # inputs to the chain's own output (deferred at planning
-                    # time; stale planning-time catalog bindings are
-                    # overridden). Candidates are matched on the param's
-                    # description/mime hints against artifact metadata.
+                if chain_steps:
+                    # Sequential dataflow: an LLM maps the chain's outputs so
+                    # far (result text and artifact metadata) onto this step's
+                    # input schema — binding artifact references and filling
+                    # params an earlier step only stated in prose. Falls back
+                    # to deterministic metadata matching on LLM failure.
                     capability = await cache.get_capability_by_skill_id(skill_id)
-                    invoke_params = bind_produced_artifacts(
-                        invoke_params,
-                        capability.input_schema if capability else None,
-                        produced_artifacts,
+                    invoke_params = await resolve_step_transition_params(
+                        skill_id=skill_id,
+                        capability=capability,
+                        params=invoke_params,
+                        chain_steps=chain_steps,
+                        produced_artifacts=produced_artifacts,
+                        user_query=state.get("user_query", ""),
+                        conversation_id=conversation_id,
                     )
                 item = await invoke_skill(skill_id, invoke_params, conversation_id)
                 invocation_results.append(item)
                 if "result" in item:
                     previous_results[skill_id] = item["result"]
                     result_payload = item["result"]
+                    step_artifacts: List[Dict[str, Any]] = []
                     if isinstance(result_payload, dict):
                         known_ids = {a["artifact_id"] for a in produced_artifacts}
                         first_in_step = True
@@ -143,20 +150,27 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                             ).strip()
                             if not artifact_id or artifact_id in known_ids:
                                 continue
-                            produced_artifacts.append(
-                                {
-                                    "artifact_id": artifact_id,
-                                    "name": artifact.get("name"),
-                                    "description": artifact.get("description"),
-                                    "mime_type": artifact.get("mime_type")
-                                    or artifact.get("mimeType"),
-                                    "tags": artifact.get("tags"),
-                                    "_step": step_index,
-                                    "_primary": first_in_step,
-                                }
-                            )
+                            record = {
+                                "artifact_id": artifact_id,
+                                "name": artifact.get("name"),
+                                "description": artifact.get("description"),
+                                "mime_type": artifact.get("mime_type")
+                                or artifact.get("mimeType"),
+                                "tags": artifact.get("tags"),
+                                "_step": step_index,
+                                "_primary": first_in_step,
+                            }
+                            produced_artifacts.append(record)
+                            step_artifacts.append(record)
                             known_ids.add(artifact_id)
                             first_in_step = False
+                    chain_steps.append(
+                        {
+                            "skill_id": skill_id,
+                            "result_text": extract_result_text(result_payload),
+                            "artifacts": step_artifacts,
+                        }
+                    )
         else:
             # Single: invoke skills one by one (no result passing)
             invocation_results = []
@@ -357,11 +371,10 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         }
 
     routing_decision = state.get("routing_decision", {})
-    required_params = await resolve_user_required_params(routing_decision)
-    provided_params = routing_decision.get("extracted_params", {}) or {}
-    missing_params = [param for param in required_params if not has_param_path(provided_params, param)]
-    if not missing_params:
-        missing_params = routing_decision.get("missing_required_params", [])
+    required_params, missing_params = await compute_required_and_missing_params(
+        routing_decision,
+        fallback_missing=routing_decision.get("missing_required_params", []),
+    )
     routing_decision["required_params"] = required_params
     routing_decision["missing_required_params"] = missing_params
     state["routing_decision"] = routing_decision
@@ -376,18 +389,11 @@ async def ask_followup_dynamic(state: AgentState) -> Dict:
         }
 
     # Gather parameter schemas from all selected skills
-    cache = get_capability_cache()
-    properties: Dict[str, Any] = {}
-    for skill_id in selected_skills:
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if capability:
-            properties.update(flatten_schema_properties(capability.input_schema))
+    properties = await collect_selected_skill_properties(selected_skills)
 
     # Fallback to primary capability only if selected_skills metadata is unavailable
     if not properties and routing_decision.get("primary_skill"):
-        capability = await cache.get_capability_by_skill_id(routing_decision["primary_skill"])
-        if capability:
-            properties = flatten_schema_properties(capability.input_schema)
+        properties = await collect_selected_skill_properties([routing_decision["primary_skill"]])
 
     # Overlay param_metadata (from workflow ui.input_overrides) to fill gaps for
     # skills that have no inputSchema (e.g. those using INPUT_REQUIRED instead).
@@ -454,21 +460,17 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
     Uses selected capability schemas and current missing params from routing_decision.
     """
     routing_decision = state.get("routing_decision", {}) or {}
-    required_params = await resolve_user_required_params(routing_decision)
-    provided_params = routing_decision.get("extracted_params", {}) or {}
-    missing_params = [param for param in required_params if not has_param_path(provided_params, param)]
-    if not missing_params:
-        missing_params = routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+    _, missing_params = await compute_required_and_missing_params(
+        routing_decision,
+        fallback_missing=(
+            routing_decision.get("missing_required_params", []) or state.get("missing_info", [])
+        ),
+    )
     if not missing_params:
         return {}
 
     selected_skills = get_selected_skills(routing_decision)
-    cache = get_capability_cache()
-    properties: Dict[str, Any] = {}
-    for skill_id in selected_skills:
-        capability = await cache.get_capability_by_skill_id(skill_id)
-        if capability:
-            properties.update(flatten_schema_properties(capability.input_schema))
+    properties = await collect_selected_skill_properties(selected_skills)
 
     param_schema = {param: properties.get(param, {"type": "string"}) for param in missing_params}
 
@@ -555,13 +557,11 @@ async def apply_followup_answers_to_state(
     )
 
     routing_decision["extracted_params"] = extracted_params
-    required_params = await resolve_user_required_params(routing_decision)
+    required_params, missing_params = await compute_required_and_missing_params(routing_decision)
     routing_decision["required_params"] = required_params
-    routing_decision["missing_required_params"] = [
-        param for param in required_params if not has_param_path(extracted_params, param)
-    ]
+    routing_decision["missing_required_params"] = missing_params
     state["routing_decision"] = routing_decision
-    state["missing_info"] = routing_decision["missing_required_params"]
+    state["missing_info"] = missing_params
 
     if extracted_params.get("material_id"):
         state["material_id"] = extracted_params.get("material_id")

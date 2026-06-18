@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence, Set
 
-from param_schema import get_nested_value, set_nested_value
+from param_schema import extract_required_param_paths, get_nested_value, set_nested_value
 
 ARTIFACT_REF_KEYS = ("x_artifact_ref", "x-artifact-ref", "artifact_ref")
 UUID_PATTERN = re.compile(
@@ -144,6 +145,51 @@ def extract_artifact_field_paths(
         if is_object:
             result.update(extract_artifact_field_paths(prop, prefix=f"{path}."))
     return result
+
+
+@dataclass
+class ChainRequiredPaths:
+    """Aggregated required-input paths across a (possibly sequential) skill chain."""
+
+    user_paths: Set[str]
+    runtime_paths: Set[str]
+    deferred_paths: Set[str]
+
+
+def collect_chain_required_paths(
+    capabilities: Sequence[Any],
+    workflow_type: Optional[str],
+) -> ChainRequiredPaths:
+    """Compute user-required and runtime-required paths for a skill chain.
+
+    Sequential dataflow: artifact-reference inputs of downstream skills are
+    produced by earlier steps at runtime. They cannot exist at planning time,
+    so they are deferred — neither asked from the user nor counted as
+    missing. This is the single source of that rule; the planner's
+    requirement status, the planning flow, and follow-up recomputation all
+    derive from it.
+
+    ``capabilities`` is the chain's capabilities in execution order (None
+    entries for unknown skills are skipped, preserving positions).
+    """
+    user_paths: Set[str] = set()
+    runtime_paths: Set[str] = set()
+    deferred_paths: Set[str] = set()
+    for index, capability in enumerate(capabilities):
+        input_schema = getattr(capability, "input_schema", None)
+        if not isinstance(input_schema, dict):
+            continue
+        user_required = set(extract_required_param_paths(input_schema))
+        all_required = set(extract_required_param_paths(input_schema, include_internal=True))
+        if workflow_type == "sequential" and index > 0:
+            artifact_paths = set(extract_artifact_field_paths(input_schema))
+            deferred = (user_required | all_required) & artifact_paths
+            deferred_paths |= deferred
+            user_required -= deferred
+            all_required -= deferred
+        user_paths |= user_required
+        runtime_paths |= all_required - user_required
+    return ChainRequiredPaths(user_paths, runtime_paths, deferred_paths)
 
 
 _BIND_STOPWORDS = {

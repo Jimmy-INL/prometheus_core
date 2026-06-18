@@ -61,7 +61,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from artifact_handling import extract_artifact_field_paths
+from artifact_handling import collect_chain_required_paths
 from capability_cache import AgentCapability
 from file_upload_handler import mime_type_label
 from param_schema import (
@@ -469,27 +469,14 @@ def _build_planning_tools(
                 if cap:
                     properties.update(flatten_schema_properties(cap.input_schema))
         else:
-            for index, skill_id in enumerate(selected):
-                cap = capabilities_by_skill.get(skill_id)
-                if not cap:
-                    continue
-                user_required = set(extract_required_param_paths(cap.input_schema))
-                all_required = set(
-                    extract_required_param_paths(cap.input_schema, include_internal=True)
-                )
-                # Sequential dataflow: artifact-reference inputs of downstream
-                # skills are produced by earlier steps at runtime. They cannot
-                # exist at planning time, so they must neither be asked from
-                # the user nor block finalize_plan.
-                if draft.workflow_type == "sequential" and index > 0:
-                    artifact_paths = set(extract_artifact_field_paths(cap.input_schema))
-                    deferred = (user_required | all_required) & artifact_paths
-                    deferred_runtime_paths_set.update(deferred)
-                    user_required -= deferred
-                    all_required -= deferred
-                required_paths_set.update(user_required)
-                runtime_required_paths_set.update(all_required - user_required)
-                properties.update(flatten_schema_properties(cap.input_schema))
+            chain_capabilities = [capabilities_by_skill.get(skill_id) for skill_id in selected]
+            chain = collect_chain_required_paths(chain_capabilities, draft.workflow_type)
+            required_paths_set.update(chain.user_paths)
+            runtime_required_paths_set.update(chain.runtime_paths)
+            deferred_runtime_paths_set.update(chain.deferred_paths)
+            for cap in chain_capabilities:
+                if cap:
+                    properties.update(flatten_schema_properties(cap.input_schema))
 
         required_paths = sorted(required_paths_set)
         runtime_required_paths = sorted(runtime_required_paths_set)

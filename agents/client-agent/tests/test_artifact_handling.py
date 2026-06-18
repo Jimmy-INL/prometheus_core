@@ -237,3 +237,38 @@ def test_bind_falls_back_to_latest_primary_without_descriptions() -> None:
 
     resolved = bind_produced_artifacts({}, schema, produced)
     assert resolved["artifact_id"] == "b-1"
+
+
+def test_collect_chain_required_paths_defers_downstream_artifact_refs() -> None:
+    from types import SimpleNamespace
+
+    from artifact_handling import collect_chain_required_paths
+
+    revise = SimpleNamespace(
+        input_schema={
+            "type": "object",
+            "properties": {"artifact_id": {"type": "string", "x_artifact_ref": "single"}},
+            "required": ["artifact_id"],
+        }
+    )
+    mesh = SimpleNamespace(
+        input_schema={
+            "type": "object",
+            "properties": {
+                "mesh_artifact_id": {"type": "string", "x_artifact_ref": "single"},
+                "element_size_mm": {"type": "number"},
+            },
+            "required": ["mesh_artifact_id", "element_size_mm"],
+        }
+    )
+
+    chain = collect_chain_required_paths([revise, mesh], "sequential")
+    # The first step's artifact input is a genuine user requirement; the
+    # downstream step's is runtime-produced and deferred.
+    assert chain.user_paths == {"artifact_id", "element_size_mm"}
+    assert chain.deferred_paths == {"mesh_artifact_id"}
+
+    # Outside sequential chains nothing is deferred.
+    chain = collect_chain_required_paths([revise, mesh], "parallel")
+    assert chain.user_paths == {"artifact_id", "mesh_artifact_id", "element_size_mm"}
+    assert chain.deferred_paths == set()

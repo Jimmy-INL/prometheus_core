@@ -11,7 +11,7 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-from orchestrator import planning_flow  # noqa: E402
+from orchestrator import parameters, planning_flow  # noqa: E402
 
 
 def test_extract_refinement_param_updates_resolves_nested_paths(monkeypatch) -> None:
@@ -43,6 +43,8 @@ def test_extract_refinement_param_updates_resolves_nested_paths(monkeypatch) -> 
 
     fake_cache = SimpleNamespace(get_capability_by_skill_id=fake_get_capability_by_skill_id)
     monkeypatch.setattr(planning_flow, "get_capability_cache", lambda: fake_cache)
+    # Schema properties are gathered via the shared parameters helper.
+    monkeypatch.setattr(parameters, "get_capability_cache", lambda: fake_cache)
 
     class _FakeLLM:
         def invoke(self, messages):
