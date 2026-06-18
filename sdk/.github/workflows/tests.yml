@@ -89,9 +89,9 @@ jobs:
           test -n "$CACHE_URI"
 
           EXTRA_ARGS=()
-          # if [ "$GITHUB_EVENT_NAME" == "push" ]; then
-          EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
-          # fi
+          if [ "$GITHUB_EVENT_NAME" == "push" ]; then
+            EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
+          fi
 
           docker build \
             --tag "$BUILD_TAG" \
@@ -122,7 +122,7 @@ jobs:
             "${{ steps.prepare.outputs.build-tag }}" \
             /bin/bash run.bash
       - name: Push
-        # if: success() && github.event_name == 'push'
+        if: success() && github.event_name == 'push'
         shell: bash
         run: |
           BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
