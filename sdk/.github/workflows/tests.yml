@@ -1,0 +1,137 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: "Python ${{ matrix.python }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: 3.12
+            image: docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9
+          - python: 3.13
+            image: docker.io/python:3.13.13-slim@sha256:aa938a849bcb82dce8f49480f056ab82bf5c1c3ebc294f0430f37b6820e7f286
+          - python: 3.14
+            image: docker.io/python:3.14.6-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061
+    runs-on:
+      group: genesis
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Sync environment
+        run: uv sync
+      - name: Test
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pytest --color=yes
+
+  docker:
+    name: "Docker ${{ matrix.platform }}"
+    runs-on:
+      group: genesis
+    permissions:
+      contents: read
+      packages: write
+    needs: [python]
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - amd64
+          - arm64
+    env:
+      REGISTRY_URL: containers.github.inl.gov
+      REGISTRY_ORG: genesis
+      PACKAGE_NAME: prometheus_api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Prepare
+        id: prepare
+        shell: bash
+        run: |
+          VALUES=(
+            "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
+            "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache"
+          )
+          for VALUE in "${VALUES[@]}"; do
+            echo "$VALUE"
+            echo "$VALUE" >> $GITHUB_OUTPUT
+          done
+      - name: Registry login
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login "$REGISTRY_URL" \
+              --username "${{ github.actor }}" \
+              --password-stdin
+      - name: Build
+        shell: bash
+        run: |
+          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
+          test -n "$BUILD_TAG"
+
+          CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
+          test -n "$CACHE_URI"
+
+          EXTRA_ARGS=()
+          if [ "$GITHUB_EVENT_NAME" == "push" ]; then
+            EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
+          fi
+
+          docker build \
+            --tag "$BUILD_TAG" \
+            --platform "linux/${{ matrix.platform }}" \
+            --layers \
+            --cache-from "$CACHE_URI" \
+            "${EXTRA_ARGS[@]}" \
+            .
+      - name: Test
+        shell: bash
+        run: |
+          rm -rf prometheus_api
+
+          cat << 'EOF' > run.bash
+          #!/bin/bash
+          set -e
+          uv export --frozen --only-dev > requirements.txt
+          uv pip install -r requirements.txt
+          rm requirements.txt
+          pytest --color=yes
+          EOF
+
+          docker run \
+            --mount "type=bind,source=${{ github.workspace }},target=${{ github.workspace }}" \
+            --workdir "${{ github.workspace }}" \
+            --platform "linux/${{ matrix.platform }}" \
+            --rm \
+            "${{ steps.prepare.outputs.build-tag }}" \
+            /bin/bash run.bash
+      - name: Push
+        if: success() && github.event_name == 'push'
+        shell: bash
+        run: |
+          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
+
+          DATE_TAG="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
+          COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
+          for TAG in "${DATE_TAG}-${COMMIT_TAG}" latest; do
+            TO_URI="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}:${TAG}"
+            docker tag "$BUILD_TAG" "$TO_URI"
+            docker push "$TO_URI"
+            docker rmi "$TO_URI"
+          done
