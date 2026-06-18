@@ -54,31 +54,52 @@ jobs:
         platform:
           - amd64
           - arm64
+    env:
+      REGISTRY_URL: containers.github.inl.gov
+      REGISTRY_ORG: genesis
+      PACKAGE_NAME: prometheus_api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Prepare
         id: prepare
+        shell: bash
         run: |
-          value="tag=prometheus_api:${{ github.run_id }}"
-          echo "$value"
-          echo "$value" >> $GITHUB_OUTPUT
-          echo
+          URI_PREFIX="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}"
+          VALUES=(
+            "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
+            "cache-uri=${URI_PREFIX}-cache:latest"
+          )
+          for value in "$VALUES[@]"; do
+            echo "$value"
+            echo "$value" >> $GITHUB_OUTPUT
+          done
       - name: Registry login
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-            podman login containers.github.inl.gov \
+            podman login "$REGISTRY_URL" \
               --username "${{ github.actor }}" \
               --password-stdin
       - name: Build
+        shell: bash
         run: |
-          TAG="${{ steps.prepare.outputs.tag }}"
-          test -n "$TAG"
+          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
+          test -n "$BUILD_TAG"
+
+          CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
+          test -n "$CACHE_URI"
+
+          EXTRA_ARGS=()
+          if [ "$GITHUB_EVENT_NAME" == "push" ]; then
+            EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
+          fi
 
           docker build \
-            --tag "$TAG" \
+            --tag "$BUILD_TAG" \
             --platform "linux/${{ matrix.platform }}" \
-            --cache-from "containers.github.inl.gov/genesis/prometheus_api" \
+            --layers \
+            --cache-from "$CACHE_URI"
+            "${EXTRA_ARGS[@]}" \
             .
       - name: Test
         shell: bash
@@ -99,19 +120,24 @@ jobs:
             --workdir "${{ github.workspace }}" \
             --platform "linux/${{ matrix.platform }}" \
             --rm \
-            "${{ steps.prepare.outputs.tag }}" \
+            "${{ steps.prepare.outputs.build-tag }}" \
             /bin/bash run.bash
       - name: Push
         # if: success() && github.event_name == 'push'
         shell: bash
         run: |
-          date_tag="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
-          commit_tag="$(git rev-parse HEAD | cut -c1-7)"
+          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
 
-          for tag in "${date_tag}-${commit_tag}" latest; do
-            uri="containers.github.inl.gov/genesis/prometheus_api:${tag}"
-            docker tag "${{ steps.prepare.outputs.tag }}" "$tag"
-            docker push "$tag"
-            docker tag "${{ steps.prepare.outputs.tag }}" "$tag"
-            docker rmi "$tag"
+          DATE_TAG="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
+          COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
+          for tag in "${DATE_TAG}-${COMMIT_TAG}" latest; do
+            TO_URI="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}:${tag}"
+            docker tag "$BUILD_TAG" "$TO_URI"
+            docker push "$TO_URI"
+            docker rmi "$TO_URI"
           done
+
+          CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
+          docker tag "$BUILD_TAG" "$CACHE_URI"
+          docker push "$CACHE_URI"
+          docker rmi "$CACHE_URI"
