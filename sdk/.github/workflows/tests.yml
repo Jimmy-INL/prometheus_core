@@ -67,7 +67,7 @@ jobs:
         run: |
           VALUES=(
             "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
-            "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache:latest"
+            "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache"
           )
           for VALUE in "${VALUES[@]}"; do
             echo "$VALUE"
