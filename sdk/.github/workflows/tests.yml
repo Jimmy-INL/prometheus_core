@@ -69,9 +69,9 @@ jobs:
             "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
             "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache:latest"
           )
-          for value in "$VALUES[@]"; do
-            echo "$value"
-            echo "$value" >> $GITHUB_OUTPUT
+          for VALUE in "${VALUES[@]}"; do
+            echo "$VALUE"
+            echo "$VALUE" >> $GITHUB_OUTPUT
           done
       - name: Registry login
         run: |
