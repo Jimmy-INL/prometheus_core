@@ -65,10 +65,9 @@ jobs:
         id: prepare
         shell: bash
         run: |
-          URI_PREFIX="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}"
           VALUES=(
             "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
-            "cache-uri=${URI_PREFIX}-cache:latest"
+            "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache:latest"
           )
           for value in "$VALUES[@]"; do
             echo "$value"
@@ -130,8 +129,8 @@ jobs:
 
           DATE_TAG="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
           COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
-          for tag in "${DATE_TAG}-${COMMIT_TAG}" latest; do
-            TO_URI="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}:${tag}"
+          for TAG in "${DATE_TAG}-${COMMIT_TAG}" latest; do
+            TO_URI="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}:${TAG}"
             docker tag "$BUILD_TAG" "$TO_URI"
             docker push "$TO_URI"
             docker rmi "$TO_URI"
