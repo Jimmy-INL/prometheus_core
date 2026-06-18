@@ -105,7 +105,11 @@ jobs:
 
           date_tag="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
           commit_tag="$(git rev-parse HEAD | cut -c1-7)"
-          to_uri="containers.github.inl.gov/genesis/prometheus_api:${date_tag}-${commit_tag}"
-          docker tag "${{ steps.prepare.outputs.tag }}" "$to_uri"
-          docker push "$to_uri"
-          docker rmi "to_uri"
+
+          for tag in "${date_tag}-${commit_tag}" latest; do
+            uri="containers.github.inl.gov/genesis/prometheus_api:tag"
+            docker tag "${{ steps.prepare.outputs.tag }}" "$tag"
+            docker push "$tag"
+            docker tag "${{ steps.prepare.outputs.tag }}" "$tag"
+            docker rmi "$tag"
+          done
