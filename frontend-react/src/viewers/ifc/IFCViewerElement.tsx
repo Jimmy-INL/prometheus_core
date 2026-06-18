@@ -13,8 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./ifc.css";
 import IfcViewer, { IFCViewerHandles } from "./IFCViewer";
-import ViewerVisibilityPanel from "./ViewerVisibilityPanel";
-import ViewerControlPanel from "./ViewerControlPanel";
+import ViewerPanel from "./ViewerPanel";
 import { VISIBILITY_TOGGLES } from "./modelViewerTypes";
 import type { VisibilityCategory } from "./modelViewerTypes";
 import type { ViewerProps } from "@/lib/chainlit/elements";
@@ -39,9 +38,12 @@ export function IFCViewerElement({ element }: ViewerProps) {
   const ifcViewerRef = useRef<IFCViewerHandles>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-collapse the floating panels when the viewer is narrow (e.g. embedded
-  // in the chat column). They expand automatically in a wider/full-width view.
-  const PANEL_BREAKPOINT = 640;
+  // Auto-collapse the floating panels when the viewer is narrow. The chat
+  // column is capped at max-w-4xl (~896px), so the viewer there is always
+  // narrower than this — panels stay collapsed in chat and only expand in a
+  // genuinely wide/full-width view. The two panels are ~480px wide combined,
+  // so anything under this crowds the model.
+  const PANEL_BREAKPOINT = 900;
   const [panelsOpen, setPanelsOpen] = useState(true);
 
   const [showViewer, setShowViewer] = useState(false);
@@ -122,9 +124,10 @@ export function IFCViewerElement({ element }: ViewerProps) {
       className="ifc-viewer-root relative my-2 w-full max-w-full rounded-lg overflow-hidden border border-base-300 bg-base-200/40"
       style={{ height }}
     >
-      {/* Top-left: visibility panel */}
+      {/* Merged viewer panel (visibility + camera + download).
+          Expanded in a wide view; collapses to a lone icon in the chat. */}
       {showViewer && (
-        <ViewerVisibilityPanel
+        <ViewerPanel
           elementItems={VISIBILITY_TOGGLES}
           elementVisibility={visibility}
           onToggleElement={(key) => handleToggleVisibility(key as VisibilityCategory)}
@@ -138,18 +141,10 @@ export function IFCViewerElement({ element }: ViewerProps) {
             visibility: pipeVisibility,
             onToggle: handleTogglePipe,
           }}
-          defaultOpen={panelsOpen}
-        />
-      )}
-
-      {/* Top-right: camera + download panel */}
-      {showViewer && (
-        <ViewerControlPanel
           onReset={() => ifcViewerRef.current?.fitToFrame()}
           onTop={()   => ifcViewerRef.current?.setTopView()}
           onFront={() => ifcViewerRef.current?.setFrontView()}
           onSide={()  => ifcViewerRef.current?.setSideView()}
-          disabled={!showViewer}
           downloadUrl={fileUrl}
           downloadName={filename}
           defaultOpen={panelsOpen}
