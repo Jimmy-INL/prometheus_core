@@ -78,7 +78,7 @@ jobs:
           docker build \
             --tag "$TAG" \
             --platform "linux/${{ matrix.platform }}" \
-            --cache-from "containers.github.inl.gov/genesis/prometheus_api:latest" \
+            --cache-from "containers.github.inl.gov/genesis/prometheus_api" \
             .
       - name: Test
         shell: bash
