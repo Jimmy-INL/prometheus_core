@@ -98,7 +98,7 @@ jobs:
             --tag "$BUILD_TAG" \
             --platform "linux/${{ matrix.platform }}" \
             --layers \
-            --cache-from "$CACHE_URI"
+            --cache-from "$CACHE_URI" \
             "${EXTRA_ARGS[@]}" \
             .
       - name: Test
