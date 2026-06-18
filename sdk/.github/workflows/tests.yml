@@ -137,6 +137,5 @@ jobs:
           done
 
           CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
-          docker tag "$BUILD_TAG" "$CACHE_URI"
           docker push "$CACHE_URI"
           docker rmi "$CACHE_URI"
