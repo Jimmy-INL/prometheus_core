@@ -135,7 +135,3 @@ jobs:
             docker push "$TO_URI"
             docker rmi "$TO_URI"
           done
-
-          CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
-          docker push "$CACHE_URI"
-          docker rmi "$CACHE_URI"
