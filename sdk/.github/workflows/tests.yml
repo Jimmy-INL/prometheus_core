@@ -89,9 +89,9 @@ jobs:
           test -n "$CACHE_URI"
 
           EXTRA_ARGS=()
-          if [ "$GITHUB_EVENT_NAME" == "push" ]; then
-            EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
-          fi
+          # if [ "$GITHUB_EVENT_NAME" == "push" ]; then
+          EXTRA_ARGS+=("--cache-to" "$CACHE_URI")
+          # fi
 
           docker build \
             --tag "$BUILD_TAG" \
