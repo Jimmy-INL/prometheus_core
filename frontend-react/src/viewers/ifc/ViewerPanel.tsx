@@ -86,16 +86,20 @@ const ViewerPanel: React.FC<Props> = ({
       </button>
 
       <div className="flex-1 overflow-y-auto">
-        <ListSection
-          title="Building Elements"
-          items={elementItems}
-          visibility={elementVisibility}
-          isOpen={sections.elements}
-          onToggleOpen={() => toggleSection("elements")}
-          onToggleItem={onToggleElement}
-          disabled={disabled}
-        />
-        {equipment && (
+        {/* Sections only appear when the model actually contains those items —
+            an IFC may have any mix of building elements, equipment, or pipes. */}
+        {elementItems.length > 0 && (
+          <ListSection
+            title="Building Elements"
+            items={elementItems}
+            visibility={elementVisibility}
+            isOpen={sections.elements}
+            onToggleOpen={() => toggleSection("elements")}
+            onToggleItem={onToggleElement}
+            disabled={disabled}
+          />
+        )}
+        {equipment && equipment.items.length > 0 && (
           <ListSection
             title="Equipment"
             items={equipment.items}
@@ -106,7 +110,7 @@ const ViewerPanel: React.FC<Props> = ({
             disabled={disabled}
           />
         )}
-        {pipes && (
+        {pipes && pipes.items.length > 0 && (
           <ListSection
             title="Pipes"
             items={pipes.items}

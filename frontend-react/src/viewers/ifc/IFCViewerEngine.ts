@@ -243,6 +243,67 @@ export default class IFCViewerEngine {
     await this.hider.set(true);
   }
 
+  // ── Category presence ───────────────────────────────────────────────────
+  // An IFC can contain anything, so the UI only shows toggles for categories
+  // the loaded model actually has. Returns the subset of `categories` present.
+
+  async enumerateCategories(categories: string[]): Promise<string[]> {
+    const present: string[] = [];
+    for (const category of categories) {
+      if (await this.categoryHasItems(category)) present.push(category);
+    }
+    return present;
+  }
+
+  private async categoryHasItems(category: string): Promise<boolean> {
+    // Name-pattern path (e.g. IfcSlab named "Roof Slab")
+    if (category in CATEGORY_NAME_PATTERNS) {
+      const { pattern, categories } = CATEGORY_NAME_PATTERNS[category];
+      if (await this.nameQueryHasItems(pattern, categories)) return true;
+      // fall through to the entity-type path when the category has both
+    }
+
+    const classes = CATEGORY_IFC_CLASSES[category];
+    if (!classes) return false;
+
+    const regexes = classes.map((c) => new RegExp(`^${c}$`, "i"));
+    for (const [, model] of this.fragments.list) {
+      try {
+        const items = await model.getItemsOfCategories(regexes);
+        if (Object.values(items).flat().length > 0) return true;
+      } catch (err) {
+        console.warn(`[IFCViewerEngine] getItemsOfCategories failed for "${category}":`, err);
+      }
+    }
+    return false;
+  }
+
+  private async nameQueryHasItems(namePattern: RegExp, categories?: RegExp[]): Promise<boolean> {
+    const finder = this.components.get(OBC.ItemsFinder);
+    const queryKey = `__name_${namePattern.source}_${categories?.map(r => r.source).join("_") ?? ""}`;
+
+    if (!finder.list.has(queryKey)) {
+      const query: Record<string, unknown> = {
+        attributes: { queries: [{ name: /^Name$/, value: namePattern }] },
+      };
+      if (categories) query.categories = categories;
+      finder.create(queryKey, [query]);
+    }
+
+    const query = finder.list.get(queryKey);
+    if (!query) return false;
+
+    try {
+      const modelIdMap = await query.test();
+      // test() can return model keys with empty id sets when nothing matches —
+      // count actual ids, not keys, or every name query reads as "present".
+      return Object.values(modelIdMap).some((ids) => (ids as Set<number>).size > 0);
+    } catch (err) {
+      console.warn(`[IFCViewerEngine] ItemsFinder query failed for pattern "${namePattern}":`, err);
+      return false;
+    }
+  }
+
   // ── Equipment enumeration / toggling ────────────────────────────────────
 
   async enumerateEquipment(): Promise<EquipmentItem[]> {

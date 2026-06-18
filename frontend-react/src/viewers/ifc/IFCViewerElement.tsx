@@ -48,6 +48,8 @@ export function IFCViewerElement({ element }: ViewerProps) {
 
   const [showViewer, setShowViewer] = useState(false);
   const [visibility, setVisibility] = useState<Record<VisibilityCategory, boolean>>(defaultVisibility);
+  // Which building-element categories the loaded model actually contains.
+  const [presentCategories, setPresentCategories] = useState<VisibilityCategory[]>([]);
 
   const [equipmentItems,      setEquipmentItems]      = useState<LabeledItem[]>([]);
   const [equipmentVisibility, setEquipmentVisibility] = useState<Record<string, boolean>>({});
@@ -69,6 +71,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
   useEffect(() => {
     setShowViewer(false);
     setVisibility(defaultVisibility());
+    setPresentCategories([]);
     setEquipmentItems([]);
     setEquipmentVisibility({});
     setPipeItems([]);
@@ -78,14 +81,17 @@ export function IFCViewerElement({ element }: ViewerProps) {
   const handleViewerLoad = async () => {
     setShowViewer(true);
 
-    const [equipment, pipes] = await Promise.all([
+    const allCategories = VISIBILITY_TOGGLES.map((t) => t.key);
+    const [present, equipment, pipes] = await Promise.all([
+      ifcViewerRef.current?.enumerateCategories(allCategories) ?? Promise.resolve<string[]>([]),
       ifcViewerRef.current?.enumerateEquipment() ?? Promise.resolve([]),
       ifcViewerRef.current?.enumeratePipes()     ?? Promise.resolve([]),
-    ]).catch((e): [LabeledItem[], LabeledItem[]] => {
+    ]).catch((e): [string[], LabeledItem[], LabeledItem[]] => {
       console.error("[IFCViewerElement] enumeration failed", e);
-      return [[], []];
+      return [[], [], []];
     });
 
+    setPresentCategories(present as VisibilityCategory[]);
     setEquipmentItems(equipment);
     setEquipmentVisibility(Object.fromEntries(equipment.map((i) => [i.key, true])));
     setPipeItems(pipes);
@@ -128,7 +134,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
           Expanded in a wide view; collapses to a lone icon in the chat. */}
       {showViewer && (
         <ViewerPanel
-          elementItems={VISIBILITY_TOGGLES}
+          elementItems={VISIBILITY_TOGGLES.filter((t) => presentCategories.includes(t.key))}
           elementVisibility={visibility}
           onToggleElement={(key) => handleToggleVisibility(key as VisibilityCategory)}
           equipment={{
@@ -153,7 +159,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
 
       {/* Loading overlay */}
       {!showViewer && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-base-100 z-10">
+        <div className="absolute inset-2 flex flex-col items-center justify-center gap-4 bg-base-100 rounded-md z-10">
           <span className="loading loading-spinner w-24 h-24 text-primary" />
           <p className="text-lg text-base-content/70">Loading 3D viewer…</p>
         </div>
@@ -162,7 +168,7 @@ export function IFCViewerElement({ element }: ViewerProps) {
       {/* Viewer engine — absolutely positioned so the WebGL canvas never
           contributes intrinsic width to the (min-width:auto) flex message
           body; otherwise the renderer↔layout feedback loop grows it forever. */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-2 rounded-md overflow-hidden bg-base-100">
         <IfcViewer
           ref={ifcViewerRef}
           modelUrl={fileUrl}

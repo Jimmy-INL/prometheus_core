@@ -18,6 +18,7 @@ export type IFCViewerHandles = {
   setIsometricView: () => void;
   setCategoryVisible: (category: string, visible: boolean) => void;
   resetVisibility: () => void;
+  enumerateCategories: (categories: string[]) => Promise<string[]>;
   enumerateEquipment: () => Promise<EquipmentItem[]>;
   setEquipmentVisible: (key: string, visible: boolean) => Promise<void>;
   enumeratePipes: () => Promise<PipeItem[]>;
@@ -50,6 +51,8 @@ const IfcViewer = forwardRef<IFCViewerHandles, Props>(({
       engineRef.current?.setCategoryVisible(category, visible);
     },
     resetVisibility:    () => { engineRef.current?.resetVisibility(); },
+    enumerateCategories: (categories) =>
+      engineRef.current?.enumerateCategories(categories) ?? Promise.resolve([]),
     enumerateEquipment: () => engineRef.current?.enumerateEquipment() ?? Promise.resolve([]),
     setEquipmentVisible: (key, visible) =>
       engineRef.current?.setEquipmentVisible(key, visible) ?? Promise.resolve(),
@@ -97,7 +100,7 @@ const IfcViewer = forwardRef<IFCViewerHandles, Props>(({
     };
   }, [modelUrl, wasmCdnPath]);
 
-  return <div ref={hostRef} className={`w-full h-full ${className}`} style={style} />;
+  return <div ref={hostRef} className={`w-full h-full [&_canvas]: -ml-2 -mt-2 ${className}`} style={style} />;
 });
 
 IfcViewer.displayName = "IfcViewer";
