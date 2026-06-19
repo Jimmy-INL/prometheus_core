@@ -518,9 +518,20 @@ export function Chat() {
                 }`}
               >
                 {isUserMessage(item) ? (
-                  <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                    {m.output}
-                  </span>
+                  <div className="flex max-w-xl flex-col items-end">
+                    {m.output && (
+                      <span className="px-4 py-2 rounded-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                        {m.output}
+                      </span>
+                    )}
+                    <ElementList
+                      elements={[
+                        ...((m.elements as AnyElement[] | undefined) ?? []),
+                        ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                      ]}
+                      onSend={handleSend}
+                    />
+                  </div>
                 ) : (
                   <>
                     <AssistantAvatar />

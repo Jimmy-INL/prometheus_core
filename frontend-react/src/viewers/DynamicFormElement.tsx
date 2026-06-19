@@ -39,6 +39,11 @@ interface DynamicFormProps {
   formId?: string;
 }
 
+type DynamicFormAsk = {
+  callback: (payload: Record<string, unknown>) => void;
+  spec: { type?: string };
+};
+
 function normalizeOptions(options?: SelectOption[]) {
   return (options ?? []).map((o) =>
     typeof o === "string"
@@ -61,7 +66,7 @@ export function DynamicFormElement({ element }: ViewerProps) {
   const props = ((element as { props?: DynamicFormProps }).props) ?? {};
   const fields = props.fields ?? [];
 
-  const ask = useRecoilValue(askUserState);
+  const ask = useRecoilValue(askUserState) as DynamicFormAsk | undefined;
   // Match by spec.type alone — only one element-ask is active at a time, and the
   // strict element_id check was failing intermittently (Chainlit 0.4.x sometimes
   // ships the form element before the ask spec, or with a non-matching id).
