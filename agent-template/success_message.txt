@@ -6,7 +6,7 @@ Your new agent has been created in: {output_dir}
 
 Next steps:
   1. cd {output_dir}
-  2. cp .env.example .env        # then fill in real values
+  2. Review .env if setup created it; otherwise copy .env.example to .env
   3. Edit agent_card.json (description, inputSchema) and agent.py (_execute)
 
 Run locally (fast iteration):
@@ -23,8 +23,12 @@ Run the tests (extend tests/test_agent.py as you implement your logic):
   uv run ruff check .
 
 Run with Docker (integration testing / deployment):
-  # Set PROMETHEUS_API_BASE_IMAGE_HASH in .env first.
+  # Set PROMETHEUS_API_BASE_IMAGE_HASH in .env first (defaults to `latest`)
   docker compose up --build
+
+  or
+
+  make up-fg
 
 Edit the network block in docker-compose.yml to match your deployment
 (external repo vs. in-tree).  See the full walkthrough:

@@ -9,10 +9,15 @@ services:
         HTTP_PROXY: ${HTTP_PROXY:-}
         HTTPS_PROXY: ${HTTPS_PROXY:-}
         NO_PROXY: ${NO_PROXY:-}
+      additional_contexts:
+        certs: ./certs
     container_name: TEMPLATE_SLUG-agent
     networks:
       - agent-network
     environment:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
+      CURL_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
       AGENT_PORT: 8000
       # The agent registers http://{container hostname}:{AGENT_PORT}; Docker
       # Compose sets the hostname to the service name, which resolves on
@@ -36,17 +41,17 @@ services:
 # are deploying this agent.  Delete the one you are not using.
 # -----------------------------------------------------------------------------
 
-# OPTION A — Same host (this agent runs alongside the platform in its own 
+# OPTION A — Same host (this agent runs alongside the platform in its own
 # docker-compose project on the same host).  The platform creates the network; this agent
-# joins it.  
+# joins it.
 networks:
   agent-network:
     external: true
-    name: agent-network # this must be the network name the platform uses
+    name: prometheus_platform_agent-network # this must be the network name the platform uses
 
-# OPTION B — Host independent (this enables the agent to run either on the same 
+# OPTION B — Host independent (this enables the agent to run either on the same
 # host or any other network reachable host). To use this, delete the OPTION A block,
-# uncomment the lines below, and make sure you use host.docker.internal or remote 
+# uncomment the lines below, and make sure you use host.docker.internal or remote
 # hostnames to point to platform services such as REGISTRY_URL and REDIS_URL.
 #
 # networks:
