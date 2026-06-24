@@ -96,7 +96,7 @@ def collect_agent_info() -> dict[str, str]:
     skill_description = get_user_input("\nPrimary skill description", f"Performs analysis using {agent_name.lower()}")
 
     # Get output directory
-    default_output = f"./{slug}"
+    default_output = f"../{slug}"
     output_dir = get_user_input("\nOutput directory", default_output)
 
     # Keep comments in the copied agent.py
