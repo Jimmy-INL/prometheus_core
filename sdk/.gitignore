@@ -139,7 +139,6 @@ scratch/
 
 # Credentials and secrets
 *.key
-*.pem
 secrets.json
 config.local.py
 .secrets
