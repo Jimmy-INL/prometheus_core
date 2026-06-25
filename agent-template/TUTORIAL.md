@@ -1048,5 +1048,5 @@ same conversation. If you need per-invocation scoping instead, key by
 | [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md) | **Check this when bumping `PROMETHEUS_API_BASE_IMAGE_HASH`** — behavior changes per prometheus_api version, with migration steps |
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
-| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman and corporate CA bundles |
+| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
 | [`examples/agent_patterns.py`](https://github.inl.gov/genesis/prometheus_api/blob/main/examples/agent_patterns.py) | Runnable reference implementation |

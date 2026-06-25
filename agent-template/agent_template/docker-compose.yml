@@ -9,15 +9,10 @@ services:
         HTTP_PROXY: ${HTTP_PROXY:-}
         HTTPS_PROXY: ${HTTPS_PROXY:-}
         NO_PROXY: ${NO_PROXY:-}
-      additional_contexts:
-        certs: ./certs
     container_name: TEMPLATE_SLUG-agent
     networks:
       - agent-network
     environment:
-      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
-      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
-      CURL_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
       AGENT_PORT: 8000
       # The agent registers http://{container hostname}:{AGENT_PORT}; Docker
       # Compose sets the hostname to the service name, which resolves on

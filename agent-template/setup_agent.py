@@ -18,11 +18,10 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT_BUNDLE_PATH = Path("/Users/Shared/root_bundle.pem")
 PLATFORM_ENV_PATH = Path(__file__).resolve().parent.parent / "prometheus_platform" / ".env"
 PLATFORM_SECRET_KEYS = ("AGENT_SECRET", "REDIS_PASSWORD", "LITELLM_MASTER_KEY")
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-SECRET_GITIGNORE_ENTRIES = (".env", "certs/*", "!certs/.gitkeep")
+SECRET_GITIGNORE_ENTRIES = (".env",)
 
 
 def to_snake_case(text: str) -> str:
@@ -212,7 +211,7 @@ def select_platform_env_values(env_path: Path) -> dict[str, str]:
 
 
 def ensure_secret_gitignore_entries(output_dir: Path) -> None:
-    """Ensure generated secret/cert files are ignored by git."""
+    """Ensure generated secret files are ignored by git."""
     gitignore_path = output_dir / ".gitignore"
     existing = ""
     existing_lines: set[str] = set()
@@ -231,31 +230,12 @@ def ensure_secret_gitignore_entries(output_dir: Path) -> None:
         content += "\n"
     if content:
         content += "\n"
-    content += "# Local secrets and certificates\n" + "\n".join(missing_entries) + "\n"
+    content += "# Local secrets\n" + "\n".join(missing_entries) + "\n"
 
     with open(gitignore_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     print("  ✓ .gitignore")
-
-
-def copy_root_bundle_if_requested(output_dir: Path) -> None:
-    """Copy the shared root bundle into the generated agent if requested."""
-    if not ROOT_BUNDLE_PATH.exists():
-        return
-
-    destination = output_dir / "certs" / "ca-bundle.pem"
-    copy_bundle = confirm_action(
-        f"\nFound '{ROOT_BUNDLE_PATH}'. Copy it to '{destination}'? (yes/no)",
-        "yes",
-    )
-    if not copy_bundle:
-        return
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT_BUNDLE_PATH, destination)
-    ensure_secret_gitignore_entries(output_dir)
-    print("  ✓ certs/ca-bundle.pem")
 
 
 def create_env_from_platform_if_requested(output_dir: Path) -> None:
@@ -352,7 +332,8 @@ def create_agent(replacements: dict[str, str]) -> None:
         # Skip directories, hidden files, and Python cache files
         if not file_path.is_file():
             continue
-        if file_path.name != ".env.example" and file_path.name.startswith("."):
+        relative_parts = file_path.relative_to(template_dir).parts
+        if file_path.name != ".env.example" and any(part.startswith(".") for part in relative_parts):
             continue
         if "__pycache__" in file_path.parts:
             continue
@@ -371,7 +352,6 @@ def create_agent(replacements: dict[str, str]) -> None:
                 f.write(strip_comments(content))
             print("  ✓ Trimmed comments from agent.py")
 
-    copy_root_bundle_if_requested(output_dir)
     create_env_from_platform_if_requested(output_dir)
 
     print()

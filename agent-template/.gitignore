@@ -13,7 +13,3 @@ logs/
 .vscode/
 !.vscode/extensions.json
 .DS_Store
-
-certs/*
-!certs/.gitkeep
-
