@@ -15,6 +15,7 @@ responses in the Chainlit UI.
 | `pyproject.toml` | Extra Python dependencies your code imports directly. |
 | `Dockerfile` | Builds the image from the pinned `prometheus_api` base image. |
 | `docker-compose.yml` | Runs the image alongside (or inside) the platform. |
+| `Makefile` | Convenience wrapper around `docker compose` (`make up`, `make up-fg`, `make down`, `make logs`). |
 | `.env.example` | Template for `.env` — copy and fill in real values. |
 
 `prometheus_api`, `a2a`, `starlette`, and `uvicorn` are already installed in the
@@ -75,10 +76,15 @@ Set `PROMETHEUS_API_BASE_IMAGE_HASH` in `.env` (find the current value in
 `prometheus_platform/Makefile`), then:
 
 ```bash
-docker compose up --build       # add -d to run detached
-docker compose logs -f
-docker compose down
+make up-fg       # build + start in the foreground (Ctrl-C to stop)
+make up          # build + start detached
+make logs        # tail logs (add SERVICE=<name> for one service)
+make down        # stop and remove
 ```
+
+These wrap `docker compose` and, on Linux, layer in `docker-compose.linux.yml`
+if you create one. The raw commands (`docker compose up --build`, etc.) still
+work if you prefer them.
 
 Pick the right network block in `docker-compose.yml`:
 

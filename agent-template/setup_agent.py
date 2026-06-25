@@ -18,6 +18,12 @@ import shutil
 import sys
 from pathlib import Path
 
+ROOT_BUNDLE_PATH = Path("/Users/Shared/root_bundle.pem")
+PLATFORM_ENV_PATH = Path(__file__).resolve().parent.parent / "prometheus_platform" / ".env"
+PLATFORM_SECRET_KEYS = ("AGENT_SECRET", "REDIS_PASSWORD", "LITELLM_MASTER_KEY")
+ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SECRET_GITIGNORE_ENTRIES = (".env", "certs/*", "!certs/.gitkeep")
+
 
 def to_snake_case(text: str) -> str:
     """Convert text to snake_case."""
@@ -49,6 +55,11 @@ def get_user_input(prompt: str, default: str = "") -> str:
         response = input(f"{prompt} [{default}]: ").strip()
         return response if response else default
     return input(f"{prompt}: ").strip()
+
+
+def confirm_action(prompt: str, default: str = "yes") -> bool:
+    """Prompt the user for a yes/no confirmation."""
+    return get_user_input(prompt, default).lower() in {"yes", "y"}
 
 
 def collect_agent_info() -> dict[str, str]:
@@ -96,7 +107,7 @@ def collect_agent_info() -> dict[str, str]:
     skill_description = get_user_input("\nPrimary skill description", f"Performs analysis using {agent_name.lower()}")
 
     # Get output directory
-    default_output = f"./{slug}"
+    default_output = f"../{slug}"
     output_dir = get_user_input("\nOutput directory", default_output)
 
     # Keep comments in the copied agent.py
@@ -167,6 +178,122 @@ def replace_placeholders(content: str, replacements: dict[str, str]) -> str:
     for placeholder, value in replacements.items():
         content = content.replace(placeholder, value)
     return content
+
+
+def read_env_assignments(env_path: Path) -> dict[str, str]:
+    """Read simple KEY=VALUE assignments from an env file."""
+    assignments: dict[str, str] = {}
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in line:
+                continue
+
+            key_part, value = line.split("=", 1)
+            key = key_part.strip()
+            if not ENV_KEY_PATTERN.fullmatch(key):
+                continue
+
+            assignments[key] = value.strip()
+
+    return assignments
+
+
+def select_platform_env_values(env_path: Path) -> dict[str, str]:
+    """Select the platform env values that are useful to a generated agent."""
+    assignments = read_env_assignments(env_path)
+    selected = {key: assignments[key] for key in PLATFORM_SECRET_KEYS if key in assignments}
+
+    for key, value in assignments.items():
+        if key.startswith("DEEPLYNX_"):
+            selected[key] = value
+
+    return selected
+
+
+def ensure_secret_gitignore_entries(output_dir: Path) -> None:
+    """Ensure generated secret/cert files are ignored by git."""
+    gitignore_path = output_dir / ".gitignore"
+    existing = ""
+    existing_lines: set[str] = set()
+
+    if gitignore_path.exists():
+        with open(gitignore_path, encoding="utf-8") as f:
+            existing = f.read()
+        existing_lines = {line.strip() for line in existing.splitlines()}
+
+    missing_entries = [entry for entry in SECRET_GITIGNORE_ENTRIES if entry not in existing_lines]
+    if not missing_entries:
+        return
+
+    content = existing
+    if content and not content.endswith("\n"):
+        content += "\n"
+    if content:
+        content += "\n"
+    content += "# Local secrets and certificates\n" + "\n".join(missing_entries) + "\n"
+
+    with open(gitignore_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print("  ✓ .gitignore")
+
+
+def copy_root_bundle_if_requested(output_dir: Path) -> None:
+    """Copy the shared root bundle into the generated agent if requested."""
+    if not ROOT_BUNDLE_PATH.exists():
+        return
+
+    destination = output_dir / "certs" / "ca-bundle.pem"
+    copy_bundle = confirm_action(
+        f"\nFound '{ROOT_BUNDLE_PATH}'. Copy it to '{destination}'? (yes/no)",
+        "yes",
+    )
+    if not copy_bundle:
+        return
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT_BUNDLE_PATH, destination)
+    ensure_secret_gitignore_entries(output_dir)
+    print("  ✓ certs/ca-bundle.pem")
+
+
+def create_env_from_platform_if_requested(output_dir: Path) -> None:
+    """Create an agent .env from selected platform secrets if requested."""
+    if not PLATFORM_ENV_PATH.exists():
+        return
+
+    selected_values = select_platform_env_values(PLATFORM_ENV_PATH)
+    if not selected_values:
+        print(f"\nFound '{PLATFORM_ENV_PATH}', but none of the requested platform values were present.")
+        return
+
+    create_env = confirm_action(
+        f"\nFound '{PLATFORM_ENV_PATH}'. Create '{output_dir / '.env'}' with "
+        "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, and LITELLM_MASTER_KEY values? (yes/no)",
+        "yes",
+    )
+    if not create_env:
+        return
+
+    env_path = output_dir / ".env"
+    if env_path.exists():
+        overwrite = confirm_action(f"\nWarning: '{env_path}' already exists. Replace it? (yes/no)", "no")
+        if not overwrite:
+            return
+
+    lines = [
+        "# Created by setup_agent.py from ../prometheus_platform/.env.",
+        "# Contains shared platform secrets needed by this agent.",
+        "",
+    ]
+    lines.extend(f"{key}={value}" for key, value in selected_values.items())
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+    ensure_secret_gitignore_entries(output_dir)
+    print("  ✓ .env")
 
 
 def process_file(file_path: Path, replacements: dict[str, str], output_dir: Path) -> None:
@@ -243,6 +370,9 @@ def create_agent(replacements: dict[str, str]) -> None:
             with open(agent_py, "w", encoding="utf-8") as f:
                 f.write(strip_comments(content))
             print("  ✓ Trimmed comments from agent.py")
+
+    copy_root_bundle_if_requested(output_dir)
+    create_env_from_platform_if_requested(output_dir)
 
     print()
     message_file = Path(__file__).parent / "success_message.txt"

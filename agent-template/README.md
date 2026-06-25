@@ -51,13 +51,26 @@ my-agent/
 └── .env.example
 ```
 
+if your `prometheus_platform` checkout is next to `prometheus_agent_template` 
+
+```
+├── prometheus_agent_template
+└── prometheus_platform
+```
+
+the `setup_agent.py` script will optionally inspect your `prometheus_platform/.env` file and
+copy over all required secrets to make the newly instantiated agent register with the platform
+out of the box.
+
 > Prefer to do it by hand? Copy `agent_template/` and replace the `TEMPLATE_*`
 > placeholders yourself. See [`TUTORIAL.md`](TUTORIAL.md).
 
 ### Run it
 
 ```bash
-cd my-agent
+cd ../my-agent
+
+# optionally (only if you declined to have a .env created during setup)
 cp .env.example .env          # fill in real values
 
 # Local (fast iteration):
@@ -71,6 +84,12 @@ uv run pytest && uv run ruff check .
 
 # Or with Docker (set PROMETHEUS_API_BASE_IMAGE_HASH in .env first):
 docker compose up --build
+
+# Or (quick start in the background)
+make up
+
+# Or (quick start in the foreground)
+make up-fg
 ```
 
 See the generated `README.md` in your agent directory, and

@@ -1,60 +1,19 @@
-# Python
-__pycache__/
+# Byte-compiled / optimized / DLL files
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-env/
-ENV/
-.venv
-
-# Environment files
 .env
-.env.local
-.env.*.local
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Common Python-related files
+app/__pycache__/
 
-# Docker
+# Log files
+logs/
 *.log
 
-# OS
+# Editor directories and files
+.vscode/
+!.vscode/extensions.json
 .DS_Store
-Thumbs.db
 
-# Certificates
-certs/
-*.pem
-*.crt
-*.key
+certs/*
+!certs/.gitkeep
 
-# Redis data
-redis-data/
-
-# Generated agents (optional - remove if you want to track them)
-# */agent.py
-# */Dockerfile
-# */requirements.txt

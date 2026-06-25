@@ -4,15 +4,20 @@ services:
       context: .
       args:
         # Passed in from the platform's Makefile (or your own .env).
-        PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH}
+        PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}
         # Corporate proxy settings (optional — leave empty if not behind a proxy).
-        HTTP_PROXY: ${HTTP_PROXY:-""}
-        HTTPS_PROXY: ${HTTPS_PROXY:-""}
-        NO_PROXY: ${NO_PROXY:-""}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+      additional_contexts:
+        certs: ./certs
     container_name: TEMPLATE_SLUG-agent
     networks:
       - agent-network
     environment:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
+      CURL_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
       AGENT_PORT: 8000
       # The agent registers http://{container hostname}:{AGENT_PORT}; Docker
       # Compose sets the hostname to the service name, which resolves on
@@ -21,7 +26,7 @@ services:
       # EXTERNAL_AGENT_URL: http://my-host.example.gov:8042
       AGENT_SECRET: ${AGENT_SECRET}
       AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
-      REGISTRY_URL: ${REGISTRY_URL:-}
+      REGISTRY_URL: ${REGISTRY_URL:-http://litellm-proxy:4000}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -36,19 +41,18 @@ services:
 # are deploying this agent.  Delete the one you are not using.
 # -----------------------------------------------------------------------------
 
-# OPTION A — External repo (this agent runs alongside the platform but in its
-# own docker-compose project).  The platform creates the network; this agent
-# joins it.  Replace "prometheus_platform" with the actual COMPOSE_PROJECT_NAME
-# if your platform team changed it.
+# OPTION A — Same host (this agent runs alongside the platform in its own
+# docker-compose project on the same host).  The platform creates the network; this agent
+# joins it.
 networks:
   agent-network:
     external: true
-    name: prometheus_platform_agent-network
+    name: prometheus_platform_agent-network # this must be the network name the platform uses
 
-# OPTION B — In-tree (agent lives inside prometheus_platform/agents/<name>/).
-# The platform's docker-compose.yml owns the network definition; agents just
-# reference it by name.  To use this, delete the OPTION A block above and
-# uncomment the lines below.
+# OPTION B — Host independent (this enables the agent to run either on the same
+# host or any other network reachable host). To use this, delete the OPTION A block,
+# uncomment the lines below, and make sure you use host.docker.internal or remote
+# hostnames to point to platform services such as REGISTRY_URL and REDIS_URL.
 #
 # networks:
 #   agent-network:
