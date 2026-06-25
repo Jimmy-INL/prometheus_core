@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  REGISTRY_URL: containers.github.inl.gov
+  REGISTRY_PACKAGE_URL: containers.github.inl.gov/${{ github.repository_owner }}/${{ github.event.repository.name }}
+
 jobs:
   python:
     name: "Python ${{ matrix.python }}"
@@ -29,16 +33,46 @@ jobs:
       image: ${{ matrix.image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install --no-cache uv
       - name: Sync environment
-        run: uv sync
+        run: uv sync --frozen --no-cache
       - name: Test
         shell: bash
         run: |
           source .venv/bin/activate
           pytest --color=yes
+
+  docker-prepare:
+    name: "Docker prepare"
+    needs:
+      - python
+    runs-on:
+      group: genesis
+    outputs:
+      build-tag: ${{ steps.prepare.outputs.build-tag }}
+      cache-uri: ${{ steps.prepare.outputs.cache-uri }}
+      current-tag: ${{ steps.prepare.outputs.current-tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare
+        id: prepare
+        shell: bash
+        run: |
+          DATE_TAG="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
+          COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
+
+          VALUES=(
+            "build-tag=${{ github.event.repository.name }}-build:run-${{ github.run_id }}"
+            "cache-uri=${REGISTRY_PACKAGE_URL}-cache"
+            "current-tag=${DATE_TAG}-${COMMIT_TAG}"
+          )
+          for VALUE in "${VALUES[@]}"; do
+            echo "$VALUE"
+            echo "$VALUE" >> $GITHUB_OUTPUT
+          done
 
   docker:
     name: "Docker ${{ matrix.platform }}"
@@ -47,7 +81,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: [python]
+    needs:
+      - docker-prepare
     strategy:
       fail-fast: false
       matrix:
@@ -55,24 +90,10 @@ jobs:
           - amd64
           - arm64
     env:
-      REGISTRY_URL: containers.github.inl.gov
-      REGISTRY_ORG: genesis
-      PACKAGE_NAME: prometheus_api
+      BUILD_TAG: "${{ needs.docker-prepare.outputs.build-tag }}-${{ matrix.platform }}"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Prepare
-        id: prepare
-        shell: bash
-        run: |
-          VALUES=(
-            "build-tag=${PACKAGE_NAME}-build:run-${{ github.run_id }}"
-            "cache-uri=${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}-cache"
-          )
-          for VALUE in "${VALUES[@]}"; do
-            echo "$VALUE"
-            echo "$VALUE" >> $GITHUB_OUTPUT
-          done
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Registry login
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
@@ -82,11 +103,9 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
-          test -n "$BUILD_TAG"
-
-          CACHE_URI="${{ steps.prepare.outputs.cache-uri }}"
+          CACHE_URI="${{ needs.docker-prepare.outputs.cache-uri }}"
           test -n "$CACHE_URI"
+          CACHE_URI+="-${{ matrix.platform }}"
 
           EXTRA_ARGS=()
           if [ "$GITHUB_EVENT_NAME" == "push" ]; then
@@ -119,19 +138,75 @@ jobs:
             --workdir "${{ github.workspace }}" \
             --platform "linux/${{ matrix.platform }}" \
             --rm \
-            "${{ steps.prepare.outputs.build-tag }}" \
+            "$BUILD_TAG" \
             /bin/bash run.bash
       - name: Push
         if: success() && github.event_name == 'push'
         shell: bash
         run: |
-          BUILD_TAG="${{ steps.prepare.outputs.build-tag }}"
+          CURRENT_TAG="${{ needs.docker-prepare.outputs.current-tag }}"
+          test -n "$CURRENT_TAG"
 
-          DATE_TAG="$(git log -1 --format=%cd --date=format:'%Y%m%d')"
-          COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
-          for TAG in "${DATE_TAG}-${COMMIT_TAG}" latest; do
-            TO_URI="${REGISTRY_URL}/${REGISTRY_ORG}/${PACKAGE_NAME}:${TAG}"
+          for TAG in "$CURRENT_TAG" latest; do
+            TO_URI="${REGISTRY_PACKAGE_URL}:${TAG}-${{ matrix.platform }}"
             docker tag "$BUILD_TAG" "$TO_URI"
             docker push "$TO_URI"
             docker rmi "$TO_URI"
           done
+      - name: Registry logout
+        if: always()
+        run: docker logout "$REGISTRY_URL" || true
+      - name: Remove docker image
+        if: always()
+        run: docker rmi "$BUILD_TAG" || true
+
+  docker-mutli-arch:
+    name: "Docker multi-arch"
+    if: success() && github.event_name == 'push'
+    runs-on:
+      group: genesis
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - docker-prepare
+      - docker
+    steps:
+      - name: Registry login
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login "$REGISTRY_URL" \
+              --username "${{ github.actor }}" \
+              --password-stdin
+      - name: Push multi-arch container
+        shell: bash
+        run: |
+          CURRENT_TAG="${{ needs.docker-prepare.outputs.current-tag }}"
+          test -n "$CURRENT_TAG"
+
+          # Get each URI we want to be in the manifest and
+          # make sure that it exists
+          ARCH_URIS=()
+          for PLATFORM in amd64 arm64; do
+            URI="${REGISTRY_PACKAGE_URL}:${CURRENT_TAG}-${PLATFORM}"
+            ARCH_URIS+=("$URI")
+            if ! docker manifest inspect "$URI" &> /dev/null; then
+              echo "::error::Container $URI is missing"
+              exit 1
+            fi
+          done
+
+          # Create manifest based on specific tag
+          CURRENT_URI="${REGISTRY_PACKAGE_URL}:${CURRENT_TAG}"
+          docker manifest create "$CURRENT_URI" "${ALL_URIS[@]}"
+          docker manifest push "$CURRENT_URI"
+
+          # And also push as the latest tag
+          LATEST_URI="${REGISTRY_PACKAGE_URL}:latest"
+          docker manifest push "$CURRENT_URI" "$LATEST_URI"
+
+          # Cleanup
+          docker manifest rm "$CURRENT_URI"
+      - name: Registry logout
+        if: always()
+        run: docker logout "$REGISTRY_URL" || true
