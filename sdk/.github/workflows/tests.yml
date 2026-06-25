@@ -147,12 +147,12 @@ jobs:
           CURRENT_TAG="${{ needs.docker-prepare.outputs.current-tag }}"
           test -n "$CURRENT_TAG"
 
-          for TAG in "$CURRENT_TAG" latest; do
-            TO_URI="${REGISTRY_PACKAGE_URL}:${TAG}-${{ matrix.platform }}"
-            docker tag "$BUILD_TAG" "$TO_URI"
-            docker push "$TO_URI"
-            docker rmi "$TO_URI"
-          done
+          TO_URI="${REGISTRY_PACKAGE_URL}-${{ matrix.platform }}:${CURRENT_TAG}"
+          echo "Pushing ${TO_URI}..."
+
+          docker tag "$BUILD_TAG" "$TO_URI"
+          docker push "$TO_URI"
+          docker rmi "$TO_URI"
       - name: Registry logout
         if: always()
         run: docker logout "$REGISTRY_URL" || true
@@ -184,28 +184,23 @@ jobs:
           CURRENT_TAG="${{ needs.docker-prepare.outputs.current-tag }}"
           test -n "$CURRENT_TAG"
 
-          # Get each URI we want to be in the manifest and
-          # make sure that it exists
-          ARCH_URIS=()
-          for PLATFORM in amd64 arm64; do
-            URI="${REGISTRY_PACKAGE_URL}:${CURRENT_TAG}-${PLATFORM}"
-            ARCH_URIS+=("$URI")
-            if ! docker manifest inspect "$URI" &> /dev/null; then
-              echo "::error::Container $URI is missing"
-              exit 1
-            fi
-          done
-
-          # Create manifest based on specific tag
+          # Create multi-arch manifest and push
           CURRENT_URI="${REGISTRY_PACKAGE_URL}:${CURRENT_TAG}"
-          docker manifest create "$CURRENT_URI" "${ALL_URIS[@]}"
+          echo "Creating multi-arch image ${CURRENT_URI}..."
+          docker manifest create "$CURRENT_URI"
+          for PLATFORM in amd64 arm64; do
+            PLATFORM_URI="${REGISTRY_PACKAGE_URL}-${PLATFORM}:${CURRENT_TAG}"
+            docker manifest add "$CURRENT_URI" "$PLATFORM_URI"
+          done
           docker manifest push "$CURRENT_URI"
 
-          # And also push as the latest tag
+          # Push multi-arch manifest with latest tag
           LATEST_URI="${REGISTRY_PACKAGE_URL}:latest"
+          echo "Pushing latest image ${LATEST_URI}..."
           docker manifest push "$CURRENT_URI" "$LATEST_URI"
 
           # Cleanup
+          echo "Cleaning up..."
           docker manifest rm "$CURRENT_URI"
       - name: Registry logout
         if: always()
