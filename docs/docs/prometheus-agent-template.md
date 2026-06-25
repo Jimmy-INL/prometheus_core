@@ -65,7 +65,7 @@ The template produces these files:
 | `agent.py` | Agent implementation -- subclass of `PrometheusAgent` with `process_analysis()` to customize |
 | `agent_card.json` | A2A agent metadata (name, description, skills, capabilities) |
 | `.env.example` | Environment variable template |
-| `Dockerfile` | Container config with health check, CA cert support, proxy support |
+| `Dockerfile` | Container config with health check and proxy support |
 | `requirements.txt` | Python dependencies (`a2a-sdk`, `pydantic`, `httpx`, `uvicorn`, `prometheus-api[agent]`) |
 | `pyproject.toml` | Package metadata |
 | `README.md` | Agent-specific documentation |
@@ -186,14 +186,13 @@ class MyAgent(PrometheusAgent):
 | `DEEPLYNX_ORG_ID` | If using storage | -- | Organization ID |
 | `DEEPLYNX_PROJECT_ID` | If using storage | -- | Project ID |
 
-See `.env.example` for the full list including proxy and SSL settings.
+See `.env.example` for the full list including proxy settings.
 
 ## Docker deployment
 
 The generated Dockerfile:
 
 - Base image: `python:3.11-slim`
-- Installs CA certificates and handles custom cert bundles
 - Supports `HTTP_PROXY` / `HTTPS_PROXY` build args
 - Health check on `/health` endpoint every 30 seconds
 

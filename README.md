@@ -26,7 +26,6 @@ graph TD
 
 - Docker and Docker Compose
 - [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image)
-- INL CA bundle PEM file (for HTTPS to internal services)
 - [uv](https://docs.astral.sh/uv/) and Python — only required if you run components outside Docker:
   - Frontend pins **Python 3.12** (`>=3.12,<3.13`)
   - Client-agent: **3.12+**
@@ -43,13 +42,7 @@ cp .env.example .env
 # Optional: DEEPLYNX_*, OAUTH_OKTA_*, HTTP_PROXY / HTTPS_PROXY / NO_PROXY
 ```
 
-### 2. Provide CA certificates
-
-Place your CA bundle at `certs/ca-bundle.pem`. It is mounted into every container at `/etc/ssl/certs/ca-bundle.pem`
-
-If building for INL, follow the INL ServiceNow knowledge base article - https://servicenow.inl.gov/ess?id=kb_article_view&sys_id=78a82f9293adba90c36eb7986cba1072
-
-### 3. Authenticate to the container registry
+### 2. Authenticate to the container registry
 
 The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
 
@@ -62,7 +55,7 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov \
   --password-stdin
 ```
 
-### 4. Start the stack
+### 3. Start the stack
 
 ```bash
 make up      # build + start everything (detached)
@@ -152,8 +145,6 @@ prometheus_platform/
   litellm_config.yaml       # LiteLLM proxy config (model_list, master key, db url)
   scripts/
     generate-agents-compose.sh
-  certs/                    # CA bundle(s) mounted into containers
-
   frontend/
     main.py                 # Chainlit app entry point
     config.yml              # Application configuration

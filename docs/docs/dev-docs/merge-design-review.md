@@ -144,7 +144,6 @@ These are orthogonal concerns. The user's preference for LiteLLM is correct **fo
 - Service dependency graph is correct: registry starts first (healthcheck), then Redis, then agents that depend on both.
 - Shared volume (`./shared:/app/shared`) for artifact exchange between agents is practical.
 - ML model cache volumes for OSTI agent prevent re-downloading on container restart.
-- CA certificate support for corporate proxy environments shows real-world deployment awareness.
 
 **Missing for production:**
 - **No resource limits.** Any agent can consume unbounded CPU/memory. A runaway LLM call or large mesh processing could starve other containers. Add `deploy.resources.limits` for CPU and memory.
