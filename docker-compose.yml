@@ -114,6 +114,7 @@ services:
     environment:
       <<: *common-env
       AGENT_PORT: 8000
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
     volumes: *common-volumes
     depends_on:
