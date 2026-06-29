@@ -31,5 +31,4 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
-    volumes:
     restart: unless-stopped
