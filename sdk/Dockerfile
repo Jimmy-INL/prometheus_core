@@ -1,4 +1,4 @@
-FROM docker.io/python:3.12.13-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9
+FROM ghcr.io/astral-sh/uv:0.11.25-python3.12-trixie-slim@sha256:1b9ee30381d729b07044688631ba4473c72db5c048a5f2a504c40186e65efb86
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -14,9 +14,10 @@ RUN --mount=type=bind,source=certs,target=/tmp/certs \
         cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem; \
     fi
 
-# Install uv for python management
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install uv
+# Install git
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install only dependencies (not including dev dependencies)
 # This is kept separately because it will change less often than
