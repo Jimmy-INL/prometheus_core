@@ -31,7 +31,7 @@ networks:
     driver: bridge
 
 volumes:
-  redis-data:
+  valkey-data:
   litellm-db-data:
 
 services:
@@ -92,7 +92,7 @@ services:
     networks:
       - agent-network
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped

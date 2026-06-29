@@ -74,5 +74,5 @@ def test_compose_has_networks_section(compose_data):
 
 def test_compose_has_volumes_section(compose_data):
     volumes = compose_data.get("volumes", {})
-    assert "redis-data" in volumes, "Missing 'redis-data' named volume"
+    assert "valkey-data" in volumes, "Missing 'valkey-data' named volume"
     assert "litellm-db-data" in volumes, "Missing 'litellm-db-data' named volume"
