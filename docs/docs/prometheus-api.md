@@ -297,9 +297,8 @@ AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://litellm:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
 
-# Enterprise proxy / CA certs
+# Enterprise proxy
 HTTP_PROXY=...
-SSL_CERT_FILE=/path/to/cert.pem
 ```
 
 ### Progress updates

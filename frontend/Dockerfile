@@ -8,7 +8,6 @@ RUN --mount=type=cache,id=prometheus-apt-cache,target=/var/cache/apt,sharing=loc
     && apt-get update \
     && apt-get install -y --no-install-recommends \
     build-essential \
-    ca-certificates \
     libx11-6 \
     libxext6 \
     libxrender1 \

@@ -236,7 +236,6 @@ def env_test_file(project_root: Path):
         f"CLIENT_AGENT_PORT=18001\n"
         f"CHAINLIT_FRONTEND_PORT=18500\n"
         f"CLIENT_AGENT_URL=http://client-agent:8000\n"
-        f"CERT_FILE=/etc/ssl/certs/ca-certificates.crt\n"
     )
     yield env_path
     env_path.unlink(missing_ok=True)

@@ -50,7 +50,3 @@ def test_redis_data_volume(compose_data):
     volumes = _get_volumes(compose_data["services"]["redis"])
     assert any("redis-data:/data" in v for v in volumes)
 
-
-def test_certs_directory_exists(project_root):
-    assert (project_root / "certs").is_dir(), "certs/ directory must exist for build contexts"
-

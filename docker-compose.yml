@@ -7,9 +7,6 @@ x-common-env: &common-env
   MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
   AGENT_SECRET: ${AGENT_SECRET}
   AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
-  SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
-  REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
-  NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.pem
   REGISTRY_URL: ${REGISTRY_URL:-}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -21,7 +18,6 @@ x-common-env: &common-env
   PROMETHEUS_MAX_UPLOAD_BYTES: ${PROMETHEUS_MAX_UPLOAD_BYTES:-104857600}
 
 x-common-volumes: &common-volumes
-  - ./certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
   - ./shared:/app/shared
 
 x-build-args: &prometheus-api-build-args

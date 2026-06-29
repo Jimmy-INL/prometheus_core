@@ -107,7 +107,6 @@ The frontend ↔ client-agent wire contract (`ConversationRequest`, `Conversatio
 - `.env` (copied from `.env.example`) holds `ANTHROPIC_API_KEY`, `AGENT_SECRET`, `REDIS_PASSWORD`, `CHAINLIT_AUTH_SECRET`, `LITELLM_MASTER_KEY`, `LITELLM_DB_PASSWORD`, `LITELLM_LOCAL_PORT`, optional `DEEPLYNX_*`, optional proxy vars.
 - `frontend/config.yml` controls Chainlit-side behavior (`agent-url`, `agent-secret`, `redis-url`, `auto-approve-steps`, `local-users`, workflow suggestions). Env vars (`CLIENT_AGENT_URL`, `AGENT_SECRET`, `REDIS_URL`) override individual keys; `PROMETHEUS_CONFIG_PATH` overrides the file path.
 - `litellm_config.yaml` ships with an empty `model_list: []` — registrations happen at runtime through `/v1/agents`. Add models here only if you also want LiteLLM to proxy them.
-- Corporate CA bundle: drop `*.pem` files into `certs/`; mounted into every container via `LOCAL_CERT_FILE`/`CERT_FILE`.
 - The base image `prometheus_api` is pulled from `mooseharbor.hpc.inl.gov`; pinned via the `PROMETHEUS_API_BASE_IMAGE_HASH` build arg in `docker-compose.yml`. Bumping the platform's PrometheusAgent SDK = bumping that hash.
 
 ## Service map (default ports)
