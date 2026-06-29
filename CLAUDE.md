@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Stack at a glance
 
-Multi-agent platform for nuclear engineering analysis. A Chainlit frontend talks to a LangGraph **client-agent** orchestrator over A2A JSON-RPC 2.0; the client-agent dispatches to specialist agents (corrosion, radiation, thermal, data, synthesis, OSTI research, form-filler, artifact-debug) through a **LiteLLM proxy** that doubles as the agent registry/gateway and the LLM proxy. Redis holds conversation state, short-lived status updates, and the artifact registry. Postgres backs LiteLLM's persistent agent registrations.
+Multi-agent platform for nuclear engineering analysis. A Chainlit frontend talks to a LangGraph **client-agent** orchestrator over A2A JSON-RPC 2.0; the client-agent dispatches to specialist agents (corrosion, radiation, thermal, data, synthesis, OSTI research, form-filler, artifact-debug) through a **LiteLLM proxy** that doubles as the agent registry/gateway and the LLM proxy. Valkey holds conversation state, short-lived status updates, and the artifact registry via the Redis-compatible protocol. Postgres backs LiteLLM's persistent agent registrations.
 
 Python versions are split: frontend pins `>=3.12,<3.13` (Chainlit/VTK constraints); client-agent and infra tests use 3.13.
 
@@ -28,7 +28,7 @@ make test-integration  # infra tests against running containers
 make test-infra        # both
 ```
 
-Launch and restart targets clear LiteLLM's Postgres volume before starting services so stale agent registrations do not survive across platform launches. Redis state is left intact.
+Launch and restart targets clear LiteLLM's Postgres volume before starting services so stale agent registrations do not survive across platform launches. Valkey state is left intact.
 
 To temporarily exclude an agent, remove (or rename) its `agents/<name>/docker-compose.yml` and re-run `make generate`. `docker-compose.override.yml` is auto-included if present for local-only tweaks.
 
@@ -67,8 +67,8 @@ User → Chainlit (frontend/main.py + components/message_handler.py)
         ├─ Tool/agent discovery: tool_discovery.py + capability_cache.py
         │     hits LiteLLM `/v1/agents` and each agent's well-known card
         ├─ Workflow library: workflow_library/  (YAML templates in workflows/)
-        ├─ Conversation state: conversation_store.py → Redis  (key: conversation:{id})
-        └─ Status updates: store_status_update() → Redis  (key: agent:status:{id})
+        ├─ Conversation state: conversation_store.py → Valkey  (key: conversation:{id})
+        └─ Status updates: store_status_update() → Valkey  (key: agent:status:{id})
      → LiteLLM proxy (litellm-proxy:4000) routes A2A calls via /a2a/{agent_name}
      → Specialist agent (built on PrometheusAgent base class from the `prometheus_api`
        package, baked into the prometheus_api base image at PROMETHEUS_API_BASE_IMAGE_HASH)
@@ -92,7 +92,7 @@ Specialist agents currently in tree: `client-agent`, `corrosion-agent`, `radiati
 
 ### Artifacts
 
-Artifacts are conversation-scoped, tracked in Redis (with in-memory fallback) by `ArtifactReference` records (`artifact_id`, `uri`, `mime_type`, `tags`, etc.). The frontend's `message_handler.render_artifacts()` routes by `mime_type`/`tags` to MeshViewer (Exodus/STL), IFCViewer, MermaidViewer, PDF viewer, citation markdown, or `cl.File`. Returning a plain dict from `process_analysis()` is auto-wrapped as JSON; for richer artifacts emit them explicitly via the event queue. See `docs/docs/dev-docs/artifacts.md`.
+Artifacts are conversation-scoped, tracked in Valkey (with in-memory fallback) by `ArtifactReference` records (`artifact_id`, `uri`, `mime_type`, `tags`, etc.). The frontend's `message_handler.render_artifacts()` routes by `mime_type`/`tags` to MeshViewer (Exodus/STL), IFCViewer, MermaidViewer, PDF viewer, citation markdown, or `cl.File`. Returning a plain dict from `process_analysis()` is auto-wrapped as JSON; for richer artifacts emit them explicitly via the event queue. See `docs/docs/dev-docs/artifacts.md`.
 
 ### Visualization plugins
 
@@ -117,7 +117,7 @@ The frontend ↔ client-agent wire contract (`ConversationRequest`, `Conversatio
 | Client agent | `client-agent` | 8001 (`CLIENT_AGENT_PORT`) | Container port 8000 |
 | LiteLLM proxy | `litellm-proxy` | `LITELLM_LOCAL_PORT` (e.g. 9977) | Gateway + LLM proxy |
 | LiteLLM Postgres | `litellm-db` | (internal) | Persistent agent registrations |
-| Redis | `agent-redis` | 6379 (`REDIS_LOCAL_PORT`) | Auth via `REDIS_PASSWORD` |
+| Valkey | `agent-valkey` | 6379 (`REDIS_LOCAL_PORT`) | Auth via `REDIS_PASSWORD` |
 | Specialist agents | per-agent containers | 8002–8009 typically | Each on container port 8000 |
 
 All services share the `agent-network` bridge.

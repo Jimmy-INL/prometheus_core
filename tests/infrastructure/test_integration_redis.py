@@ -1,4 +1,4 @@
-"""Integration tests for Redis container."""
+"""Integration tests for the Valkey Redis-compatible container."""
 
 import subprocess
 
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def redis_client(docker_compose_up, env_test_file):
-    """Create a Redis client connected to the test Redis instance."""
+    """Create a Redis client connected to the test Valkey instance."""
     # Read password from .env.test
     env_vars = {}
     for line in env_test_file.read_text().splitlines():
@@ -27,20 +27,20 @@ def redis_client(docker_compose_up, env_test_file):
     client.close()
 
 
-def test_redis_container_running(docker_compose_up):
+def test_valkey_container_running(docker_compose_up):
     result = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Status}}", "agent-redis"],
+        ["docker", "inspect", "--format", "{{.State.Status}}", "agent-valkey"],
         capture_output=True,
         text=True,
     )
     assert result.stdout.strip() == "running"
 
 
-def test_redis_accepts_authenticated_connection(redis_client):
+def test_valkey_accepts_authenticated_connection(redis_client):
     assert redis_client.ping() is True
 
 
-def test_redis_rejects_unauthenticated_connection(docker_compose_up, env_test_file):
+def test_valkey_rejects_unauthenticated_connection(docker_compose_up, env_test_file):
     """Connecting without a password should raise an authentication error."""
     env_vars = {}
     for line in env_test_file.read_text().splitlines():
@@ -58,7 +58,7 @@ def test_redis_rejects_unauthenticated_connection(docker_compose_up, env_test_fi
         client.close()
 
 
-def test_redis_set_get(redis_client):
+def test_valkey_set_get(redis_client):
     """SET and GET round-trip should work."""
     test_key = "__infra_test_key__"
     try:
@@ -68,6 +68,6 @@ def test_redis_set_get(redis_client):
         redis_client.delete(test_key)
 
 
-def test_redis_appendonly_enabled(redis_client):
+def test_valkey_appendonly_enabled(redis_client):
     config = redis_client.config_get("appendonly")
     assert config.get("appendonly") == "yes"

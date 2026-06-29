@@ -48,8 +48,10 @@ def test_postgres_image_version(compose_data):
     assert compose_data["services"]["litellm-db"]["image"] == "postgres:16-alpine"
 
 
-def test_redis_image_version(compose_data):
-    assert compose_data["services"]["redis"]["image"] == "redis:7-alpine"
+def test_redis_service_uses_valkey_bundle(compose_data):
+    svc = compose_data["services"]["redis"]
+    assert svc["image"] == "valkey/valkey-bundle:9.1.0"
+    assert svc["command"][:1] == ["valkey-server"]
 
 
 def test_litellm_image_pinned(compose_data):

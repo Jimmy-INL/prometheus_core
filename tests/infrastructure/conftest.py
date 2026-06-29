@@ -296,7 +296,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
         core_readiness_checks = [
             ("litellm-db", "healthy", _wait_for_container_healthy, 90),
             ("litellm-proxy", "healthy", _wait_for_container_healthy, 180),
-            ("agent-redis", "running", _wait_for_container_running, 60),
+            ("agent-valkey", "running", _wait_for_container_running, 60),
         ]
         for container_name, expected_state, wait_fn, timeout in core_readiness_checks:
             if wait_fn(container_name, timeout=timeout):
