@@ -268,6 +268,16 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
         "",
     ]
     lines.extend(f"{key}={value}" for key, value in selected_values.items())
+    lines.extend(
+        [
+            "",
+            "# Uncomment this for external network mode",
+            "#EXTERNAL_AGENT_HOST=host.docker.internal",
+            "#EXTERNAL_AGENT_PORT=8042",
+            "#REGISTRY_URL=http://host.docker.internal:9977",
+            "#REDIS_URL=redis://host.docker.internal:6379",
+        ]
+    )
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
