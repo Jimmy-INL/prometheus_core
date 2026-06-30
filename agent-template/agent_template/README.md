@@ -14,7 +14,9 @@ responses in the Chainlit UI.
 | `agent_card.json` | Declares the agent's name, description, and skills. The orchestrator reads this to decide when to route to you. |
 | `pyproject.toml` | Extra Python dependencies your code imports directly. |
 | `Dockerfile` | Builds the image from the pinned `prometheus_api` base image. |
-| `docker-compose.yml` | Runs the image alongside (or inside) the platform. |
+| `docker-compose.yml` | Common service definition for containerized runs. |
+| `docker-compose.net_internal.yml` | Default network include for joining the platform Docker network. |
+| `docker-compose.net_external.yml` | Network include for exposing the agent port outside Docker. |
 | `Makefile` | Convenience wrapper around `docker compose` (`make up`, `make up-fg`, `make down`, `make logs`). |
 | `.env.example` | Template for `.env` — copy and fill in real values. |
 
@@ -83,16 +85,29 @@ make down        # stop and remove
 ```
 
 These wrap `docker compose` and, on Linux, layer in `docker-compose.linux.yml`
-if you create one. The raw commands (`docker compose up --build`, etc.) still
-work if you prefer them.
+only when external mode is selected.
 
-Pick the right network block in `docker-compose.yml`:
+By default, `make` includes `docker-compose.net_internal.yml`, so the agent joins
+the platform's Docker network. Start the platform first, then run `make up` or
+`make up-fg` here.
 
-- **Option A — external repo:** your agent joins the platform's network. Start
-  the platform first (`make up`), then `docker compose up --build` here.
-- **Option B — in-tree:** copy this directory into
-  `prometheus_platform/agents/<name>/`, switch to the in-tree network block, then
-  run `make generate && make up` from the platform.
+To expose the agent port outside Docker instead, set both external mode variables:
+
+```bash
+EXTERNAL_AGENT_HOST=my-host.example.gov EXTERNAL_AGENT_PORT=8042 make up
+```
+
+`host.docker.internal` is Docker's hostname for "the host machine from inside a
+container." Docker Desktop provides it automatically. On Linux, external mode
+also includes `docker-compose.linux.yml`, which maps that name to Docker's host
+gateway so the agent container can call host-published platform services.
+
+If exactly one of `EXTERNAL_AGENT_HOST` or `EXTERNAL_AGENT_PORT` is set, `make`
+stops before running Compose.
+
+For in-tree platform deployment, copy this directory into
+`prometheus_platform/agents/<name>/` and run `make generate && make up` from the
+platform checkout.
 
 ## Customizing
 
@@ -112,7 +127,7 @@ multiple skills, and DeepLynx file storage.
 | Variable | Purpose |
 |----------|---------|
 | `AGENT_PORT` | Port the agent listens on (default `8000`). |
-| `EXTERNAL_AGENT_URL` | Optional full URL the registry uses to reach this agent. Defaults to `http://{container hostname}:{AGENT_PORT}` (the Docker service name), which is right for in-network deployments; set it only when port-mapped or on another host. |
+| `EXTERNAL_AGENT_HOST` / `EXTERNAL_AGENT_PORT` | Optional Docker external mode. Leave both unset to join the platform Docker network; set both to expose the agent port and register `http://{host}:{port}`. |
 | `AGENT_SECRET` | Shared bearer token for A2A auth. Must match the platform's. |
 | `AGENT_SECRET_REQUIRED` | Set `false` to disable auth — local development only. |
 | `REGISTRY_URL` | LiteLLM proxy URL where the agent registers on startup. |

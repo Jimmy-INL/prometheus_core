@@ -129,11 +129,10 @@ The agent card is a JSON file that tells the orchestrator everything it needs to
 | `capabilities.streaming` | Set `true` only if your agent emits streaming partial responses (rare; not needed for most agents). |
 
 There is no `url` field: the base class sets the registered URL at startup —
-`EXTERNAL_AGENT_URL` if set, otherwise `http://{container hostname}:{AGENT_PORT}`.
-Inside Docker Compose the hostname is the service name, which resolves on
-`agent-network`, so you normally don't need to configure anything. Set
-`EXTERNAL_AGENT_URL` only when the agent is port-mapped or runs on a different
-host than the platform.
+external Docker mode sets `EXTERNAL_AGENT_URL`; otherwise the agent registers
+`http://{container hostname}:{AGENT_PORT}`. Inside Docker Compose the hostname is
+the service name, which resolves on `agent-network`, so the default internal mode
+does not need any URL configuration.
 
 ### Skills
 
@@ -615,7 +614,7 @@ Documents that the container listens on port 8000 and sets the default startup c
 
 ### Building the image manually
 
-You don't normally need to build manually — `docker compose up` does it. But to check that your Dockerfile is correct:
+You don't normally need to build manually — `make up` does it. But to check that your Dockerfile is correct:
 
 ```bash
 # Get the current hash from prometheus_platform/Makefile or your .env
@@ -671,13 +670,17 @@ Passes secrets and configuration into the container at runtime. Values come from
       MY_BASE_URL: ${MY_BASE_URL:-https://api.example.com}
 ```
 
-### The network: two options
+### Network mode selection
 
-The `agent-network` in `docker-compose.yml` is how your agent finds and is found by the rest of the platform. The correct configuration depends on where your agent lives.
+The common service definition lives in `docker-compose.yml`. The Makefile adds
+one network include file based on `EXTERNAL_AGENT_HOST` and
+`EXTERNAL_AGENT_PORT`.
 
-#### Option A — External repository (own repo, own Compose project)
+#### Internal network mode
 
-Your agent's `docker-compose.yml` is separate from the platform's. When the platform starts, it creates a Docker network named `prometheus_platform_agent-network`. Your agent needs to join that existing network:
+Leave both variables unset to use internal mode. This is the default for a
+standalone agent repository running on the same Docker host as the platform.
+The Makefile includes `docker-compose.net_internal.yml`:
 
 ```yaml
 networks:
@@ -686,9 +689,12 @@ networks:
     name: prometheus_platform_agent-network
 ```
 
-`external: true` means "this network was created by someone else; don't try to create it yourself." The `name` must match what the platform actually created.
+`external: true` means "this network was created by someone else; don't try to
+create it yourself." The `name` must match what the platform actually created.
 
-> **Note:** The network name is `<COMPOSE_PROJECT_NAME>_agent-network`. The platform defaults to `prometheus_platform` (the directory name), giving `prometheus_platform_agent-network`. If your platform team changed `COMPOSE_PROJECT_NAME`, update the `name` field accordingly.
+> **Note:** The network name is `<COMPOSE_PROJECT_NAME>_agent-network`. The
+> platform defaults to `prometheus_platform` (the directory name), giving
+> `prometheus_platform_agent-network`.
 
 Start your agent after the platform is running:
 
@@ -697,21 +703,55 @@ Start your agent after the platform is running:
 make up
 
 # In your agent directory:
-docker compose up --build
+make up
 ```
 
-#### Option B — In-tree (agent lives inside `prometheus_platform/agents/`)
+#### External port mode
 
-If you want your agent to be part of the main platform stack and launched by `make up`, copy your project directory into `prometheus_platform/agents/<your-agent-name>/`. The platform's Makefile automatically discovers any `docker-compose.yml` inside `agents/*/`.
+Set both variables to expose the agent outside Docker:
 
-In this case, the platform's `docker-compose.yml` owns the network definition. Your agent just references it by name:
+```bash
+EXTERNAL_AGENT_HOST=my-host.example.gov EXTERNAL_AGENT_PORT=8042 make up
+```
+
+If the platform will call the agent through a port published on the same Docker
+host, `EXTERNAL_AGENT_HOST` may be `host.docker.internal` as long as the platform
+containers can resolve that name. `host.docker.internal` means "the host machine
+from inside a container." Docker Desktop provides it automatically. On Linux,
+the agent Makefile includes `docker-compose.linux.yml` in external mode, mapping
+that name to Docker's host gateway for the agent container.
+
+The Makefile includes `docker-compose.net_external.yml`:
 
 ```yaml
+services:
+  my-agent:
+    ports:
+      - "${EXTERNAL_AGENT_PORT}:${AGENT_PORT:-8000}"
+    environment:
+      EXTERNAL_AGENT_URL: http://${EXTERNAL_AGENT_HOST}:${EXTERNAL_AGENT_PORT}
+
 networks:
   agent-network:
 ```
 
-(No `external:` or `name:` — just the name, referencing the network defined in the parent compose.)
+This maps the host port to the container's `AGENT_PORT` and registers the URL
+that the platform should call. If exactly one of `EXTERNAL_AGENT_HOST` or
+`EXTERNAL_AGENT_PORT` is set, `make` stops before running Compose.
+
+In external port mode, make sure `REGISTRY_URL` and `REDIS_URL` point to
+hostnames that are reachable from inside the agent container, such as
+`host.docker.internal` or a remote platform host. Do not use `localhost` for
+host-published platform services from inside the container; inside the container,
+`localhost` means the agent container itself.
+
+#### In-tree platform deployment
+
+If you want your agent to be part of the main platform stack and launched by the
+platform's `make up`, copy your project directory into
+`prometheus_platform/agents/<your-agent-name>/`. The platform's Makefile
+discovers `docker-compose.yml` files inside `agents/*/` and owns the top-level
+network definition.
 
 Then, from the `prometheus_platform` directory:
 
@@ -720,15 +760,15 @@ make generate   # re-discovers agents and regenerates docker-compose.agents.yml
 make up         # starts everything including your new agent
 ```
 
-**Which option to choose?**
+**Which mode to choose?**
 
-| Scenario | Recommended option |
-|----------|-------------------|
-| Agent is developed by a separate team or has its own release cycle | Option A — own repo |
-| Multiple related agents share a single repo / are deployed together | Option A — shared repo with one `docker-compose.yml` listing all services |
-| Agent is a general-purpose utility that ships with the platform | Option B — in-tree |
+| Scenario | Recommended mode |
+|----------|------------------|
+| Agent runs in its own repo on the same Docker host as the platform | Internal network mode |
+| Platform must reach the agent through a host or remote port | External port mode |
+| Agent is maintained inside `prometheus_platform/agents/` | In-tree deployment |
 
-Most purpose-built agents use Option A. Option B is mainly for agents maintained alongside the platform itself.
+Most purpose-built agents use internal network mode during integration testing.
 
 ---
 
@@ -736,7 +776,7 @@ Most purpose-built agents use Option A. Option B is mainly for agents maintained
 
 You have two ways to run your agent during development. Use Python for fast iteration, Docker for integration testing.
 
-### Option A: Python directly (no Docker)
+### Python directly (no Docker)
 
 This is the fastest way to test your logic. Set your environment variables and run:
 
@@ -780,22 +820,20 @@ You'll see the response with your result dict in the final `completed` status ev
 
 > **Tip:** When running locally without a Redis connection, the agent still works — artifact registry and state storage fall back to an in-memory dict. Set `AGENT_SECRET_REQUIRED=false` in `.env` to skip the bearer token check during development.
 
-### Option B: Docker Compose
+### Docker via Makefile
 
 Build and start the container:
 
 ```bash
-docker compose up --build
+make up-fg
 ```
 
-The `--build` flag rebuilds the image if your code or `pyproject.toml` has changed. Omit it for fast restarts when nothing changed.
-
-Stop with `Ctrl+C`, or in the background:
+Stop with `Ctrl+C`, or run in the background:
 
 ```bash
-docker compose up --build -d    # detached (runs in background)
-docker compose logs -f          # follow logs
-docker compose down             # stop and remove container
+make up        # detached
+make logs      # follow logs
+make down      # stop and remove container
 ```
 
 ---
@@ -837,25 +875,24 @@ When your container starts, `PrometheusAgent.run()` calls `register_with_registr
 
 Registration retries with exponential backoff (default: 10 attempts, up to 30 seconds between tries), so the order in which containers start does not matter — your agent will wait for LiteLLM to become available.
 
-### Option A: External repository
+### External repository deployment
 
 1. Make sure the platform is running (`make up` from `prometheus_platform/`).
 2. Fill in your `.env` with the same `AGENT_SECRET`, `LITELLM_MASTER_KEY`, `REDIS_PASSWORD`, and `REGISTRY_URL` values that the platform uses (copy from `prometheus_platform/.env`).
-3. Start your agent: `docker compose up --build -d`
+3. Start your agent: `make up`
 4. Verify registration: `curl -s http://localhost:9977/v1/agents | python -m json.tool` (replace `9977` with `LITELLM_LOCAL_PORT` from the platform's `.env`). Your agent's name should appear in the list.
 
 If you need the agent to restart automatically when the platform does, add it to the platform team's infrastructure configuration or document the startup order for your deployment environment.
 
-### Option B: In-tree
+### In-tree deployment
 
 1. Copy your project directory to `prometheus_platform/agents/<your-agent-name>/`.
-2. In your agent's `docker-compose.yml`, switch to the in-tree network configuration (see Step 7, Option B).
-3. From `prometheus_platform/`:
+2. From `prometheus_platform/`:
    ```bash
    make generate   # picks up your new docker-compose.yml
    make up         # or make restart if platform is already running
    ```
-4. Your agent appears in `docker compose ps` and logs with `make logs SERVICE=your-agent-name`.
+3. Your agent appears in `docker compose ps` and logs with `make logs SERVICE=your-agent-name`.
 
 > **Note:** The platform's `make generate` discovers agents by looking for `docker-compose.yml` files at exactly one directory level inside `agents/`. The directory name becomes the service name. Make sure your directory name is distinct from existing agents.
 

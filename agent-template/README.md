@@ -9,7 +9,7 @@ This repository gives you two things:
 
 - **`agent_template/`** — the canonical set of files for one agent
   (`agent.py`, `agent_card.json`, `pyproject.toml`, `Dockerfile`,
-  `docker-compose.yml`, `.env.example`).
+  `docker-compose.yml`, network compose includes, `Makefile`, `.env.example`).
 - **`setup_agent.py`** — an interactive scaffolder that copies the template into
   a new directory with your agent's name, slug, class, and skill filled in.
 - **[`TUTORIAL.md`](TUTORIAL.md)** — a step-by-step guide that explains every file
@@ -48,6 +48,9 @@ my-agent/
 ├── pyproject.toml
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker-compose.net_internal.yml
+├── docker-compose.net_external.yml
+├── Makefile
 └── .env.example
 ```
 
@@ -83,14 +86,18 @@ AGENT_SECRET_REQUIRED=false python agent.py
 uv run pytest && uv run ruff check .
 
 # Or with Docker (set PROMETHEUS_API_BASE_IMAGE_HASH in .env first):
-docker compose up --build
-
-# Or (quick start in the background)
 make up
 
-# Or (quick start in the foreground)
+# Or run in the foreground:
 make up-fg
+
+# Expose the agent outside Docker instead of joining the platform network:
+EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up
 ```
+
+For external mode, `host.docker.internal` is Docker's hostname for the host
+machine from inside a container. Docker Desktop provides it automatically; on
+Linux the template includes a small Compose override for the same mapping.
 
 See the generated `README.md` in your agent directory, and
 [`TUTORIAL.md`](TUTORIAL.md) for the full walkthrough — agent card design,
