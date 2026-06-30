@@ -46,6 +46,21 @@ def _load_prompt(name: str) -> str:
 FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = _load_prompt("followup_extraction.txt")
 
 
+def _tool_results_have_errors(tool_results: Dict[str, Any]) -> bool:
+    """Return true when any invoked skill or workflow step reported failure."""
+    for value in (tool_results or {}).values():
+        if not isinstance(value, dict):
+            continue
+        if value.get("error"):
+            return True
+        step_statuses = value.get("step_statuses")
+        if isinstance(step_statuses, dict) and any(
+            str(status).lower() == "failed" for status in step_statuses.values()
+        ):
+            return True
+    return False
+
+
 async def invoke_agent_generic(state: AgentState) -> Dict:
     """Generic agent invocation - calls any agent based on routing decision.
 
@@ -736,7 +751,10 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]
 
-    runtime.store_status_update(conversation_id, "Execution complete.", final=True)
+    if _tool_results_have_errors(state.get("tool_results", {}) or {}):
+        runtime.store_status_update(conversation_id, "Execution finished with errors.", final=True)
+    else:
+        runtime.store_status_update(conversation_id, "Execution complete.", final=True)
 
     return state
 
