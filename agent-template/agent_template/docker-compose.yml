@@ -26,8 +26,16 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # deeplynx environment
+      DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-}
+      DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
+      DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
+      DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
+      DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
+
       # Add your own agent-specific variables here (and in .env):
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
+      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-5}
       PYTHONDONTWRITEBYTECODE: 1
     restart: unless-stopped
