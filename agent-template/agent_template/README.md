@@ -72,8 +72,8 @@ uv run ruff check .           # lint
 
 ## Run with Docker
 
-Set `PROMETHEUS_API_BASE_IMAGE_HASH` in `.env` (find the current value in
-`prometheus_platform/Makefile`), then:
+Optionally set `PROMETHEUS_API_BASE_IMAGE_HASH` in `.env` (find the current value in
+`prometheus_platform/Makefile`), or let it default to `latest`, then:
 
 ```bash
 make up-fg       # build + start in the foreground (Ctrl-C to stop)

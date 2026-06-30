@@ -38,7 +38,7 @@ Every agent is built from **five files**:
 - **uv** — the package manager used across the platform. Install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Docker Desktop** (or Podman) — only needed for Steps 6–9
 - **Git** — for cloning and version control
-- Access to the `prometheus_api` base image registry (`containers.github.inl.gov/genesis/prometheus_api`) — or the platform's `.env` file, which has the `PROMETHEUS_API_BASE_IMAGE_HASH` value
+- Access to the `prometheus_api` base image registry (`containers.github.inl.gov/genesis/prometheus_api`) — or the platform's `.env` file, which has the `PROMETHEUS_API_BASE_IMAGE_HASH` value (defaults to `latest`)
 
 ---
 
@@ -642,7 +642,7 @@ services:
     build:
       context: .
       args:
-        PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH}
+        PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}
 ```
 Tells Compose to build the image from the current directory using the `Dockerfile` here. The `${...}` syntax reads values from your `.env` file or the shell environment.
 
@@ -667,7 +667,7 @@ Passes secrets and configuration into the container at runtime. Values come from
 **Add your own agent-specific variables here and in `.env`:**
 
 ```yaml
-      MY_API_KEY: ${MY_API_KEY:-""}
+      MY_API_KEY: ${MY_API_KEY:-}
       MY_BASE_URL: ${MY_BASE_URL:-https://api.example.com}
 ```
 
@@ -974,7 +974,7 @@ async def _execute(self, params, context, event_queue):
             hint="I need an operating temperature to continue.",
         )
         return {}   # suspend — do NOT return real results here
-    
+
     # On resume, resolved["temperature_c"] is populated
     ...
 ```
