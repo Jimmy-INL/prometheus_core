@@ -16,15 +16,6 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 
 WORKDIR /app
 
-# Install CA bundle
-COPY --from=certs ca-bundle.pem /usr/local/share/ca-certificates/ca-bundle.crt
-RUN update-ca-certificates
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV SSL_CERT_DIR=/etc/ssl/certs/
-
 # Tell uv (the package manager) to install into the system Python — where
 # prometheus_api already lives — rather than creating a separate virtualenv.
 ENV UV_PROJECT_ENVIRONMENT="/usr/local" \

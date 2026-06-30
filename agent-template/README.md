@@ -117,7 +117,7 @@ These live in the [`prometheus_api`](https://github.inl.gov/genesis/prometheus_a
 | [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
-| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman and corporate CA bundles |
+| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
 
 ## Support
 
