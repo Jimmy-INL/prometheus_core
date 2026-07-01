@@ -181,7 +181,9 @@ async def refresh_dynamic_components(trigger: str = "manual") -> Dict[str, Any]:
         if ENABLE_WORKFLOW_LIBRARY:
             registry = get_workflow_registry()
             capabilities = await cache.get_capabilities()
-            workflow_refresh = registry.refresh(capabilities)
+            get_agent_cards = getattr(cache, "get_agent_cards", None)
+            agent_cards = await get_agent_cards() if callable(get_agent_cards) else []
+            workflow_refresh = registry.refresh(capabilities, agent_cards=agent_cards)
         return {
             "status": "ok",
             "trigger": trigger,

@@ -8,9 +8,14 @@ from prometheus_api.agent import PrometheusAgent
 
 from artifact_handling import merge_artifacts_into_context, summarize_artifacts_for_context
 from conversation_store import get_conversation, store_conversation
+from workflow_library import find_workflow_by_command, get_workflow_registry
 
 from . import runtime
-from .debug_commands import _maybe_handle_slash_command
+from .debug_commands import (
+    SUPPORTED_SLASH_COMMANDS,
+    _maybe_handle_slash_command,
+    _parse_slash_command,
+)
 from .execution import (
     _format_plan_for_response,
     _latest_conversation_entry,
@@ -23,6 +28,26 @@ from .execution import (
 )
 from .models import AgentState, ConversationRequest, ConversationResponse
 from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
+
+
+def _workflow_slash_selection(query: Optional[str]) -> Optional[Dict[str, str]]:
+    parsed = _parse_slash_command(query)
+    if parsed is None:
+        return None
+    command, args = parsed
+    if command in SUPPORTED_SLASH_COMMANDS or not runtime.ENABLE_WORKFLOW_LIBRARY:
+        return None
+
+    workflow = find_workflow_by_command(command, get_workflow_registry().list_all())
+    if workflow is None:
+        return None
+
+    workflow_id = workflow.definition.id
+    return {
+        "workflow_id": workflow_id,
+        "workflow_version": workflow.definition.version,
+        "query": args or f"Start workflow {workflow_id}",
+    }
 
 
 def _needs_info_response(
@@ -64,8 +89,8 @@ def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationRe
 async def chat(request: ConversationRequest) -> ConversationResponse:
     """Conversational A2A orchestration endpoint.
 
-    Every frontend message arrives here. Slash commands are handled first via a
-    deterministic path that never invokes the planner LLM. Otherwise, the
+    Every frontend message arrives here. Debug slash commands are handled first via a
+    lightweight path that never invokes the planner LLM. Otherwise, the
     function dispatches to one of three high-level paths based on what the
     request carries:
 
@@ -106,16 +131,30 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
     runtime.store_status_update(conv_id, "Received request.")
     request_artifacts = summarize_artifacts_for_context(request.artifacts)
     existing_state = get_conversation(conv_id)
-    slash_response = await _maybe_handle_slash_command(
-        request,
-        conv_id,
-        existing_state if isinstance(existing_state, dict) else None,
-        request_artifacts,
-    )
-    if slash_response is not None:
-        return slash_response
+    workflow_slash = _workflow_slash_selection(request.query)
+    workflow_slash_selected = workflow_slash is not None
+    if workflow_slash is not None:
+        request = request.model_copy(
+            update={
+                "query": workflow_slash["query"],
+                "workflow_id": workflow_slash["workflow_id"],
+                "workflow_version": workflow_slash["workflow_version"],
+                "selection_source": "slash_command",
+            }
+        )
+    else:
+        slash_response = await _maybe_handle_slash_command(
+            request,
+            conv_id,
+            existing_state if isinstance(existing_state, dict) else None,
+            request_artifacts,
+        )
+        if slash_response is not None:
+            return slash_response
 
-    has_pending_followup = bool(existing_state and existing_state.get("missing_info"))
+    has_pending_followup = bool(
+        existing_state and existing_state.get("missing_info") and not workflow_slash_selected
+    )
     is_new_query_on_existing = (
         bool(existing_state)
         and bool(request.query)

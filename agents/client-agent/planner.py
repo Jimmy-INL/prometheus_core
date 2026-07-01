@@ -12,7 +12,7 @@ HOW IT WORKS
 2. The LLM is given:
    - The user query and conversation history
    - Available capabilities (skills + their input schemas)
-   - Optional workflow template candidates (pre-built execution blueprints)
+   - Optional workflow templates (pre-built execution blueprints)
 3. The LLM calls planning tools until it calls `finalize_plan` or
    `fallback_to_chat`, at which point the loop exits.
 4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
@@ -20,8 +20,9 @@ HOW IT WORKS
 PLANNING TOOLS (called by the LLM, not external code)
 ------------------------------------------------------
 - `select_capabilities`      — choose primary + supporting skills and workflow type
-- `select_workflow_template` — choose a pre-built workflow blueprint instead
-- `get_workflow_candidates`  — inspect matcher-provided workflow options
+- `workflow_*`              — choose a registered workflow blueprint directly
+- `select_workflow_template` — choose a pre-built workflow blueprint by id/version
+- `get_workflow_candidates`  — inspect registered workflow options
 - `get_requirement_status`   — check which required params are still missing
 - `set_extracted_params`     — store param values extracted from the query/context
 - `set_plan_steps`           — set human-readable steps shown in the approval UI
@@ -42,11 +43,10 @@ Dynamic selection (always available): the planner picks skills freely from the
 capability registry. Flexible but requires the agent cards to have good metadata.
 
 Workflow templates (when ENABLE_WORKFLOW_LIBRARY=true): pre-authored blueprints
-stored in `workflow_library/`. The text matcher in `agent.py` scores templates
-against the query and passes the top candidates to `compile_plan_with_tools` as
-`workflow_candidates`. The planner can then select one via
-`select_workflow_template`. Templates define fixed skill sequences, input
-bindings, and execution order — faster and more predictable than dynamic plans.
+stored in `workflow_library/`. Registered workflows are exposed to the planner
+as dedicated `workflow_*` tools. The planner can call one of those tools, or
+select one by id/version via `select_workflow_template`. Templates define fixed
+skill sequences, input bindings, and execution order.
 """
 from __future__ import annotations
 
@@ -71,6 +71,7 @@ from param_schema import (
     has_param_path,
     set_nested_value,
 )
+from workflow_library.naming import workflow_tool_name
 
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
@@ -89,9 +90,9 @@ committing to the wrong plan.
 - When intent is clear, proceed directly — do not ask unnecessary questions.
 
 PLANNING RULES
-- Select capabilities via select_capabilities or choose a workflow via \
-select_workflow_template before calling finalize_plan.
-- Prefer select_workflow_template when a workflow candidate clearly fits the request.
+- Select capabilities via select_capabilities or choose a workflow by calling its \
+workflow_* tool or select_workflow_template before calling finalize_plan.
+- Prefer a workflow_* tool when a registered workflow clearly fits the request.
 - Use get_requirement_status to check which required parameters are still missing.
 - Do not finalize a direct capability plan when required inputs are runtime-only and \
 cannot be collected from the user; choose a workflow template or different capabilities instead.
@@ -156,6 +157,11 @@ class SelectWorkflowTemplateInput(BaseModel):
     workflow_version: Optional[str] = Field(default=None, description="Specific version (optional)")
     reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class SelectRegisteredWorkflowInput(BaseModel):
+    reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
 class SetParamsInput(BaseModel):
@@ -267,6 +273,7 @@ class WorkflowPlanningCandidate:
     display_name: Optional[str] = None
     summary: Optional[str] = None
     extracted_params: Dict[str, Any] = field(default_factory=dict)
+    tool_name: Optional[str] = None
 
 
 def _set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
@@ -381,14 +388,16 @@ def _build_prompt(
         rows = []
         for candidate in workflow_candidates:
             label = candidate.display_name or candidate.workflow_id
+            tool_name = candidate.tool_name or workflow_tool_name(candidate.workflow_id)
             rows.append(
-                f"- {label} ({candidate.workflow_id}@{candidate.workflow_version}) "
-                f"score={candidate.score:.2f} "
+                f"- tool: {tool_name} "
+                f"label={label} "
+                f"workflow={candidate.workflow_id}@{candidate.workflow_version} "
                 f"mode={candidate.execution_mode} "
                 f"skills={candidate.skills} "
                 f"required={candidate.required_paths}"
             )
-        workflow_block = "Workflow template candidates:\n" + "\n".join(rows) + "\n\n"
+        workflow_block = "Registered workflow tools:\n" + "\n".join(rows) + "\n\n"
 
     return (
         f"User query:\n{query}\n\n"
@@ -517,7 +526,7 @@ def _build_planning_tools(
             {
                 "workflow_id": candidate.workflow_id,
                 "workflow_version": candidate.workflow_version,
-                "score": candidate.score,
+                "tool_name": candidate.tool_name or workflow_tool_name(candidate.workflow_id),
                 "required_paths": candidate.required_paths,
                 "skills": candidate.skills,
                 "execution_mode": candidate.execution_mode,
@@ -694,7 +703,42 @@ def _build_planning_tools(
         draft.finalized = True
         return {"ok": True, "finalized": True}
 
-    return [
+    workflow_tools: List[StructuredTool] = []
+    seen_tool_names: set[str] = set()
+    for candidate in candidate_list:
+        tool_name = candidate.tool_name or workflow_tool_name(candidate.workflow_id)
+        if tool_name in seen_tool_names:
+            continue
+        seen_tool_names.add(tool_name)
+
+        def run_registered_workflow(
+            reasoning: str = "",
+            confidence: float = 0.8,
+            *,
+            _candidate: WorkflowPlanningCandidate = candidate,
+        ) -> Dict[str, Any]:
+            return select_workflow_template(
+                workflow_id=_candidate.workflow_id,
+                workflow_version=_candidate.workflow_version,
+                reasoning=reasoning,
+                confidence=confidence,
+            )
+
+        label = candidate.display_name or candidate.workflow_id
+        summary = candidate.summary or ""
+        workflow_tools.append(
+            StructuredTool.from_function(
+                func=run_registered_workflow,
+                name=tool_name,
+                description=(
+                    f"Select workflow template '{label}' "
+                    f"({candidate.workflow_id}@{candidate.workflow_version}). {summary}"
+                ).strip(),
+                args_schema=SelectRegisteredWorkflowInput,
+            )
+        )
+
+    planning_tools = [
         StructuredTool.from_function(
             func=select_capabilities,
             name="select_capabilities",
@@ -710,7 +754,7 @@ def _build_planning_tools(
         StructuredTool.from_function(
             func=get_workflow_candidates,
             name="get_workflow_candidates",
-            description="Return workflow template candidates from deterministic matching and catalog selection context.",
+            description="Return registered workflow templates available as workflow_* tools.",
         ),
         StructuredTool.from_function(
             func=select_workflow_template,
@@ -747,6 +791,7 @@ def _build_planning_tools(
             args_schema=FallbackResponseInput,
         ),
     ]
+    return workflow_tools + planning_tools
 
 
 def _default_steps_from_selection(

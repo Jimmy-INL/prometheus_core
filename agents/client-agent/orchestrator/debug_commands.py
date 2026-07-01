@@ -40,6 +40,11 @@ def _is_slash_command_query(query: Optional[str]) -> bool:
     return _parse_slash_command(query) is not None
 
 
+def _is_supported_slash_command_query(query: Optional[str]) -> bool:
+    parsed = _parse_slash_command(query)
+    return parsed is not None and parsed[0] in SUPPORTED_SLASH_COMMANDS
+
+
 def _format_debug_skill(skill: Dict[str, Any]) -> str:
     skill_id = str(skill.get("skill_id") or skill.get("id") or "").strip()
     skill_name = str(skill.get("skill_name") or skill.get("name") or "").strip()

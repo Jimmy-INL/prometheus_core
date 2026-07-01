@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 
 from capability_cache import get_capability_cache
 from param_schema import get_nested_value, has_param_path
-from workflow_library import execute_workflow, get_workflow_registry
+from workflow_library import execute_workflow, get_workflow_registry, verify_workflow_source_health
 
 from . import runtime
 from .models import AgentState
@@ -596,6 +596,10 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
                 f"Workflow template '{workflow_id}'"
                 f"{'@' + str(workflow_version) if workflow_version else ''} is unavailable."
             )
+        health_error = await verify_workflow_source_health(compiled_workflow)
+        if health_error:
+            runtime.store_status_update(conversation_id, health_error, final=True)
+            raise RuntimeError(health_error)
         runtime.store_status_update(
             conversation_id,
             (
