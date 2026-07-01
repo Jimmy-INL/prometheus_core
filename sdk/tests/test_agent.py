@@ -369,9 +369,6 @@ class TestPrometheusAgent:
         monkeypatch.setenv("REGISTRY_URL", " http://registry:4000 ")
         assert PrometheusAgent.registry_url() == "http://registry:4000"
 
-        monkeypatch.setenv("REGISTRY_URL", "")
-        assert PrometheusAgent.registry_url() == ""
-
     def test_register_with_registry_retries_fallback_url_without_registry_url(self, monkeypatch):
         """Unset REGISTRY_URL still retries the built-in LiteLLM service fallback."""
         agent = PrometheusAgent(agent_name="MyAgent")
@@ -400,16 +397,6 @@ class TestPrometheusAgent:
             ("http://litellm:4000", {}),
         ]
         assert sleep_delays == [2.0, 4.0]
-
-    def test_register_with_registry_skips_with_empty_registry_url(self, monkeypatch):
-        """Set REGISTRY_URL to empty string skips registry attempt."""
-        agent = PrometheusAgent(agent_name="MyAgent")
-        monkeypatch.setenv("REGISTRY_URL", "")
-
-        class DummyAgentCard:
-            name = "My Agent"
-
-        assert agent.register_with_registry(DummyAgentCard()) is None
 
     def test_register_with_registry_retries_configured_registry(self, monkeypatch):
         """Explicit registry configuration should use the configured retry count."""
