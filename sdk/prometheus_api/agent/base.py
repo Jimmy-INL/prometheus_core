@@ -434,7 +434,7 @@ class PrometheusAgent:
     @staticmethod
     def registry_url() -> str:
         """Return the configured LiteLLM registry URL with the agent default applied."""
-        return os.getenv("REGISTRY_URL", "http://litellm:4000").strip()
+        return (os.getenv("REGISTRY_URL") or "http://litellm:4000").strip()
 
     def __init__(self, agent_name: str = "Agent", agent_card_path: Optional[str] = None):
         """
