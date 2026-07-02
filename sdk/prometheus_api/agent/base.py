@@ -464,6 +464,29 @@ class PrometheusAgent:
             raise RuntimeError("Agent card has not been loaded yet")
         return self.agent_card_dict
 
+    @staticmethod
+    def _agent_card_payload_with_extensions(
+        source_card: Dict[str, Any],
+        agent_card: AgentCard,
+    ) -> Dict[str, Any]:
+        """Return an A2A-valid payload while preserving Prometheus card extensions."""
+        normalized_card = agent_card.model_dump(exclude_none=True)
+        payload = {**source_card, **normalized_card}
+
+        source_skills = source_card.get("skills", [])
+        normalized_skills = normalized_card.get("skills", [])
+        if isinstance(source_skills, list) and isinstance(normalized_skills, list):
+            merged_skills: List[Dict[str, Any]] = []
+            for index, normalized_skill in enumerate(normalized_skills):
+                source_skill = source_skills[index] if index < len(source_skills) else {}
+                if isinstance(source_skill, dict) and isinstance(normalized_skill, dict):
+                    merged_skills.append({**source_skill, **normalized_skill})
+                elif isinstance(normalized_skill, dict):
+                    merged_skills.append(normalized_skill)
+            payload["skills"] = merged_skills
+
+        return payload
+
     def _resolve_agent_card_path(self) -> Path:
         """Resolve the configured agent-card path using the existing script-relative rule."""
         agent_card_path = Path(self.agent_card_path)
@@ -862,9 +885,6 @@ class PrometheusAgent:
         )
         self._insert_workflows_from_directory(agent_card_dict, agent_card_path)
 
-        # Store the raw dict for registry registration
-        self.agent_card_dict = agent_card_dict
-
         # Convert capabilities dict to AgentCapabilities object
         capabilities_dict = agent_card_dict.get("capabilities", {})
         capabilities = AgentCapabilities(
@@ -894,6 +914,11 @@ class PrometheusAgent:
             default_input_modes=agent_card_dict.get("defaultInputModes", ["text"]),
             default_output_modes=agent_card_dict.get("defaultOutputModes", ["text"]),
         )
+
+        # Store the raw card for registry registration and HTTP routes. The A2A
+        # model supplies required defaults while the source card keeps Prometheus
+        # extensions such as workflows and tool input schemas.
+        self.agent_card_dict = self._agent_card_payload_with_extensions(agent_card_dict, agent_card)
 
         logger.info(f"Loaded agent card: {agent_card.name} v{agent_card.version}")
         logger.info(f"Agent URL: {agent_card.url}")

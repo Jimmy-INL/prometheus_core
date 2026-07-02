@@ -515,6 +515,21 @@ class TestPrometheusAgent:
 
         assert agent.get_raw_agent_card()["skills"][0]["inputSchema"]["required"] == ["material_id"]
 
+    def test_load_agent_card_normalizes_raw_card_for_a2a_validation(self, tmp_path, monkeypatch):
+        """Served raw cards should remain valid for strict A2A clients."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        monkeypatch.setenv("EXTERNAL_AGENT_URL", "http://workflow-agent:8000")
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        agent.load_agent_card()
+
+        raw_card = agent.get_raw_agent_card()
+        assert raw_card["defaultInputModes"] == ["text"]
+        assert raw_card["defaultOutputModes"] == ["text"]
+        assert raw_card["skills"][0]["tags"] == []
+        AgentCard.model_validate(raw_card)
+
     def test_load_agent_card_inserts_default_workflows_directory(self, tmp_path, monkeypatch):
         """Workflow files next to agent_card.json should be inserted into the raw card."""
         card_path = tmp_path / "agent_card.json"
@@ -637,7 +652,11 @@ workflows:
 
                 assert response.status_code == 200
                 payload = response.json()
+                assert payload["defaultInputModes"] == ["text"]
+                assert payload["defaultOutputModes"] == ["text"]
+                assert payload["skills"][0]["tags"] == []
                 assert payload["workflows"][0]["id"] == "catalog.workflow"
+                AgentCard.model_validate(payload)
 
     def test_llm_client_helper_inherits_agent_name_and_context_key(self):
         agent = PrometheusAgent(agent_name="Trace Agent")
