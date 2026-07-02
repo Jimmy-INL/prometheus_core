@@ -17,6 +17,8 @@ from typing import Sequence, cast
 from datetime import datetime
 from pathlib import Path
 from starlette.responses import JSONResponse
+from starlette.routing import Route
+import yaml
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
@@ -64,6 +66,7 @@ from ..storage_client.models.item import ItemUpdate
 import uvicorn
 
 logger = logging.getLogger(__name__)
+_WORKFLOW_FILE_SUFFIXES = {".json", ".yaml", ".yml"}
 
 
 class _TrackedEventQueue:
@@ -461,6 +464,109 @@ class PrometheusAgent:
             raise RuntimeError("Agent card has not been loaded yet")
         return self.agent_card_dict
 
+    def _resolve_agent_card_path(self) -> Path:
+        """Resolve the configured agent-card path using the existing script-relative rule."""
+        agent_card_path = Path(self.agent_card_path)
+
+        if not agent_card_path.is_absolute():
+            import __main__
+
+            if hasattr(__main__, "__file__"):
+                agent_card_path = Path(__main__.__file__).parent / agent_card_path
+
+        return agent_card_path
+
+    @staticmethod
+    def _workflow_directory(agent_card_path: Path) -> Path:
+        """Return the workflow directory for an agent card.
+
+        `AGENT_WORKFLOWS` may be absolute or relative. Relative paths are resolved
+        next to the resolved agent card so packaged agents can keep
+        `agent_card.json` and `workflows/` together.
+        """
+        raw_path = (os.getenv("AGENT_WORKFLOWS") or "workflows").strip()
+        workflows_dir = Path(raw_path).expanduser()
+        if not workflows_dir.is_absolute():
+            workflows_dir = agent_card_path.parent / workflows_dir
+        return workflows_dir
+
+    @staticmethod
+    def _workflow_definitions_from_payload(payload: Any, source_path: Path) -> List[Dict[str, Any]]:
+        """Normalize one workflow file payload into workflow definition objects."""
+        if payload is None:
+            return []
+
+        if isinstance(payload, dict):
+            workflows = payload.get("workflows")
+            if isinstance(workflows, list) and "id" not in payload:
+                items = workflows
+            else:
+                items = [payload]
+        elif isinstance(payload, list):
+            items = payload
+        else:
+            raise ValueError(f"{source_path}: workflow file must contain an object or list")
+
+        definitions: List[Dict[str, Any]] = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"{source_path}: workflow entry {index} must be an object")
+            definitions.append(item)
+        return definitions
+
+    @classmethod
+    def _load_workflow_file(cls, path: Path) -> List[Dict[str, Any]]:
+        """Load workflow definitions from one JSON/YAML file."""
+        text = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".json":
+            payload = json.loads(text)
+        else:
+            payload = yaml.safe_load(text)
+        return cls._workflow_definitions_from_payload(payload, path)
+
+    @classmethod
+    def _load_workflows_from_directory(cls, workflows_dir: Path) -> List[Dict[str, Any]]:
+        """Load all workflow definitions from a directory, if it exists."""
+        if not workflows_dir.exists():
+            logger.debug("Agent workflow directory not found: %s", workflows_dir)
+            return []
+        if not workflows_dir.is_dir():
+            raise ValueError(f"AGENT_WORKFLOWS must point to a directory: {workflows_dir}")
+
+        workflows: List[Dict[str, Any]] = []
+        workflow_files = sorted(
+            path
+            for path in workflows_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in _WORKFLOW_FILE_SUFFIXES
+        )
+        for path in workflow_files:
+            workflows.extend(cls._load_workflow_file(path))
+        return workflows
+
+    def _insert_workflows_from_directory(
+        self,
+        agent_card_dict: Dict[str, Any],
+        agent_card_path: Path,
+    ) -> None:
+        """Merge workflow files into the raw agent-card payload."""
+        workflows_dir = self._workflow_directory(agent_card_path)
+        loaded_workflows = self._load_workflows_from_directory(workflows_dir)
+        if not loaded_workflows:
+            return
+
+        card_workflows = agent_card_dict.get("workflows", [])
+        if card_workflows in (None, ""):
+            card_workflows = []
+        if not isinstance(card_workflows, list):
+            raise ValueError("agent_card.json field 'workflows' must be a list")
+
+        agent_card_dict["workflows"] = [*card_workflows, *loaded_workflows]
+        logger.info(
+            "Loaded %d workflow definition(s) from %s",
+            len(loaded_workflows),
+            workflows_dir,
+        )
+
     def load_context_state(self, context_id: str) -> Dict[str, Any]:
         """Load persisted agent-local state for one A2A contextId."""
         return self.context_state_store.load(self._producer_agent_id, str(context_id or ""))
@@ -732,16 +838,7 @@ class PrometheusAgent:
             FileNotFoundError: If agent_card.json doesn't exist
             json.JSONDecodeError: If agent_card.json is invalid
         """
-        agent_card_path = Path(self.agent_card_path)
-
-        # If relative path, look in the directory of the calling script
-        if not agent_card_path.is_absolute():
-            # Get the directory of the main script
-            import __main__
-
-            if hasattr(__main__, "__file__"):
-                script_dir = Path(__main__.__file__).parent
-                agent_card_path = script_dir / agent_card_path
+        agent_card_path = self._resolve_agent_card_path()
 
         try:
             with open(agent_card_path, "r") as f:
@@ -763,6 +860,7 @@ class PrometheusAgent:
         agent_card_dict["url"] = (
             os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
         )
+        self._insert_workflows_from_directory(agent_card_dict, agent_card_path)
 
         # Store the raw dict for registry registration
         self.agent_card_dict = agent_card_dict
@@ -1445,7 +1543,12 @@ class PrometheusAgent:
             """Return the raw agent card with Prometheus-specific skill metadata."""
             return JSONResponse(self.get_raw_agent_card())
 
-        app.add_route("/api/agent-card", api_agent_card, methods=["GET"])
+        for route_path in (
+            "/api/agent-card",
+            "/.well-known/agent.json",
+            "/.well-known/agent-card.json",
+        ):
+            app.router.routes.insert(0, Route(route_path, api_agent_card, methods=["GET"]))
 
         async def api_list_artifacts(request):
             """List metadata references available to a conversation/session."""

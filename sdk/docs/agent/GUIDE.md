@@ -162,6 +162,7 @@ Unhandled exceptions from `_execute` are caught by the base class, which emits a
 ```
 
 - The `url` field is overridden at startup from `EXTERNAL_AGENT_URL` (if set) or auto-derived from the container hostname and `AGENT_PORT` — set a placeholder in the file.
+- Workflow templates in `workflows/*.yaml`, `workflows/*.yml`, or `workflows/*.json` next to `agent_card.json` are inserted into the raw card served at `/api/agent-card` and registered with LiteLLM. Set `AGENT_WORKFLOWS` to use a different directory.
 
 ### Routing multiple skills with `skill_id`
 
@@ -752,6 +753,7 @@ behavior changes, see [Prometheus Agent Migration Guide](AGENT_MIGRATIONS.md).
 |---|---|---|
 | `AGENT_PORT` | `8000` | Port uvicorn binds to (internal) |
 | `EXTERNAL_AGENT_URL` | auto | Full URL advertised to the registry. Auto-derived from the container hostname and `AGENT_PORT` when not set. Set explicitly for port-mapped or cross-host deployments (e.g. `http://my-host:9002`, where `9002` is the host-side port and `8000` is `AGENT_PORT` inside the container). |
+| `AGENT_WORKFLOWS` | `workflows` | Directory of JSON/YAML workflow templates inserted into the raw agent card. Relative paths are resolved next to `agent_card.json`. |
 | `AGENT_SECRET` | — | Bearer token for inbound authentication |
 | `AGENT_SECRET_REQUIRED` | `true` | Reject requests without a valid `Authorization: Bearer` header. If true and `AGENT_SECRET` is unset, app startup fails fast. |
 | `REGISTRY_URL` | `http://litellm:4000` | LiteLLM gateway URL for registry registration |
@@ -789,6 +791,7 @@ from starting the HTTP server.
 my-agent/
 ├── agent.py              # PrometheusAgent subclass + if __name__ == "__main__": agent.run()
 ├── agent_card.json       # Skill definitions, capabilities, tags
+├── workflows/            # Optional workflow templates inserted into /api/agent-card
 ├── Dockerfile
 ├── docker-compose.yml
 └── .env                  # AGENT_PORT, REGISTRY_URL, AGENT_SECRET, etc.
