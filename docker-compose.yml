@@ -21,7 +21,7 @@ x-common-volumes: &common-volumes
   - ./shared:/app/shared
 
 x-build-args: &prometheus-api-build-args
-  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH}
+  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
   HTTP_PROXY: ${HTTP_PROXY:-""}
   HTTPS_PROXY: ${HTTPS_PROXY:-""}
   NO_PROXY: ${NO_PROXY:-""}
@@ -31,7 +31,7 @@ networks:
     driver: bridge
 
 volumes:
-  redis-data:
+  valkey-data:
   litellm-db-data:
 
 services:
@@ -81,17 +81,18 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # Redis for shared state (conversations, status, artifacts)
+  # Valkey for Redis-compatible shared state (conversations, status, artifacts).
+  # The service name stays "redis" so existing REDIS_URL values keep working.
   redis:
-    image: redis:7-alpine
-    container_name: agent-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    image: valkey/valkey-bundle:9.1.0
+    container_name: agent-valkey
+    command: ["valkey-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
     ports:
       - "${REDIS_LOCAL_PORT:-6379}:6379"
     networks:
       - agent-network
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped

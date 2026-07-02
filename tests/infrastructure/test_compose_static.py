@@ -48,8 +48,10 @@ def test_postgres_image_version(compose_data):
     assert compose_data["services"]["litellm-db"]["image"] == "postgres:16-alpine"
 
 
-def test_redis_image_version(compose_data):
-    assert compose_data["services"]["redis"]["image"] == "redis:7-alpine"
+def test_redis_service_uses_valkey_bundle(compose_data):
+    svc = compose_data["services"]["redis"]
+    assert svc["image"] == "valkey/valkey-bundle:9.1.0"
+    assert svc["command"][:1] == ["valkey-server"]
 
 
 def test_litellm_image_pinned(compose_data):
@@ -72,5 +74,5 @@ def test_compose_has_networks_section(compose_data):
 
 def test_compose_has_volumes_section(compose_data):
     volumes = compose_data.get("volumes", {})
-    assert "redis-data" in volumes, "Missing 'redis-data' named volume"
+    assert "valkey-data" in volumes, "Missing 'valkey-data' named volume"
     assert "litellm-db-data" in volumes, "Missing 'litellm-db-data' named volume"

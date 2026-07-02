@@ -9,7 +9,7 @@ graph TD
   U[User] -->|chat / file upload| CL[Chainlit Frontend]
   CL -->|A2A JSON-RPC| CA[Client Agent]
   CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
-  CA -->|state + factoids| RED[(Redis)]
+  CA -->|state + factoids| RED[(Valkey<br/>Redis-compatible)]
   LLM -->|A2A| CORR[Corrosion Agent]
   LLM -->|A2A| RAD[Radiation Agent]
   LLM -->|A2A| THERM[Thermal Agent]
@@ -67,7 +67,7 @@ make clear-litellm-db  # stop services + remove only LiteLLM's Postgres volume
 
 `make up` runs `make generate` first, which scans `agents/*/docker-compose.yml` and writes `docker-compose.agents.yml`. **Do not hand-edit that file** — re-run `make generate` after adding or removing an agent (or use `make ng-up` to skip regeneration).
 
-Launch and restart targets clear LiteLLM's Postgres volume before starting services. This removes stale LiteLLM agent registrations while preserving Redis conversation and artifact state.
+Launch and restart targets clear LiteLLM's Postgres volume before starting services. This removes stale LiteLLM agent registrations while preserving Valkey conversation and artifact state.
 
 Services and host ports:
 
@@ -76,7 +76,7 @@ Services and host ports:
 | Chainlit UI | http://localhost:8500 | Entry point |
 | Client agent | http://localhost:8001 | Orchestrator |
 | LiteLLM gateway | http://localhost:9977 (`LITELLM_LOCAL_PORT`) | Agent registry + LLM proxy |
-| Redis | localhost:6379 | State, status, artifact metadata |
+| Valkey | localhost:6379 | Redis-compatible state, status, artifact metadata |
 | Postgres (LiteLLM) | internal only | Persistent agent registrations |
 
 ### Log in
@@ -91,7 +91,7 @@ Default credentials (defined in `frontend/config.yml`):
 The frontend supports hot reload against an already-running Compose stack:
 
 ```bash
-# 1. Start the stack via Compose (see Quickstart) — leaves agents, Redis,
+# 1. Start the stack via Compose (see Quickstart) — leaves agents, Valkey,
 #    and LiteLLM running.
 # 2. Stop just the containerized frontend so it doesn't fight for port 8500.
 docker stop chainlit-frontend
@@ -140,7 +140,7 @@ Notable environment variables (see `.env.example` for the full list):
 ```
 prometheus_platform/
   Makefile                  # Top-level orchestration (Compose, generate, tests)
-  docker-compose.yml        # Core infra: Redis, LiteLLM, Postgres, client-agent, frontend
+  docker-compose.yml        # Core infra: Valkey, LiteLLM, Postgres, client-agent, frontend
   docker-compose.agents.yml # Auto-generated from agents/*/docker-compose.yml — do not edit
   litellm_config.yaml       # LiteLLM proxy config (model_list, master key, db url)
   scripts/
