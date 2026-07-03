@@ -2,6 +2,7 @@
 
 from .middleware import BearerTokenMiddleware
 from .base import (
+    AgentEndpoint,
     DelegatingPrometheusAgentExecutor,
     MissingInput,
     PrometheusAgent,
@@ -29,6 +30,7 @@ from a2a.types import (
 
 __all__ = [
     "BearerTokenMiddleware",
+    "AgentEndpoint",
     "DelegatingPrometheusAgentExecutor",
     "MissingInput",
     "PrometheusAgent",
