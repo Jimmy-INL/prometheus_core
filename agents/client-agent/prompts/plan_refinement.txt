@@ -1,0 +1,24 @@
+Extract parameter updates from this plan-refinement instruction.
+
+REFINEMENT INSTRUCTION:
+{text}
+
+RECENT CONVERSATION:
+{history_block}
+
+CURRENT PARAMS:
+{current_params_json}
+
+ALLOWED PARAM KEYS (use these exact dotted keys):
+{normalized_paths_json}
+
+PARAM SCHEMA BY KEY:
+{param_schema_json}
+
+Rules:
+- Return ONLY a JSON object.
+- Include ONLY keys that should be updated by this refinement.
+- Do NOT repeat unchanged values.
+- If no updates are implied, return {{}}.
+- Preserve schema data types when possible.
+- If a duration field is in hours and user gives years/months/days, convert to hours.

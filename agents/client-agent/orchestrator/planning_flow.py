@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
@@ -27,6 +28,15 @@ from .parameters import (
     resolve_params_via_capability_metadata,
 )
 from .utils import enrich_material_params, extract_json_from_text, extract_material_ids_from_text
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+PLAN_REFINEMENT_PROMPT_TEMPLATE = _load_prompt("plan_refinement.txt")
 
 
 def _unique_workflow_skills(workflow) -> List[str]:
@@ -503,31 +513,13 @@ async def extract_refinement_param_updates(
     history_block = "\n".join(history_lines) if history_lines else "(none)"
 
     current_params = routing_decision.get("extracted_params", {}) or {}
-    prompt = f"""Extract parameter updates from this plan-refinement instruction.
-
-REFINEMENT INSTRUCTION:
-{text}
-
-RECENT CONVERSATION:
-{history_block}
-
-CURRENT PARAMS:
-{json.dumps(current_params, indent=2, default=str)}
-
-ALLOWED PARAM KEYS (use these exact dotted keys):
-{json.dumps(normalized_paths, indent=2)}
-
-PARAM SCHEMA BY KEY:
-{json.dumps(param_schema, indent=2, default=str)}
-
-Rules:
-- Return ONLY a JSON object.
-- Include ONLY keys that should be updated by this refinement.
-- Do NOT repeat unchanged values.
-- If no updates are implied, return {{}}.
-- Preserve schema data types when possible.
-- If a duration field is in hours and user gives years/months/days, convert to hours.
-"""
+    prompt = PLAN_REFINEMENT_PROMPT_TEMPLATE.format(
+        text=text,
+        history_block=history_block,
+        current_params_json=json.dumps(current_params, indent=2, default=str),
+        normalized_paths_json=json.dumps(normalized_paths, indent=2),
+        param_schema_json=json.dumps(param_schema, indent=2, default=str),
+    )
 
     llm = runtime.create_llm()
     response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])

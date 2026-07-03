@@ -4,6 +4,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage
@@ -34,6 +35,15 @@ from .utils import (
     extract_material_ids_from_text,
     extract_result_text,
 )
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = _load_prompt("followup_extraction.txt")
 
 
 async def invoke_agent_generic(state: AgentState) -> Dict:
@@ -474,25 +484,11 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
 
     param_schema = {param: properties.get(param, {"type": "string"}) for param in missing_params}
 
-    prompt = f"""Extract parameter values from the user's followup response.
-
-USER FOLLOWUP RESPONSE:
-{query}
-
-PARAMETERS TO EXTRACT (JSON schema by field):
-{json.dumps(param_schema, indent=2)}
-
-REQUIRED OUTPUT KEYS:
-{json.dumps(missing_params)}
-
-Rules:
-- Return ONLY a JSON object.
-- Include only keys from REQUIRED OUTPUT KEYS.
-- Only extract values that are explicitly stated in the user's text.
-- Never infer defaults, typical operating conditions, or domain assumptions.
-- If a value is not present or is uncertain, set it to null.
-- Preserve data types (number/integer/boolean/array/object/string) per schema when possible.
-"""
+    prompt = FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE.format(
+        query=query,
+        param_schema_json=json.dumps(param_schema, indent=2),
+        missing_params_json=json.dumps(missing_params),
+    )
 
     llm = runtime.create_llm()
     runtime.store_status_update(state.get("conversation_id"), "Calling planner LLM to extract follow-up answers.")

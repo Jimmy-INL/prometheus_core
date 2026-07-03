@@ -14,6 +14,7 @@ RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=loc
 
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json
+COPY prompts /app/prompts
 
 EXPOSE 8000
 
