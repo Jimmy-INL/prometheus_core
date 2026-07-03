@@ -42,7 +42,12 @@ from param_schema import (
 )
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
 from tool_discovery import discover_agents, get_all_tools_dynamic
-from workflow_library import execute_workflow, get_workflow_registry, match_workflows
+from workflow_library import (
+    execute_workflow,
+    get_workflow_registry,
+    match_workflows,
+    verify_workflow_source_health,
+)
 
 AGENT_PORT = _runtime.AGENT_PORT
 MODEL_NAME = _runtime.MODEL_NAME
@@ -91,6 +96,7 @@ _unique_workflow_skills = _planning_flow._unique_workflow_skills
 
 _parse_slash_command = _debug_commands._parse_slash_command
 _is_slash_command_query = _debug_commands._is_slash_command_query
+_is_supported_slash_command_query = _debug_commands._is_supported_slash_command_query
 _format_debug_skill = _debug_commands._format_debug_skill
 _collect_registered_agent_debug_entries = _debug_commands._collect_registered_agent_debug_entries
 _format_agents_debug_response = _debug_commands._format_agents_debug_response
@@ -188,6 +194,11 @@ def _sync_compat() -> None:
             )
         if hasattr(module, "match_workflows"):
             module.match_workflows = globals().get("match_workflows", module.match_workflows)
+        if hasattr(module, "verify_workflow_source_health"):
+            module.verify_workflow_source_health = globals().get(
+                "verify_workflow_source_health",
+                module.verify_workflow_source_health,
+            )
 
     _skills.find_tool_for_skill = _exported("find_tool_for_skill")
     _skills.invoke_skill = _exported("invoke_skill")

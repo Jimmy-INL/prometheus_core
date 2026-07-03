@@ -7,6 +7,7 @@ a consolidated engineering summary for workflow final output.
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict
 
 from anthropic import Anthropic
@@ -17,42 +18,14 @@ from prometheus_api.agent import PrometheusAgent
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
-ANALYSIS_PROMPT_TEMPLATE = """\
-You are a nuclear materials senior reviewer.
-Synthesize the specialist analyses into one coherent engineering assessment.
+PROMPTS_DIR = Path(__file__).with_name("prompts")
 
-MATERIAL:
-{material_id}
 
-USER QUERY:
-{user_query}
+def _load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
 
-OPERATING CONTEXT:
-{operating_context_json}
 
-SPECIALIST RESULTS:
-{tool_results_json}
-
-Return ONLY valid JSON with this structure:
-{{
-  "executive_summary": "<2-4 sentence synthesis>",
-  "key_findings": [
-    "<finding 1>",
-    "<finding 2>"
-  ],
-  "risk_assessment": {{
-    "overall_risk": "<low|medium|high|critical>",
-    "primary_risk_drivers": ["<driver 1>", "<driver 2>"],
-    "uncertainties": ["<uncertainty 1>", "<uncertainty 2>"]
-  }},
-  "recommended_actions": [
-    "<action 1>",
-    "<action 2>"
-  ],
-  "go_no_go": "<go|go_with_conditions|no_go>",
-  "confidence": <0.0-1.0>
-}}
-"""
+ANALYSIS_PROMPT_TEMPLATE = _load_prompt("analysis.txt")
 
 
 class SynthesisAgent(PrometheusAgent):

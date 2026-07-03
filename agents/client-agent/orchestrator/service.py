@@ -14,11 +14,11 @@ from starlette.responses import JSONResponse
 from artifact_handling import merge_artifact_catalogs
 from capability_cache import get_capability_cache
 from conversation_store import get_conversation
-from workflow_library import get_workflow_registry
+from workflow_library import get_workflow_registry, verify_workflow_source_health
 
 from . import runtime, task_tracking
 from .chat_flow import chat
-from .debug_commands import _is_slash_command_query
+from .debug_commands import _is_supported_slash_command_query
 from .models import ConversationRequest, ConversationResponse
 
 # Strong references to detached background orchestration tasks, so the event
@@ -209,11 +209,15 @@ class OrchestratorAgent(PrometheusAgent):
         form_values = body.get("inputs") if isinstance(body.get("inputs"), dict) else None
         artifacts = body.get("artifacts") if isinstance(body.get("artifacts"), list) else None
         registry = get_workflow_registry()
-        if not registry.get(workflow_id, version=workflow_version):
+        workflow = registry.get(workflow_id, version=workflow_version)
+        if not workflow:
             return JSONResponse(
                 {"error": f"Workflow '{workflow_id}' not found"},
                 status_code=404,
             )
+        health_error = await verify_workflow_source_health(workflow)
+        if health_error:
+            return JSONResponse({"error": health_error}, status_code=409)
 
         chat_request = ConversationRequest(
             query=query,
@@ -482,7 +486,7 @@ class OrchestratorAgent(PrometheusAgent):
                 request_payload.get("artifacts") if isinstance(request_payload.get("artifacts"), list) else None,
             )
 
-        if _is_slash_command_query(request_payload.get("query")):
+        if _is_supported_slash_command_query(request_payload.get("query")):
             chat_request = ConversationRequest.model_validate(request_payload)
             response = await chat(chat_request)
             return self._response_payload_with_artifacts(

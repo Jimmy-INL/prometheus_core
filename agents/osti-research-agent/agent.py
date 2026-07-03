@@ -21,6 +21,7 @@ import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import redis
@@ -43,9 +44,24 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 REDIS_URL = os.getenv("REDIS_URL")
 TIMEOUT_SECONDS = 900  # 15 minutes maximum
+PROMPTS_DIR = Path(__file__).with_name("prompts")
 
 # Disable SSL warnings for OSTI (uses self-signed certs sometimes)
 requests.packages.urllib3.disable_warnings()
+
+
+def _load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+SEARCH_QUERY_PROMPT_TEMPLATE = _load_prompt("search_query.txt")
+ASSESS_ABSTRACT_PROMPT_TEMPLATE = _load_prompt("assess_abstract.txt")
+EXTRACT_ANSWER_PROMPT_TEMPLATE = _load_prompt("extract_answer.txt")
+SYNTHESIZE_ANSWER_PROMPT_TEMPLATE = _load_prompt("synthesize_answer.txt")
+FOLLOWUP_QUERIES_PROMPT_TEMPLATE = _load_prompt("followup_queries.txt")
+SELECT_FACTOIDS_PROMPT_TEMPLATE = _load_prompt("select_factoids.txt")
+SYNTHESIZE_MEMORY_PROMPT_TEMPLATE = _load_prompt("synthesize_memory.txt")
+EXTRACT_FACTS_PROMPT_TEMPLATE = _load_prompt("extract_facts.txt")
 
 
 def is_memory_answer_sufficient(answer_text: str) -> bool:
@@ -307,17 +323,13 @@ class OSTIResearchAgent(PrometheusAgent):
             return []
 
         # Use Claude to select relevant ones
-        selection_prompt = f"""Given this research question and these stored factoids from literature,
-select the most relevant factoids that could help answer the question.
-
-QUESTION: {question}
-
-AVAILABLE FACTOIDS:
-{json.dumps([{"id": f["factoid_id"], "content": f["content"]} for f in factoids], indent=2)}
-
-Return JSON array of relevant factoid IDs: ["id1", "id2", ...]
-If none are relevant, return [].
-"""
+        selection_prompt = SELECT_FACTOIDS_PROMPT_TEMPLATE.format(
+            question=question,
+            factoids_json=json.dumps(
+                [{"id": f["factoid_id"], "content": f["content"]} for f in factoids],
+                indent=2,
+            ),
+        )
 
         try:
             response = self.anthropic_client.messages.create(
@@ -342,24 +354,10 @@ If none are relevant, return [].
             for i, f in enumerate(factoids, 1)
         ])
 
-        prompt = f"""Based on these facts from our knowledge base, answer the research question.
-
-QUESTION: {question}
-
-KNOWN FACTS:
-{factoids_text}
-
-Decide whether the known facts are sufficient to answer the question well.
-If they are not sufficient, clearly say so and state what is missing.
-When writing the answer, cite facts by number (Fact 1, Fact 2, etc.) and note conflicts.
-
-Return STRICT JSON with this schema:
-{{
-  "sufficient_for_answer": true or false,
-  "confidence": 0.0 to 1.0,
-  "answer": "text answer for the user",
-  "missing_information": "what is still missing (empty string if sufficient)"
-}}"""
+        prompt = SYNTHESIZE_MEMORY_PROMPT_TEMPLATE.format(
+            question=question,
+            factoids_text=factoids_text,
+        )
 
         try:
             response = self.anthropic_client.messages.create(
@@ -467,17 +465,7 @@ Return STRICT JSON with this schema:
 
     def formulate_search_queries(self, question: str) -> str:
         """Use Claude to generate OSTI search query from research question."""
-        prompt = f"""You are a scientific literature search expert. Generate a search query for OSTI.gov.
-
-RESEARCH QUESTION: {question}
-
-Generate a search query string for OSTI database:
-- Use only the most specific technical keywords
-- No boolean operators or parentheses
-- Focus on materials, processes, phenomena, measurements
-- Keep it concise (3-7 words)
-
-Return ONLY the search query string, no explanation."""
+        prompt = SEARCH_QUERY_PROMPT_TEMPLATE.format(question=question)
 
         try:
             response = self.anthropic_client.messages.create(
@@ -561,22 +549,11 @@ Return ONLY the search query string, no explanation."""
 
     def assess_abstract(self, question: str, title: str, abstract: str) -> Dict[str, Any]:
         """Use Claude to assess if paper is relevant to question."""
-        prompt = f"""You are a scientist assessing paper relevance.
-
-RESEARCH QUESTION: {question}
-
-PAPER: {title}
-ABSTRACT: {abstract}
-
-Could this paper expand knowledge on the research question?
-Consider: methods, data, findings, applications.
-
-Return JSON:
-{{
-    "relevant": true/false,
-    "confidence": <0.0-1.0>,
-    "reason": "<brief explanation>"
-}}"""
+        prompt = ASSESS_ABSTRACT_PROMPT_TEMPLATE.format(
+            question=question,
+            title=title,
+            abstract=abstract,
+        )
 
         try:
             response = self.anthropic_client.messages.create(
@@ -861,31 +838,11 @@ except Exception as e:
         # Limit paper text to avoid token limits
         paper_text = paper_text[:50000]
 
-        prompt = f"""You are a scientist extracting answers from research papers.
-
-RESEARCH QUESTION: {question}
-
-PAPER TITLE: {title}
-
-PAPER TEXT:
-{paper_text}
-
-Extract the answer to the research question from this paper. Include:
-1. Direct answer to the question
-2. Supporting evidence (data, measurements, findings)
-3. Relevant excerpt from the paper (exact quote if possible)
-4. Confidence in the answer (0.0-1.0)
-
-Return JSON:
-{{
-    "answer": "<answer to the question>",
-    "evidence": "<supporting data/measurements>",
-    "excerpt": "<relevant text excerpt from paper>",
-    "confidence": <0.0-1.0>,
-    "answered": true/false
-}}
-
-If the paper doesn't contain enough information, set answered=false."""
+        prompt = EXTRACT_ANSWER_PROMPT_TEMPLATE.format(
+            question=question,
+            title=title,
+            paper_text=paper_text,
+        )
 
         try:
             response = self.anthropic_client.messages.create(
@@ -911,26 +868,11 @@ If the paper doesn't contain enough information, set answered=false."""
             for i, ans in enumerate(answers, 1)
         ])
 
-        prompt = f"""You are a research synthesis expert. Synthesize a comprehensive answer.
-
-RESEARCH QUESTION: {question}
-
-FINDINGS FROM {len(answers)} PAPERS:
-{answers_text}
-
-Provide a comprehensive, well-sourced answer that:
-1. Directly answers the research question
-2. Synthesizes findings from all papers
-3. **CRITICAL:** If papers disagree or provide conflicting data, explicitly note the conflict and explain possible reasons (different test conditions, methods, temperatures, etc.)
-4. Includes specific data, measurements, or values with source citations
-5. Notes overall confidence level and any limitations
-
-Write naturally and cite sources by number (Paper 1, Paper 2, etc.).
-
-Example conflict handling:
-"The creep rate varies between studies. Paper 1 reports 1.2e-8 /hr at 400°C and 15 MPa, while Paper 2 found 4.5e-8 /hr at 400°C and 20 MPa. This difference is likely due to the higher pressure in Paper 2's experiments, as creep rate increases with stress."
-
-Return the synthesized answer."""
+        prompt = SYNTHESIZE_ANSWER_PROMPT_TEMPLATE.format(
+            question=question,
+            answers_count=len(answers),
+            answers_text=answers_text,
+        )
 
         try:
             response = self.anthropic_client.messages.create(
@@ -954,25 +896,15 @@ Return the synthesized answer."""
         limit: int = 3,
     ) -> List[Dict[str, str]]:
         """Generate 1-3 actionable follow-up literature queries for the UI."""
-        prompt = f"""You are helping suggest follow-up literature searches.
-
-ORIGINAL QUESTION:
-{question}
-
-CURRENT ANSWER SUMMARY:
-{answer[:2000]}
-
-SOURCES (titles only):
-{json.dumps([p.get("title", "") for p in (provenance or [])][:10], indent=2)}
-
-Return STRICT JSON array (1 to {limit} items), each item as:
-{{"suggested_query": "<standalone follow-up query a user can click>"}}
-
-Rules:
-- Keep each suggestion specific and research-oriented.
-- Do not repeat the original question verbatim.
-- Make each suggestion independently useful.
-"""
+        prompt = FOLLOWUP_QUERIES_PROMPT_TEMPLATE.format(
+            question=question,
+            answer_summary=answer[:2000],
+            source_titles_json=json.dumps(
+                [p.get("title", "") for p in (provenance or [])][:10],
+                indent=2,
+            ),
+            limit=limit,
+        )
 
         suggestions: List[Dict[str, str]] = []
         seen = set()
@@ -1064,33 +996,10 @@ Rules:
             for ans in answers
         ])
 
-        prompt = f"""Extract discrete, reusable facts from these research findings.
-
-RESEARCH QUESTION: {question}
-
-FINDINGS:
-{answers_text}
-
-Extract 3-10 specific facts that could be useful for answering future questions.
-Focus on:
-- Material properties (creep rates, corrosion rates, temperatures)
-- Experimental data and measurements
-- Recommendations and best practices
-- Degradation mechanisms and phenomena
-
-Return JSON array:
-[
-  {{
-    "content": "<fact statement>",
-    "topics": ["<keyword1>", "<keyword2>"],
-    "source_osti_id": "<osti_id>"
-  }},
-  ...
-]
-
-Example: {{"content": "SS316 exhibits creep rate of 1e-8 /hr at 400°C and 15 MPa", "topics": ["SS316", "creep", "high-temperature"], "source_osti_id": "1234567"}}
-
-Return ONLY the JSON array."""
+        prompt = EXTRACT_FACTS_PROMPT_TEMPLATE.format(
+            question=question,
+            answers_text=answers_text,
+        )
 
         try:
             response = self.anthropic_client.messages.create(

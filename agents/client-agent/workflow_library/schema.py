@@ -49,6 +49,8 @@ class WorkflowMetadata(BaseModel):
     requires_approval: bool = False
     estimated_duration_seconds: Optional[int] = None
     owner: Optional[str] = None
+    source_agent_id: Optional[str] = None
+    source_agent_url: Optional[str] = None
 
 
 class WorkflowUiInputOverride(BaseModel):
