@@ -346,6 +346,25 @@ class TestPrometheusAgentExecutor:
 class TestPrometheusAgent:
     """Tests for PrometheusAgent."""
 
+    @staticmethod
+    def _write_agent_card(path, *, workflows=None):
+        payload = {
+            "name": "Workflow Agent",
+            "description": "Agent with workflow metadata",
+            "version": "1.0.0",
+            "capabilities": {"streaming": False},
+            "skills": [
+                {
+                    "id": "analyze_thermal",
+                    "name": "Analyze Thermal",
+                    "description": "Run thermal analysis.",
+                }
+            ],
+        }
+        if workflows is not None:
+            payload["workflows"] = workflows
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
     def test_agent_initialization(self):
         """Test agent initializes with default values."""
         agent = PrometheusAgent(agent_name="MyAgent")
@@ -495,6 +514,149 @@ class TestPrometheusAgent:
         }
 
         assert agent.get_raw_agent_card()["skills"][0]["inputSchema"]["required"] == ["material_id"]
+
+    def test_load_agent_card_normalizes_raw_card_for_a2a_validation(self, tmp_path, monkeypatch):
+        """Served raw cards should remain valid for strict A2A clients."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        monkeypatch.setenv("EXTERNAL_AGENT_URL", "http://workflow-agent:8000")
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        agent.load_agent_card()
+
+        raw_card = agent.get_raw_agent_card()
+        assert raw_card["defaultInputModes"] == ["text"]
+        assert raw_card["defaultOutputModes"] == ["text"]
+        assert raw_card["skills"][0]["tags"] == []
+        AgentCard.model_validate(raw_card)
+
+    def test_load_agent_card_inserts_default_workflows_directory(self, tmp_path, monkeypatch):
+        """Workflow files next to agent_card.json should be inserted into the raw card."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        (workflows_dir / "quick_check.yaml").write_text(
+            """
+id: thermal_agent.quick_check
+name: Quick Thermal Check
+version: "1.0.0"
+description: Run a quick thermal analysis.
+steps:
+  - id: analyze
+    skill_id: analyze_thermal
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("AGENT_WORKFLOWS", raising=False)
+        monkeypatch.setenv("EXTERNAL_AGENT_URL", "http://workflow-agent:8000")
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        agent_card = agent.load_agent_card()
+
+        assert agent_card.name == "Workflow Agent"
+        assert agent.get_raw_agent_card()["url"] == "http://workflow-agent:8000"
+        assert agent.get_raw_agent_card()["workflows"] == [
+            {
+                "id": "thermal_agent.quick_check",
+                "name": "Quick Thermal Check",
+                "version": "1.0.0",
+                "description": "Run a quick thermal analysis.",
+                "steps": [{"id": "analyze", "skill_id": "analyze_thermal"}],
+            }
+        ]
+
+    def test_load_agent_card_uses_agent_workflows_env_relative_to_card(self, tmp_path, monkeypatch):
+        """AGENT_WORKFLOWS should customize the directory and preserve explicit card workflows."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(
+            card_path,
+            workflows=[
+                {
+                    "id": "card.workflow",
+                    "name": "Card Workflow",
+                    "version": "1.0.0",
+                    "description": "Declared directly in the card.",
+                    "steps": [{"id": "card_step", "skill_id": "analyze_thermal"}],
+                }
+            ],
+        )
+        custom_dir = tmp_path / "custom-workflows"
+        custom_dir.mkdir()
+        (custom_dir / "from_file.json").write_text(
+            json.dumps(
+                {
+                    "id": "file.workflow",
+                    "name": "File Workflow",
+                    "version": "1.0.0",
+                    "description": "Loaded from a workflow file.",
+                    "steps": [{"id": "file_step", "skill_id": "analyze_thermal"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("AGENT_WORKFLOWS", "custom-workflows")
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        agent.load_agent_card()
+
+        assert [workflow["id"] for workflow in agent.get_raw_agent_card()["workflows"]] == [
+            "card.workflow",
+            "file.workflow",
+        ]
+
+    def test_load_agent_card_ignores_missing_workflows_directory(self, tmp_path, monkeypatch):
+        """Agents without workflow files should keep the existing card payload."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        monkeypatch.delenv("AGENT_WORKFLOWS", raising=False)
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        agent.load_agent_card()
+
+        assert "workflows" not in agent.get_raw_agent_card()
+
+    async def test_agent_card_routes_serve_inserted_workflows(self, tmp_path, monkeypatch):
+        """Agent-card endpoints should include workflows loaded from files."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        (workflows_dir / "catalog.yaml").write_text(
+            """
+workflows:
+  - id: catalog.workflow
+    name: Catalog Workflow
+    version: "1.0.0"
+    description: Loaded from a workflows wrapper.
+    steps:
+      - id: analyze
+        skill_id: analyze_thermal
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+        monkeypatch.delenv("AGENT_WORKFLOWS", raising=False)
+
+        agent = PrometheusAgent(agent_name="Workflow Agent", agent_card_path=str(card_path))
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            for path in (
+                "/api/agent-card",
+                "/.well-known/agent.json",
+                "/.well-known/agent-card.json",
+            ):
+                response = await client.get(path)
+
+                assert response.status_code == 200
+                payload = response.json()
+                assert payload["defaultInputModes"] == ["text"]
+                assert payload["defaultOutputModes"] == ["text"]
+                assert payload["skills"][0]["tags"] == []
+                assert payload["workflows"][0]["id"] == "catalog.workflow"
+                AgentCard.model_validate(payload)
 
     def test_llm_client_helper_inherits_agent_name_and_context_key(self):
         agent = PrometheusAgent(agent_name="Trace Agent")

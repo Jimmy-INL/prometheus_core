@@ -29,6 +29,8 @@ This project targets Python 3.12+. Ruff uses a 100-character line length and exc
 
 Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized. Registry HTTP/retry behavior belongs in `agent/registry.py`; registration starts from the app lifespan as a background async task. Keep `REGISTRY_MAX_RETRIES` docs and tests aligned with that startup behavior, including retries against the built-in fallback URL. Invalid retry configuration should not prevent an agent from starting.
 
+Environment variables passed through Docker Compose may be present with an empty value. For agent defaults, prefer the existing pattern `(os.getenv("NAME") or "default").strip()` so unset and empty values both fall back consistently. `AGENT_WORKFLOWS` follows this convention when selecting the workflow-template directory.
+
 Keep debug/compatibility HTTP route logic (including `/api/chat`) in `agent/debug_routes.py` rather than growing `agent/base.py`.
 
 Keep task status event construction in `agent/events.py` and route public helper methods through those helpers instead of duplicating `TaskStatusUpdateEvent` boilerplate.
