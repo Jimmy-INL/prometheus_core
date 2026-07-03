@@ -9,7 +9,8 @@ This repository gives you two things:
 
 - **`agent_template/`** — the canonical set of files for one agent
   (`agent.py`, `agent_card.json`, `pyproject.toml`, `Dockerfile`,
-  `docker-compose.yml`, network compose includes, `Makefile`, `.env.example`).
+  `docker-compose.yml`, network compose includes, `Makefile`, `.env.example`,
+  `prompts/`, and `workflows/`).
 - **`setup_agent.py`** — an interactive scaffolder that copies the template into
   a new directory with your agent's name, slug, class, and skill filled in.
 - **[`TUTORIAL.md`](TUTORIAL.md)** — a step-by-step guide that explains every file
@@ -45,6 +46,8 @@ skill, then writes a ready-to-edit project to the output directory you choose:
 my-agent/
 ├── agent.py
 ├── agent_card.json
+├── prompts/
+├── workflows/
 ├── pyproject.toml
 ├── Dockerfile
 ├── docker-compose.yml
@@ -113,7 +116,8 @@ Linux the template includes a small Compose override for the same mapping.
 See the generated `README.md` in your agent directory, and
 [`TUTORIAL.md`](TUTORIAL.md) for the full walkthrough — agent card design,
 emitting artifacts, multi-turn input (`INPUT_REQUIRED`), multiple skills,
-DeepLynx storage, and both deployment paths (external repo vs. in-tree).
+agent-owned workflows, prompt templates, custom HTTP endpoints, DeepLynx
+storage, and both deployment paths (external repo vs. in-tree).
 
 ## Repository development
 

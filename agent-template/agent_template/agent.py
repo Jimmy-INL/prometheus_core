@@ -9,6 +9,7 @@ serving, and registry registration for you.
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
@@ -24,9 +25,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+PROMPTS_DIR = Path(__file__).with_name("prompts")
+
+
+def load_prompt(name: str) -> str:
+    """Load a prompt template from the local prompts/ directory."""
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
 
 class TEMPLATE_CLASSAgent(PrometheusAgent):
     """TEMPLATE_NAME Agent."""
+
+    # Optional: register agent-owned HTTP endpoints in __init__.
+    #
+    # def __init__(self, *args: Any, **kwargs: Any) -> None:
+    #     super().__init__(*args, **kwargs)
+    #     self.add_http_endpoint(
+    #         "/api/preview/{artifact_id}",
+    #         self.preview_artifact,
+    #         methods=["GET"],
+    #         endpoint_id="artifact_preview",
+    #         purpose="artifact",
+    #         description="Return preview metadata for one artifact.",
+    #         content_types=["application/json"],
+    #     )
+    #     self.add_static_endpoint(
+    #         "/viewer",
+    #         "viewer-assets",
+    #         endpoint_id="viewer_assets",
+    #         purpose="viewer_plugin",
+    #         description="Serve viewer plugin JavaScript and CSS.",
+    #         content_types=["text/javascript", "text/css"],
+    #     )
+    #
+    # async def preview_artifact(self, request):
+    #     from starlette.responses import JSONResponse
+    #
+    #     return JSONResponse({"artifact_id": request.path_params["artifact_id"]})
 
     async def _execute(
         self,
@@ -88,8 +123,9 @@ class TEMPLATE_CLASSAgent(PrometheusAgent):
     #
     # Calling an LLM through the platform's LiteLLM gateway:
     #
+    #     system_prompt = load_prompt("system_prompt.txt").format(input_data=input_data)
     #     async with self.llm_client(context) as llm:
-    #         response = await llm.medium(f"Summarize this:\n\n{input_data}")
+    #         response = await llm.medium(system_prompt)
     #     return {"status": "success", "summary": response.text}
     #
     # Dispatching when agent_card.json declares more than one skill:
