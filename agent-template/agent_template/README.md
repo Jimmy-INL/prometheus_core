@@ -123,7 +123,7 @@ platform checkout.
 2. **`agent.py`** — read your inputs from `params`, do the work, return a plain
    `dict`. Use `self.send_status_update(...)` for progress messages.
 3. **`prompts/`** — move large static LLM prompts into text files and load them
-   with `load_prompt(...)` from `agent.py`.
+   with `load_prompt(...)` from `prometheus_api`.
 4. **`workflows/`** — add workflow YAML/JSON files when this agent should publish
    workflow templates to the platform. Rename `example_workflow.yaml.example` to
    `.yaml` only after reviewing it; `.yaml` files are auto-published.

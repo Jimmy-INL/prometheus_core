@@ -9,9 +9,9 @@ serving, and registry registration for you.
 """
 
 import logging
-from pathlib import Path
 from typing import Any
 
+from prometheus_api import load_prompt  # noqa: F401 - used by the LLM pattern below
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 
 # Read secrets and configuration from environment variables.
@@ -24,13 +24,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-PROMPTS_DIR = Path(__file__).with_name("prompts")
-
-
-def load_prompt(name: str) -> str:
-    """Load a prompt template from the local prompts/ directory."""
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
 
 
 class TEMPLATE_CLASSAgent(PrometheusAgent):

@@ -914,10 +914,12 @@ The following capabilities are documented in detail in the linked references. Th
 ### Prompt template files
 
 Put large static LLM prompts in `prompts/` rather than embedding long strings in
-`agent.py`. The template includes `prompts/system_prompt.txt` and a small
-`load_prompt(...)` helper in `agent.py`.
+`agent.py`. The template includes `prompts/system_prompt.txt` and uses the
+shared `load_prompt(...)` helper from `prometheus_api`.
 
 ```python
+from prometheus_api import load_prompt
+
 system_prompt = load_prompt("system_prompt.txt").format(input_data=input_data)
 
 async with self.llm_client(context) as llm:

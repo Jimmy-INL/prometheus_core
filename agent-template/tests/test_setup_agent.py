@@ -39,6 +39,8 @@ def test_create_agent_copies_prompt_and_workflow_template_dirs(tmp_path, monkeyp
     assert "COPY workflows /app/workflows" in dockerfile
 
     agent_py = (output_dir / "agent.py").read_text(encoding="utf-8")
-    assert "PROMPTS_DIR" in agent_py
+    assert "from prometheus_api import load_prompt" in agent_py
+    assert "PROMPTS_DIR" not in agent_py
+    assert "def load_prompt(" not in agent_py
     assert "add_http_endpoint" in agent_py
     assert "add_static_endpoint" in agent_py
