@@ -3,7 +3,8 @@ services:
     build:
       context: .
       args:
-        # Passed in from the platform's Makefile (or your own .env).
+        # Default to using the latest prometheus_api base image. Override using an env var
+        # only for resolving transient incompatibilities.
         PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}
         # Corporate proxy settings (optional — leave empty if not behind a proxy).
         HTTP_PROXY: ${HTTP_PROXY:-}
@@ -13,41 +14,28 @@ services:
     networks:
       - agent-network
     environment:
-      AGENT_PORT: 8000
+      AGENT_PORT: ${AGENT_PORT:-8000}
       # The agent registers http://{container hostname}:{AGENT_PORT}; Docker
       # Compose sets the hostname to the service name, which resolves on
-      # agent-network. Set EXTERNAL_AGENT_URL only if the agent is port-mapped
-      # or reachable at a different address than its container hostname.
-      # EXTERNAL_AGENT_URL: http://my-host.example.gov:8042
+      # agent-network. docker-compose.net_external.yml sets EXTERNAL_AGENT_URL
+      # when EXTERNAL_AGENT_HOST and EXTERNAL_AGENT_PORT are set.
+
       AGENT_SECRET: ${AGENT_SECRET}
       AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
       REGISTRY_URL: ${REGISTRY_URL:-http://litellm-proxy:4000}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # deeplynx environment
+      DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-}
+      DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
+      DEEPLYNX_SECRET: ${DEEPLYNX_SECRET:-}
+      DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
+      DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
+
       # Add your own agent-specific variables here (and in .env):
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-""}
-      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-5}
       PYTHONDONTWRITEBYTECODE: 1
     restart: unless-stopped
-
-# -----------------------------------------------------------------------------
-# Network configuration — choose ONE of the two blocks below based on how you
-# are deploying this agent.  Delete the one you are not using.
-# -----------------------------------------------------------------------------
-
-# OPTION A — Same host (this agent runs alongside the platform in its own
-# docker-compose project on the same host).  The platform creates the network; this agent
-# joins it.
-networks:
-  agent-network:
-    external: true
-    name: prometheus_platform_agent-network # this must be the network name the platform uses
-
-# OPTION B — Host independent (this enables the agent to run either on the same
-# host or any other network reachable host). To use this, delete the OPTION A block,
-# uncomment the lines below, and make sure you use host.docker.internal or remote
-# hostnames to point to platform services such as REGISTRY_URL and REDIS_URL.
-#
-# networks:
-#   agent-network:

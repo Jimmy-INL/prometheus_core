@@ -9,7 +9,7 @@ This repository gives you two things:
 
 - **`agent_template/`** — the canonical set of files for one agent
   (`agent.py`, `agent_card.json`, `pyproject.toml`, `Dockerfile`,
-  `docker-compose.yml`, `.env.example`).
+  `docker-compose.yml`, network compose includes, `Makefile`, `.env.example`).
 - **`setup_agent.py`** — an interactive scaffolder that copies the template into
   a new directory with your agent's name, slug, class, and skill filled in.
 - **[`TUTORIAL.md`](TUTORIAL.md)** — a step-by-step guide that explains every file
@@ -48,10 +48,13 @@ my-agent/
 ├── pyproject.toml
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker-compose.net_internal.yml
+├── docker-compose.net_external.yml
+├── Makefile
 └── .env.example
 ```
 
-if your `prometheus_platform` checkout is next to `prometheus_agent_template` 
+if your `prometheus_platform` checkout is next to `prometheus_agent_template`
 
 ```
 ├── prometheus_agent_template
@@ -85,14 +88,27 @@ AGENT_SECRET_REQUIRED=false python agent.py
 uv run pytest && uv run ruff check .
 
 # Or with Docker (set PROMETHEUS_API_BASE_IMAGE_HASH in .env first):
-docker compose up --build
-
-# Or (quick start in the background)
 make up
 
-# Or (quick start in the foreground)
+# Or run in the foreground:
 make up-fg
+
+# Standalone Docker curl testing (no platform running):
+EXTERNAL_AGENT_HOST=localhost EXTERNAL_AGENT_PORT=8000 make up-fg
+
+# Platform integration through a host-published port:
+EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up
 ```
+
+Plain `make up` / `make up-fg` defaults to the platform Docker network. If the
+platform is not running, `prometheus_platform_agent-network` will not exist and
+the agent port will not be published to the host. Use external mode with
+`EXTERNAL_AGENT_HOST=localhost EXTERNAL_AGENT_PORT=8000` when you only want to
+start one agent container and test it from your host with `curl`.
+
+For external mode, `host.docker.internal` is Docker's hostname for the host
+machine from inside a container. Docker Desktop provides it automatically; on
+Linux the template includes a small Compose override for the same mapping.
 
 See the generated `README.md` in your agent directory, and
 [`TUTORIAL.md`](TUTORIAL.md) for the full walkthrough — agent card design,

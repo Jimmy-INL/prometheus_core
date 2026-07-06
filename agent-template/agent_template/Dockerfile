@@ -35,6 +35,6 @@ COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json
 
 # Port is configured via the AGENT_PORT environment variable (default 8000).
-EXPOSE 8000
+EXPOSE ${AGENT_PORT}
 
 CMD ["python", "agent.py"]
