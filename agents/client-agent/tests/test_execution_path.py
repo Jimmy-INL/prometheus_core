@@ -152,7 +152,7 @@ def test_runtime_status_stream_emits_store_updates(monkeypatch) -> None:
     emitted = []
 
     class _Redis:
-        def setex(self, *args, **kwargs):
+        def set(self, *args, **kwargs):
             return None
 
         def rpush(self, *args, **kwargs):
