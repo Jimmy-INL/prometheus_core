@@ -795,7 +795,12 @@ INFO:prometheus_api.agent.base:Loaded agent card: My Agent v1.0.0
 INFO:prometheus_api.agent.base:Starting HTTP server on 0.0.0.0:8000
 ```
 
+If the target agent is running in Docker, start it in external network mode so
+`localhost:8000` reaches the container; see the
+[template README run instructions](README.md#run-it).
+
 To test it, send a request in a second terminal:
+
 
 ```bash
 curl -s -X POST http://localhost:8000 \

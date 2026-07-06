@@ -39,6 +39,10 @@ uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@$(grep -E 
 AGENT_SECRET_REQUIRED=false python agent.py
 ```
 
+If the target agent is running in Docker, start it in external network mode so
+`localhost:8000` reaches the container; see the
+[template README run instructions](https://github.inl.gov/genesis/prometheus_agent_template/blob/main/README.md#run-it).
+
 The agent starts on `http://localhost:8000`. Test it:
 
 ```bash
@@ -89,7 +93,7 @@ only when external mode is selected.
 
 By default, `make` includes `docker-compose.net_internal.yml`, so the agent joins
 the platform's Docker network. Start the platform first, then run `make up` or
-`make up-fg` here.
+`make up-fg` here. Without a running platform, Docker cannot attach to that network.
 
 To expose the agent port outside Docker instead, set both external mode variables:
 

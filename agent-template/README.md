@@ -54,7 +54,7 @@ my-agent/
 └── .env.example
 ```
 
-if your `prometheus_platform` checkout is next to `prometheus_agent_template` 
+if your `prometheus_platform` checkout is next to `prometheus_agent_template`
 
 ```
 ├── prometheus_agent_template
@@ -91,9 +91,18 @@ make up
 # Or run in the foreground:
 make up-fg
 
-# Expose the agent outside Docker instead of joining the platform network:
+# Standalone Docker curl testing (no platform running):
+EXTERNAL_AGENT_HOST=localhost EXTERNAL_AGENT_PORT=8000 make up-fg
+
+# Platform integration through a host-published port:
 EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up
 ```
+
+Plain `make up` / `make up-fg` defaults to the platform Docker network. If the
+platform is not running, `prometheus_platform_agent-network` will not exist and
+the agent port will not be published to the host. Use external mode with
+`EXTERNAL_AGENT_HOST=localhost EXTERNAL_AGENT_PORT=8000` when you only want to
+start one agent container and test it from your host with `curl`.
 
 For external mode, `host.docker.internal` is Docker's hostname for the host
 machine from inside a container. Docker Desktop provides it automatically; on
