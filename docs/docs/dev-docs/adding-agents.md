@@ -186,6 +186,8 @@ Once the container starts, it registers with LiteLLM. The client-agent discovers
 ## Workflow templates
 
 For multi-step workflows that chain agents in a defined sequence, use the workflow library.
+See [Workflow Templates](../workflow-templates.md) for the complete schema, platform-owned and agent-owned
+publication paths, binding rules, and compiler behavior.
 Platform-owned workflows can still live in `agents/client-agent/workflows/*.yaml`:
 
 ```yaml
