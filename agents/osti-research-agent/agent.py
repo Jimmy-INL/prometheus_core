@@ -421,10 +421,10 @@ class OSTIResearchAgent(PrometheusAgent):
         }
 
         # Store with 30-day TTL
-        self.redis_client.setex(
+        self.redis_client.set(
             f"osti:question:{question_hash}:answer",
-            30 * 24 * 3600,  # 30 days
-            json.dumps(cache_data)
+            json.dumps(cache_data),
+            ex=30 * 24 * 3600,  # 30 days
         )
 
     def store_factoid(self, content: str, source_paper: Dict, topics: List[str], question: str) -> str:
@@ -605,10 +605,10 @@ class OSTIResearchAgent(PrometheusAgent):
 
                 # Cache in Redis (30 day TTL) - use binary client for PDF data
                 try:
-                    self.redis_binary_client.setex(
+                    self.redis_binary_client.set(
                         f"osti:paper:pdf_bytes:{osti_id}",
-                        30 * 24 * 3600,  # 30 days
-                        response.content
+                        response.content,
+                        ex=30 * 24 * 3600,  # 30 days
                     )
                     logger.info(f"Paper {osti_id} cached in Redis ({len(response.content)} bytes)")
                 except Exception as e:
@@ -814,7 +814,7 @@ except Exception as e:
             # Cache the converted text (30 day TTL)
             if text:
                 try:
-                    self.redis_client.setex(cache_key, 30 * 24 * 3600, text)
+                    self.redis_client.set(cache_key, text, ex=30 * 24 * 3600)
                     logger.info(f"Paper {osti_id} text cached ({len(text)} chars)")
                 except Exception as e:
                     logger.warning(f"Failed to cache text: {e}")
@@ -949,10 +949,10 @@ except Exception as e:
                 "final": final
             }
             # Store latest status with 10-minute TTL
-            self.redis_client.setex(
+            self.redis_client.set(
                 f"agent:status:{conversation_id}",
-                600,
-                json.dumps(status_data)
+                json.dumps(status_data),
+                ex=600,
             )
             # Append to bounded status history so frontend can render full progress logs.
             history_key = f"agent:status_history:{conversation_id}"
