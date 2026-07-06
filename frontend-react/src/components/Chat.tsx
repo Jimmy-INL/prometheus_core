@@ -518,20 +518,11 @@ export function Chat() {
                 }`}
               >
                 {isUserMessage(item) ? (
-                  <div className="flex max-w-xl flex-col items-end">
-                    {m.output && (
-                      <span className="px-4 py-2 rounded-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                        {m.output}
-                      </span>
-                    )}
-                    <ElementList
-                      elements={[
-                        ...((m.elements as AnyElement[] | undefined) ?? []),
-                        ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-                      ]}
-                      onSend={handleSend}
-                    />
-                  </div>
+                  m.output ? (
+                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                      {m.output}
+                    </span>
+                  ) : null
                 ) : (
                   <>
                     <AssistantAvatar />
@@ -596,7 +587,7 @@ export function Chat() {
                   ) : (
                     <FileText size={12} />
                   )}
-                  <span className="max-w-[180px] truncate">{a.file.name}</span>
+                  <span className="max-w-45 truncate">{a.file.name}</span>
                   <span className="text-base-content/50">{formatBytes(a.file.size)}</span>
                   <button
                     onClick={() => removeAttachment(a.localId)}

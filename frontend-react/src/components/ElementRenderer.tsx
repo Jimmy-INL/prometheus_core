@@ -97,6 +97,59 @@ function ElementRenderer({ element, onSend }: ViewerProps) {
 // List renderer — drop this into Chat.tsx
 // ---------------------------------------------------------------------------
 
+function elementId(el: AnyElement): string {
+  return (el as { id?: string }).id ?? "";
+}
+
+function propName(el: AnyElement): string {
+  return typeof el.props?.name === "string" ? el.props.name : "";
+}
+
+function elementName(el: AnyElement): string {
+  return (el.name ?? propName(el)).trim();
+}
+
+function imageDuplicateKey(el: AnyElement): string {
+  return (elementName(el) || el.url || el.path || elementId(el)).toLowerCase();
+}
+
+function elementDuplicateKey(el: AnyElement): string {
+  const id = elementId(el);
+  if (id) return `id:${id}`;
+  return [
+    el.type,
+    elementName(el),
+    el.url ?? "",
+    el.path ?? "",
+    el.mime ?? "",
+  ].join(":");
+}
+
+function dedupeElements(elements: AnyElement[]): AnyElement[] {
+  const previewImageKeys = new Set(
+    elements
+      .filter((el) => el.type !== "file" && classifyElement(el) === "image")
+      .map(imageDuplicateKey)
+      .filter(Boolean),
+  );
+  const seen = new Set<string>();
+
+  return elements.filter((el) => {
+    if (
+      el.type === "file" &&
+      classifyElement(el) === "image" &&
+      previewImageKeys.has(imageDuplicateKey(el))
+    ) {
+      return false;
+    }
+
+    const key = elementDuplicateKey(el);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function ElementList({
   elements,
   onSend,
@@ -105,11 +158,14 @@ export function ElementList({
   onSend?: (text: string) => void;
 }) {
   if (!elements?.length) return null;
+  const uniqueElements = dedupeElements(elements);
+  if (!uniqueElements.length) return null;
+
   return (
     <div className="mt-2 space-y-1">
-      {elements.map((el, i) => (
+      {uniqueElements.map((el, i) => (
         <ElementRenderer
-          key={(el as { id?: string }).id ?? el.name ?? i}
+          key={elementId(el) || elementDuplicateKey(el) || i}
           element={el}
           onSend={onSend}
         />
