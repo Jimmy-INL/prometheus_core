@@ -129,8 +129,8 @@ if "prometheus_api.agent" not in sys.modules:
     sys.modules["prometheus_api"] = prometheus_api_module
     sys.modules["prometheus_api.agent"] = agent_api_module
 
-import agent as agent_module
-import file_upload_handler
+import agent as agent_module  # noqa: E402
+import file_upload_handler  # noqa: E402
 
 
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
@@ -383,6 +383,49 @@ def test_execute_current_plan_rejects_unhealthy_agent_provided_workflow(monkeypa
 
     assert calls["workflow"] == 0
     assert any("thermal-agent" in args[1] for args in statuses if len(args) > 1)
+
+
+def test_execute_current_plan_reports_tool_errors_in_final_status(monkeypatch) -> None:
+    statuses = []
+
+    async def fake_invoke_agent_generic(state):
+        return {
+            "conversation_history": state.get("conversation_history", []) + [{
+                "role": "assistant",
+                "content": "[import_step_file] Error: build123d export failed",
+                "type": "error",
+            }],
+            "tool_results": {
+                "import_step_file": {"error": "build123d export failed"},
+            },
+            "awaiting_approval": False,
+        }
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", False)
+    monkeypatch.setattr(agent_module, "invoke_agent_generic", fake_invoke_agent_generic)
+    monkeypatch.setattr(
+        agent_module,
+        "store_status_update",
+        lambda conversation_id, message, final=False: statuses.append((message, final)),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "workflow_type": "single",
+            "primary_skill": "import_step_file",
+            "supporting_skills": [],
+            "extracted_params": {},
+        },
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    result = asyncio.run(agent_module.execute_current_plan(state, start_message="go"))
+
+    assert result["final_report"] == "[import_step_file] Error: build123d export failed"
+    assert statuses[-1] == ("Execution finished with errors.", True)
 
 
 def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(monkeypatch) -> None:
