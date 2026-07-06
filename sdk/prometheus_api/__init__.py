@@ -2,6 +2,8 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .prompts import load_prompt
+
 try:
     __version__ = version("prometheus-api")
 except PackageNotFoundError:
@@ -9,4 +11,4 @@ except PackageNotFoundError:
     # without an installed distribution.
     __version__ = "0.0.0+unknown"
 
-__all__ = ["__version__"]
+__all__ = ["__version__", "load_prompt"]

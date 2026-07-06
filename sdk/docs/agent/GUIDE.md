@@ -191,6 +191,30 @@ async def _execute(self, params, context, event_queue):
 
 ---
 
+## Prompt Templates
+
+Put large static LLM prompts in `prompts/` next to the agent entrypoint instead
+of embedding long strings in `agent.py`. Load them with the shared helper:
+
+```python
+from prometheus_api import load_prompt
+
+SYSTEM_PROMPT = load_prompt("system_prompt.txt")
+
+async def _handle_analysis(self, params, context, event_queue):
+    prompt = SYSTEM_PROMPT.format(input_data=params["input_data"])
+    async with self.llm_client(context) as llm:
+        response = await llm.medium(prompt)
+    return {"message": response.text, "agent": self.agent_name}
+```
+
+`load_prompt()` reads UTF-8 text and strips leading/trailing whitespace by
+default. It resolves relative prompt names inside the prompt directory and
+rejects absolute paths or `../` escapes. Pass `prompts_dir=...` for custom
+layouts or unit tests.
+
+---
+
 ## Status Updates
 
 Use `send_status_update()` to emit transient progress messages visible in the frontend's "thinking" indicator. These are not durable chat messages.
@@ -870,6 +894,7 @@ from starting the HTTP server.
 my-agent/
 ├── agent.py              # PrometheusAgent subclass + if __name__ == "__main__": agent.run()
 ├── agent_card.json       # Skill definitions, capabilities, tags
+├── prompts/              # Optional prompt templates loaded with load_prompt()
 ├── workflows/            # Optional workflow templates inserted into /api/agent-card
 ├── Dockerfile
 ├── docker-compose.yml
