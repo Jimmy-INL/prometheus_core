@@ -139,7 +139,7 @@ def store_status_update(conversation_id: Optional[str], message: str, final: boo
             "final": final,
         }
         redis_client = _get_status_redis_client()
-        redis_client.setex(f"agent:status:{conv_id}", 900, json.dumps(status_data))
+        redis_client.set(f"agent:status:{conv_id}", json.dumps(status_data), ex=900)
         history_key = f"agent:status_history:{conv_id}"
         redis_client.rpush(history_key, json.dumps(status_data))
         redis_client.ltrim(history_key, -300, -1)
