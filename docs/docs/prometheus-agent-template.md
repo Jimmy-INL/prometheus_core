@@ -231,6 +231,9 @@ Every generated agent exposes:
 
 Agents communicate using JSON-RPC 2.0 with the `message/send` method:
 
+If you test this request against a Dockerized target agent on localhost, run that
+agent in external network mode; see the [agent template run instructions](https://github.inl.gov/genesis/prometheus_agent_template/blob/main/README.md#run-it).
+
 **Request:**
 
 ```json
