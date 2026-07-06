@@ -59,6 +59,13 @@ help: ##@ (Default) Print listing of key targets with their descriptions
 validate-network:
 ifeq ($(NETWORK_MODE),invalid)
 	$(error EXTERNAL_AGENT_HOST and EXTERNAL_AGENT_PORT must be set together, or neither set)
+else ifeq ($(NETWORK_MODE),internal)
+	@if [ -z "$$(docker network ls -q -f name=^prometheus_platform_agent-network$$)" ]; then \
+		echo "\nThe Prometheus Platform must be launched first when internal network mode is selected."; \
+		echo "For standalone agent testing/debugging launch with:"; \
+		echo "EXTERNAL_AGENT_HOST=localhost EXTERNAL_AGENT_PORT=8000 make $(MAKECMDGOALS)\n"; \
+		exit 1; \
+	fi
 endif
 
 up: ##@ Build and start the agent (detached)
