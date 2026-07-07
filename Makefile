@@ -3,7 +3,6 @@
 # Specialist agents live in agents/*/docker-compose.yml.
 # Any agent directory that contains a docker-compose.yml is included automatically.
 # To exclude an agent, remove its directory.
-COMPOSE := docker compose
 
 UNAME := $(shell uname)
 
@@ -11,8 +10,10 @@ UNAME := $(shell uname)
 # DEBUG_AGENTS live alongside the rest of the project config.
 -include .env
 
-COMPOSE_PROJECT_NAME ?= $(notdir $(CURDIR))
+COMPOSE_PROJECT_NAME ?= prometheus_platform
 export COMPOSE_PROJECT_NAME
+
+COMPOSE := docker compose -p $(COMPOSE_PROJECT_NAME)
 
 COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
