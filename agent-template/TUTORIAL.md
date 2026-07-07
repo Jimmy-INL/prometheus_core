@@ -20,12 +20,14 @@ User → Chainlit UI → Orchestrator (client-agent)
                           └── Redis (state, artifact catalog)
 ```
 
-Every agent is built from **five files**:
+Every agent starts from a small project template:
 
 | File | Purpose |
 |------|---------|
 | `agent_card.json` | Declares the agent's name, description, and skills. The orchestrator reads this at startup. |
 | `agent.py` | Your Python code. Subclass `PrometheusAgent`, implement `_execute`. |
+| `prompts/` | Optional prompt template files loaded by your agent code. |
+| `workflows/` | Optional agent-owned workflow definitions loaded into the served agent card. |
 | `pyproject.toml` | Python packaging metadata and your extra dependencies. |
 | `Dockerfile` | Turns your code into a Docker image. |
 | `docker-compose.yml` | Runs the image as part of (or alongside) the Prometheus platform. |
@@ -61,6 +63,8 @@ finishes, your new project lives in the output directory you chose:
 my-agent/
 ├── agent.py
 ├── agent_card.json
+├── prompts/
+├── workflows/
 ├── pyproject.toml
 ├── Dockerfile
 ├── docker-compose.yml
@@ -906,6 +910,102 @@ If you need the agent to restart automatically when the platform does, add it to
 ## Advanced topics
 
 The following capabilities are documented in detail in the linked references. This section shows where to look.
+
+### Prompt template files
+
+Put large static LLM prompts in `prompts/` rather than embedding long strings in
+`agent.py`. The template includes `prompts/system_prompt.txt` and uses the
+shared `load_prompt(...)` helper from `prometheus_api`.
+
+```python
+from prometheus_api import load_prompt
+
+system_prompt = load_prompt("system_prompt.txt").format(input_data=input_data)
+
+async with self.llm_client(context) as llm:
+    response = await llm.medium(system_prompt)
+```
+
+Prompt files are copied into the Docker image by the template Dockerfile. If
+you add new prompt files, keep placeholders explicit and escape literal JSON
+braces as `{{` and `}}` when using `str.format`.
+
+### Agent-owned workflows
+
+Use `workflows/` when this agent should contribute reusable workflow templates
+to the platform workflow library. `prometheus_api` loads `*.yaml`, `*.yml`, and
+`*.json` files from that directory at startup and inserts them into the raw
+agent card. The client-agent discovers those workflows from the agent card and
+exposes them in the platform workflow library.
+
+The template includes `workflows/example_workflow.yaml.example` so new agents do
+not publish a sample workflow accidentally. Rename it to
+`example_workflow.yaml` only after reviewing the workflow id, inputs, step
+bindings, and output mapping.
+
+```yaml
+id: my_agent.example_workflow
+name: My Agent Example Workflow
+version: "1.0.0"
+steps:
+  - id: run_primary_skill
+    skill_id: my_skill
+    is_final: true
+    params:
+      input_data:
+        from: input.input_data
+```
+
+If your workflow YAML contains `#`, `:`, or other YAML-sensitive characters in
+scalar values, quote them. If you want to place workflows somewhere else, set
+`AGENT_WORKFLOWS`; relative paths resolve next to `agent_card.json`.
+
+See the workflow notes in `prometheus_api` and the platform workflow library
+docs for schema details.
+
+### Authenticated custom HTTP endpoints
+
+Use custom endpoints for small provider-owned HTTP resources: artifact previews,
+derived downloads, workflow support resources, or static viewer plugin assets.
+Register them in `__init__` after `super().__init__(...)`.
+
+```python
+from starlette.responses import JSONResponse
+
+
+class MyAgent(PrometheusAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_http_endpoint(
+            "/api/preview/{artifact_id}",
+            self.preview_artifact,
+            methods=["GET"],
+            endpoint_id="artifact_preview",
+            purpose="artifact",
+            description="Return preview metadata for one artifact.",
+            content_types=["application/json"],
+        )
+        self.add_static_endpoint(
+            "/viewer",
+            "viewer-assets",
+            endpoint_id="viewer_assets",
+            purpose="viewer_plugin",
+            description="Serve viewer plugin JavaScript and CSS.",
+            content_types=["text/javascript", "text/css"],
+        )
+
+    async def preview_artifact(self, request):
+        return JSONResponse({"artifact_id": request.path_params["artifact_id"]})
+```
+
+Routes registered this way use the same bearer-token authentication as normal
+agent traffic and are advertised in `/api/agent-card` under `endpoints`. Static
+directories resolve relative to `agent_card.json`, so copy any asset directory
+into the Docker image if you add one.
+
+Keep the platform boundary in mind: browser-facing features should usually be
+aggregated, proxied, or cataloged by the client-agent instead of giving the
+frontend arbitrary direct access to specialist agents.
 
 ### Emitting artifacts
 

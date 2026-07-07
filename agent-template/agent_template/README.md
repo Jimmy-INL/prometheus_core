@@ -12,6 +12,8 @@ responses in the Chainlit UI.
 |------|---------|
 | `agent.py` | Your code. Subclass of `PrometheusAgent`; implements `_execute`. |
 | `agent_card.json` | Declares the agent's name, description, and skills. The orchestrator reads this to decide when to route to you. |
+| `prompts/` | Prompt template files loaded by your agent code when prompts get too large for `agent.py`. |
+| `workflows/` | Optional agent-owned workflow definitions inserted into the served agent card. |
 | `pyproject.toml` | Extra Python dependencies your code imports directly. |
 | `Dockerfile` | Builds the image from the pinned `prometheus_api` base image. |
 | `docker-compose.yml` | Common service definition for containerized runs. |
@@ -120,11 +122,21 @@ platform checkout.
    `output_format`, and `usage_notes`.
 2. **`agent.py`** — read your inputs from `params`, do the work, return a plain
    `dict`. Use `self.send_status_update(...)` for progress messages.
-3. **`pyproject.toml`** — add any packages your code imports.
+3. **`prompts/`** — move large static LLM prompts into text files and load them
+   with `load_prompt(...)` from `prometheus_api`.
+4. **`workflows/`** — add workflow YAML/JSON files when this agent should publish
+   workflow templates to the platform. Rename `example_workflow.yaml.example` to
+   `.yaml` only after reviewing it; `.yaml` files are auto-published.
+5. **Custom HTTP endpoints** — use `self.add_http_endpoint(...)` for small JSON
+   endpoints or `self.add_static_endpoint(...)` for authenticated static assets
+   such as viewer plugin files. Registered endpoints are advertised in the raw
+   agent card under `endpoints`.
+6. **`pyproject.toml`** — add any packages your code imports.
 
 See **TUTORIAL.md** in the template repository for a full walkthrough, including
 emitting artifacts, asking the user for missing inputs (`INPUT_REQUIRED`),
-multiple skills, and DeepLynx file storage.
+multiple skills, agent-owned workflows, custom endpoints, prompt files, and
+DeepLynx file storage.
 
 ## Key environment variables
 
@@ -134,6 +146,7 @@ multiple skills, and DeepLynx file storage.
 | `EXTERNAL_AGENT_HOST` / `EXTERNAL_AGENT_PORT` | Optional Docker external mode. Leave both unset to join the platform Docker network; set both to expose the agent port and register `http://{host}:{port}`. |
 | `AGENT_SECRET` | Shared bearer token for A2A auth. Must match the platform's. |
 | `AGENT_SECRET_REQUIRED` | Set `false` to disable auth — local development only. |
+| `AGENT_WORKFLOWS` | Optional workflow directory override. Defaults to `workflows` next to `agent_card.json`. |
 | `REGISTRY_URL` | LiteLLM proxy URL where the agent registers on startup. |
 | `LITELLM_MASTER_KEY` | LiteLLM gateway auth. |
 | `REDIS_URL` / `REDIS_PASSWORD` | Conversation state and artifact registry. |

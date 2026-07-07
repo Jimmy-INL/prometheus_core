@@ -33,6 +33,8 @@ RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=loc
 # Copy agent source last so code changes don't invalidate the dependency cache.
 COPY agent.py /app/agent.py
 COPY agent_card.json /app/agent_card.json
+COPY prompts /app/prompts
+COPY workflows /app/workflows
 
 # Port is configured via the AGENT_PORT environment variable (default 8000).
 EXPOSE ${AGENT_PORT}
