@@ -29,6 +29,10 @@ The frontend communicates directly with the client-agent via A2A protocol. The c
 | LiteLLM Agent Gateway | 9977 | LiteLLM proxy + A2A routing |
 | Redis | 6379 | Factoids, conversation state |
 
+The client-agent also maintains a workflow library for reusable multi-step analyses. Workflow templates can be
+platform-owned or published by specialist agents through their agent cards. See [Workflow Templates](workflow-templates.md)
+for the schema, ownership model, and authoring rules.
+
 ## Getting started
 
 ### Prerequisites
