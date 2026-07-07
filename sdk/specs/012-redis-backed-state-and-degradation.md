@@ -23,9 +23,9 @@ Provide a shared Redis connection recipe and durable A2A task storage that degra
 - REQ-012-13: `PrometheusAgent.build_app(...)` MUST use `RedisTaskStore` unless `PROMETHEUS_TASK_STORE=memory`.
 
 ## Behavior
-- GIVEN an unreachable Redis URL WHEN `create_redis_client(...)` is called THEN it returns `None` and logs the failure. (id: BEH-012-01)
-- GIVEN the fallback task store has saved a task WHEN the task is loaded THEN the A2A `Task` model round-trips with its ID, context ID, and state. (id: BEH-012-02)
-- GIVEN a task is deleted twice WHEN using the fallback store THEN the second delete succeeds without error. (id: BEH-012-03)
+- BEH-012-01: GIVEN an unreachable Redis URL WHEN `create_redis_client(...)` is called THEN it returns `None` and logs the failure.
+- BEH-012-02: GIVEN the fallback task store has saved a task WHEN the task is loaded THEN the A2A `Task` model round-trips with its ID, context ID, and state.
+- BEH-012-03: GIVEN a task is deleted twice WHEN using the fallback store THEN the second delete succeeds without error.
 
 ## Interfaces
 - `DEFAULT_REDIS_URL = "redis://localhost:6379"`

@@ -25,9 +25,9 @@ Define the standard A2A task lifecycle for Prometheus agents, including paramete
 - REQ-009-15: `PrometheusWorker.emit_json_artifact(...)` MUST queue inline JSON artifact events and return/reuse the artifact ID, but MUST NOT perform catalog registration or loop-bound I/O.
 
 ## Behavior
-- GIVEN a slow `_execute(...)` and a short heartbeat interval WHEN execution runs THEN at least one silent non-final heartbeat is emitted before the final completed event. (id: BEH-009-01)
-- GIVEN `_execute(...)` emits a final status WHEN it returns a dict THEN the executor skips automatic finalization and does not emit a contradictory terminal event. (id: BEH-009-02)
-- GIVEN a worker emits status, artifact, and status events WHEN `run_worker(...)` completes THEN those events are forwarded in order and the worker result is returned. (id: BEH-009-03)
+- BEH-009-01: GIVEN a slow `_execute(...)` and a short heartbeat interval WHEN execution runs THEN at least one silent non-final heartbeat is emitted before the final completed event.
+- BEH-009-02: GIVEN `_execute(...)` emits a final status WHEN it returns a dict THEN the executor skips automatic finalization and does not emit a contradictory terminal event.
+- BEH-009-03: GIVEN a worker emits status, artifact, and status events WHEN `run_worker(...)` completes THEN those events are forwarded in order and the worker result is returned.
 
 ## Interfaces
 - `MissingInput` is owned by spec 010.

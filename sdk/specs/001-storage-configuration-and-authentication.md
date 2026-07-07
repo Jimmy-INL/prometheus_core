@@ -22,9 +22,9 @@ Provide a single typed contract for connecting to DeepLynx and a consistent sync
 - REQ-001-12: If `data_source_id` is not configured, clients MUST fetch and cache the project default data source or raise a `StorageClientError` that instructs users to set `DEEPLYNX_DATA_SOURCE_ID`. ⚠ untested
 
 ## Behavior
-- GIVEN a config with API key credentials WHEN request headers are requested THEN the auth handler obtains a JWT and returns `Authorization: Bearer <token>`. (id: BEH-001-01)
-- GIVEN a config with a JWT token WHEN request headers are requested THEN the auth handler uses that token directly and does not manage refresh. (id: BEH-001-02)
-- GIVEN an HTTP 404 response WHEN the storage client handles it THEN an `ItemNotFoundError` is raised with the API error message when available. (id: BEH-001-03)
+- BEH-001-01: GIVEN a config with API key credentials WHEN request headers are requested THEN the auth handler obtains a JWT and returns `Authorization: Bearer <token>`.
+- BEH-001-02: GIVEN a config with a JWT token WHEN request headers are requested THEN the auth handler uses that token directly and does not manage refresh.
+- BEH-001-03: GIVEN an HTTP 404 response WHEN the storage client handles it THEN an `ItemNotFoundError` is raised with the API error message when available.
 
 ## Interfaces
 - `ConnectionConfig(organization_id: int, project_id: int, data_source_id: int | None = None, base_url: str = ..., api_key: str | None = None, api_secret: str | None = None, jwt_token: str | None = None, timeout: float = 30.0, max_retries: int = 3, verify_ssl: bool = True)`

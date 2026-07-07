@@ -4,9 +4,9 @@
 
 `prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
 
-`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/DEPENDENCIES.md` is the glossary for major external software named in the docs, not an exhaustive package manifest.
+`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/DEPENDENCIES.md` is the glossary for major external software named in the docs, not an exhaustive package manifest. `docs/SDD_SPEC_AUTHORING.md` and `docs/SDD_TESTING_STANDARD.md` define how specs and spec-backed tests should be written.
 
-`specs/` contains the spec-driven-development contract for implemented capabilities, with `specs/000-index.md` as the entry point and one numbered file per capability. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
+`specs/` contains the spec-driven-development contract for implemented capabilities, with `specs/000-index.md` as the entry point and one numbered file per capability. Requirement and behavior bullets use front-loaded IDs such as `REQ-001-01:` and `BEH-001-01:`. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 
 ## Build, Test, and Development Commands
 
@@ -39,7 +39,7 @@ Keep task status event construction in `agent/events.py` and route public helper
 
 Base-agent behavior changes that downstream agents may need to react to should be documented in `docs/agent/AGENT_MIGRATIONS.md` under a version heading, with each migration as a short subheading followed by migration steps and a compact code example.
 
-Spec-impacting behavior changes should update `specs/` in the same change. Add or revise requirement IDs before implementing new behavior, keep deleted IDs marked retired rather than reusing them, and tag inferred-but-untested requirements with `⚠ untested` until coverage exists.
+Spec-impacting behavior changes should update `specs/` in the same change and follow `docs/SDD_SPEC_AUTHORING.md`. Add or revise requirement and behavior IDs before implementing new behavior, keep deleted IDs marked retired rather than reusing them, use front-loaded `REQ-NNN-XX:` and `BEH-NNN-XX:` bullets, and tag inferred-but-untested requirements with `⚠ untested` until coverage exists. Spec-backed tests should follow `docs/SDD_TESTING_STANDARD.md`.
 
 ## Testing Guidelines
 

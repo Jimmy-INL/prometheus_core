@@ -22,9 +22,9 @@ Let applications select LLM models through stable aliases while supporting LiteL
 - REQ-005-12: `resolve_model(alias)` MUST return the alias itself on the proxy path and the provider model name on the fallback path.
 
 ## Behavior
-- GIVEN `LLM_DEFAULT_MODEL=medium` WHEN `LLMClient()` is called without `model` THEN chat uses alias `medium`. (id: BEH-005-01)
-- GIVEN a reachable proxy that lacks `default` WHEN default chat is requested THEN `LLMAliasError` lists the proxy aliases and does not consult fallback YAML. (id: BEH-005-02)
-- GIVEN a proxy connection error WHEN aliases are listed THEN fallback YAML aliases are returned if configured. (id: BEH-005-03)
+- BEH-005-01: GIVEN `LLM_DEFAULT_MODEL=medium` WHEN `LLMClient()` is called without `model` THEN chat uses alias `medium`.
+- BEH-005-02: GIVEN a reachable proxy that lacks `default` WHEN default chat is requested THEN `LLMAliasError` lists the proxy aliases and does not consult fallback YAML.
+- BEH-005-03: GIVEN a proxy connection error WHEN aliases are listed THEN fallback YAML aliases are returned if configured.
 
 ## Interfaces
 - `FallbackModelConfig(alias: str, provider_model: str, litellm_params: dict[str, Any])`

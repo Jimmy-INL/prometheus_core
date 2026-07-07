@@ -24,9 +24,9 @@ Provide dependency-light payload models and stream consumption helpers shared by
 - REQ-011-14: Concurrent A2A streaming sends to the same conversation MUST keep per-request final results isolated.
 
 ## Behavior
-- GIVEN a status stream with one progress event and one final event WHEN consumed THEN only the non-final progress text is sent to `status_callback`. (id: BEH-011-01)
-- GIVEN an SSE stream ending without a trailing blank line WHEN consumed THEN the final data block is still flushed and applied. (id: BEH-011-02)
-- GIVEN a heartbeat status event WHEN applied THEN it does not overwrite the previously accumulated status. (id: BEH-011-03)
+- BEH-011-01: GIVEN a status stream with one progress event and one final event WHEN consumed THEN only the non-final progress text is sent to `status_callback`.
+- BEH-011-02: GIVEN an SSE stream ending without a trailing blank line WHEN consumed THEN the final data block is still flushed and applied.
+- BEH-011-03: GIVEN a heartbeat status event WHEN applied THEN it does not overwrite the previously accumulated status.
 
 ## Interfaces
 - `ConversationStatus(str, Enum)`

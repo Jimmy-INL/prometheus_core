@@ -24,9 +24,9 @@ Keep the package installable, versioned, testable, and container-buildable throu
 - REQ-013-14: Pytest configuration MUST discover `tests/test_*.py`, enable `asyncio_mode=auto`, and define `unit`, `integration`, and `slow` markers.
 
 ## Behavior
-- GIVEN the package is installed WHEN `from prometheus_api import __version__` is executed THEN the installed package version is returned. (id: BEH-013-01)
-- GIVEN a source checkout not installed as a distribution WHEN `__version__` is imported THEN `0.0.0+unknown` is returned. (id: BEH-013-02)
-- GIVEN `make test-install` succeeds THEN a clean venv can import the top-level, storage, and agent public APIs. (id: BEH-013-03)
+- BEH-013-01: GIVEN the package is installed WHEN `from prometheus_api import __version__` is executed THEN the installed package version is returned.
+- BEH-013-02: GIVEN a source checkout not installed as a distribution WHEN `__version__` is imported THEN `0.0.0+unknown` is returned.
+- BEH-013-03: GIVEN `make test-install` succeeds THEN a clean venv can import the top-level, storage, and agent public APIs.
 
 ## Interfaces
 - `prometheus_api.__version__: str`

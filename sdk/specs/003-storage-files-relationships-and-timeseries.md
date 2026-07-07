@@ -23,9 +23,9 @@ Support non-record storage workflows: binary files, large chunked uploads, relat
 - REQ-003-13: Sync and async file, chunked upload, relationship, and timeseries resource pairs SHOULD remain behaviorally aligned. ⚠ untested
 
 ## Behavior
-- GIVEN a file path that does not exist WHEN upload is requested THEN `ValueError` is raised before any API request. (id: BEH-003-01)
-- GIVEN `direction=None` WHEN item relationships are requested THEN outgoing and incoming relationship lists are concatenated. (id: BEH-003-02)
-- GIVEN a chunk upload failure WHEN cancellation also fails THEN the original upload failure is re-raised. (id: BEH-003-03)
+- BEH-003-01: GIVEN a file path that does not exist WHEN upload is requested THEN `ValueError` is raised before any API request.
+- BEH-003-02: GIVEN `direction=None` WHEN item relationships are requested THEN outgoing and incoming relationship lists are concatenated.
+- BEH-003-03: GIVEN a chunk upload failure WHEN cancellation also fails THEN the original upload failure is re-raised.
 
 ## Interfaces
 - `FileMetadata(id: int, name: str, description: str | None = None, file_type: str | None = None, size: int | None = None, uri: str | None = None, created_at: datetime | None = None, updated_at: datetime | None = None)`

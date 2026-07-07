@@ -22,9 +22,9 @@ Expose DeepLynx-backed file records through familiar `fsspec` object-store opera
 - REQ-004-12: Full-scan results MUST be cached until a mutating operation invalidates the cache. ⚠ untested
 
 ## Behavior
-- GIVEN multiple valid versions for one key WHEN `get()` is called THEN the file with the greatest version timestamp, breaking ties by item ID, is downloaded. (id: BEH-004-01)
-- GIVEN a copied DeepLynx item URI for another project WHEN `get()` is called THEN `ValueError` is raised before download. (id: BEH-004-02)
-- GIVEN search endpoints fail WHEN a matching item exists only in a full scan THEN both fallback warnings are emitted and the file is still resolved. (id: BEH-004-03)
+- BEH-004-01: GIVEN multiple valid versions for one key WHEN `get()` is called THEN the file with the greatest version timestamp, breaking ties by item ID, is downloaded.
+- BEH-004-02: GIVEN a copied DeepLynx item URI for another project WHEN `get()` is called THEN `ValueError` is raised before download.
+- BEH-004-03: GIVEN search endpoints fail WHEN a matching item exists only in a full scan THEN both fallback warnings are emitted and the file is still resolved.
 
 ## Interfaces
 - `DeepLynxFileSystem(client: StorageClient | None = None, config: ConnectionConfig | None = None, *, recent_limit: int = 500, search_page_size: int = 100, search_max_pages: int = 5, **kwargs)`

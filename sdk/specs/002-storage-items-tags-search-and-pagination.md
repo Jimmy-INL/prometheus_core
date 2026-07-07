@@ -23,9 +23,9 @@ Expose DeepLynx records as typed `Item` objects with predictable CRUD, tagging, 
 - REQ-002-13: Sync and async item create/update payloads and search query parsing MUST remain aligned.
 
 ## Behavior
-- GIVEN a tag list with duplicate and blank names WHEN IDs are resolved THEN each non-empty normalized name is resolved once. (id: BEH-002-01)
-- GIVEN search results with JSON-string properties and tags WHEN parsed THEN properties become a dict and tags become `Tag` models. (id: BEH-002-02)
-- GIVEN a full page from a list-shaped response WHEN total count is absent THEN `has_next` is conservatively true. (id: BEH-002-03)
+- BEH-002-01: GIVEN a tag list with duplicate and blank names WHEN IDs are resolved THEN each non-empty normalized name is resolved once.
+- BEH-002-02: GIVEN search results with JSON-string properties and tags WHEN parsed THEN properties become a dict and tags become `Tag` models.
+- BEH-002-03: GIVEN a full page from a list-shaped response WHEN total count is absent THEN `has_next` is conservatively true.
 
 ## Interfaces
 - `Tag(id: int | None = None, name: str)`

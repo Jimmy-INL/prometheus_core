@@ -26,9 +26,9 @@ Let agents request missing structured input, persist per-conversation state, pub
 - REQ-010-16: Artifact resolution MUST materialize inline JSON/text to cache files, download non-local URI artifacts through `fsspec`, and validate local `file://` or absolute paths against allowed roots.
 
 ## Behavior
-- GIVEN `send_input_required(...)` is called WHEN the event is inspected THEN its status is final `input_required` and the missing input is in a `DataPart`. (id: BEH-010-01)
-- GIVEN two conversations register artifacts with the same name or ID WHEN lookups occur THEN each conversation sees only its own artifacts. (id: BEH-010-02)
-- GIVEN a local `file://` artifact outside allowed roots WHEN resolving it to a path THEN `PermissionError` is raised. (id: BEH-010-03)
+- BEH-010-01: GIVEN `send_input_required(...)` is called WHEN the event is inspected THEN its status is final `input_required` and the missing input is in a `DataPart`.
+- BEH-010-02: GIVEN two conversations register artifacts with the same name or ID WHEN lookups occur THEN each conversation sees only its own artifacts.
+- BEH-010-03: GIVEN a local `file://` artifact outside allowed roots WHEN resolving it to a path THEN `PermissionError` is raised.
 
 ## Interfaces
 - `MissingInput(name: str, description: str, user_prompt: str, type: str, options: list[str] | None = None, resolvable_from_context: bool = False, sensitive: bool = False, required: bool = True)`

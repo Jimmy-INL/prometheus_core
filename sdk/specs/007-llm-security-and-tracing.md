@@ -22,9 +22,9 @@ Keep LLM usage safe for agents and operators by redacting secrets, accepting tra
 - REQ-007-12: Trace tags `app_name`, `base_url`, and `model` MUST be protected and override caller-supplied tags.
 
 ## Behavior
-- GIVEN visible text containing `llm_api_key` and a structured DataPart key WHEN an A2A client is created THEN only the structured key is used. (id: BEH-007-01)
-- GIVEN debug logging without opt-in message logging WHEN a prompt contains sensitive content THEN logs include counts/roles but not prompt text. (id: BEH-007-02)
-- GIVEN tracing with caller tags that conflict with protected tags WHEN chat runs THEN protected `app_name`, `base_url`, and `model` values win. (id: BEH-007-03)
+- BEH-007-01: GIVEN visible text containing `llm_api_key` and a structured DataPart key WHEN an A2A client is created THEN only the structured key is used.
+- BEH-007-02: GIVEN debug logging without opt-in message logging WHEN a prompt contains sensitive content THEN logs include counts/roles but not prompt text.
+- BEH-007-03: GIVEN tracing with caller tags that conflict with protected tags WHEN chat runs THEN protected `app_name`, `base_url`, and `model` values win.
 
 ## Interfaces
 - `redact_secrets(value: Any) -> Any`

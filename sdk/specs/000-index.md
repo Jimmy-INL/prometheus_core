@@ -3,6 +3,10 @@
 This directory is the spec-driven-development contract for `prometheus_api`.
 Specs describe required behavior that future changes must preserve or update.
 
+Spec authors should follow [SDD_SPEC_AUTHORING.md](../docs/SDD_SPEC_AUTHORING.md).
+Test coverage and `⚠ untested` handling should follow
+[SDD_TESTING_STANDARD.md](../docs/SDD_TESTING_STANDARD.md).
+
 ## Architecture in 10 lines
 - `prometheus_api.storage_client` wraps [DeepLynx](../docs/DEPENDENCIES.md#deeplynx) HTTP APIs behind typed sync and async clients.
 - `ConnectionConfig` centralizes DeepLynx org/project, auth, data source, timeout, retry, and SSL settings.
@@ -45,6 +49,7 @@ Each public interface should be claimed by exactly one spec:
 
 ## How Agents Use These Specs
 
-- Implementing: pick REQ IDs, write or extend tests that encode them, then code until green. Reference IDs in the commit message.
-- Extending: add new REQ/BEH entries using the next free number before coding; update `status` when done.
+- Implementing: pick REQ and BEH IDs, write or extend tests that encode them, then code until green. Reference IDs in the commit message.
+- Extending: add new front-loaded `REQ-NNN-XX:` and `BEH-NNN-XX:` entries using the next free number before coding; update `status` when done.
+- Testing: cite REQ or BEH IDs in tests when useful, and keep inferred-but-untested requirements marked `⚠ untested` until coverage exists.
 - Auditing / drift check: walk each REQ, locate the enforcing test or code; report `satisfied / violated / untested / obsolete` per ID. Propose spec edits for intentional drift, code fixes for unintentional drift.

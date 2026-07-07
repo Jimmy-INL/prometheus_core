@@ -25,9 +25,9 @@ Let specialist agents become hosted A2A services with minimal boilerplate while 
 - REQ-008-15: `/api/chat` MUST accept `{"params": {...}}`, `{"message": {...}}`, or string `message`, execute the standard executor with local task/context IDs, and optionally return serialized events and artifact catalog entries.
 
 ## Behavior
-- GIVEN workflow YAML next to `agent_card.json` WHEN the app serves `/api/agent-card` THEN the workflow metadata appears in the response and the card remains A2A-valid. (id: BEH-008-01)
-- GIVEN unset `REGISTRY_URL` and transient registry failures WHEN registration runs THEN retries target `http://litellm:4000` and eventual failure does not stop the agent. (id: BEH-008-02)
-- GIVEN `AGENT_SECRET_REQUIRED=false` WHEN app auth is configured THEN no bearer middleware is added. (id: BEH-008-03)
+- BEH-008-01: GIVEN workflow YAML next to `agent_card.json` WHEN the app serves `/api/agent-card` THEN the workflow metadata appears in the response and the card remains A2A-valid.
+- BEH-008-02: GIVEN unset `REGISTRY_URL` and transient registry failures WHEN registration runs THEN retries target `http://litellm:4000` and eventual failure does not stop the agent.
+- BEH-008-03: GIVEN `AGENT_SECRET_REQUIRED=false` WHEN app auth is configured THEN no bearer middleware is added.
 
 ## Interfaces
 - `PrometheusAgent(agent_name: str = "Agent", agent_card_path: str | None = None)`

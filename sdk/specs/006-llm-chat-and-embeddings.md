@@ -23,9 +23,9 @@ Provide provider-agnostic sync and async chat/embedding APIs that hide LiteLLM p
 - REQ-006-13: `close()` and `aclose()` MUST close only HTTP clients owned by the LLM client. ⚠ untested
 
 ## Behavior
-- GIVEN a sync proxy chat response with `choices[0].message.content` WHEN chat returns THEN `ChatResponse.text` is that content. (id: BEH-006-01)
-- GIVEN an async embedding response containing integer vectors WHEN embedding returns THEN vectors are converted to floats. (id: BEH-006-02)
-- GIVEN a configured fallback YAML and a down proxy WHEN chat or embedding is requested THEN the LiteLLM SDK path is used with the provider model. (id: BEH-006-03)
+- BEH-006-01: GIVEN a sync proxy chat response with `choices[0].message.content` WHEN chat returns THEN `ChatResponse.text` is that content.
+- BEH-006-02: GIVEN an async embedding response containing integer vectors WHEN embedding returns THEN vectors are converted to floats.
+- BEH-006-03: GIVEN a configured fallback YAML and a down proxy WHEN chat or embedding is requested THEN the LiteLLM SDK path is used with the provider model.
 
 ## Interfaces
 - `normalize_messages(value: str | list[dict[str, Any]]) -> list[dict[str, Any]]`
