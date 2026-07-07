@@ -191,6 +191,30 @@ async def _execute(self, params, context, event_queue):
 
 ---
 
+## Prompt Templates
+
+Put large static LLM prompts in `prompts/` next to the agent entrypoint instead
+of embedding long strings in `agent.py`. Load them with the shared helper:
+
+```python
+from prometheus_api import load_prompt
+
+SYSTEM_PROMPT = load_prompt("system_prompt.txt")
+
+async def _handle_analysis(self, params, context, event_queue):
+    prompt = SYSTEM_PROMPT.format(input_data=params["input_data"])
+    async with self.llm_client(context) as llm:
+        response = await llm.medium(prompt)
+    return {"message": response.text, "agent": self.agent_name}
+```
+
+`load_prompt()` reads UTF-8 text and strips leading/trailing whitespace by
+default. It resolves relative prompt names inside the prompt directory and
+rejects absolute paths or `../` escapes. Pass `prompts_dir=...` for custom
+layouts or unit tests.
+
+---
+
 ## Status Updates
 
 Use `send_status_update()` to emit transient progress messages visible in the frontend's "thinking" indicator. These are not durable chat messages.
@@ -712,9 +736,83 @@ class MyAgent(PrometheusAgent):
 `agent.run()` calls `build_app()` and starts uvicorn. Use `build_app(register_on_startup=False)`
 when tests or custom hosts need a Starlette app without background registry registration.
 
+### Custom HTTP endpoints
+
+Use `add_http_endpoint(...)` or `add_static_endpoint(...)` when an agent owns
+small HTTP endpoints in addition to A2A execution. Routes registered this way
+are installed before bearer-token middleware, so they use the same
+`Authorization: Bearer <AGENT_SECRET>` policy as normal agent traffic. The base
+class also advertises them in the raw agent card under the Prometheus
+`endpoints` extension.
+
+Register endpoints in `__init__` after `super().__init__(...)`:
+
+```python
+from pathlib import Path
+
+from prometheus_api.agent import PrometheusAgent
+from starlette.responses import JSONResponse
+
+
+class ViewerAgent(PrometheusAgent):
+    def __init__(self):
+        super().__init__(agent_name="Viewer Agent")
+
+        self.add_http_endpoint(
+            "/api/preview/{artifact_id}",
+            self.preview_artifact,
+            methods=["GET"],
+            endpoint_id="artifact_preview",
+            purpose="artifact",
+            description="Return preview metadata for one artifact.",
+            content_types=["application/json"],
+        )
+
+        self.add_static_endpoint(
+            "/viewer",
+            Path("viewer-assets"),
+            endpoint_id="viewer_assets",
+            purpose="viewer_plugin",
+            description="Serve viewer plugin JavaScript and CSS.",
+            content_types=["text/javascript", "text/css"],
+        )
+
+    async def preview_artifact(self, request):
+        artifact_id = request.path_params["artifact_id"]
+        return JSONResponse({"artifact_id": artifact_id, "ok": True})
+```
+
+Relative static directories are resolved next to `agent_card.json`, matching
+workflow directory resolution. If the agent runs in Docker, copy the static
+asset directory into the image.
+
+Endpoint metadata shape in `/api/agent-card`:
+
+```json
+{
+  "endpoints": [
+    {
+      "id": "viewer_assets",
+      "path": "/viewer",
+      "methods": ["GET", "HEAD"],
+      "purpose": "viewer_plugin",
+      "auth_required": true,
+      "description": "Serve viewer plugin JavaScript and CSS.",
+      "content_types": ["text/javascript", "text/css"]
+    }
+  ]
+}
+```
+
+Custom endpoints are intended for provider-to-platform traffic. Browser-facing
+features should still go through the client-agent or another deliberate
+platform boundary rather than giving the frontend arbitrary direct access to
+specialist agents.
+
 ### `configure_app(app)`
 
-Override to add custom HTTP routes or middleware to the Starlette app:
+Override to add advanced custom Starlette routes or middleware when the helper
+methods are not enough:
 
 ```python
 def configure_app(self, app):
@@ -726,6 +824,11 @@ def configure_app(self, app):
 
     app.routes.append(Route("/api/custom", custom_endpoint))
 ```
+
+Routes added through `configure_app(app)` also run behind the same auth
+middleware, but they are not automatically advertised in the agent card. Prefer
+`add_http_endpoint(...)` or `add_static_endpoint(...)` when the platform should
+discover the endpoint.
 
 ### `lifespan(app)`
 
@@ -791,6 +894,7 @@ from starting the HTTP server.
 my-agent/
 ├── agent.py              # PrometheusAgent subclass + if __name__ == "__main__": agent.run()
 ├── agent_card.json       # Skill definitions, capabilities, tags
+├── prompts/              # Optional prompt templates loaded with load_prompt()
 ├── workflows/            # Optional workflow templates inserted into /api/agent-card
 ├── Dockerfile
 ├── docker-compose.yml

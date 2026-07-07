@@ -67,6 +67,21 @@ await self.send_status_update(context, event_queue, message="Running model…")
 # base class emits final "completed" status from your return dict — don't emit it manually
 ```
 
+## Prompt templates
+
+Put large static LLM prompts in `prompts/` next to `agent.py`, then load them
+with the shared helper:
+
+```python
+from prometheus_api import load_prompt
+
+SYSTEM_PROMPT = load_prompt("system_prompt.txt")
+prompt = SYSTEM_PROMPT.format(input_data=params["input_data"])
+```
+
+`load_prompt()` reads UTF-8 text from the entrypoint-adjacent `prompts/`
+directory by default. Pass `prompts_dir=...` only for custom layouts or tests.
+
 ## JSON artifact
 
 ```python

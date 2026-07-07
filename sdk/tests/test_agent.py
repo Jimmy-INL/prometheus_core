@@ -9,8 +9,10 @@ import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from starlette.applications import Starlette
+from starlette.responses import JSONResponse
 
 from prometheus_api.agent import (
+    AgentEndpoint,
     DelegatingPrometheusAgentExecutor,
     MissingInput,
     PrometheusAgent,
@@ -806,6 +808,121 @@ workflows:
         assert payload["ok"] is True
         assert payload["context_id"] == "conv-1"
         assert payload["result"] == {"message": "hello", "context_id": "conv-1"}
+
+    async def test_add_http_endpoint_registers_authenticated_route_and_card_metadata(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Custom HTTP endpoints should inherit auth and appear in the raw card."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+
+        class TestAgent(PrometheusAgent):
+            def __init__(self):
+                super().__init__(agent_name="Endpoint Agent", agent_card_path=str(card_path))
+                endpoint = self.add_http_endpoint(
+                    "/api/custom-status",
+                    self.custom_status,
+                    methods=["GET"],
+                    endpoint_id="custom_status",
+                    purpose="debug",
+                    description="Return custom status for tests.",
+                    content_types=["application/json"],
+                )
+                assert isinstance(endpoint, AgentEndpoint)
+
+            async def custom_status(self, request):
+                return JSONResponse({"ok": True, "agent": self.agent_name})
+
+            async def _execute(self, params, context, event_queue):
+                return {"ok": True}
+
+        monkeypatch.setenv("AGENT_SECRET", "agent-secret")
+        monkeypatch.delenv("AGENT_SECRET_REQUIRED", raising=False)
+
+        agent = TestAgent()
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            unauthenticated = await client.get("/api/custom-status")
+            authenticated = await client.get(
+                "/api/custom-status",
+                headers={"Authorization": "Bearer agent-secret"},
+            )
+            card_response = await client.get("/api/agent-card")
+
+        assert unauthenticated.status_code == 401
+        assert authenticated.status_code == 200
+        assert authenticated.json() == {"ok": True, "agent": "Endpoint Agent"}
+        assert card_response.status_code == 200
+        endpoint_metadata = card_response.json()["endpoints"][0]
+        assert endpoint_metadata == {
+            "id": "custom_status",
+            "path": "/api/custom-status",
+            "methods": ["GET"],
+            "purpose": "debug",
+            "auth_required": True,
+            "description": "Return custom status for tests.",
+            "content_types": ["application/json"],
+        }
+
+    async def test_add_static_endpoint_serves_authenticated_assets_and_card_metadata(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Static endpoints should resolve relative to agent_card.json and use auth."""
+        card_path = tmp_path / "agent_card.json"
+        self._write_agent_card(card_path)
+        assets_dir = tmp_path / "viewer-assets"
+        assets_dir.mkdir()
+        (assets_dir / "plugin.js").write_text("export const plugin = true;\n", encoding="utf-8")
+
+        class TestAgent(PrometheusAgent):
+            def __init__(self):
+                super().__init__(agent_name="Static Agent", agent_card_path=str(card_path))
+                self.add_static_endpoint(
+                    "/viewer",
+                    "viewer-assets",
+                    endpoint_id="viewer_assets",
+                    purpose="viewer_plugin",
+                    description="Serve custom viewer assets.",
+                    content_types=["text/javascript"],
+                )
+
+            async def _execute(self, params, context, event_queue):
+                return {"ok": True}
+
+        monkeypatch.setenv("AGENT_SECRET", "agent-secret")
+        monkeypatch.delenv("AGENT_SECRET_REQUIRED", raising=False)
+
+        agent = TestAgent()
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            unauthenticated = await client.get("/viewer/plugin.js")
+            authenticated = await client.get(
+                "/viewer/plugin.js",
+                headers={"Authorization": "Bearer agent-secret"},
+            )
+            card_response = await client.get("/api/agent-card")
+
+        assert unauthenticated.status_code == 401
+        assert authenticated.status_code == 200
+        assert "export const plugin = true;" in authenticated.text
+        endpoint_metadata = card_response.json()["endpoints"][0]
+        assert endpoint_metadata == {
+            "id": "viewer_assets",
+            "path": "/viewer",
+            "methods": ["GET", "HEAD"],
+            "purpose": "viewer_plugin",
+            "auth_required": True,
+            "description": "Serve custom viewer assets.",
+            "content_types": ["text/javascript"],
+        }
 
     def test_agent__execute_not_implemented(self):
         """Test that base agent raises NotImplementedError for _execute."""

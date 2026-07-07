@@ -11,13 +11,14 @@ import logging
 import uuid
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional
 from typing import Sequence, cast
 from datetime import datetime
 from pathlib import Path
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
 import yaml
 
 from a2a.server.agent_execution import AgentExecutor
@@ -99,6 +100,63 @@ class MissingInput:
     resolvable_from_context: bool = False
     sensitive: bool = False
     required: bool = True
+
+
+@dataclass
+class AgentEndpoint:
+    """Metadata for an agent-owned HTTP endpoint advertised in the raw agent card."""
+
+    id: str
+    path: str
+    methods: List[str]
+    purpose: str = "custom"
+    auth_required: bool = True
+    description: str = ""
+    content_types: List[str] = field(default_factory=list)
+    cache_control: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize endpoint metadata into the raw agent-card extension shape."""
+        payload: Dict[str, Any] = {
+            "id": self.id,
+            "path": self.path,
+            "methods": list(self.methods),
+            "purpose": self.purpose,
+            "auth_required": self.auth_required,
+        }
+        if self.description:
+            payload["description"] = self.description
+        if self.content_types:
+            payload["content_types"] = list(self.content_types)
+        if self.cache_control:
+            payload["cache_control"] = self.cache_control
+        if self.metadata:
+            payload["metadata"] = dict(self.metadata)
+        return payload
+
+
+@dataclass
+class _AgentHTTPRoute:
+    """Pending custom route registration applied during app construction."""
+
+    path: str
+    endpoint: Callable[..., Any]
+    methods: List[str]
+    name: Optional[str]
+    metadata: AgentEndpoint
+
+
+@dataclass
+class _AgentStaticEndpoint:
+    """Pending static endpoint registration applied during app construction."""
+
+    path: str
+    directory: Path
+    html: bool
+    check_dir: bool
+    name: Optional[str]
+    metadata: AgentEndpoint
 
 
 def build_input_required_payload(
@@ -453,6 +511,9 @@ class PrometheusAgent:
         # Will be set during initialization
         self.agent_card: Optional[AgentCard] = None
         self.agent_card_dict: Optional[Dict[str, Any]] = None  # Raw dict for registry registration
+        self._resolved_agent_card_path: Optional[Path] = None
+        self._custom_http_routes: List[_AgentHTTPRoute] = []
+        self._custom_static_endpoints: List[_AgentStaticEndpoint] = []
         self.executor: Optional[PrometheusAgentExecutor] = None
         self.artifact_registry = ArtifactRegistry()
         self.artifact_resolver = ArtifactResolver(self.artifact_registry)
@@ -463,6 +524,211 @@ class PrometheusAgent:
         if self.agent_card_dict is None:
             raise RuntimeError("Agent card has not been loaded yet")
         return self.agent_card_dict
+
+    @staticmethod
+    def _normalize_endpoint_path(path: str) -> str:
+        """Return a route path with a leading slash."""
+        normalized = str(path or "").strip()
+        if not normalized:
+            raise ValueError("endpoint path is required")
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        return normalized
+
+    @staticmethod
+    def _normalize_endpoint_methods(methods: Optional[Sequence[str]]) -> List[str]:
+        """Return uppercase route methods, defaulting to GET."""
+        normalized = []
+        for method in methods or ["GET"]:
+            value = str(method or "").strip().upper()
+            if value and value not in normalized:
+                normalized.append(value)
+        if not normalized:
+            raise ValueError("at least one endpoint method is required")
+        return normalized
+
+    @staticmethod
+    def _default_endpoint_id(path: str) -> str:
+        """Build a stable default endpoint id from a path."""
+        normalized = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
+        normalized = "".join(
+            ch if ch.isalnum() or ch in ("_", "-", ".") else "_"
+            for ch in normalized
+        )
+        return normalized or "root"
+
+    def _assert_unique_endpoint_id(self, endpoint_id: str) -> None:
+        """Reject duplicate endpoint ids before they reach agent-card metadata."""
+        existing_ids = {
+            route.metadata.id for route in self._custom_http_routes
+        } | {
+            static.metadata.id for static in self._custom_static_endpoints
+        }
+        if endpoint_id in existing_ids:
+            raise ValueError(f"duplicate custom endpoint id: {endpoint_id}")
+
+    def add_http_endpoint(
+        self,
+        path: str,
+        endpoint: Callable[..., Any],
+        *,
+        methods: Optional[Sequence[str]] = None,
+        endpoint_id: Optional[str] = None,
+        purpose: str = "custom",
+        description: str = "",
+        content_types: Optional[Sequence[str]] = None,
+        cache_control: Optional[str] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        name: Optional[str] = None,
+    ) -> AgentEndpoint:
+        """Register an authenticated custom HTTP route for this agent.
+
+        The route is added during :meth:`build_app` before bearer-token
+        middleware is attached, so it uses the same authentication policy as
+        normal agent traffic. Metadata is inserted into the raw agent card under
+        the Prometheus `endpoints` extension.
+        """
+        route_path = self._normalize_endpoint_path(path)
+        route_methods = self._normalize_endpoint_methods(methods)
+        resolved_id = str(endpoint_id or self._default_endpoint_id(route_path)).strip()
+        if not resolved_id:
+            raise ValueError("endpoint_id cannot be empty")
+        self._assert_unique_endpoint_id(resolved_id)
+
+        endpoint_metadata = AgentEndpoint(
+            id=resolved_id,
+            path=route_path,
+            methods=route_methods,
+            purpose=str(purpose or "custom").strip() or "custom",
+            auth_required=True,
+            description=str(description or "").strip(),
+            content_types=[str(item) for item in (content_types or [])],
+            cache_control=cache_control,
+            metadata=dict(metadata or {}),
+        )
+        self._custom_http_routes.append(
+            _AgentHTTPRoute(
+                path=route_path,
+                endpoint=endpoint,
+                methods=route_methods,
+                name=name,
+                metadata=endpoint_metadata,
+            )
+        )
+        return endpoint_metadata
+
+    def add_static_endpoint(
+        self,
+        path: str,
+        directory: Path | str,
+        *,
+        endpoint_id: Optional[str] = None,
+        purpose: str = "viewer_plugin",
+        description: str = "",
+        content_types: Optional[Sequence[str]] = None,
+        cache_control: Optional[str] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        name: Optional[str] = None,
+        html: bool = False,
+        check_dir: bool = True,
+    ) -> AgentEndpoint:
+        """Register an authenticated static-file mount for this agent.
+
+        Relative directories are resolved next to `agent_card.json`, matching
+        workflow directory resolution. This keeps cards, workflow files, and
+        endpoint assets relocatable as a packaged agent unit.
+        """
+        mount_path = self._normalize_endpoint_path(path)
+        resolved_id = str(endpoint_id or self._default_endpoint_id(mount_path)).strip()
+        if not resolved_id:
+            raise ValueError("endpoint_id cannot be empty")
+        self._assert_unique_endpoint_id(resolved_id)
+
+        endpoint_metadata = AgentEndpoint(
+            id=resolved_id,
+            path=mount_path,
+            methods=["GET", "HEAD"],
+            purpose=str(purpose or "viewer_plugin").strip() or "viewer_plugin",
+            auth_required=True,
+            description=str(description or "").strip(),
+            content_types=[str(item) for item in (content_types or [])],
+            cache_control=cache_control,
+            metadata=dict(metadata or {}),
+        )
+        self._custom_static_endpoints.append(
+            _AgentStaticEndpoint(
+                path=mount_path,
+                directory=Path(directory).expanduser(),
+                html=html,
+                check_dir=check_dir,
+                name=name,
+                metadata=endpoint_metadata,
+            )
+        )
+        return endpoint_metadata
+
+    def _resolve_custom_static_directory(self, directory: Path) -> Path:
+        """Resolve custom static directories relative to the loaded agent card."""
+        if directory.is_absolute():
+            return directory
+        agent_card_path = self._resolved_agent_card_path or self._resolve_agent_card_path()
+        return agent_card_path.parent / directory
+
+    def _custom_endpoint_metadata(self) -> List[Dict[str, Any]]:
+        """Return custom endpoint metadata in registration order."""
+        return [
+            route.metadata.to_dict() for route in self._custom_http_routes
+        ] + [
+            static.metadata.to_dict() for static in self._custom_static_endpoints
+        ]
+
+    def _insert_custom_endpoint_metadata(self) -> None:
+        """Merge registered endpoint metadata into the raw agent card."""
+        if self.agent_card_dict is None:
+            return
+        metadata = self._custom_endpoint_metadata()
+        if not metadata:
+            return
+
+        existing = self.agent_card_dict.get("endpoints", [])
+        if existing in (None, ""):
+            existing = []
+        if not isinstance(existing, list):
+            raise ValueError("agent_card.json field 'endpoints' must be a list")
+
+        seen_ids = {str(item.get("id")) for item in existing if isinstance(item, dict)}
+        merged = list(existing)
+        for endpoint_metadata in metadata:
+            endpoint_id = str(endpoint_metadata.get("id") or "")
+            if endpoint_id in seen_ids:
+                raise ValueError(f"duplicate custom endpoint id in agent card: {endpoint_id}")
+            seen_ids.add(endpoint_id)
+            merged.append(endpoint_metadata)
+        self.agent_card_dict["endpoints"] = merged
+
+    def _apply_custom_endpoints(self, app) -> None:
+        """Install custom route and static endpoint registrations on the Starlette app."""
+        for route in self._custom_http_routes:
+            app.add_route(
+                route.path,
+                route.endpoint,
+                methods=route.methods,
+                name=route.name,
+            )
+
+        for static in self._custom_static_endpoints:
+            directory = self._resolve_custom_static_directory(static.directory)
+            app.mount(
+                static.path,
+                StaticFiles(
+                    directory=str(directory),
+                    html=static.html,
+                    check_dir=static.check_dir,
+                ),
+                name=static.name or static.metadata.id,
+            )
+
+        self._insert_custom_endpoint_metadata()
 
     @staticmethod
     def _agent_card_payload_with_extensions(
@@ -862,6 +1128,7 @@ class PrometheusAgent:
             json.JSONDecodeError: If agent_card.json is invalid
         """
         agent_card_path = self._resolve_agent_card_path()
+        self._resolved_agent_card_path = agent_card_path
 
         try:
             with open(agent_card_path, "r") as f:
@@ -1592,6 +1859,7 @@ class PrometheusAgent:
 
         # Optional subclass hook for custom routes/endpoints.
         self.configure_app(app)
+        self._apply_custom_endpoints(app)
 
         self._configure_auth(app)
 
