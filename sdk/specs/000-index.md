@@ -4,12 +4,12 @@ This directory is the spec-driven-development contract for `prometheus_api`.
 Specs describe required behavior that future changes must preserve or update.
 
 ## Architecture in 10 lines
-- `prometheus_api.storage_client` wraps DeepLynx HTTP APIs behind typed sync and async clients.
+- `prometheus_api.storage_client` wraps [DeepLynx](../docs/DEPENDENCIES.md#deeplynx) HTTP APIs behind typed sync and async clients.
 - `ConnectionConfig` centralizes DeepLynx org/project, auth, data source, timeout, retry, and SSL settings.
 - Storage resource classes own endpoint contracts for items, tags, search, files, relationships, and timeseries data.
 - `DeepLynxFileSystem` exposes DeepLynx file records as an `fsspec` `deeplynx://` filesystem.
-- `prometheus_api.llm_client` routes chat and embedding calls through LiteLLM proxy aliases with YAML fallback.
-- LLM normalization, secret redaction, A2A credential extraction, and optional MLflow tracing sit behind provider-agnostic response models.
+- `prometheus_api.llm_client` routes chat and embedding calls through [LiteLLM](../docs/DEPENDENCIES.md#litellm) proxy aliases with YAML fallback.
+- LLM normalization, secret redaction, [A2A](../docs/DEPENDENCIES.md#agent2agent-a2a) credential extraction, and optional [MLflow](../docs/DEPENDENCIES.md#mlflow) tracing sit behind provider-agnostic response models.
 - `prometheus_api.agent` lets specialist agents subclass `PrometheusAgent` while the base handles A2A execution, app wiring, auth, and registry registration.
 - Agent helpers emit status updates, input-required messages, worker-thread progress, and native A2A artifacts.
 - `prometheus_api.contract` and `prometheus_api.a2a_stream` define dependency-light frontend/client-agent payload and stream handling.
