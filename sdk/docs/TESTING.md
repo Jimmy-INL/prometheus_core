@@ -1,5 +1,8 @@
 # Testing Guide
 
+For spec-backed behavior, follow the traceability and `⚠ untested` rules in
+[SDD_TESTING_STANDARD.md](SDD_TESTING_STANDARD.md).
+
 ## Quick Start
 
 Use the locked `uv` environment through the Makefile:
