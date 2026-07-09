@@ -14,7 +14,7 @@ const TOKEN_CLASS: Record<JsonToken["type"], string> = {
   text: "text-base-content/80",
 };
 
-export default function JSONViewer({ element }: ViewerProps) {
+export function JSONViewer({ element }: ViewerProps) {
   // TODO: confirm the actual prop key the backend sends for the
   // `CollapsibleJson` element in the Agent Output Contract — this assumes
   // `data`, matching the pattern used elsewhere in elements.ts. Same
