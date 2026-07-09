@@ -61,9 +61,15 @@ export default defineConfig({
         target: "http://localhost:8500",
         changeOrigin: true,
       },
-      "/files": { 
+      "/files": {
         target: "http://localhost:8500",
         changeOrigin: true
+      },
+      // IFC (and other) static assets served by the Chainlit API:
+      // /public/ifc-data/{id}/{file}.ifc
+      "/public": {
+        target: "http://localhost:8500",
+        changeOrigin: true,
       },
     },
   },
