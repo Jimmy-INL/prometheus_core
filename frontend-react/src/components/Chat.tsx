@@ -518,9 +518,11 @@ export function Chat() {
                 }`}
               >
                 {isUserMessage(item) ? (
-                  <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                    {m.output}
-                  </span>
+                  m.output ? (
+                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                      {m.output}
+                    </span>
+                  ) : null
                 ) : (
                   <>
                     <AssistantAvatar />
@@ -585,7 +587,7 @@ export function Chat() {
                   ) : (
                     <FileText size={12} />
                   )}
-                  <span className="max-w-[180px] truncate">{a.file.name}</span>
+                  <span className="max-w-45 truncate">{a.file.name}</span>
                   <span className="text-base-content/50">{formatBytes(a.file.size)}</span>
                   <button
                     onClick={() => removeAttachment(a.localId)}

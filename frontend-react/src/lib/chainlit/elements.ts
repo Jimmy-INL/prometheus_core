@@ -51,6 +51,27 @@ export type ViewerComponent = ComponentType<ViewerProps>;
 // Classifier
 // ---------------------------------------------------------------------------
 
+const IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/svg+xml",
+]);
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".svg"];
+
+function normalizeMime(mime?: string): string {
+  return (mime ?? "").split(";", 1)[0].trim().toLowerCase();
+}
+
+function isImageFile(el: AnyElement): boolean {
+  const mime = normalizeMime(el.mime);
+  if (IMAGE_MIME_TYPES.has(mime)) return true;
+
+  const name = (el.name ?? el.path ?? el.url ?? "").toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
 export function classifyElement(el: AnyElement): ElementKind {
   const type = el.type ?? "";
 
@@ -64,12 +85,13 @@ export function classifyElement(el: AnyElement): ElementKind {
       case "DynamicForm":         return "dynamic_form";
       case "Mermaid":             return "mermaid";
       case "ThermalAnalysis":     return "thermal";
+      case "SVGViewer":           return "image";
       default:                    return "unknown";
     }
   }
 
   if (type === "pdf")   return "pdf";
-  if (type === "file")  return "file";
+  if (type === "file")  return isImageFile(el) ? "image" : "file";
   if (type === "image") return "image";
 
   return "unknown";
@@ -95,7 +117,7 @@ const IFCViewerElement = import.meta.env.DEV
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 // import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
-// import { ImageViewerElement }          from "../../viewers/ImageViewerElement";
+import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
 // import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
 import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
 import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
@@ -107,7 +129,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   exodus:       null,  // → ExodusViewerElement
   pdf:          PdfViewerElement,
   file:         null,  // → FileDownloadElement
-  image:        null,  // → ImageViewerElement
+  image:        ImageViewerElement,
   json:         null,  // → CollapsibleJsonElement
   suggestions:  FollowUpSuggestionsElement,
   plan_viewer:  PlanViewerElement,

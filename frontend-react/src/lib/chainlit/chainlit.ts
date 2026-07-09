@@ -20,12 +20,12 @@
  *   ✓ element pipeline — classifyElement() + VIEWER_REGISTRY in elements.ts
  *   ✓ element fallback — non-custom unregistered kinds show download card;
  *                        custom elements without a registered viewer are hidden
- *   ✓ viewers — PDF, FollowUpSuggestions, PlanViewer
+ *   ✓ viewers — PDF, Image, FollowUpSuggestions, PlanViewer
  *   ✓ file upload UI — Paperclip button + multi-file picker, IFileRef wiring
  *
  * Not yet implemented:
  *   ✗ ask_plain (AskUserMessage)
- *   ✗ viewers — IFC, Exodus, file download, image, JSON, Mermaid, ThermalAnalysis
+ *   ✗ viewers — IFC, Exodus, file download, JSON, Mermaid, ThermalAnalysis
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -135,12 +135,11 @@ export const isWaitingForInput  = (item: FlatItem) =>
 //
 // Priority order:
 //   1. FileDownloadElement  — cl.File; simple <a download> with mime badge
-//   2. ImageViewerElement   — cl.Image; <img> with lightbox
-//   3. CollapsibleJsonElement — cl.CustomElement CollapsibleJson
-//   4. IFCViewerElement     — cl.CustomElement IFCViewer (nearly ready)
-//   5. ExodusViewerElement  — cl.CustomElement ExodusViewer
-//   6. MermaidElement       — cl.CustomElement Mermaid
-//   7. ThermalAnalysisElement — cl.CustomElement ThermalAnalysis (Plotly)
+//   2. CollapsibleJsonElement — cl.CustomElement CollapsibleJson
+//   3. IFCViewerElement     — cl.CustomElement IFCViewer (nearly ready)
+//   4. ExodusViewerElement  — cl.CustomElement ExodusViewer
+//   5. MermaidElement       — cl.CustomElement Mermaid
+//   6. ThermalAnalysisElement — cl.CustomElement ThermalAnalysis (Plotly)
 //
 // NOTE: Audit plugins/ folder to confirm CustomElement names before building
 //   IFC, Mermaid, and ThermalAnalysis viewers — names above are assumed.
