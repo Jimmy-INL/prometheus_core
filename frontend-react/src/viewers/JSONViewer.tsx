@@ -1,27 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, FileJson } from "lucide-react";
 import { toPrettyJson, tokenizeJsonLine, type JsonToken } from "../lib/viewers/jsonSyntax";
-// ^ adjust this relative path (or swap for your "@/lib/..." alias, if configured)
-// to match where jsonSyntax.ts lands in the repo.
-
-interface CollapsibleJsonElementProps {
-  /** Header label — e.g. a filename or element name passed from the agent. */
-  name?: string;
-  /**
-   * The JSON payload from the agent. Accepts either an already-parsed
-   * object/array or a raw JSON string; both are normalized before render.
-   *
-   * TODO: confirm the actual prop key the backend sends for the
-   * `CollapsibleJson` element in the Agent Output Contract — this assumes
-   * `data`, matching the pattern used elsewhere in elements.ts. Same
-   * unconfirmed-name situation as IFCViewer.
-   */
-  data: unknown;
-  /** Render collapsed (header only) on first paint. Defaults to expanded. */
-  defaultCollapsed?: boolean;
-  /** Max height in px of the scrollable body before it scrolls internally. */
-  maxHeight?: number;
-}
+import type { ViewerProps } from "../lib/chainlit/elements";
 
 const TOKEN_CLASS: Record<JsonToken["type"], string> = {
   key: "text-primary",
@@ -34,12 +14,18 @@ const TOKEN_CLASS: Record<JsonToken["type"], string> = {
   text: "text-base-content/80",
 };
 
-export default function CollapsibleJsonElement({
-  name = "JSON",
-  data,
-  defaultCollapsed = false,
-  maxHeight = 400,
-}: CollapsibleJsonElementProps) {
+export default function JSONViewer({ element }: ViewerProps) {
+  // TODO: confirm the actual prop key the backend sends for the
+  // `CollapsibleJson` element in the Agent Output Contract — this assumes
+  // `data`, matching the pattern used elsewhere in elements.ts. Same
+  // unconfirmed-name situation as IFCViewer. Adjust the fallback chain below
+  // once confirmed instead of guessing multiple keys indefinitely.
+  const props = element.props ?? {};
+  const data = props.data ?? props.json ?? props.content;
+  const name = element.name ?? "JSON";
+  const defaultCollapsed = Boolean(props.defaultCollapsed);
+  const maxHeight = typeof props.maxHeight === "number" ? props.maxHeight : 400;
+
   const [expanded, setExpanded] = useState(!defaultCollapsed);
   const [copied, setCopied] = useState(false);
 
