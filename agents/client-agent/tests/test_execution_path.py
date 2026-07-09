@@ -129,8 +129,8 @@ if "prometheus_api.agent" not in sys.modules:
     sys.modules["prometheus_api"] = prometheus_api_module
     sys.modules["prometheus_api.agent"] = agent_api_module
 
-import agent as agent_module
-import file_upload_handler
+import agent as agent_module  # noqa: E402
+import file_upload_handler  # noqa: E402
 
 
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
@@ -152,7 +152,7 @@ def test_runtime_status_stream_emits_store_updates(monkeypatch) -> None:
     emitted = []
 
     class _Redis:
-        def setex(self, *args, **kwargs):
+        def set(self, *args, **kwargs):
             return None
 
         def rpush(self, *args, **kwargs):
@@ -332,6 +332,100 @@ def test_execute_current_plan_routes_templates_through_workflow_engine(monkeypat
 
     assert calls == {"workflow": 1, "direct": 0}
     assert result["final_report"] == "render complete"
+
+
+def test_execute_current_plan_rejects_unhealthy_agent_provided_workflow(monkeypatch) -> None:
+    workflow = SimpleNamespace(
+        definition=SimpleNamespace(
+            id="wf",
+            version="1.0.0",
+            metadata=SimpleNamespace(
+                source_agent_id="thermal-agent",
+                source_agent_url="http://thermal-agent:8000",
+            ),
+            steps=[SimpleNamespace(id="step-1", skill_id="analyze_thermal")],
+        )
+    )
+    registry = SimpleNamespace(get=lambda workflow_id, version=None: workflow)
+    calls = {"workflow": 0}
+
+    async def fake_health_check(compiled_workflow):
+        assert compiled_workflow is workflow
+        return "Workflow provider agent 'thermal-agent' is unavailable."
+
+    async def fake_execute_workflow(**kwargs):
+        calls["workflow"] += 1
+        return {}
+
+    statuses: list[tuple] = []
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "verify_workflow_source_health", fake_health_check)
+    monkeypatch.setattr(agent_module, "execute_workflow", fake_execute_workflow)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: statuses.append(args))
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "workflow_type": "workflow_template",
+            "workflow_id": "wf",
+            "workflow_version": "1.0.0",
+            "extracted_params": {},
+        },
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    with pytest.raises(RuntimeError, match="thermal-agent"):
+        asyncio.run(agent_module.execute_current_plan(state, start_message="go"))
+
+    assert calls["workflow"] == 0
+    assert any("thermal-agent" in args[1] for args in statuses if len(args) > 1)
+
+
+def test_execute_current_plan_reports_tool_errors_in_final_status(monkeypatch) -> None:
+    statuses = []
+
+    async def fake_invoke_agent_generic(state):
+        return {
+            "conversation_history": state.get("conversation_history", []) + [{
+                "role": "assistant",
+                "content": "[import_step_file] Error: build123d export failed",
+                "type": "error",
+            }],
+            "tool_results": {
+                "import_step_file": {"error": "build123d export failed"},
+            },
+            "awaiting_approval": False,
+        }
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", False)
+    monkeypatch.setattr(agent_module, "invoke_agent_generic", fake_invoke_agent_generic)
+    monkeypatch.setattr(
+        agent_module,
+        "store_status_update",
+        lambda conversation_id, message, final=False: statuses.append((message, final)),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "workflow_type": "single",
+            "primary_skill": "import_step_file",
+            "supporting_skills": [],
+            "extracted_params": {},
+        },
+        "conversation_history": [],
+        "context": {},
+        "tool_results": {},
+    }
+
+    result = asyncio.run(agent_module.execute_current_plan(state, start_message="go"))
+
+    assert result["final_report"] == "[import_step_file] Error: build123d export failed"
+    assert statuses[-1] == ("Execution finished with errors.", True)
 
 
 def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(monkeypatch) -> None:
@@ -553,6 +647,62 @@ def test_artifacts_slash_command_lists_conversation_artifacts_without_planner(mo
     assert "deeplynx_file_id: 123" in response.message
     assert "older-result.json" in response.message
     assert [artifact["artifact_id"] for artifact in response.artifacts] == ["svg-1", "older-1"]
+
+
+def test_workflow_slash_command_forces_explicit_workflow(monkeypatch) -> None:
+    workflow = SimpleNamespace(
+        required_input_paths=[],
+        definition=SimpleNamespace(
+            id="artifact_debug.patriotic_usa_png",
+            version="1.0.0",
+            name="Patriotic USA PNG",
+            steps=[],
+            ui=SimpleNamespace(display_name="Patriotic USA PNG"),
+        ),
+    )
+    registry = SimpleNamespace(
+        list_all=lambda: [workflow],
+        get=lambda workflow_id, version=None: workflow
+        if workflow_id == "artifact_debug.patriotic_usa_png"
+        else None,
+    )
+    seen = {}
+
+    async def fake_compile_query_plan(state, **kwargs):
+        seen["state"] = state
+        seen["kwargs"] = kwargs
+        return {"is_fallback": True, "fallback_message": "planned"}
+
+    monkeypatch.setattr(agent_module, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "compile_query_plan", fake_compile_query_plan)
+    monkeypatch.setattr(
+        agent_module,
+        "get_conversation",
+        lambda conversation_id: {
+            "missing_info": ["stale_param"],
+            "conversation_history": [{"role": "user", "content": "previous turn"}],
+            "context": {"existing": "context"},
+        },
+    )
+    monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="/patriotic_usa_png Happy fourth of July",
+                conversation_id="conv-workflow-slash",
+            )
+        )
+    )
+
+    assert response.status == "answer"
+    assert seen["state"]["user_query"] == "Happy fourth of July"
+    assert seen["state"]["context"]["existing"] == "context"
+    assert seen["kwargs"]["explicit_workflow_id"] == "artifact_debug.patriotic_usa_png"
+    assert seen["kwargs"]["explicit_workflow_version"] == "1.0.0"
+    assert seen["kwargs"]["selection_source"] == "slash_command"
 
 
 def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> None:

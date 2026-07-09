@@ -94,8 +94,9 @@ class CapabilityCache:
     """
 
     TTL_SECONDS = 60  # 1 minute
-    CACHE_KEY = "capability_cache:v3:capabilities"
-    TIMESTAMP_KEY = "capability_cache:v3:last_refresh"
+    CACHE_KEY = "capability_cache:v4:capabilities"
+    AGENT_CARDS_CACHE_KEY = "capability_cache:v4:agent_cards"
+    TIMESTAMP_KEY = "capability_cache:v4:last_refresh"
 
     def __init__(self, redis_url: Optional[str] = None):
         """Initialize the capability cache.
@@ -107,6 +108,7 @@ class CapabilityCache:
         self.redis_password = REDIS_PASSWORD
         self._redis: Optional[redis.Redis] = None
         self._local_cache: List[AgentCapability] = []
+        self._agent_card_records: List[Dict[str, Any]] = []
         self._last_refresh: Optional[datetime] = None
 
     @property
@@ -127,6 +129,19 @@ class CapabilityCache:
     def _filter_self_capabilities(self, capabilities: List[AgentCapability]) -> List[AgentCapability]:
         """Remove self capabilities to prevent recursive self-invocation."""
         return [cap for cap in capabilities if not self._is_self_capability(cap)]
+
+    def _filter_self_agent_cards(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove this orchestrator's own agent card from discovery-derived metadata."""
+        filtered: List[Dict[str, Any]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            agent_id = str(record.get("agent_id") or "")
+            direct_url = str(record.get("direct_url") or record.get("url") or "")
+            if is_self_agent(agent_id, direct_url):
+                continue
+            filtered.append(record)
+        return filtered
 
     def _is_cache_valid(self) -> bool:
         """Check if cached data is still valid (within TTL)."""
@@ -164,10 +179,35 @@ class CapabilityCache:
         # Fall back to local cache
         return self._filter_self_capabilities(self._local_cache)
 
+    async def get_agent_cards(self) -> List[Dict[str, Any]]:
+        """Get full discovered agent-card records, refreshing from registry if needed.
+
+        Workflow and future plugin discovery need card-level metadata that is
+        intentionally not part of flattened skill capabilities.
+        """
+        if not self._is_cache_valid():
+            await self.refresh()
+
+        try:
+            cached_data = self.redis_client.get(self.AGENT_CARDS_CACHE_KEY)
+            if cached_data:
+                records = json.loads(cached_data)
+                if isinstance(records, list):
+                    return self._filter_self_agent_cards(records)
+        except Exception as e:
+            print(f"Warning: Failed to load agent cards from Redis cache: {e}")
+
+        if self._agent_card_records:
+            return self._filter_self_agent_cards(self._agent_card_records)
+
+        await self.refresh()
+        return self._filter_self_agent_cards(self._agent_card_records)
+
     async def refresh(self) -> None:
         """Refresh capabilities from registry."""
         print("Refreshing capability cache from registry...")
         capabilities: List[AgentCapability] = []
+        agent_card_records: List[Dict[str, Any]] = []
 
         try:
             agents = await discover_agents()
@@ -189,8 +229,23 @@ class CapabilityCache:
                     # per-skill inputSchema/approval metadata. Always fetch the
                     # full agent card for capability planning.
                     agent_card = await get_agent_card(agent_id, direct_url=direct_url)
-                    if not agent_card.get("skills"):
-                        agent_card = agent.get("agent_card_params") or agent_card
+                    fallback_card = agent.get("agent_card_params") or {}
+                    if not isinstance(agent_card, dict):
+                        agent_card = {}
+                    if not isinstance(fallback_card, dict):
+                        fallback_card = {}
+                    if not agent_card.get("skills") and fallback_card.get("skills"):
+                        agent_card = fallback_card
+
+                    agent_card_records.append(
+                        {
+                            "agent_id": agent_id,
+                            "agent_name": agent_name,
+                            "direct_url": direct_url,
+                            "agent_url": agent_url,
+                            "agent_card": agent_card,
+                        }
+                    )
 
                     capabilities_meta = agent_card.get("capabilities") or {}
                     supports_streaming = bool(capabilities_meta.get("streaming", False))
@@ -224,7 +279,9 @@ class CapabilityCache:
             # Store in Redis cache
             try:
                 capabilities_json = json.dumps([c.to_dict() for c in capabilities])
+                agent_cards_json = json.dumps(agent_card_records)
                 self.redis_client.set(self.CACHE_KEY, capabilities_json)
+                self.redis_client.set(self.AGENT_CARDS_CACHE_KEY, agent_cards_json)
                 self.redis_client.set(
                     self.TIMESTAMP_KEY,
                     datetime.now(timezone.utc).isoformat()
@@ -234,6 +291,7 @@ class CapabilityCache:
 
             # Update local cache
             self._local_cache = self._filter_self_capabilities(capabilities)
+            self._agent_card_records = self._filter_self_agent_cards(agent_card_records)
             self._last_refresh = datetime.now(timezone.utc)
 
             print(f"Capability cache refreshed: {len(self._local_cache)} capabilities")
@@ -316,10 +374,12 @@ class CapabilityCache:
         """Clear the cache."""
         try:
             self.redis_client.delete(self.CACHE_KEY)
+            self.redis_client.delete(self.AGENT_CARDS_CACHE_KEY)
             self.redis_client.delete(self.TIMESTAMP_KEY)
         except Exception as e:
             logger.warning(f"Failed to clear Redis cache: {e}")
         self._local_cache = []
+        self._agent_card_records = []
         self._last_refresh = None
 
 

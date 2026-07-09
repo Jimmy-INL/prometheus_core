@@ -80,7 +80,7 @@ class FormFillerAgent(PrometheusAgent):
     def save_state(self, conversation_id: str, state: Dict[str, Any]) -> None:
         """Save conversation state to Redis with TTL."""
         key = f"form_filler:{conversation_id}"
-        self.redis_client.setex(key, STATE_TTL_SECONDS, json.dumps(state))
+        self.redis_client.set(key, json.dumps(state), ex=STATE_TTL_SECONDS)
 
     def initialize_state(
         self,

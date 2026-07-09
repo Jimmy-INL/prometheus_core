@@ -236,7 +236,6 @@ def env_test_file(project_root: Path):
         f"CLIENT_AGENT_PORT=18001\n"
         f"CHAINLIT_FRONTEND_PORT=18500\n"
         f"CLIENT_AGENT_URL=http://client-agent:8000\n"
-        f"CERT_FILE=/etc/ssl/certs/ca-certificates.crt\n"
     )
     yield env_path
     env_path.unlink(missing_ok=True)
@@ -297,7 +296,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
         core_readiness_checks = [
             ("litellm-db", "healthy", _wait_for_container_healthy, 90),
             ("litellm-proxy", "healthy", _wait_for_container_healthy, 180),
-            ("agent-redis", "running", _wait_for_container_running, 60),
+            ("agent-valkey", "running", _wait_for_container_running, 60),
         ]
         for container_name, expected_state, wait_fn, timeout in core_readiness_checks:
             if wait_fn(container_name, timeout=timeout):

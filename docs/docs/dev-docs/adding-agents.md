@@ -148,8 +148,6 @@ docker run -p 8000:8000 --env-file .env my-analysis-agent
 The agent starts a uvicorn server and registers with LiteLLM (if `REGISTRY_URL` is set).
 Keep `AGENT_SECRET_REQUIRED=true` for local runs as well.
 
-Custom CA certificates should be placed in the repo-local [`certs`](/Users/schwd/Programs/prometheus/prometheus_platform/certs) directory as `*.pem` files only. The Docker build context for certificates is intentionally limited to that directory.
-
 ### 5. Add to Docker Compose
 
 Add a service block to `docker-compose.yml`:
@@ -160,7 +158,6 @@ my-analysis-agent:
     context: ./agents/my-analysis-agent
     additional_contexts:
       prometheus_api: ./prometheus_api
-      certs: ./certs
   container_name: my-analysis-agent
   ports:
     - "8010:8000"
@@ -186,41 +183,101 @@ my-analysis-agent:
 
 Once the container starts, it registers with LiteLLM. The client-agent discovers it automatically through LiteLLM's agent directory and loads the full agent card from the specialist's well-known endpoint when needed.
 
-## Workflow YAML files
+## Workflow templates
 
-For multi-step workflows that chain agents in a defined sequence, use the workflow library:
+For multi-step workflows that chain agents in a defined sequence, use the workflow library.
+See [Workflow Templates](../workflow-templates.md) for the complete schema, platform-owned and agent-owned
+publication paths, binding rules, and compiler behavior.
+Platform-owned workflows can still live in `agents/client-agent/workflows/*.yaml`:
 
 ```yaml
 # workflows/my_workflow.yml
+id: material_assessment
 name: Material Assessment
+version: "1.0.0"
 description: Full material assessment workflow
-version: "1.0"
+matching:
+  patterns:
+    - "material assessment for {material_id}"
+inputs:
+  required:
+    - material_id
+    - context.temperature_c
+execution:
+  mode: sequential
+  on_error: fail_fast
 
 steps:
   - id: data_retrieval
-    agent_skill: retrieve_material_data
-    description: Get material properties
+    skill_id: retrieve_material_data
     params:
-      material_id: "${input.material_id}"
+      material_id:
+        from: input.material_id
 
   - id: corrosion_check
-    agent_skill: analyze_corrosion
-    description: Run corrosion analysis
+    skill_id: analyze_corrosion
     depends_on: [data_retrieval]
     params:
-      material_id: "${input.material_id}"
-      material_data: "${steps.data_retrieval.result}"
-      temperature: "${input.temperature}"
+      material_id:
+        from: input.material_id
+      material_data:
+        from: step.data_retrieval.result
+      context:
+        temperature_c:
+          from: input.context.temperature_c
 
   - id: synthesis
-    agent_skill: synthesize_results
-    description: Combine findings
+    skill_id: synthesize_results
     depends_on: [corrosion_check]
     params:
-      analyses: "${steps.corrosion_check.result}"
+      analyses:
+        from: step.corrosion_check.result
 ```
 
-Workflow files are loaded by the client-agent's workflow library module. Parameters use `${input.*}` for user-provided values and `${steps.<id>.result}` for outputs from previous steps.
+Workflow files are loaded by the client-agent's workflow library module. Parameters use `from: input.*`
+for user-provided values and `from: step.<id>.*` for outputs from previous steps.
+
+Agents can also contribute workflow templates directly from their `agent_card.json` by adding a top-level
+`workflows` array. The client-agent reads these cards during discovery, compiles the definitions against
+the discovered skill schemas, and merges them into the same workflow catalog:
+
+```json
+{
+  "name": "Thermal Agent",
+  "skills": [
+    {
+      "id": "analyze_thermal",
+      "name": "Analyze Thermal",
+      "description": "Run thermal analysis."
+    }
+  ],
+  "workflows": [
+    {
+      "id": "thermal_agent.quick_check",
+      "name": "Quick Thermal Check",
+      "version": "1.0.0",
+      "description": "Run a quick thermal analysis.",
+      "matching": {"patterns": ["quick thermal check"]},
+      "execution": {"mode": "sequential", "on_error": "fail_fast"},
+      "steps": [
+        {"id": "analyze", "skill_id": "analyze_thermal"}
+      ],
+      "ui": {
+        "category": "Thermal",
+        "display_name": "Quick Thermal Check",
+        "summary": "Quick thermal analysis"
+      }
+    }
+  ]
+}
+```
+
+Workflow IDs are global. Prefer an agent-scoped prefix such as `thermal_agent.quick_check`.
+If a platform-local YAML workflow and an agent-provided workflow use the same `id:version`, the local
+workflow wins and the duplicate is reported in the workflow refresh errors.
+Before an agent-provided workflow starts, the client-agent calls the contributing agent's direct
+`/health` endpoint. If the contributing agent has been disconnected or scaled down, the workflow start is
+rejected instead of executing a stale catalog entry.
 
 ## Agent endpoints
 

@@ -7,9 +7,6 @@ x-common-env: &common-env
   MODEL_NAME: ${MODEL_NAME:-claude-sonnet-4-6}
   AGENT_SECRET: ${AGENT_SECRET}
   AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
-  SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.pem
-  REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.pem
-  NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.pem
   REGISTRY_URL: ${REGISTRY_URL:-}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -21,11 +18,10 @@ x-common-env: &common-env
   PROMETHEUS_MAX_UPLOAD_BYTES: ${PROMETHEUS_MAX_UPLOAD_BYTES:-104857600}
 
 x-common-volumes: &common-volumes
-  - ./certs/ca-bundle.pem:/etc/ssl/certs/ca-bundle.pem
   - ./shared:/app/shared
 
 x-build-args: &prometheus-api-build-args
-  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH}
+  PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
   HTTP_PROXY: ${HTTP_PROXY:-""}
   HTTPS_PROXY: ${HTTPS_PROXY:-""}
   NO_PROXY: ${NO_PROXY:-""}
@@ -35,7 +31,7 @@ networks:
     driver: bridge
 
 volumes:
-  redis-data:
+  valkey-data:
   litellm-db-data:
 
 services:
@@ -85,17 +81,18 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # Redis for shared state (conversations, status, artifacts)
+  # Valkey for Redis-compatible shared state (conversations, status, artifacts).
+  # The service name stays "redis" so existing REDIS_URL values keep working.
   redis:
-    image: redis:7-alpine
-    container_name: agent-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    image: valkey/valkey-bundle:9.1.0
+    container_name: agent-valkey
+    command: ["valkey-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
     ports:
       - "${REDIS_LOCAL_PORT:-6379}:6379"
     networks:
       - agent-network
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
@@ -114,6 +111,7 @@ services:
     environment:
       <<: *common-env
       AGENT_PORT: 8000
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
     volumes: *common-volumes
     depends_on:

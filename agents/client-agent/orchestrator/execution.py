@@ -4,13 +4,14 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage
 
 from capability_cache import get_capability_cache
 from param_schema import get_nested_value, has_param_path
-from workflow_library import execute_workflow, get_workflow_registry
+from workflow_library import execute_workflow, get_workflow_registry, verify_workflow_source_health
 
 from . import runtime
 from .models import AgentState
@@ -34,6 +35,30 @@ from .utils import (
     extract_material_ids_from_text,
     extract_result_text,
 )
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = _load_prompt("followup_extraction.txt")
+
+
+def _tool_results_have_errors(tool_results: Dict[str, Any]) -> bool:
+    """Return true when any invoked skill or workflow step reported failure."""
+    for value in (tool_results or {}).values():
+        if not isinstance(value, dict):
+            continue
+        if value.get("error"):
+            return True
+        step_statuses = value.get("step_statuses")
+        if isinstance(step_statuses, dict) and any(
+            str(status).lower() == "failed" for status in step_statuses.values()
+        ):
+            return True
+    return False
 
 
 async def invoke_agent_generic(state: AgentState) -> Dict:
@@ -474,25 +499,11 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
 
     param_schema = {param: properties.get(param, {"type": "string"}) for param in missing_params}
 
-    prompt = f"""Extract parameter values from the user's followup response.
-
-USER FOLLOWUP RESPONSE:
-{query}
-
-PARAMETERS TO EXTRACT (JSON schema by field):
-{json.dumps(param_schema, indent=2)}
-
-REQUIRED OUTPUT KEYS:
-{json.dumps(missing_params)}
-
-Rules:
-- Return ONLY a JSON object.
-- Include only keys from REQUIRED OUTPUT KEYS.
-- Only extract values that are explicitly stated in the user's text.
-- Never infer defaults, typical operating conditions, or domain assumptions.
-- If a value is not present or is uncertain, set it to null.
-- Preserve data types (number/integer/boolean/array/object/string) per schema when possible.
-"""
+    prompt = FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE.format(
+        query=query,
+        param_schema_json=json.dumps(param_schema, indent=2),
+        missing_params_json=json.dumps(missing_params),
+    )
 
     llm = runtime.create_llm()
     runtime.store_status_update(state.get("conversation_id"), "Calling planner LLM to extract follow-up answers.")
@@ -596,6 +607,10 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
                 f"Workflow template '{workflow_id}'"
                 f"{'@' + str(workflow_version) if workflow_version else ''} is unavailable."
             )
+        health_error = await verify_workflow_source_health(compiled_workflow)
+        if health_error:
+            runtime.store_status_update(conversation_id, health_error, final=True)
+            raise RuntimeError(health_error)
         runtime.store_status_update(
             conversation_id,
             (
@@ -736,7 +751,10 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]
 
-    runtime.store_status_update(conversation_id, "Execution complete.", final=True)
+    if _tool_results_have_errors(state.get("tool_results", {}) or {}):
+        runtime.store_status_update(conversation_id, "Execution finished with errors.", final=True)
+    else:
+        runtime.store_status_update(conversation_id, "Execution complete.", final=True)
 
     return state
 

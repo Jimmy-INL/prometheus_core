@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +61,23 @@ def _append_unit_to_description(description: str, unit: Optional[str]) -> str:
     return f"Unit: {normalized_unit}."
 
 
+def _safe_source_segment(value: str) -> str:
+    """Return a stable virtual path segment for non-filesystem workflow sources."""
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9_.-]+", "-", text)
+    return text.strip("-") or "unknown"
+
+
+def _agent_card_from_record(record: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """Return `(agent_id, agent_card)` from a cached card record or raw card."""
+    if isinstance(record.get("agent_card"), dict):
+        agent_id = str(record.get("agent_id") or record.get("agent_name") or "").strip()
+        return agent_id, record["agent_card"]
+
+    agent_id = str(record.get("agent_id") or record.get("name") or "").strip()
+    return agent_id, record
+
+
 @dataclass
 class WorkflowSnapshot:
     """Immutable registry snapshot."""
@@ -109,6 +128,11 @@ class WorkflowRegistry:
         for workflow in self.list_all():
             ui = workflow.definition.ui
             metadata = workflow.definition.metadata
+            source_type = (
+                "agent_card"
+                if workflow.source_path.parts and workflow.source_path.parts[0] == "agent_cards"
+                else "local"
+            )
             cards.append(
                 {
                     "id": workflow.definition.id,
@@ -118,6 +142,8 @@ class WorkflowRegistry:
                     "category": ui.category or "General",
                     "requires_approval": bool(metadata.requires_approval),
                     "estimated_duration_seconds": metadata.estimated_duration_seconds,
+                    "owner": metadata.owner,
+                    "source": source_type,
                 }
             )
         cards.sort(key=lambda item: (item["category"], item["display_name"], item["id"]))
@@ -209,7 +235,12 @@ class WorkflowRegistry:
             "fields": fields,
         }
 
-    def refresh(self, capabilities: List[AgentCapability]) -> Dict[str, Any]:
+    def refresh(
+        self,
+        capabilities: List[AgentCapability],
+        *,
+        agent_cards: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
         capabilities_by_skill = {cap.skill_id: cap for cap in capabilities}
 
@@ -217,6 +248,14 @@ class WorkflowRegistry:
         by_key: Dict[str, CompiledWorkflow] = {}
         by_id: Dict[str, List[CompiledWorkflow]] = {}
         errors: List[str] = []
+
+        def add_compiled(compiled: CompiledWorkflow, source_label: str) -> None:
+            key = compiled.key
+            if key in by_key:
+                errors.append(f"{source_label}: duplicate workflow key '{key}'")
+                return
+            by_key[key] = compiled
+            by_id.setdefault(compiled.definition.id, []).append(compiled)
 
         checksum_parts: List[str] = []
         for path in files:
@@ -237,12 +276,63 @@ class WorkflowRegistry:
                 errors.append(f"{path.name}: {exc}")
                 continue
 
-            key = compiled.key
-            if key in by_key:
-                errors.append(f"{path.name}: duplicate workflow key '{key}'")
+            add_compiled(compiled, path.name)
+
+        for record in agent_cards or []:
+            if not isinstance(record, dict):
+                errors.append("agent_card: expected agent-card record object")
                 continue
-            by_key[key] = compiled
-            by_id.setdefault(compiled.definition.id, []).append(compiled)
+
+            agent_id, card = _agent_card_from_record(record)
+            if not isinstance(card, dict):
+                errors.append(f"agent_card:{agent_id or 'unknown'}: expected agent card object")
+                continue
+
+            workflows = card.get("workflows", [])
+            source_agent = agent_id or str(card.get("name") or "unknown")
+            source_agent_url = str(record.get("direct_url") or card.get("url") or "").strip()
+            source_prefix = f"agent_card:{source_agent}"
+            if workflows in (None, ""):
+                continue
+            if not isinstance(workflows, list):
+                errors.append(f"{source_prefix}: workflows must be a list")
+                continue
+
+            for index, raw_workflow in enumerate(workflows):
+                source_label = f"{source_prefix}:workflows[{index}]"
+                if not isinstance(raw_workflow, dict):
+                    errors.append(f"{source_label}: workflow definition must be an object")
+                    continue
+
+                data = deepcopy(raw_workflow)
+                metadata = data.setdefault("metadata", {})
+                if isinstance(metadata, dict):
+                    metadata.setdefault("owner", source_agent)
+                    metadata.setdefault("source_agent_id", source_agent)
+                    if source_agent_url:
+                        metadata.setdefault("source_agent_url", source_agent_url)
+
+                serialized = json.dumps(data, sort_keys=True, default=str)
+                checksum_parts.append(
+                    f"{source_label}:{hashlib.sha256(serialized.encode('utf-8')).hexdigest()}"
+                )
+
+                try:
+                    compiled = compile_workflow(
+                        raw=data,
+                        source_path=(
+                            Path("agent_cards")
+                            / _safe_source_segment(source_agent)
+                            / f"workflow-{index}.json"
+                        ),
+                        capabilities_by_skill=capabilities_by_skill,
+                        strict=self.strict,
+                    )
+                except (WorkflowCompileError, Exception) as exc:
+                    errors.append(f"{source_label}: {exc}")
+                    continue
+
+                add_compiled(compiled, source_label)
 
         for workflow_id, items in by_id.items():
             by_id[workflow_id] = sorted(items, key=lambda wf: _version_key(wf.definition.version), reverse=True)

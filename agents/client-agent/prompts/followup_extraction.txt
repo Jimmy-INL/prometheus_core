@@ -1,0 +1,18 @@
+Extract parameter values from the user's followup response.
+
+USER FOLLOWUP RESPONSE:
+{query}
+
+PARAMETERS TO EXTRACT (JSON schema by field):
+{param_schema_json}
+
+REQUIRED OUTPUT KEYS:
+{missing_params_json}
+
+Rules:
+- Return ONLY a JSON object.
+- Include only keys from REQUIRED OUTPUT KEYS.
+- Only extract values that are explicitly stated in the user's text.
+- Never infer defaults, typical operating conditions, or domain assumptions.
+- If a value is not present or is uncertain, set it to null.
+- Preserve data types (number/integer/boolean/array/object/string) per schema when possible.

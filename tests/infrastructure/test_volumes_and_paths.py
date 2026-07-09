@@ -38,7 +38,7 @@ def test_shared_bind_mount_client_agent(compose_data):
 def test_named_volumes_declared(compose_data):
     volumes = compose_data.get("volumes", {})
     assert "litellm-db-data" in volumes
-    assert "redis-data" in volumes
+    assert "valkey-data" in volumes
 
 
 def test_postgres_data_volume(compose_data):
@@ -46,11 +46,6 @@ def test_postgres_data_volume(compose_data):
     assert any("litellm-db-data:/var/lib/postgresql/data" in v for v in volumes)
 
 
-def test_redis_data_volume(compose_data):
+def test_valkey_data_volume(compose_data):
     volumes = _get_volumes(compose_data["services"]["redis"])
-    assert any("redis-data:/data" in v for v in volumes)
-
-
-def test_certs_directory_exists(project_root):
-    assert (project_root / "certs").is_dir(), "certs/ directory must exist for build contexts"
-
+    assert any("valkey-data:/data" in v for v in volumes)

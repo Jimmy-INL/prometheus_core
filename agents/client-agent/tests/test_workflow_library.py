@@ -17,6 +17,7 @@ if str(CLIENT_AGENT_DIR) not in sys.path:
 from workflow_library.compiler import WorkflowCompileError, compile_workflow
 from workflow_library.executor import execute_workflow
 from workflow_library.matcher import match_workflows
+from workflow_library.naming import find_workflow_by_command, workflow_tool_name
 from workflow_library.registry import WorkflowRegistry
 
 
@@ -253,6 +254,131 @@ steps:
 
     assert selected is not None
     assert selected.definition.version == "1.10.0"
+
+
+def test_registry_loads_agent_card_workflows() -> None:
+    capabilities = [_capability("analyze_thermal")]
+    agent_cards = [
+        {
+            "agent_id": "thermal-agent",
+            "agent_name": "Thermal Agent",
+            "direct_url": "http://thermal-agent:8000",
+            "agent_card": {
+                "name": "Thermal Agent",
+                "workflows": [
+                    {
+                        "id": "thermal_agent.quick_check",
+                        "name": "Quick Thermal Check",
+                        "version": "1.0.0",
+                        "description": "Run a quick thermal analysis.",
+                        "matching": {"patterns": ["quick thermal check"]},
+                        "execution": {"mode": "sequential", "on_error": "fail_fast"},
+                        "steps": [{"id": "analyze", "skill_id": "analyze_thermal"}],
+                        "ui": {
+                            "category": "Thermal",
+                            "display_name": "Quick Thermal Check",
+                            "summary": "Quick thermal analysis",
+                        },
+                    }
+                ],
+            },
+        }
+    ]
+
+    with TemporaryDirectory() as tmp_dir:
+        registry = WorkflowRegistry(workflows_dir=tmp_dir, strict=True)
+        refresh_result = registry.refresh(capabilities, agent_cards=agent_cards)
+
+    assert refresh_result["count"] == 1
+    assert refresh_result["errors"] == []
+
+    workflow = registry.get("thermal_agent.quick_check", version="1.0.0")
+    assert workflow is not None
+    assert workflow.definition.metadata.owner == "thermal-agent"
+    assert workflow.definition.metadata.source_agent_id == "thermal-agent"
+    assert workflow.definition.metadata.source_agent_url == "http://thermal-agent:8000"
+
+    catalog = registry.get_catalog()
+    assert catalog == [
+        {
+            "id": "thermal_agent.quick_check",
+            "version": "1.0.0",
+            "display_name": "Quick Thermal Check",
+            "summary": "Quick thermal analysis",
+            "category": "Thermal",
+            "requires_approval": False,
+            "estimated_duration_seconds": None,
+            "owner": "thermal-agent",
+            "source": "agent_card",
+        }
+    ]
+
+
+def test_workflow_command_aliases_resolve_short_names() -> None:
+    workflow = _compile(
+        {
+            "id": "artifact_debug.patriotic_usa_png",
+            "name": "Patriotic USA PNG",
+            "version": "1.0.0",
+            "description": "test",
+            "execution": {"mode": "sequential", "on_error": "fail_fast"},
+            "steps": [{"id": "s1", "skill_id": "create_svg_artifact"}],
+        }
+    )
+
+    assert workflow_tool_name(workflow.definition.id) == "workflow_artifact_debug_patriotic_usa_png"
+    assert find_workflow_by_command("patriotic_usa_png", [workflow]) is workflow
+    assert find_workflow_by_command("artifact_debug_patriotic_usa_png", [workflow]) is workflow
+    assert find_workflow_by_command("artifact_debug.patriotic_usa_png", [workflow]) is workflow
+
+
+def test_registry_keeps_local_workflow_on_agent_card_duplicate_key() -> None:
+    workflow_yaml = """
+id: duplicate_workflow
+name: Local Duplicate Workflow
+version: "1.0.0"
+description: local
+matching:
+  patterns: ["duplicate"]
+execution:
+  mode: sequential
+  on_error: fail_fast
+steps:
+  - id: analyze
+    skill_id: analyze_thermal
+"""
+    agent_cards = [
+        {
+            "agent_id": "remote-agent",
+            "agent_card": {
+                "name": "Remote Agent",
+                "workflows": [
+                    {
+                        "id": "duplicate_workflow",
+                        "name": "Remote Duplicate Workflow",
+                        "version": "1.0.0",
+                        "description": "remote",
+                        "steps": [{"id": "analyze", "skill_id": "analyze_thermal"}],
+                    }
+                ],
+            },
+        }
+    ]
+
+    with TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "duplicate_workflow.yaml"
+        path.write_text(workflow_yaml, encoding="utf-8")
+
+        registry = WorkflowRegistry(workflows_dir=tmp_dir, strict=True)
+        refresh_result = registry.refresh([_capability("analyze_thermal")], agent_cards=agent_cards)
+
+    assert refresh_result["count"] == 1
+    assert any("duplicate workflow key 'duplicate_workflow:1.0.0'" in err for err in refresh_result["errors"])
+
+    selected = registry.get("duplicate_workflow", version="1.0.0")
+    assert selected is not None
+    assert selected.definition.name == "Local Duplicate Workflow"
+    assert registry.get_catalog()[0]["source"] == "local"
 
 
 def test_registry_input_form_uses_overrides_then_agent_metadata() -> None:

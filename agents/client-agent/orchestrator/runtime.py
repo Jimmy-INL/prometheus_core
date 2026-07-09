@@ -139,7 +139,7 @@ def store_status_update(conversation_id: Optional[str], message: str, final: boo
             "final": final,
         }
         redis_client = _get_status_redis_client()
-        redis_client.setex(f"agent:status:{conv_id}", 900, json.dumps(status_data))
+        redis_client.set(f"agent:status:{conv_id}", json.dumps(status_data), ex=900)
         history_key = f"agent:status_history:{conv_id}"
         redis_client.rpush(history_key, json.dumps(status_data))
         redis_client.ltrim(history_key, -300, -1)
@@ -181,7 +181,9 @@ async def refresh_dynamic_components(trigger: str = "manual") -> Dict[str, Any]:
         if ENABLE_WORKFLOW_LIBRARY:
             registry = get_workflow_registry()
             capabilities = await cache.get_capabilities()
-            workflow_refresh = registry.refresh(capabilities)
+            get_agent_cards = getattr(cache, "get_agent_cards", None)
+            agent_cards = await get_agent_cards() if callable(get_agent_cards) else []
+            workflow_refresh = registry.refresh(capabilities, agent_cards=agent_cards)
         return {
             "status": "ok",
             "trigger": trigger,
