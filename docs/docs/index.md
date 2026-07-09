@@ -17,6 +17,7 @@ Prometheus is a multi-agent analysis platform for nuclear engineering, built as 
 - [Platform](prometheus-platform.md) -- Chainlit frontend + multi-agent architecture
 - [API](prometheus-api.md) -- StorageClient and PrometheusAgent Python toolkit
 - [Agent Template](prometheus-agent-template.md) -- Scaffolding tool for creating new A2A agents
+- [Workflow Templates](workflow-templates.md) -- Reusable platform- and agent-owned workflow schema and authoring guide
 - [Contributing](contributing.md) -- How to set up your local environment, write docs, and use the available markdown features
 
 ### Architecture & guides

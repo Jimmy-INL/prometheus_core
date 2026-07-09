@@ -11,6 +11,7 @@ if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
 import planner  # noqa: E402
+from workflow_library.naming import workflow_tool_name  # noqa: E402
 
 CREATE_SCHEMA = {
     "type": "object",
@@ -43,6 +44,37 @@ CAPABILITIES = {
 def _tools_by_name(draft):
     tools = planner._build_planning_tools(draft, CAPABILITIES, context={})
     return {tool.name: tool.func for tool in tools}
+
+
+def test_workflow_templates_are_registered_as_planner_tools():
+    draft = planner._PlanDraft()
+    candidate = planner.WorkflowPlanningCandidate(
+        workflow_id="artifact_debug.patriotic_usa_png",
+        workflow_version="1.0.0",
+        score=0.0,
+        skills=["create_svg_artifact", "convert_svg_to_png"],
+        display_name="Patriotic USA PNG",
+        summary="Create a patriotic image and convert it to PNG.",
+        tool_name=workflow_tool_name("artifact_debug.patriotic_usa_png"),
+    )
+    tools = planner._build_planning_tools(
+        draft,
+        CAPABILITIES,
+        context={},
+        workflow_candidates=[candidate],
+    )
+    funcs = {tool.name: tool.func for tool in tools}
+
+    result = funcs["workflow_artifact_debug_patriotic_usa_png"](
+        reasoning="patriotic request",
+        confidence=0.9,
+    )
+
+    assert result["ok"] is True
+    assert draft.workflow_id == "artifact_debug.patriotic_usa_png"
+    assert draft.workflow_type == "workflow_template"
+    assert draft.primary_skill == "create_svg_artifact"
+    assert draft.supporting_skills == ["convert_svg_to_png"]
 
 
 def test_sequential_plan_defers_downstream_artifact_refs():
@@ -173,3 +205,69 @@ def test_compile_query_plan_does_not_ask_for_deferred_artifact_ids(monkeypatch):
     # The deferred artifact id must not trigger a follow-up form.
     assert "artifact_id" not in routing["missing_required_params"]
     assert "artifact_id" not in result.get("missing_info", [])
+
+
+def test_compile_query_plan_does_not_auto_select_registered_workflow_on_fallback(monkeypatch):
+    import asyncio
+
+    from orchestrator import planning_flow
+
+    create_cap = SimpleNamespace(
+        skill_id="create_svg_artifact",
+        skill_name="Create SVG",
+        description="Create an SVG image",
+        input_schema=CREATE_SCHEMA,
+        requires_approval=False,
+        agent_url="http://artifact-debug-agent:8000",
+        expected_duration_seconds=5,
+    )
+    workflow = SimpleNamespace(
+        required_input_paths=[],
+        definition=SimpleNamespace(
+            id="artifact_debug.patriotic_usa_png",
+            version="1.0.0",
+            name="Patriotic USA PNG",
+            description="Create a patriotic image.",
+            steps=[SimpleNamespace(skill_id="create_svg_artifact")],
+            execution=SimpleNamespace(mode="sequential"),
+            metadata=SimpleNamespace(estimated_duration_seconds=5),
+            ui=SimpleNamespace(display_name="Patriotic USA PNG", summary="Create a patriotic image."),
+        ),
+    )
+
+    async def fake_get_capabilities():
+        return [create_cap]
+
+    monkeypatch.setattr(
+        planning_flow,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(planning_flow.runtime, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(
+        planning_flow,
+        "get_workflow_registry",
+        lambda: SimpleNamespace(list_all=lambda: [workflow], get=lambda *args, **kwargs: workflow),
+    )
+    monkeypatch.setattr(
+        planning_flow.runtime,
+        "store_status_update",
+        lambda *args, **kwargs: None,
+    )
+
+    async def fake_compile_plan_with_tools(**kwargs):
+        assert kwargs["workflow_candidates"]
+        return planner.PlanningResult(outcome="fallback", message="ask a question")
+
+    monkeypatch.setattr(planning_flow, "compile_plan_with_tools", fake_compile_plan_with_tools)
+
+    state = {
+        "conversation_id": "conv-1",
+        "user_query": "hello",
+        "conversation_history": [],
+        "context": {},
+    }
+
+    result = asyncio.run(planning_flow.compile_query_plan(state))
+
+    assert result == {"is_fallback": True, "fallback_message": "ask a question"}

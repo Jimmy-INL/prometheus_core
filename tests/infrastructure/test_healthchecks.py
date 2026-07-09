@@ -37,10 +37,10 @@ def test_litellm_healthcheck_has_start_period(compose_data):
     assert "start_period" in hc, "litellm healthcheck should have start_period (slow startup)"
 
 
-def test_redis_has_no_healthcheck(compose_data):
-    """Document current state: Redis has no healthcheck defined."""
+def test_valkey_has_no_healthcheck(compose_data):
+    """Document current state: Valkey has no healthcheck defined."""
     hc = _get_healthcheck(compose_data, "redis")
-    assert hc is None, "Redis currently has no healthcheck (update this test if one is added)"
+    assert hc is None, "Valkey currently has no healthcheck (update this test if one is added)"
 
 
 def test_frontend_has_no_healthcheck(compose_data):

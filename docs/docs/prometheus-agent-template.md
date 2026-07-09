@@ -64,8 +64,9 @@ The template produces these files:
 |------|---------|
 | `agent.py` | Agent implementation -- subclass of `PrometheusAgent` with `process_analysis()` to customize |
 | `agent_card.json` | A2A agent metadata (name, description, skills, capabilities) |
+| `workflows/` | Optional agent-owned workflow templates published through the served agent card |
 | `.env.example` | Environment variable template |
-| `Dockerfile` | Container config with health check, CA cert support, proxy support |
+| `Dockerfile` | Container config with health check and proxy support |
 | `requirements.txt` | Python dependencies (`a2a-sdk`, `pydantic`, `httpx`, `uvicorn`, `prometheus-api[agent]`) |
 | `pyproject.toml` | Package metadata |
 | `README.md` | Agent-specific documentation |
@@ -150,6 +151,17 @@ Edit `agent_card.json` to register additional skills:
 }
 ```
 
+### Add workflow templates
+
+Use `workflows/` when this agent should publish reusable workflow templates to the platform workflow library.
+`PrometheusAgent` loads `*.yaml`, `*.yml`, and `*.json` workflow files from that directory and inserts them into
+the served agent card. The client-agent discovers those definitions, compiles them against available skill schemas,
+and exposes them in the shared workflow catalog.
+
+The generated template ships `workflows/example_workflow.yaml.example` so a new agent does not publish a sample
+workflow by accident. Rename it to `.yaml` only after reviewing the workflow ID, inputs, step bindings, and output
+mapping. See [Workflow Templates](workflow-templates.md) for the complete schema and authoring rules.
+
 ### Use the StorageClient
 
 Agents can interact with the storage backend:
@@ -186,14 +198,13 @@ class MyAgent(PrometheusAgent):
 | `DEEPLYNX_ORG_ID` | If using storage | -- | Organization ID |
 | `DEEPLYNX_PROJECT_ID` | If using storage | -- | Project ID |
 
-See `.env.example` for the full list including proxy and SSL settings.
+See `.env.example` for the full list including proxy settings.
 
 ## Docker deployment
 
 The generated Dockerfile:
 
 - Base image: `python:3.11-slim`
-- Installs CA certificates and handles custom cert bundles
 - Supports `HTTP_PROXY` / `HTTPS_PROXY` build args
 - Health check on `/health` endpoint every 30 seconds
 
@@ -231,6 +242,9 @@ Every generated agent exposes:
 ## A2A protocol
 
 Agents communicate using JSON-RPC 2.0 with the `message/send` method:
+
+If you test this request against a Dockerized target agent on localhost, run that
+agent in external network mode; see the [agent template run instructions](https://github.inl.gov/genesis/prometheus_agent_template/blob/main/README.md#run-it).
 
 **Request:**
 

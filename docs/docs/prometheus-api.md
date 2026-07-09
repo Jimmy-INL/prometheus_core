@@ -297,10 +297,21 @@ AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://litellm:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
 
-# Enterprise proxy / CA certs
+# Agent-owned workflow template directory (optional)
+AGENT_WORKFLOWS=workflows
+
+# Enterprise proxy
 HTTP_PROXY=...
-SSL_CERT_FILE=/path/to/cert.pem
 ```
+
+### Agent-owned workflow templates
+
+`PrometheusAgent` can publish workflow templates owned by the agent. At startup it loads `*.yaml`, `*.yml`, and
+`*.json` files from `workflows/` beside `agent_card.json`, or from `AGENT_WORKFLOWS` when that environment variable
+is set. Loaded workflow definitions are inserted into the served raw agent card so the client-agent can discover
+and compile them into the platform workflow catalog.
+
+See [Workflow Templates](workflow-templates.md) for the full schema, file formats, and ownership model.
 
 ### Progress updates
 
@@ -363,11 +374,12 @@ Every agent automatically exposes:
 When `agent.run()` is called:
 
 1. Loads `agent_card.json` from disk
-2. Creates an executor wrapping `process_analysis()`
-3. Sets up a Starlette HTTP server with the A2A SDK
-4. Adds health endpoint and Bearer token middleware (if `AGENT_SECRET` is set)
-5. Registers with LiteLLM (if `REGISTRY_URL` is set)
-6. Starts uvicorn
+2. Loads agent-owned workflow template files and inserts them into the raw agent card
+3. Creates an executor wrapping `process_analysis()`
+4. Sets up a Starlette HTTP server with the A2A SDK
+5. Adds health endpoint and Bearer token middleware (if `AGENT_SECRET` is set)
+6. Registers with LiteLLM (if `REGISTRY_URL` is set)
+7. Starts uvicorn
 
 ## Testing
 

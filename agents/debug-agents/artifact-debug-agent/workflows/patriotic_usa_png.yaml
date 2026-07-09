@@ -1,0 +1,61 @@
+id: artifact_debug.patriotic_usa_png
+name: Patriotic USA PNG
+version: "1.0.0"
+description: Create a patriotic USA image and convert it to PNG when the user makes a patriotic, Independence Day, USA, or red-white-and-blue request.
+
+inputs:
+  required: []
+  optional: []
+
+execution:
+  mode: sequential
+  max_concurrency: 1
+  on_error: fail_fast
+
+steps:
+  - id: create_usa_svg
+    skill_id: create_svg_artifact
+    params:
+      word:
+        literal: "USA is #1"
+      name:
+        literal: usa_is_number_one.svg
+      description:
+        literal: 'Blue "USA is #1" text on a white background.'
+      width:
+        literal: 512
+      height:
+        literal: 512
+      background_color:
+        literal: white
+      color:
+        literal: blue
+    outputs:
+      - to_context: usa_svg_artifact_id
+        from: artifact_id
+
+  - id: convert_to_png
+    skill_id: convert_svg_to_png
+    depends_on: [create_usa_svg]
+    is_final: true
+    params:
+      artifact_id:
+        from: context.usa_svg_artifact_id
+      name:
+        literal: usa_is_number_one.png
+      description:
+        literal: "PNG conversion of the blue-on-white USA is #1 SVG."
+
+outputs:
+  final:
+    from: step.convert_to_png.result
+
+metadata:
+  requires_approval: false
+  estimated_duration_seconds: 6
+  owner: artifact-debug-agent
+
+ui:
+  category: Debug
+  display_name: Patriotic USA PNG
+  summary: "For patriotic utterances like Happy Fourth of July or Let's go USA, create a blue-on-white USA is #1 image and convert it to PNG."
