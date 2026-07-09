@@ -1,6 +1,4 @@
 /**
- * src/viewers/IFCViewerElement.tsx
- *
  * Renders the `IFCViewer` Chainlit custom element using the native ThatOpen
  * (@thatopen/components) engine — ported from the Alchemy standalone viewer.
  *
