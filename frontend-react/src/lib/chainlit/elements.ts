@@ -116,7 +116,7 @@ const IFCViewerElement = import.meta.env.DEV
   : lazy(() => import("../../viewers/ifc/IFCViewerElement"));
 // import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
-// import { FileDownloadElement }         from "../../viewers/FileDownloadElement";
+import { FileDownloadElement }             from "../../viewers/FileDownloadElement";
 import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
 // import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
 import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
@@ -128,7 +128,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   ifc:          IFCViewerElement,
   exodus:       null,  // → ExodusViewerElement
   pdf:          PdfViewerElement,
-  file:         null,  // → FileDownloadElement
+  file:         FileDownloadElement,
   image:        ImageViewerElement,
   json:         null,  // → CollapsibleJsonElement
   suggestions:  FollowUpSuggestionsElement,
