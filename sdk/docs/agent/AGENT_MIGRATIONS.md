@@ -31,6 +31,12 @@ Downstream code that directly constructs or inspects SDK objects must migrate:
 5. Raw JSON-RPC callers must use v1 method names such as `SendMessage` and
    `SendStreamingMessage` and send `A2A-Version: 1.0`.
 
+LiteLLM deployments that route A2A traffic must use version 1.92.0 or newer;
+older releases embed the 0.3 SDK and cannot invoke a protocol-v1 agent. The
+base registry client automatically adds LiteLLM's top-level `url` and
+`protocolVersion` routing fields to the registered copy of the v1 card. These
+compatibility fields are not added to the strict card served by the agent.
+
 ```python
 from a2a.types import Part, Role, TaskState
 from google.protobuf.json_format import MessageToDict, ParseDict

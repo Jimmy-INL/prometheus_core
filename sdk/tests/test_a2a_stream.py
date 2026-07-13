@@ -245,6 +245,12 @@ async def test_consume_sse_stream_with_comments_and_multiline_data():
     assert result["status"]["state"] == "completed"
 
 
+async def test_consume_json_response_surfaces_json_rpc_error():
+    lines = [json.dumps({"error": {"code": -32601, "message": "Method not found"}})]
+    with pytest.raises(A2AStreamError, match="Method not found"):
+        await consume_stream_response(_FakeStreamResponse(lines, content_type="application/json"))
+
+
 async def test_consume_rejects_unknown_content_type():
     with pytest.raises(A2AStreamError, match="content type"):
-        await consume_stream_response(_FakeStreamResponse([], content_type="application/json"))
+        await consume_stream_response(_FakeStreamResponse([], content_type="text/plain"))

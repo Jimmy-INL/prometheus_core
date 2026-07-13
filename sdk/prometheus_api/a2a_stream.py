@@ -191,8 +191,9 @@ async def consume_stream_response(
     """Collapse an open httpx streaming response into a final task payload.
 
     Supports ``application/x-ndjson`` (one JSON envelope per line) and
-    ``text/event-stream`` (SSE ``data:`` blocks). Raises
-    :class:`A2AStreamError` for any other content type.
+    ``text/event-stream`` (SSE ``data:`` blocks). A JSON response is consumed
+    as one envelope so a pre-stream JSON-RPC error is reported to the caller.
+    Raises :class:`A2AStreamError` for any other content type.
     """
     a2a_result = new_task_accumulator()
     content_type = str(response.headers.get("content-type") or "").lower()
@@ -234,6 +235,16 @@ async def consume_stream_response(
             if stripped.startswith("data:"):
                 data_lines.append(stripped[5:].lstrip())
         await _flush()
+    elif "application/json" in content_type:
+        payload = "\n".join([line async for line in response.aiter_lines()]).strip()
+        if not payload:
+            raise A2AStreamError("A2A streaming endpoint returned an empty JSON response")
+        a2a_result = await apply_stream_event(
+            a2a_result,
+            json.loads(payload),
+            status_callback=status_callback,
+            background_callback=background_callback,
+        )
     else:
         raise A2AStreamError(f"Unsupported A2A streaming content type: {content_type or 'unknown'}")
 

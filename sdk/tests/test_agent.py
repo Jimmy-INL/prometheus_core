@@ -491,8 +491,8 @@ class TestPrometheusAgent:
         assert sleep_delays == [2.0, 4.0]
         assert "Invalid REGISTRY_MAX_RETRIES='not-an-int'; using 10" in caplog.text
 
-    def test_registry_client_build_payload_uses_raw_card_and_agent_secret(self):
-        """Registry payload should preserve raw card metadata and static auth headers."""
+    def test_registry_client_build_payload_adds_litellm_v1_routing_fields(self):
+        """Registry payload keeps extensions plus LiteLLM's upstream routing fields."""
         raw_agent_card = {
             "name": "Test Agent",
             "description": "Raw card",
@@ -509,7 +509,11 @@ class TestPrometheusAgent:
         )
 
         assert agent_name == "test-agent"
-        assert payload["agent_card_params"] is raw_agent_card
+        assert payload["agent_card_params"]["skills"] == raw_agent_card["skills"]
+        assert payload["agent_card_params"]["url"] == "http://test-agent:8000"
+        assert payload["agent_card_params"]["protocolVersion"] == "1.0"
+        assert "url" not in raw_agent_card
+        assert "protocolVersion" not in raw_agent_card
         assert payload["static_headers"] == {"Authorization": "Bearer agent-secret"}
 
     def test_get_raw_agent_card_returns_loaded_dict(self):

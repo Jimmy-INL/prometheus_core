@@ -83,7 +83,20 @@ class AgentRegistryClient:
     ) -> tuple[str, Dict[str, Any]]:
         """Build the LiteLLM registration payload without logging secret-bearing values."""
         agent_name = self.agent_name(agent_card)
-        agent_card_params = raw_agent_card or MessageToDict(agent_card)
+        agent_card_params = dict(raw_agent_card or MessageToDict(agent_card))
+        jsonrpc_interface = next(
+            (
+                interface
+                for interface in agent_card.supported_interfaces
+                if interface.protocol_binding.upper() == "JSONRPC"
+            ),
+            None,
+        )
+        if jsonrpc_interface is not None:
+            # LiteLLM's registry keeps the upstream route in the legacy top-level
+            # URL fields even when it serves a protocol-v1 supportedInterfaces card.
+            agent_card_params["url"] = jsonrpc_interface.url
+            agent_card_params["protocolVersion"] = jsonrpc_interface.protocol_version
         registration_payload: Dict[str, Any] = {
             "agent_name": agent_name,
             "agent_card_params": agent_card_params,
