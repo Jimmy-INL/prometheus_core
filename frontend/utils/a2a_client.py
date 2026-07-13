@@ -116,29 +116,28 @@ class A2AClient:
         message = {
             "jsonrpc": "2.0",
             "id": request_id,
-            "method": "message/stream",
+            "method": "SendStreamingMessage",
             "params": {
                 "message": {
                     "messageId": message_id,
-                    "role": "user",
+                    "role": "ROLE_USER",
                     # contextId is the A2A-spec conversation scope; the a2a-sdk
                     # exposes it to the client-agent as RequestContext.context_id.
                     "contextId": conversation_id,
                     "parts": [
                         {
-                            # "kind" is the A2A SDK part discriminator
-                            "kind": "text",
                             "text": json.dumps(payload),
                         }
                     ],
                 },
-                "configuration": {"blocking": True},
+                "configuration": {"returnImmediately": False},
             },
         }
 
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream, application/x-ndjson",
+            "A2A-Version": "1.0",
             "Authorization": f"Bearer {self.agent_secret}",
         }
 
@@ -197,6 +196,8 @@ class A2AClient:
                 continue
             root = part.get("root") if isinstance(part.get("root"), dict) else None
             part_kind = str(part.get("kind") or (root or {}).get("kind") or "").strip().lower()
+            if not part_kind and "text" in part:
+                part_kind = "text"
             if part_kind != "text":
                 continue
             text = part.get("text")

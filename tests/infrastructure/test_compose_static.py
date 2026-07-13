@@ -56,8 +56,9 @@ def test_redis_service_uses_valkey_bundle(compose_data):
 
 def test_litellm_image_pinned(compose_data):
     image = compose_data["services"]["litellm"]["image"]
-    assert ":latest" not in image, "LiteLLM image should be pinned, not :latest"
-    assert ":" in image, "LiteLLM image should have an explicit tag"
+    assert image == "ghcr.io/berriai/litellm:v1.92.0", (
+        "LiteLLM 1.92.0 is the minimum pinned gateway with A2A SDK v1 routing"
+    )
 
 
 def test_restart_policies(compose_data, infrastructure_services):
