@@ -4,6 +4,64 @@ This document is the running migration log for `PrometheusAgent` behavior change
 When a base-agent change requires downstream agent updates, add a short section here
 under the relevant version heading with migration steps and a minimal code example.
 
+## 0.9.0
+
+### A2A SDK v1 Uses Protobuf Types and Strict Task Streams
+
+`prometheus-api` now requires `a2a-sdk[http-server]>=1.0.0,<2` and serves A2A
+Protocol v1. The base executor emits the required initial `Task` before status
+or artifact updates, so normal `PrometheusAgent._execute()` implementations do
+not need to manage the task lifecycle themselves.
+
+Downstream code that directly constructs or inspects SDK objects must migrate:
+
+1. Replace lower-case enum attributes with the v1 names, such as
+   `TaskState.TASK_STATE_WORKING` and `Role.ROLE_USER`.
+2. Replace `TextPart`, `DataPart`, `FilePart`, and `Part(root=...)` with unified
+   `Part(text=...)`, `Part(data=...)`, `Part(url=...)`, or `Part(raw=...)`.
+   Convert Python data payloads with `ParseDict(..., Value())` and protobuf
+   payloads with `MessageToDict(...)`.
+3. Stop reading `TaskStatusUpdateEvent.final`; v1 removed it. Determine whether
+   work stopped from `event.status.state`. The Prometheus
+   `send_status_update(..., final=...)` parameter remains accepted for source
+   compatibility, but finality on the wire comes from the state.
+4. Replace direct `A2AClient` use with `await create_client(...)`, then inspect
+   each `StreamResponse` with `HasField("task")`, `HasField("status_update")`,
+   or `HasField("artifact_update")`.
+5. Raw JSON-RPC callers must use v1 method names such as `SendMessage` and
+   `SendStreamingMessage` and send `A2A-Version: 1.0`.
+
+```python
+from a2a.types import Part, Role, TaskState
+from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Value
+
+text_part = Part(text="Working")
+data_part = Part(data=ParseDict({"score": 0.95}, Value()))
+state = TaskState.TASK_STATE_WORKING
+payload = MessageToDict(data_part.data)
+```
+
+### Agent Cards and Server Assembly Use v1 Interfaces and Route Factories
+
+The base agent now advertises a JSON-RPC `AgentInterface` in
+`supportedInterfaces`, passes the card to `DefaultRequestHandler`, and builds
+Starlette with `create_agent_card_routes()` and `create_jsonrpc_routes()`.
+Existing cards may continue omitting endpoint fields: `load_agent_card()`
+creates the JSON-RPC interface from `EXTERNAL_AGENT_URL` or the container host
+and `AGENT_PORT`. If a v1 JSON-RPC interface is present, its URL receives the
+same runtime override.
+
+The canonical v1 card is served at `/.well-known/agent-card.json` and at the
+legacy discovery alias `/.well-known/agent.json`. Prometheus-only extensions
+such as workflows remain on `/api/agent-card`. `build_app()` also preserves the
+previous 10 MiB request limit; pass `max_content_length=None` only when a custom
+host intentionally allows larger requests.
+
+Agents that use `PrometheusAgent.build_app()` need no server-assembly changes.
+Custom hosts should replace the removed `A2AStarletteApplication` wrapper with
+the v1 route factories, or switch to `build_app()`.
+
 ## 0.8.0
 
 ### Shared Client-Side Helpers — Stop Copying Stream/Redis Boilerplate
@@ -11,7 +69,7 @@ under the relevant version heading with migration steps and a minimal code examp
 Three pieces of logic that downstream code tended to copy now have single
 canonical implementations:
 
-- `prometheus_api.a2a_stream` — consume A2A `message/stream` responses
+- `prometheus_api.a2a_stream` — consume A2A `SendStreamingMessage` responses
   (SSE/NDJSON parsing, heartbeat skipping, status/background callbacks,
   artifact merge/dedup). Use `stream_a2a_request(...)` for a full call or
   `consume_stream_response(...)` on an open httpx stream.

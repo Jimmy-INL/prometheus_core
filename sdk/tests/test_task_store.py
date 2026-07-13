@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import ListTasksRequest, Task, TaskState, TaskStatus
 
 from prometheus_api.agent.task_store import TERMINAL_STATES, RedisTaskStore
 
@@ -17,12 +17,11 @@ from prometheus_api.agent.task_store import TERMINAL_STATES, RedisTaskStore
 UNREACHABLE = "redis://localhost:0"
 
 
-def _task(task_id: str, state: TaskState = TaskState.working) -> Task:
+def _task(task_id: str, state: TaskState = TaskState.TASK_STATE_WORKING) -> Task:
     return Task(
         id=task_id,
-        contextId="conv-1",
+        context_id="conv-1",
         status=TaskStatus(state=state),
-        kind="task",
     )
 
 
@@ -39,7 +38,7 @@ async def test_save_then_get_roundtrips(store: RedisTaskStore) -> None:
     assert loaded is not None
     assert loaded.id == "t-1"
     assert loaded.context_id == "conv-1"
-    assert loaded.status.state == TaskState.working
+    assert loaded.status.state == TaskState.TASK_STATE_WORKING
 
 
 async def test_get_missing_returns_none(store: RedisTaskStore) -> None:
@@ -47,12 +46,12 @@ async def test_get_missing_returns_none(store: RedisTaskStore) -> None:
 
 
 async def test_save_overwrites(store: RedisTaskStore) -> None:
-    await store.save(_task("t-2", TaskState.submitted))
-    await store.save(_task("t-2", TaskState.completed))
+    await store.save(_task("t-2", TaskState.TASK_STATE_SUBMITTED))
+    await store.save(_task("t-2", TaskState.TASK_STATE_COMPLETED))
 
     loaded = await store.get("t-2")
     assert loaded is not None
-    assert loaded.status.state == TaskState.completed
+    assert loaded.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 async def test_delete_removes(store: RedisTaskStore) -> None:
@@ -69,9 +68,26 @@ async def test_corrupt_payload_returns_none(store: RedisTaskStore) -> None:
     assert await store.get("t-bad") is None
 
 
+async def test_list_filters_and_paginates_tasks(store: RedisTaskStore) -> None:
+    await store.save(_task("t-1", TaskState.TASK_STATE_WORKING))
+    await store.save(_task("t-2", TaskState.TASK_STATE_COMPLETED))
+
+    completed = await store.list(
+        ListTasksRequest(
+            context_id="conv-1",
+            status=TaskState.TASK_STATE_COMPLETED,
+            page_size=1,
+        )
+    )
+
+    assert completed.total_size == 1
+    assert completed.page_size == 1
+    assert [task.id for task in completed.tasks] == ["t-2"]
+
+
 def test_terminal_states_set() -> None:
-    assert TaskState.completed in TERMINAL_STATES
-    assert TaskState.failed in TERMINAL_STATES
-    assert TaskState.canceled in TERMINAL_STATES
-    assert TaskState.rejected in TERMINAL_STATES
-    assert TaskState.working not in TERMINAL_STATES
+    assert TaskState.TASK_STATE_COMPLETED in TERMINAL_STATES
+    assert TaskState.TASK_STATE_FAILED in TERMINAL_STATES
+    assert TaskState.TASK_STATE_CANCELED in TERMINAL_STATES
+    assert TaskState.TASK_STATE_REJECTED in TERMINAL_STATES
+    assert TaskState.TASK_STATE_WORKING not in TERMINAL_STATES

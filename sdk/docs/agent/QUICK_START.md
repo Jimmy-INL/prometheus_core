@@ -37,7 +37,6 @@ if __name__ == "__main__":
 {
   "name": "My Agent",
   "description": "One-sentence description for orchestrator routing.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": { "streaming": true, "pushNotifications": false },
   "skills": [
@@ -58,6 +57,9 @@ if __name__ == "__main__":
   ]
 }
 ```
+
+The base class supplies the A2A v1 `supportedInterfaces` JSON-RPC entry from
+`EXTERNAL_AGENT_URL` or the runtime host and port.
 
 ## Status updates
 

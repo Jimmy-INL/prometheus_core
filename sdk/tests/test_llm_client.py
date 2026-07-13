@@ -11,7 +11,9 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from a2a.types import DataPart, Part, TextPart
+from a2a.types import Part
+from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Value
 
 from prometheus_api.llm_client import (
     AsyncLLMClient,
@@ -759,8 +761,13 @@ def test_async_client_extracts_llm_api_key_from_a2a_datapart_only():
     context = SimpleNamespace(
         message=SimpleNamespace(
             parts=[
-                Part(root=TextPart(text='{"llm_api_key": "visible-text-secret"}')),
-                Part(root=DataPart(data={"provided_inputs": {"llm_api_key": "structured-key"}})),
+                Part(text='{"llm_api_key": "visible-text-secret"}'),
+                Part(
+                    data=ParseDict(
+                        {"provided_inputs": {"llm_api_key": "structured-key"}},
+                        Value(),
+                    )
+                ),
             ]
         )
     )
@@ -781,7 +788,12 @@ def test_a2a_api_key_is_sent_as_proxy_bearer_token():
 
     context = MagicMock()
     context.message.parts = [
-        Part(root=DataPart(data={"provided_inputs": {"llm_api_key": "structured-key"}}))
+        Part(
+            data=ParseDict(
+                {"provided_inputs": {"llm_api_key": "structured-key"}},
+                Value(),
+            )
+        )
     ]
     client = LLMClient.from_a2a_context(
         context,

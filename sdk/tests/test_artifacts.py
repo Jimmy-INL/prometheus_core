@@ -5,6 +5,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from google.protobuf.json_format import MessageToDict
 
 from prometheus_api.agent import EventQueue, PrometheusAgent, RequestContext
 from prometheus_api.agent.artifacts import ArtifactReference, ArtifactRegistry
@@ -17,28 +18,22 @@ class _DummyAgent(PrometheusAgent):
 
 def _extract_text_part(event) -> str:
     part = event.artifact.parts[0]
-    if hasattr(part, "text"):
+    if part.WhichOneof("content") == "text":
         return part.text
-    if hasattr(part, "root") and hasattr(part.root, "text"):
-        return part.root.text
     raise AssertionError("Unsupported artifact part structure")
 
 
 def _extract_data_part(event):
     part = event.artifact.parts[0]
-    if hasattr(part, "data"):
-        return part.data
-    if hasattr(part, "root") and hasattr(part.root, "data"):
-        return part.root.data
+    if part.WhichOneof("content") == "data":
+        return MessageToDict(part.data)
     raise AssertionError("Unsupported data part structure")
 
 
 def _extract_file_part(event):
     part = event.artifact.parts[0]
-    if hasattr(part, "file"):
-        return part.file
-    if hasattr(part, "root") and hasattr(part.root, "file"):
-        return part.root.file
+    if part.WhichOneof("content") == "url":
+        return part
     raise AssertionError("Unsupported file part structure")
 
 
@@ -162,7 +157,12 @@ def test_send_artifact_reference_registers_and_emits():
     assert resolved.uri == "deeplynx://container/file/mesh-123"
     event = queue.enqueue_event.call_args[0][0]
     file_payload = _extract_file_part(event)
-    assert file_payload.uri == "deeplynx://container/file/mesh-123"
+    assert file_payload.url == "deeplynx://container/file/mesh-123"
+
+    from_proto = ArtifactReference.from_a2a_artifact(event.artifact)
+    assert from_proto is not None
+    assert from_proto.uri == "deeplynx://container/file/mesh-123"
+    assert from_proto.mime_type == "application/octet-stream"
 
 
 def test_artifact_reference_from_a2a_file_part():
@@ -172,12 +172,9 @@ def test_artifact_reference_from_a2a_file_part():
         "description": "Hex mesh generated from CAD",
         "parts": [
             {
-                "kind": "file",
-                "file": {
-                    "uri": "deeplynx://container/file/mesh-123",
-                    "mimeType": "application/octet-stream",
-                    "name": "mesh.exo",
-                },
+                "url": "deeplynx://container/file/mesh-123",
+                "mediaType": "application/octet-stream",
+                "filename": "mesh.exo",
             }
         ],
         "metadata": {
@@ -205,7 +202,6 @@ def test_artifact_reference_from_a2a_data_part():
         "description": "Inline analysis output",
         "parts": [
             {
-                "kind": "data",
                 "data": {"material_id": "Alloy 600", "finding_count": 3},
                 "metadata": {
                     "mime_type": "application/json",
@@ -236,7 +232,6 @@ def test_artifact_reference_preserves_data_part_metadata():
         "name": "conversation_message",
         "parts": [
             {
-                "kind": "data",
                 "data": {"message": "Hello"},
                 "metadata": {
                     "mime_type": "application/json",
@@ -262,7 +257,6 @@ def test_artifact_reference_from_a2a_text_part():
         "name": "analysis.log",
         "parts": [
             {
-                "kind": "text",
                 "text": "step 1\nstep 2\n",
                 "metadata": {"mime_type": "text/plain"},
             }

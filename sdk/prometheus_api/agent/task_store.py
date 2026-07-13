@@ -22,22 +22,26 @@ import asyncio
 import logging
 import os
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from ..redis_utils import create_redis_client
 
 from a2a.server.tasks import TaskStore
-from a2a.types import Task, TaskState
+from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
+from a2a.utils.constants import DEFAULT_LIST_TASKS_PAGE_SIZE
+from a2a.utils.errors import InvalidParamsError
+from a2a.utils.task import decode_page_token, encode_page_token
+from google.protobuf.json_format import MessageToJson, Parse
 
 logger = logging.getLogger(__name__)
 
 #: States a task can rest in; these never change again.
 TERMINAL_STATES = frozenset(
     {
-        TaskState.completed,
-        TaskState.canceled,
-        TaskState.failed,
-        TaskState.rejected,
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_CANCELED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_REJECTED,
     }
 )
 
@@ -85,7 +89,7 @@ class RedisTaskStore(TaskStore):
     # --- TaskStore interface ------------------------------------------------
 
     async def save(self, task: Task, context: Any | None = None) -> None:
-        data = task.model_dump_json()
+        data = MessageToJson(task)
         await asyncio.to_thread(self._save_sync, task.id, data)
 
     async def get(self, task_id: str, context: Any | None = None) -> Optional[Task]:
@@ -93,13 +97,64 @@ class RedisTaskStore(TaskStore):
         if not data:
             return None
         try:
-            return Task.model_validate_json(data)
+            return cast(Task, Parse(data, Task()))
         except Exception as exc:
             logger.warning("[TASKSTORE] Corrupt task payload for %s: %s", task_id, exc)
             return None
 
     async def delete(self, task_id: str, context: Any | None = None) -> None:
         await asyncio.to_thread(self._delete_sync, task_id)
+
+    async def list(
+        self,
+        params: ListTasksRequest,
+        context: Any | None = None,
+    ) -> ListTasksResponse:
+        """List persisted tasks using the filtering and pagination required by v1."""
+        tasks = await asyncio.to_thread(self._list_sync)
+        if params.context_id:
+            tasks = [task for task in tasks if task.context_id == params.context_id]
+        if params.status:
+            tasks = [task for task in tasks if task.status.state == params.status]
+        if params.HasField("status_timestamp_after"):
+            cutoff = params.status_timestamp_after.ToJsonString()
+            tasks = [
+                task
+                for task in tasks
+                if task.HasField("status")
+                and task.status.HasField("timestamp")
+                and task.status.timestamp.ToJsonString() >= cutoff
+            ]
+
+        tasks.sort(
+            key=lambda task: (
+                task.status.timestamp.ToJsonString()
+                if task.HasField("status") and task.status.HasField("timestamp")
+                else "",
+                task.id,
+            ),
+            reverse=True,
+        )
+        total_size = len(tasks)
+        start_idx = 0
+        if params.page_token:
+            start_task_id = decode_page_token(params.page_token)
+            for index, task in enumerate(tasks):
+                if task.id == start_task_id:
+                    start_idx = index
+                    break
+            else:
+                raise InvalidParamsError(f"Invalid page token: {params.page_token}")
+
+        page_size = params.page_size or DEFAULT_LIST_TASKS_PAGE_SIZE
+        end_idx = start_idx + page_size
+        next_page_token = encode_page_token(tasks[end_idx].id) if end_idx < total_size else None
+        return ListTasksResponse(
+            tasks=tasks[start_idx:end_idx],
+            next_page_token=next_page_token,
+            page_size=page_size,
+            total_size=total_size,
+        )
 
     # --- sync workers (run off the event loop via to_thread) ----------------
 
@@ -129,6 +184,28 @@ class RedisTaskStore(TaskStore):
                 logger.warning("[TASKSTORE] Redis get failed for %s: %s", task_id, exc)
         with self._memory_lock:
             return self._memory_store.get(task_id)
+
+    def _list_sync(self) -> List[Task]:
+        serialized_by_id: Dict[str, str] = {}
+        client = self.redis_client
+        if client is not None:
+            try:
+                for key in client.scan_iter(match="a2a:task:*"):
+                    data = client.get(key)
+                    if data:
+                        serialized_by_id[str(key).removeprefix("a2a:task:")] = str(data)
+            except Exception as exc:
+                logger.warning("[TASKSTORE] Redis list failed: %s", exc)
+        with self._memory_lock:
+            serialized_by_id.update(self._memory_store)
+
+        tasks: List[Task] = []
+        for task_id, data in serialized_by_id.items():
+            try:
+                tasks.append(cast(Task, Parse(data, Task())))
+            except Exception as exc:
+                logger.warning("[TASKSTORE] Corrupt task payload for %s: %s", task_id, exc)
+        return tasks
 
     def _delete_sync(self, task_id: str) -> None:
         client = self.redis_client

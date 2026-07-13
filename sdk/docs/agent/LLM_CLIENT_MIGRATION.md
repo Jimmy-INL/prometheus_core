@@ -130,7 +130,7 @@ that error instead of silently bypassing the proxy.
 6. Remove visible key plumbing.
 
    Do not accept `llm_api_key` in plain text prompts or visible request JSON.
-   `from_a2a_context()` reads it only from structured A2A `DataPart` /
+   `from_a2a_context()` reads it only from structured A2A v1 `Part(data=...)` /
    `provided_inputs`.
 
 7. Update tests.

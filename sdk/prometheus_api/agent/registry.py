@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from a2a.types import AgentCard
+from google.protobuf.json_format import MessageToDict
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class AgentRegistryClient:
     ) -> tuple[str, Dict[str, Any]]:
         """Build the LiteLLM registration payload without logging secret-bearing values."""
         agent_name = self.agent_name(agent_card)
-        agent_card_params = raw_agent_card or agent_card.model_dump()
+        agent_card_params = raw_agent_card or MessageToDict(agent_card)
         registration_payload: Dict[str, Any] = {
             "agent_name": agent_name,
             "agent_card_params": agent_card_params,

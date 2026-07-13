@@ -9,9 +9,41 @@ import os
 import logging
 from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+
+class A2AContentSizeLimitMiddleware:
+    """Raise HTTP 413 while an oversized request body is read.
+
+    A2A's v1 JSON-RPC dispatcher catches this exception and returns the
+    protocol-level ``Payload too large`` error used by the former application
+    wrapper.
+    """
+
+    def __init__(self, app, max_content_length: int = 10 * 1024 * 1024):
+        self.app = app
+        self.max_content_length = max_content_length
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        received = 0
+
+        async def receive_limited():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_content_length:
+                    raise HTTPException(status_code=413)
+            return message
+
+        await self.app(scope, receive_limited, send)
 
 
 class BearerTokenMiddleware(BaseHTTPMiddleware):

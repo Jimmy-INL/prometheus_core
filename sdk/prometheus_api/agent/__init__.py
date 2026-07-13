@@ -25,7 +25,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
     TaskArtifactUpdateEvent,
     Artifact,
-    TextPart,
+    Part,
 )
 
 __all__ = [
@@ -53,5 +53,5 @@ __all__ = [
     "TaskStatusUpdateEvent",
     "TaskArtifactUpdateEvent",
     "Artifact",
-    "TextPart",
+    "Part",
 ]
