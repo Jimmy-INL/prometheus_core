@@ -27,13 +27,10 @@ class _FakeStreamResponse:
 def _status_event(
     text,
     *,
-    final=False,
     task_id="task-1",
     context_id="ctx-1",
     state="TASK_STATE_WORKING",
 ):
-    if final and state == "TASK_STATE_WORKING":
-        state = "TASK_STATE_COMPLETED"
     return {
         "result": {
             "statusUpdate": {
@@ -62,18 +59,14 @@ def test_extract_text_from_bare_part():
     assert extract_status_message_text(status) == "hello"
 
 
-def test_extract_text_from_root_wrapped_part():
-    status = {"message": {"parts": [{"root": {"kind": "text", "text": "wrapped"}}]}}
-    assert extract_status_message_text(status) == "wrapped"
-
-
-def test_extract_text_ignores_non_text_parts_and_non_dicts():
+def test_extract_text_ignores_non_v1_and_non_text_parts():
     status = {
         "message": {
             "parts": [
                 "garbage",
-                {"kind": "data", "data": {"x": 1}},
-                {"kind": "text", "text": "found"},
+                {"root": {"kind": "text", "text": "pre-v1"}},
+                {"data": {"x": 1}},
+                {"text": "found"},
             ]
         }
     }
@@ -146,11 +139,11 @@ async def test_status_update_accumulates_and_fires_callback():
     )
     result = await apply_stream_event(
         result,
-        _status_event("Done", final=True, state="TASK_STATE_COMPLETED"),
+        _status_event("Done", state="TASK_STATE_COMPLETED"),
         status_callback=on_status,
     )
 
-    # Final events do not fire the status callback.
+    # Terminal status events do not fire the status callback.
     assert seen == ["Working on it"]
     assert result["id"] == "task-1"
     assert result["contextId"] == "ctx-1"
@@ -197,6 +190,23 @@ async def test_non_dict_result_is_ignored():
     assert await apply_stream_event(acc, {"result": "noise"}) is acc
 
 
+async def test_pre_v1_event_shape_is_ignored():
+    """Covers BEH-011-04."""
+    acc = new_task_accumulator()
+    result = await apply_stream_event(
+        acc,
+        {
+            "result": {
+                "kind": "status-update",
+                "final": True,
+                "status": {"state": "completed"},
+            }
+        },
+    )
+    assert result is acc
+    assert "status" not in result
+
+
 # ---------------------------------------------------------------------------
 # consume_stream_response
 # ---------------------------------------------------------------------------
@@ -211,7 +221,6 @@ async def test_consume_ndjson_stream():
         json.dumps(
             _status_event(
                 json.dumps(final_payload),
-                final=True,
                 state="TASK_STATE_COMPLETED",
             )
         ),
@@ -230,7 +239,7 @@ async def test_consume_ndjson_stream():
 
 async def test_consume_sse_stream_with_comments_and_multiline_data():
     event_one = json.dumps(_status_event("Working"))
-    event_two = json.dumps(_status_event("Final", final=True, state="TASK_STATE_COMPLETED"))
+    event_two = json.dumps(_status_event("Final", state="TASK_STATE_COMPLETED"))
     lines = [
         ": keepalive comment",
         f"data: {event_one[:10]}",

@@ -1216,7 +1216,7 @@ class PrometheusAgent:
         self.agent_card_dict = self._agent_card_payload_with_extensions(agent_card_dict, agent_card)
 
         logger.info(f"Loaded agent card: {agent_card.name} v{agent_card.version}")
-        logger.info("Agent URL: %s", interfaces[0].url)
+        logger.info(f"Agent URL: {interfaces[0].url}")
 
         return agent_card
 

@@ -105,6 +105,7 @@ class RedisTaskStore(TaskStore):
     async def delete(self, task_id: str, context: Any | None = None) -> None:
         await asyncio.to_thread(self._delete_sync, task_id)
 
+    # The A2A v1 TaskStore ABC requires this exact name despite shadowing list.
     async def list(
         self,
         params: ListTasksRequest,

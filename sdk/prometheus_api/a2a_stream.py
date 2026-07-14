@@ -8,6 +8,10 @@ implementation of that logic; do not copy it into consumers.
 Dependency-light by design (stdlib + httpx), so the frontend can import it
 without the agent runtime (a2a-sdk, starlette, litellm).
 
+Only A2A v1 envelope and part shapes are accepted. Pre-v1 dashed event kinds,
+root-wrapped parts, and status-update ``final`` fields are intentionally not
+supported.
+
 Event handling rules:
 
 - v1 ``statusUpdate`` events overwrite the accumulated ``status`` and update
@@ -57,22 +61,14 @@ def new_task_accumulator() -> Dict[str, Any]:
 def extract_status_message_text(status_payload: Any) -> str:
     """Extract plain text from a ``status.message`` payload.
 
-    Handles v1 bare parts (``{"text": ...}``) plus legacy kind/root shapes.
+    A2A v1 represents text with a direct ``Part.text`` JSON field.
     """
     message = status_payload.get("message", {}) if isinstance(status_payload, dict) else {}
     parts = message.get("parts", []) if isinstance(message, dict) else []
     for part in parts:
         if not isinstance(part, dict):
             continue
-        root = part.get("root") if isinstance(part.get("root"), dict) else None
-        part_kind = str(part.get("kind") or (root or {}).get("kind") or "").strip().lower()
-        if not part_kind and "text" in part:
-            part_kind = "text"
-        if part_kind != "text":
-            continue
         text = part.get("text")
-        if text is None and root is not None:
-            text = root.get("text")
         if isinstance(text, str) and text.strip():
             return text.strip()
     return ""
@@ -117,7 +113,7 @@ async def apply_stream_event(
     status_callback: Optional[StatusCallback] = None,
     background_callback: Optional[BackgroundCallback] = None,
 ) -> Dict[str, Any]:
-    """Fold one stream envelope into the accumulated task payload."""
+    """Fold one A2A v1 stream envelope into the accumulated task payload."""
     if "error" in envelope:
         raise A2AStreamError(f"Agent error: {envelope['error']}")
 
@@ -138,8 +134,15 @@ async def apply_stream_event(
             )
         return a2a_result
 
-    event = result.get("statusUpdate") or result.get("artifactUpdate") or result
-    if not isinstance(event, dict):
+    status_update = result.get("statusUpdate")
+    artifact_update = result.get("artifactUpdate")
+    if isinstance(status_update, dict):
+        event = status_update
+        event_type = "status"
+    elif isinstance(artifact_update, dict):
+        event = artifact_update
+        event_type = "artifact"
+    else:
         return a2a_result
 
     # Heartbeat keepalives only hold the connection open; they carry no
@@ -156,22 +159,16 @@ async def apply_stream_event(
     ):
         await background_callback(event_metadata)
 
-    if "statusUpdate" in result:
-        kind = "status-update"
-    elif "artifactUpdate" in result:
-        kind = "artifact-update"
-    else:
-        kind = str(event.get("kind") or "").strip().lower()
-    if kind == "status-update":
+    if event_type == "status":
         a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
         a2a_result["contextId"] = event.get("contextId") or a2a_result.get("contextId")
         a2a_result["status"] = _normalize_task_state(event.get("status", {}))
         status_text = extract_status_message_text(a2a_result["status"])
         state = str(a2a_result["status"].get("state") or "").lower()
-        is_stopping = bool(event.get("final")) or state in _STOPPING_STATES
+        is_stopping = state in _STOPPING_STATES
         if status_callback and status_text and not is_stopping:
             await status_callback(status_text)
-    elif kind == "artifact-update":
+    else:
         artifact = event.get("artifact")
         if isinstance(artifact, dict):
             a2a_result["artifacts"] = merge_artifacts(

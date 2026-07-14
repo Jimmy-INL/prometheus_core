@@ -13,20 +13,22 @@ Provide dependency-light payload models and stream consumption helpers shared by
 - REQ-011-03: `ConversationResponse` MUST validate status against `ConversationStatus`, store status as a plain string after validation, ignore unknown fields, and default status to `answer`.
 - REQ-011-04: `ConversationRequest`, `ConversationResponse`, and `ConversationStatus` MUST be re-exported from `prometheus_api.agent`.
 - REQ-011-05: `new_task_accumulator()` MUST return a task accumulator with an empty artifact list.
-- REQ-011-06: `extract_status_message_text(...)` MUST extract non-empty text from bare text parts or A2A SDK `root`-wrapped text parts and ignore non-text or invalid parts.
+- REQ-011-06: `extract_status_message_text(...)` MUST extract non-empty text from direct A2A v1 `Part.text` fields and ignore non-v1, non-text, or invalid parts.
 - REQ-011-07: `merge_artifacts(...)` MUST preserve order, deduplicate keyed artifacts by `artifactId` falling back to `name`, and retain unkeyed artifact entries.
 - REQ-011-08: `apply_stream_event(...)` MUST raise `A2AStreamError` for envelopes with `error`, ignore non-dict results, skip heartbeat events, and invoke `background_callback` for `metadata.background` events.
-- REQ-011-09: Status-update events MUST update accumulated task ID, context ID, and status; non-final text status updates MUST invoke `status_callback`.
-- REQ-011-10: Artifact-update events MUST merge the incoming artifact into the accumulated artifact list.
+- REQ-011-09: A2A v1 `statusUpdate` events MUST update accumulated task ID, context ID, and status; non-terminal text status updates MUST invoke `status_callback`.
+- REQ-011-10: A2A v1 `artifactUpdate` events MUST merge the incoming artifact into the accumulated artifact list.
 - REQ-011-11: `consume_stream_response(...)` MUST support `application/x-ndjson` and `text/event-stream`, including SSE comments and multiline `data:` blocks, and MUST reject unsupported content types.
 - REQ-011-12: `stream_a2a_request(...)` MUST POST JSON with `Content-Type: application/json`, accept SSE or NDJSON, enforce a default 900-second client timeout, raise non-success HTTP responses, and return the accumulated task.
 - REQ-011-13: Hosted A2A agents SHOULD handle large request payloads up to the configured SDK content limit and return JSON-RPC payload-too-large errors when that limit is exceeded.
 - REQ-011-14: Concurrent A2A streaming sends to the same conversation MUST keep per-request final results isolated.
+- REQ-011-15: Stream parsing MUST accept only A2A v1 `task`, `statusUpdate`, and `artifactUpdate` result envelopes and MUST ignore pre-v1 dashed event-kind shapes.
 
 ## Behavior
 - BEH-011-01: GIVEN a status stream with one progress event and one final event WHEN consumed THEN only the non-final progress text is sent to `status_callback`.
 - BEH-011-02: GIVEN an SSE stream ending without a trailing blank line WHEN consumed THEN the final data block is still flushed and applied.
 - BEH-011-03: GIVEN a heartbeat status event WHEN applied THEN it does not overwrite the previously accumulated status.
+- BEH-011-04: GIVEN a pre-v1 dashed event-kind result WHEN applied THEN the accumulator remains unchanged.
 
 ## Interfaces
 - `ConversationStatus(str, Enum)`

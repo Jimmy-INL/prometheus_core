@@ -13,6 +13,9 @@ derived from `TaskState` because v1 has no `TaskStatusUpdateEvent.final` field.
 Assemble custom servers with `a2a.server.routes` factories; prefer
 `PrometheusAgent.build_app()` so agent-card routes, request limits,
 authentication, and lifecycle behavior stay aligned.
+`prometheus_api.a2a_stream` accepts only v1 `task`, `statusUpdate`, and
+`artifactUpdate` envelopes with direct `Part` fields; do not add pre-v1 wire
+shape fallbacks.
 
 `tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 
@@ -40,6 +43,10 @@ For targeted tests, use `uv run pytest tests/test_agent.py::TestPrometheusAgentE
 
 This project targets Python 3.12+. Ruff uses a 100-character line length and excludes `examples/`. Prefer typed Pydantic models for API payloads, explicit resource classes for endpoints, and clear async/sync parity between `storage_client/resources/` and `storage_client/async_resources/`. Keep `llm_client` sync and async behavior aligned when changing aliases, fallback behavior, logging, or response objects. Use `snake_case` for modules, functions, variables, and test functions; use `PascalCase` for classes.
 
+Preserve the surrounding logging interpolation style when editing existing modules. In
+f-string-heavy sections such as `agent/base.py`, prefer f-strings for straightforward values
+unless lazy interpolation provides a material benefit.
+
 Agent registry URL lookups should go through `PrometheusAgent.registry_url()` so the `REGISTRY_URL` fallback value stays centralized. Registry HTTP/retry behavior belongs in `agent/registry.py`; registration starts from the app lifespan as a background async task. Keep `REGISTRY_MAX_RETRIES` docs and tests aligned with that startup behavior, including retries against the built-in fallback URL. Invalid retry configuration should not prevent an agent from starting.
 
 LiteLLM A2A routing requires the registered copy of a v1 agent card to retain
@@ -57,7 +64,9 @@ Base-agent behavior changes that downstream agents may need to react to should b
 
 Spec-impacting behavior changes should update `specs/` in the same change and follow `docs/SDD_SPEC_AUTHORING.md`. Add or revise requirement and behavior IDs before implementing new behavior, keep deleted IDs marked retired rather than reusing them, use front-loaded `REQ-NNN-XX:` and `BEH-NNN-XX:` bullets, and tag inferred-but-untested requirements with `⚠ untested` until coverage exists. Spec-backed tests should follow `docs/SDD_TESTING_STANDARD.md`.
 
-Keep the A2A SDK dependency on the supported v1 range (`>=1.0.0,<2`) and keep
+Keep the A2A SDK dependency on the supported v1 range (`>=1.0.0,<2`), keep the
+directly imported `protobuf` runtime dependency aligned with the SDK's
+supported range (`>=5.29.5,<7`), and keep `types-protobuf` development-only. Keep
 protobuf migration coverage in `tests/test_agent.py`, `tests/test_a2a_payloads.py`,
 and `tests/test_task_store.py` aligned with agent behavior.
 
