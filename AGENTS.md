@@ -163,3 +163,4 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - When replacing an implementation path, delete the obsolete path and tests instead of leaving quarantined fallback code.
+- Raw A2A v1 callers use PascalCase JSON-RPC methods, ProtoJSON enum/part/configuration shapes, and `A2A-Version: 1.0`; keep the LiteLLM gateway at version 1.92.0 or newer.

@@ -121,26 +121,26 @@ def test_send_streams_sse_statuses_and_final_response(monkeypatch) -> None:
     stream_events = [
         {
             "result": {
-                "kind": "status-update",
-                "contextId": "conv-1",
-                "taskId": "task-1",
-                "final": False,
-                "status": {
-                    "state": "working",
-                    "message": {"parts": [{"kind": "text", "text": "Thinking..."}]},
-                },
+                "statusUpdate": {
+                    "contextId": "conv-1",
+                    "taskId": "task-1",
+                    "status": {
+                        "state": "TASK_STATE_WORKING",
+                        "message": {"parts": [{"text": "Thinking..."}]},
+                    },
+                }
             }
         },
         {
             "result": {
-                "kind": "status-update",
-                "contextId": "conv-1",
-                "taskId": "task-1",
-                "final": True,
-                "status": {
-                    "state": "completed",
-                    "message": {"parts": [{"kind": "text", "text": json.dumps(final_payload)}]},
-                },
+                "statusUpdate": {
+                    "contextId": "conv-1",
+                    "taskId": "task-1",
+                    "status": {
+                        "state": "TASK_STATE_COMPLETED",
+                        "message": {"parts": [{"text": json.dumps(final_payload)}]},
+                    },
+                }
             }
         },
     ]
@@ -185,11 +185,17 @@ def test_send_streams_sse_statuses_and_final_response(monkeypatch) -> None:
     assert statuses == ["Thinking..."]
     assert captured["method"] == "POST"
     assert captured["url"] == "http://example.test"
-    assert captured["json"]["method"] == "message/stream"
+    assert captured["json"]["method"] == "SendStreamingMessage"
     # conversationId must travel as the A2A-spec message.contextId so the
     # client-agent's RequestContext.context_id matches the conversation.
     assert captured["json"]["params"]["message"]["contextId"] == "conv-1"
+    assert captured["json"]["params"]["message"]["role"] == "ROLE_USER"
+    assert captured["json"]["params"]["message"]["parts"] == [
+        {"text": json.dumps({"query": "hello", "conversation_id": "conv-1"})}
+    ]
+    assert captured["json"]["params"]["configuration"] == {"returnImmediately": False}
     assert "application/x-ndjson" in captured["headers"]["Accept"]
+    assert captured["headers"]["A2A-Version"] == "1.0"
     assert captured["headers"]["Authorization"] == "Bearer secret"
     assert response.status == "completed"
     assert response.message == "Done."

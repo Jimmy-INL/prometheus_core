@@ -23,14 +23,15 @@ instead.
 3. **Routing invariants preserved.** The frontend never talks to agents directly; the **client-agent** is the
    aggregator. LiteLLM stays the proxy for *A2A traffic* and is **not** in the JSX path (see next section).
 
-## Routing fact: LiteLLM does not proxy `.well-known/*`
+## Routing fact: viewer assets do not travel through LiteLLM
 
-LiteLLM's A2A gateway is **path-routed**: it forwards only `message/send` (and `message/stream` via the
-JSON-RPC body) under `/a2a/{agent}`. It does **not** proxy arbitrary paths such as `/.well-known/viewers/*`.
+LiteLLM's current A2A gateway proxies the standard agent-card discovery routes and
+JSON-RPC operations under `/a2a/{agent}`. It does **not** proxy arbitrary extension
+assets such as `/.well-known/viewers/*`.
 
-This is already how agent **cards** are fetched: `tool_discovery.get_agent_card` hits the agent's **direct
-URL** (`{direct_url}/.well-known/agent.json`) on the shared Docker network — explicitly *because* LiteLLM's
-`/a2a/{agent}` response drops metadata. So viewer JSX follows the same path:
+Prometheus discovery fetches each agent's card from its **direct URL** on the shared
+Docker network so custom card metadata remains available. Viewer JSX follows the same
+direct route:
 
 ```
 agent (direct URL, well-known)  ──fetched by──▶  client-agent (aggregates + caches + re-serves)

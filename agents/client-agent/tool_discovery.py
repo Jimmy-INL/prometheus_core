@@ -262,18 +262,24 @@ def _extract_status_payload(a2a_result: Dict[str, Any]) -> Optional[Dict[str, An
     for part in parts:
         if not isinstance(part, dict):
             continue
-        part_kind = str(part.get("kind") or "").strip().lower()
+        root = part.get("root") if isinstance(part.get("root"), dict) else None
+        payload_part = root or part
+        part_kind = str(part.get("kind") or payload_part.get("kind") or "").strip().lower()
+        if not part_kind and "data" in payload_part:
+            part_kind = "data"
+        elif not part_kind and "text" in payload_part:
+            part_kind = "text"
         if part_kind == "data":
-            data_payload = part.get("data")
+            data_payload = payload_part.get("data")
             if isinstance(data_payload, dict):
                 return data_payload
             continue
         if part_kind != "text":
             continue
-        text_content = part.get("text")
+        text_content = payload_part.get("text")
         try:
             parsed = json.loads(text_content)
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, TypeError) as e:
             logger.debug(f"Failed to parse final status message as JSON: {e}")
             continue
         if isinstance(parsed, dict):
@@ -294,7 +300,7 @@ async def call_a2a_agent(
     Call an A2A agent using JSON-RPC protocol.
 
     Implements the Agent-to-Agent (A2A) communication protocol for invoking
-    remote agent skills. Uses JSON-RPC with blocking=True for standard sends,
+    remote agent skills. Uses JSON-RPC with returnImmediately=false for standard sends,
     and switches to the A2A SSE stream endpoint when the downstream agent card
     advertises streaming support.
 
@@ -321,16 +327,16 @@ async def call_a2a_agent(
     message = {
         "jsonrpc": "2.0",
         "id": request_id,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": message_id,
-                "role": "user",
+                "role": "ROLE_USER",
                 "parts": [],
                 "metadata": {"skillId": skill_id},
             },
             "configuration": {
-                "blocking": True,  # Wait for task to complete before returning
+                "returnImmediately": False,
             },
         }
     }
@@ -343,7 +349,6 @@ async def call_a2a_agent(
     if request_params:
         message["params"]["message"]["parts"].append(
             {
-                "kind": "text",
                 "text": json.dumps(request_params),
             }
         )
@@ -351,7 +356,6 @@ async def call_a2a_agent(
     if isinstance(provided_inputs, dict) and provided_inputs:
         message["params"]["message"]["parts"].append(
             {
-                "kind": "data",
                 "data": {
                     "provided_inputs": provided_inputs,
                 },
@@ -369,10 +373,10 @@ async def call_a2a_agent(
     if kwargs.get("_a2a_task_id"):
         message["params"]["message"]["taskId"] = kwargs["_a2a_task_id"]
 
-    # Route through LiteLLM: agent_url is {REGISTRY_URL}/a2a/{agent_name}
-    # LiteLLM's A2A endpoint requires the method in the URL path.
-    endpoint = agent_url.rstrip("/") + "/message/send"
-    headers = {"Content-Type": "application/json"}
+    # Route through LiteLLM: agent_url is {REGISTRY_URL}/a2a/{agent_name}.
+    # A2A v1 uses one JSON-RPC endpoint and selects the operation by method.
+    endpoint = agent_url.rstrip("/")
+    headers = {"Content-Type": "application/json", "A2A-Version": "1.0"}
     if LITELLM_MASTER_KEY:
         headers["Authorization"] = f"Bearer {LITELLM_MASTER_KEY}"
 
@@ -382,10 +386,7 @@ async def call_a2a_agent(
     try:
         if _prefer_streaming:
             stream_message = dict(message)
-            stream_message["method"] = "message/stream"
-            # A2A streaming stays on the same JSON-RPC endpoint and switches the
-            # method in the payload; LiteLLM does not expose a separate
-            # /message/stream sub-route.
+            stream_message["method"] = "SendStreamingMessage"
             stream_endpoint = agent_url.rstrip("/")
             logger.debug("[A2A] Using streaming invocation via %s", stream_endpoint)
             a2a_result = await stream_a2a_request(
@@ -409,8 +410,14 @@ async def call_a2a_agent(
 
                 logger.debug("[A2A] Got result: %s", str(result)[:500])
 
-                # Extract the actual response from A2A protocol wrapper
-                a2a_result = result.get("result", {})
+                # A2A v1 wraps a blocking response in SendMessageResponse.task.
+                result_payload = result.get("result", {})
+                if isinstance(result_payload, dict) and isinstance(
+                    result_payload.get("task"), dict
+                ):
+                    a2a_result = result_payload["task"]
+                else:
+                    a2a_result = result_payload
 
         logger.debug("[A2A] Full result structure: %s", json.dumps(a2a_result, indent=2, default=str)[:2000])
 

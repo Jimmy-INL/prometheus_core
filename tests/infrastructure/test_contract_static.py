@@ -11,7 +11,7 @@ conversation *before* runtime:
    other two produce
 
 Each request builder's real output is captured and fed through the real
-a2a-sdk ``MessageSendParams`` schema and the real ``_extract_params``
+a2a-sdk ``SendMessageRequest`` protobuf and the real ``_extract_params``
 implementation, asserting that skillId, conversation params, and contextId
 survive the round trip.
 """
@@ -30,8 +30,10 @@ for _entry in (PLATFORM_ROOT / "agents" / "client-agent", PLATFORM_ROOT / "front
     if str(_entry) not in sys.path:
         sys.path.insert(0, str(_entry))
 
-from a2a.server.agent_execution.context import RequestContext  # noqa: E402
-from a2a.types import MessageSendParams  # noqa: E402
+from a2a.server.agent_execution import RequestContext  # noqa: E402
+from a2a.server.context import ServerCallContext  # noqa: E402
+from a2a.types import SendMessageRequest  # noqa: E402
+from google.protobuf.json_format import ParseDict  # noqa: E402
 from prometheus_api.agent import PrometheusAgentExecutor  # noqa: E402
 from prometheus_api.contract import (  # noqa: E402
     ConversationRequest,
@@ -63,8 +65,11 @@ class _FakeResponse:
 def _specialist_final_status(payload: dict) -> dict:
     return {
         "result": {
-            "status": {
-                "message": {"parts": [{"kind": "text", "text": json.dumps(payload)}]}
+            "task": {
+                "status": {
+                    "state": "TASK_STATE_COMPLETED",
+                    "message": {"parts": [{"text": json.dumps(payload)}]},
+                }
             }
         }
     }
@@ -104,14 +109,12 @@ def _capture_frontend_request(monkeypatch, response_payload: dict, **send_kwargs
 
     final_event = {
         "result": {
-            "kind": "status-update",
-            "final": True,
-            "status": {
-                "state": "completed",
-                "message": {
-                    "parts": [{"kind": "text", "text": json.dumps(response_payload)}]
+            "statusUpdate": {
+                "status": {
+                    "state": "TASK_STATE_COMPLETED",
+                    "message": {"parts": [{"text": json.dumps(response_payload)}]},
                 },
-            },
+            }
         }
     }
 
@@ -155,8 +158,8 @@ def _capture_frontend_request(monkeypatch, response_payload: dict, **send_kwargs
 
 def _request_context_from_envelope(envelope: dict) -> RequestContext:
     """Build a RequestContext the way the a2a-sdk server does from a request."""
-    params = MessageSendParams.model_validate(envelope["params"])
-    return RequestContext(request=params)
+    request = ParseDict(envelope["params"], SendMessageRequest())
+    return RequestContext(call_context=ServerCallContext(), request=request)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +176,7 @@ def test_client_agent_request_parses_through_prometheus_api(monkeypatch):
     )
 
     # The envelope must satisfy the real a2a-sdk wire schema.
-    assert envelope["method"] == "message/send"
+    assert envelope["method"] == "SendMessage"
     context = _request_context_from_envelope(envelope)
 
     # conversationId must arrive as the SDK context_id (artifact/state scoping).
@@ -213,7 +216,7 @@ def test_frontend_request_parses_through_prometheus_api(monkeypatch):
         plan_approved=True,
     )
 
-    assert envelope["method"] == "message/stream"
+    assert envelope["method"] == "SendStreamingMessage"
     context = _request_context_from_envelope(envelope)
     assert context.context_id == "conv-88"
 
