@@ -2,20 +2,34 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
+from a2a.helpers import new_task
 from a2a.server.agent_execution.context import RequestContext
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
     Part,
     Role,
+    Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
+)
+from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Value
+
+
+STOPPING_TASK_STATES = frozenset(
+    {
+        TaskState.TASK_STATE_COMPLETED,
+        TaskState.TASK_STATE_FAILED,
+        TaskState.TASK_STATE_CANCELED,
+        TaskState.TASK_STATE_INPUT_REQUIRED,
+        TaskState.TASK_STATE_AUTH_REQUIRED,
+        TaskState.TASK_STATE_REJECTED,
+    }
 )
 
 
@@ -55,6 +69,27 @@ def context_id(context: RequestContext) -> str:
     return str(getattr(context, "context_id", "") or "")
 
 
+def build_initial_task(context: RequestContext) -> Task:
+    """Build the initial task required before any v1.0 task update events."""
+    current_task = getattr(context, "current_task", None)
+    if current_task is not None:
+        return cast(Task, current_task)
+
+    message = getattr(context, "message", None)
+    history = [message] if message is not None else []
+    return new_task(
+        task_id=context_task_id(context),
+        context_id=context_id(context),
+        state=TaskState.TASK_STATE_SUBMITTED,
+        history=history,
+    )
+
+
+def is_stopping_status_event(event: Any) -> bool:
+    """Return whether a v1.0 status event stops automatic agent finalization."""
+    return isinstance(event, TaskStatusUpdateEvent) and event.status.state in STOPPING_TASK_STATES
+
+
 def build_status_update_event(
     *,
     context: RequestContext,
@@ -63,15 +98,20 @@ def build_status_update_event(
     message: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> TaskStatusUpdateEvent:
-    """Build a task status update event with an optional text message."""
+    """Build a task status update event with an optional text message.
+
+    ``final`` remains in the public helper signature for source compatibility.
+    A2A v1 derives finality from the task state and no longer has a ``final``
+    field on ``TaskStatusUpdateEvent``.
+    """
     task_id = context_task_id(context)
     current_context_id = context_id(context)
     status_message = None
     if message:
         status_message = Message(
             message_id=str(uuid.uuid4()),
-            role=Role.agent,
-            parts=[Part(root=TextPart(text=message))],
+            role=Role.ROLE_AGENT,
+            parts=[Part(text=message)],
             context_id=current_context_id,
             task_id=task_id,
         )
@@ -79,7 +119,6 @@ def build_status_update_event(
     return TaskStatusUpdateEvent(
         task_id=task_id,
         context_id=current_context_id,
-        final=final,
         status=TaskStatus(state=state, message=status_message),
         metadata=metadata,
     )
@@ -141,10 +180,11 @@ def build_data_artifact_event(
             metadata=build_artifact_metadata(context=context, agent_name=agent_name),
             parts=[
                 Part(
-                    root=DataPart(
-                        data=payload if isinstance(payload, dict) else {"value": payload},
-                        metadata=part_metadata,
-                    )
+                    data=ParseDict(
+                        payload if isinstance(payload, dict) else {"value": payload},
+                        Value(),
+                    ),
+                    metadata=part_metadata,
                 )
             ],
         ),

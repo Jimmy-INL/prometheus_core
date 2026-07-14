@@ -110,7 +110,7 @@ class PrometheusWorker:
         self,
         message: Optional[str] = None,
         *,
-        state: TaskState = TaskState.working,
+        state: TaskState = TaskState.TASK_STATE_WORKING,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Queue a progress status update. Mirror of
@@ -170,6 +170,4 @@ class PrometheusWorker:
         to stream progress, and check ``self.cancelled`` periodically to stop
         early. The returned dict becomes the agent's final result.
         """
-        raise NotImplementedError(
-            "Subclasses must implement run() with their blocking workload."
-        )
+        raise NotImplementedError("Subclasses must implement run() with their blocking workload.")

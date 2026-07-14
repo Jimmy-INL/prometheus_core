@@ -2,7 +2,7 @@
 
 The Chainlit frontend and the client-agent orchestrator exchange a JSON
 payload (``ConversationRequest`` / ``ConversationResponse``) embedded in the
-text part of A2A ``message/stream`` calls. These models are the single source
+text part of A2A ``SendStreamingMessage`` calls. These models are the single source
 of truth for that payload; both sides must import them from here instead of
 maintaining local copies.
 

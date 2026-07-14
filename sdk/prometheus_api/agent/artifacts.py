@@ -17,6 +17,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import Message as ProtobufMessage
+
 from ..redis_utils import create_redis_client
 
 
@@ -102,7 +105,9 @@ class ArtifactReference:
         producer_agent_id: Optional[str] = None,
     ) -> Optional["ArtifactReference"]:
         """Normalize a native A2A artifact payload into a catalog entry."""
-        if hasattr(payload, "model_dump"):
+        if isinstance(payload, ProtobufMessage):
+            payload = MessageToDict(payload)
+        elif hasattr(payload, "model_dump"):
             payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
         if not isinstance(payload, dict) or not isinstance(payload.get("parts"), list):
             return None
@@ -127,14 +132,24 @@ class ArtifactReference:
             return None
 
         part_kind = str(primary_part.get("kind") or "").strip().lower()
+        if not part_kind:
+            if "url" in primary_part:
+                part_kind = "file"
+            elif "data" in primary_part:
+                part_kind = "data"
+            elif "text" in primary_part:
+                part_kind = "text"
         part_metadata = dict(primary_part.get("metadata") or {})
 
         if part_kind == "file":
-            file_payload = dict(primary_part.get("file") or {})
-            uri = str(file_payload.get("uri") or "").strip() or None
-            mime_type = file_payload.get("mimeType")
+            file_payload = dict(primary_part.get("file") or primary_part)
+            uri = str(file_payload.get("url") or file_payload.get("uri") or "").strip() or None
+            mime_type = file_payload.get("mediaType") or file_payload.get("mimeType")
             if not name:
-                name = str(file_payload.get("name") or "").strip() or "artifact"
+                name = (
+                    str(file_payload.get("filename") or file_payload.get("name") or "").strip()
+                    or "artifact"
+                )
             return cls(
                 artifact_id=artifact_id,
                 conversation_id=normalized_conversation_id,
@@ -203,7 +218,9 @@ class ArtifactReference:
         if normalized is not None:
             return normalized
 
-        if hasattr(payload, "model_dump"):
+        if isinstance(payload, ProtobufMessage):
+            payload = MessageToDict(payload)
+        elif hasattr(payload, "model_dump"):
             payload = payload.model_dump(mode="json", by_alias=True, exclude_none=True)
 
         if not isinstance(payload, dict):

@@ -79,7 +79,7 @@ test-install: ##@ Verify package installs and imports correctly in a clean venv
 	@echo "Building package..."
 	@uv build --quiet
 	@TMPVENV=$$(mktemp -d) && \
-	uv venv "$$TMPVENV" --quiet && \
+	uv venv --python 3.12 "$$TMPVENV" --quiet && \
 	VIRTUAL_ENV="$$TMPVENV" uv pip install --quiet dist/prometheus_api-*.whl && \
 	echo "Testing imports..." && \
 	"$$TMPVENV/bin/python" -c "\
@@ -137,4 +137,3 @@ endif
 		$(BUILD_PUSH_TAGS) \
 		.
 	@echo "Done$(if $(filter true,$(PUSH_LATEST)), — also tagged as latest)"
-

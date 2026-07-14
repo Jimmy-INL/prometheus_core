@@ -6,8 +6,11 @@ from typing import Any, Dict, cast
 
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatusUpdateEvent
+from a2a.types import TaskState, TaskStatusUpdateEvent
+from google.protobuf.json_format import MessageToDict
 from starlette.responses import JSONResponse
+
+from .events import is_stopping_status_event
 
 
 class _LocalRequestContext:
@@ -34,22 +37,17 @@ class _CollectingEventQueue:
 
 def _extract_result_payload(events: list[Any]) -> Any:
     for event in reversed(events):
-        if not isinstance(event, TaskStatusUpdateEvent) or not event.final:
+        if not is_stopping_status_event(event):
             continue
 
-        status_message = getattr(event.status, "message", None)
-        if status_message is None:
+        if not event.status.HasField("message"):
             continue
+        status_message = event.status.message
 
         for part in getattr(status_message, "parts", []) or []:
-            text_value = None
-            if hasattr(part, "text"):
-                text_value = part.text
-            elif hasattr(part, "root") and hasattr(part.root, "text"):
-                text_value = part.root.text
-
-            if text_value is None:
+            if part.WhichOneof("content") != "text":
                 continue
+            text_value = part.text
 
             try:
                 return json.loads(text_value)
@@ -61,14 +59,8 @@ def _extract_result_payload(events: list[Any]) -> Any:
 def _serialize_events(events: list[Any]) -> list[Dict[str, Any]]:
     serialized = []
     for event in events:
-        if hasattr(event, "model_dump"):
-            serialized.append(
-                event.model_dump(
-                    mode="json",
-                    by_alias=True,
-                    exclude_none=True,
-                )
-            )
+        if hasattr(event, "DESCRIPTOR"):
+            serialized.append(MessageToDict(event))
         else:
             serialized.append({"type": type(event).__name__, "value": str(event)})
     return serialized
@@ -169,7 +161,7 @@ def add_debug_chat_route(app, *, agent: Any, executor: Any) -> None:
         final_state = None
         for event in reversed(local_queue.events):
             if isinstance(event, TaskStatusUpdateEvent):
-                final_state = event.status.state.value
+                final_state = TaskState.Name(event.status.state)
                 break
 
         response_payload = {

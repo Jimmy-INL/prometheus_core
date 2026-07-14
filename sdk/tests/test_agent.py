@@ -27,14 +27,22 @@ from prometheus_api.agent import (
 )
 from prometheus_api.agent.registry import AgentRegistryClient
 from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
-from a2a.types import AgentCapabilities, AgentCard, AgentSkill, Artifact, DataPart, TextPart
+from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Artifact, Part, Task
+from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Value
 
 
 def _test_agent_card() -> AgentCard:
     return AgentCard(
         name="Test Agent",
         description="Agent card used by tests",
-        url="http://test-agent:8000",
+        supported_interfaces=[
+            AgentInterface(
+                url="http://test-agent:8000",
+                protocol_binding="JSONRPC",
+                protocol_version="1.0",
+            )
+        ],
         version="1.0.0",
         capabilities=AgentCapabilities(streaming=True),
         skills=[
@@ -64,6 +72,8 @@ class TestPrometheusAgentExecutor:
         context = MagicMock(spec=RequestContext)
         context.task_id = "test-task-123"
         context.context_id = "test-context-456"
+        context.current_task = None
+        context.message = None
         context.get_user_input.return_value = '{"input": "test data"}'
         return context
 
@@ -158,22 +168,26 @@ class TestPrometheusAgentExecutor:
         assert mock_event_queue.enqueue_event.called
         calls = mock_event_queue.enqueue_event.call_args_list
 
-        # Should have working status then final completed status with the result payload.
-        assert len(calls) == 2
+        # A2A v1 requires the Task first, followed by working and completed updates.
+        assert len(calls) == 3
 
-        # Check first call is working status
-        first_event = calls[0][0][0]
+        initial_task = calls[0][0][0]
+        assert isinstance(initial_task, Task)
+        assert initial_task.id == "test-task-123"
+        assert initial_task.status.state == TaskState.TASK_STATE_SUBMITTED
+
+        # Check the next call is working status
+        first_event = calls[1][0][0]
         assert isinstance(first_event, TaskStatusUpdateEvent)
-        assert first_event.status.state == TaskState.working
+        assert first_event.status.state == TaskState.TASK_STATE_WORKING
         assert first_event.task_id == "test-task-123"
         assert first_event.context_id == "test-context-456"
 
         # Check second call is completed status with the final response payload
-        second_event = calls[1][0][0]
+        second_event = calls[2][0][0]
         assert isinstance(second_event, TaskStatusUpdateEvent)
-        assert second_event.status.state == TaskState.completed
-        assert second_event.final is True
-        payload_text = second_event.status.message.parts[0].root.text
+        assert second_event.status.state == TaskState.TASK_STATE_COMPLETED
+        payload_text = second_event.status.message.parts[0].text
         assert json.loads(payload_text) == {"status": "success", "data": "test data"}
 
     def test_execute_emits_heartbeats_during_long_execute(self, mock_context, monkeypatch):
@@ -190,7 +204,8 @@ class TestPrometheusAgentExecutor:
             return [
                 e
                 for e in events
-                if isinstance(e, TaskStatusUpdateEvent) and (e.metadata or {}).get("heartbeat")
+                if isinstance(e, TaskStatusUpdateEvent)
+                and MessageToDict(e.metadata).get("heartbeat")
             ]
 
         class SlowExecutor(PrometheusAgentExecutor):
@@ -207,15 +222,13 @@ class TestPrometheusAgentExecutor:
         heartbeats = _heartbeats()
         assert heartbeats, "expected at least one heartbeat keepalive event"
         for hb in heartbeats:
-            assert hb.final is False
-            assert hb.status.state == TaskState.working
-            assert hb.status.message is None  # silent: no UI text
+            assert hb.status.state == TaskState.TASK_STATE_WORKING
+            assert not hb.status.HasField("message")  # silent: no UI text
 
         # The terminal event is the completed status, emitted after heartbeats stop.
         assert isinstance(events[-1], TaskStatusUpdateEvent)
-        assert events[-1].final is True
-        assert events[-1].status.state == TaskState.completed
-        assert not (events[-1].metadata or {}).get("heartbeat")
+        assert events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+        assert not MessageToDict(events[-1].metadata).get("heartbeat")
 
     def test_heartbeat_interval_rejects_invalid_values(self, monkeypatch):
         """A non-positive or non-numeric PROMETHEUS_HEARTBEAT_INTERVAL is rejected
@@ -250,7 +263,7 @@ class TestPrometheusAgentExecutor:
         # Last call should be failed status
         last_event = calls[-1][0][0]
         assert isinstance(last_event, TaskStatusUpdateEvent)
-        assert last_event.status.state == TaskState.failed
+        assert last_event.status.state == TaskState.TASK_STATE_FAILED
 
     def test_execute_skips_auto_finalization_when_agent_finalizes(
         self, mock_context, mock_event_queue
@@ -261,10 +274,9 @@ class TestPrometheusAgentExecutor:
             async def _execute(self, params, context, event_queue):
                 await event_queue.enqueue_event(
                     TaskStatusUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
-                        final=True,
-                        status=TaskStatus(state=TaskState.completed),
+                        task_id=context.task_id,
+                        context_id=context.context_id,
+                        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
                     )
                 )
                 return {"status": "handled-by-agent"}
@@ -273,17 +285,16 @@ class TestPrometheusAgentExecutor:
         asyncio.run(test_executor.execute(mock_context, mock_event_queue))
 
         calls = mock_event_queue.enqueue_event.call_args_list
-        assert len(calls) == 2
+        assert len(calls) == 3
 
-        first_event = calls[0][0][0]
+        assert isinstance(calls[0][0][0], Task)
+        first_event = calls[1][0][0]
         assert isinstance(first_event, TaskStatusUpdateEvent)
-        assert first_event.status.state == TaskState.working
-        assert first_event.final is False
+        assert first_event.status.state == TaskState.TASK_STATE_WORKING
 
-        second_event = calls[1][0][0]
+        second_event = calls[2][0][0]
         assert isinstance(second_event, TaskStatusUpdateEvent)
-        assert second_event.status.state == TaskState.completed
-        assert second_event.final is True
+        assert second_event.status.state == TaskState.TASK_STATE_COMPLETED
 
     def test_execute_allows_streamed_artifacts_without_adding_extra_result_artifact(
         self, mock_context, mock_event_queue
@@ -294,12 +305,12 @@ class TestPrometheusAgentExecutor:
             async def _execute(self, params, context, event_queue):
                 await event_queue.enqueue_event(
                     TaskArtifactUpdateEvent(
-                        taskId=context.task_id,
-                        contextId=context.context_id,
+                        task_id=context.task_id,
+                        context_id=context.context_id,
                         artifact=Artifact(
-                            artifactId="streamed-artifact",
+                            artifact_id="streamed-artifact",
                             name="progress",
-                            parts=[TextPart(text='{"partial": true}')],
+                            parts=[Part(text='{"partial": true}')],
                         ),
                     )
                 )
@@ -316,14 +327,13 @@ class TestPrometheusAgentExecutor:
             call[0][0]
             for call in calls
             if isinstance(call[0][0], TaskStatusUpdateEvent)
-            and call[0][0].status.state == TaskState.completed
-            and call[0][0].final is True
+            and call[0][0].status.state == TaskState.TASK_STATE_COMPLETED
         ]
 
         assert len(artifact_events) == 1
         assert artifact_events[0].artifact.artifact_id == "streamed-artifact"
         assert len(completed_events) == 1
-        payload_text = completed_events[0].status.message.parts[0].root.text
+        payload_text = completed_events[0].status.message.parts[0].text
         assert json.loads(payload_text) == {"status": "done"}
 
     def test_cancel_sends_canceled_status(self, executor, mock_context, mock_event_queue):
@@ -334,10 +344,9 @@ class TestPrometheusAgentExecutor:
         event = mock_event_queue.enqueue_event.call_args[0][0]
 
         assert isinstance(event, TaskStatusUpdateEvent)
-        assert event.status.state == TaskState.canceled
+        assert event.status.state == TaskState.TASK_STATE_CANCELED
         assert event.task_id == "test-task-123"
         assert event.context_id == "test-context-456"
-        assert event.final is True
 
     def test__execute_not_implemented(self, executor, mock_context, mock_event_queue):
         """Test that base executor raises NotImplementedError."""
@@ -482,8 +491,8 @@ class TestPrometheusAgent:
         assert sleep_delays == [2.0, 4.0]
         assert "Invalid REGISTRY_MAX_RETRIES='not-an-int'; using 10" in caplog.text
 
-    def test_registry_client_build_payload_uses_raw_card_and_agent_secret(self):
-        """Registry payload should preserve raw card metadata and static auth headers."""
+    def test_registry_client_build_payload_adds_litellm_v1_routing_fields(self):
+        """Registry payload keeps extensions plus LiteLLM's upstream routing fields."""
         raw_agent_card = {
             "name": "Test Agent",
             "description": "Raw card",
@@ -500,7 +509,11 @@ class TestPrometheusAgent:
         )
 
         assert agent_name == "test-agent"
-        assert payload["agent_card_params"] is raw_agent_card
+        assert payload["agent_card_params"]["skills"] == raw_agent_card["skills"]
+        assert payload["agent_card_params"]["url"] == "http://test-agent:8000"
+        assert payload["agent_card_params"]["protocolVersion"] == "1.0"
+        assert "url" not in raw_agent_card
+        assert "protocolVersion" not in raw_agent_card
         assert payload["static_headers"] == {"Authorization": "Bearer agent-secret"}
 
     def test_get_raw_agent_card_returns_loaded_dict(self):
@@ -529,8 +542,9 @@ class TestPrometheusAgent:
         raw_card = agent.get_raw_agent_card()
         assert raw_card["defaultInputModes"] == ["text"]
         assert raw_card["defaultOutputModes"] == ["text"]
-        assert raw_card["skills"][0]["tags"] == []
-        AgentCard.model_validate(raw_card)
+        assert raw_card["skills"][0].get("tags", []) == []
+        assert raw_card["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
+        ParseDict(raw_card, AgentCard(), ignore_unknown_fields=True)
 
     def test_load_agent_card_inserts_default_workflows_directory(self, tmp_path, monkeypatch):
         """Workflow files next to agent_card.json should be inserted into the raw card."""
@@ -557,7 +571,10 @@ steps:
         agent_card = agent.load_agent_card()
 
         assert agent_card.name == "Workflow Agent"
-        assert agent.get_raw_agent_card()["url"] == "http://workflow-agent:8000"
+        assert (
+            agent.get_raw_agent_card()["supportedInterfaces"][0]["url"]
+            == "http://workflow-agent:8000"
+        )
         assert agent.get_raw_agent_card()["workflows"] == [
             {
                 "id": "thermal_agent.quick_check",
@@ -645,27 +662,32 @@ workflows:
 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            for path in (
-                "/api/agent-card",
-                "/.well-known/agent.json",
-                "/.well-known/agent-card.json",
-            ):
-                response = await client.get(path)
+            raw_response = await client.get("/api/agent-card")
+            assert raw_response.status_code == 200
+            raw_payload = raw_response.json()
+            assert raw_payload["workflows"][0]["id"] == "catalog.workflow"
 
+            for path in ("/.well-known/agent.json", "/.well-known/agent-card.json"):
+                response = await client.get(path)
                 assert response.status_code == 200
                 payload = response.json()
                 assert payload["defaultInputModes"] == ["text"]
                 assert payload["defaultOutputModes"] == ["text"]
-                assert payload["skills"][0]["tags"] == []
-                assert payload["workflows"][0]["id"] == "catalog.workflow"
-                AgentCard.model_validate(payload)
+                assert payload["skills"][0].get("tags", []) == []
+                assert "workflows" not in payload
+                ParseDict(payload, AgentCard())
 
     def test_llm_client_helper_inherits_agent_name_and_context_key(self):
         agent = PrometheusAgent(agent_name="Trace Agent")
         context = MagicMock(spec=RequestContext)
-        part = MagicMock()
-        part.root = DataPart(data={"provided_inputs": {"llm_api_key": "structured-key"}})
-        context.message.parts = [part]
+        context.message.parts = [
+            Part(
+                data=ParseDict(
+                    {"provided_inputs": {"llm_api_key": "structured-key"}},
+                    Value(),
+                )
+            )
+        ]
 
         client = agent.llm_client(context, config=LLMConfig(proxy_url="http://proxy"))
 
@@ -962,11 +984,12 @@ workflows:
         queue.enqueue_event.assert_called_once()
         event = queue.enqueue_event.call_args[0][0]
         assert isinstance(event, TaskStatusUpdateEvent)
-        assert event.status.state == TaskState.input_required
-        part = event.status.message.parts[0].root
-        assert isinstance(part, DataPart)
-        assert part.data["hint"] == "Thermal analysis requires a temperature."
-        assert part.data["missing_inputs"][0]["name"] == "temperature_c"
+        assert event.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+        part = event.status.message.parts[0]
+        assert part.WhichOneof("content") == "data"
+        data = MessageToDict(part.data)
+        assert data["hint"] == "Thermal analysis requires a temperature."
+        assert data["missing_inputs"][0]["name"] == "temperature_c"
 
     def test_create_executor_returns_delegating_executor(self):
         """Test that create_executor returns the standard delegating executor."""
@@ -989,25 +1012,23 @@ class TestEventTypes:
     def test_task_status_update_event_creation(self):
         """Test creating TaskStatusUpdateEvent."""
         event = TaskStatusUpdateEvent(
-            taskId="task-123",
-            contextId="context-456",
-            final=False,
-            status=TaskStatus(state=TaskState.working),
+            task_id="task-123",
+            context_id="context-456",
+            status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
         )
 
         assert event.task_id == "task-123"
         assert event.context_id == "context-456"
-        assert event.final is False
-        assert event.status.state == TaskState.working
+        assert event.status.state == TaskState.TASK_STATE_WORKING
 
     def test_task_status_states(self):
         """Test all task states are accessible."""
         states = [
-            TaskState.submitted,
-            TaskState.working,
-            TaskState.completed,
-            TaskState.canceled,
-            TaskState.failed,
+            TaskState.TASK_STATE_SUBMITTED,
+            TaskState.TASK_STATE_WORKING,
+            TaskState.TASK_STATE_COMPLETED,
+            TaskState.TASK_STATE_CANCELED,
+            TaskState.TASK_STATE_FAILED,
         ]
 
         for state in states:
@@ -1036,6 +1057,8 @@ class TestAgentIntegration:
         context = MagicMock(spec=RequestContext)
         context.task_id = "echo-task-1"
         context.context_id = "echo-context-1"
+        context.current_task = None
+        context.message = None
         context.get_user_input.return_value = '{"message": "Hello, World!"}'
 
         queue = AsyncMock(spec=EventQueue)
@@ -1046,12 +1069,14 @@ class TestAgentIntegration:
         # Verify the flow
         calls = queue.enqueue_event.call_args_list
 
+        assert isinstance(calls[0][0][0], Task)
+
         # Working status
-        assert calls[0][0][0].status.state == TaskState.working
+        assert calls[1][0][0].status.state == TaskState.TASK_STATE_WORKING
 
         # Completed status with canonical final payload
-        assert calls[1][0][0].status.state == TaskState.completed
-        text_content = calls[1][0][0].status.message.parts[0].root.text
+        assert calls[2][0][0].status.state == TaskState.TASK_STATE_COMPLETED
+        text_content = calls[2][0][0].status.message.parts[0].text
         result = json.loads(text_content)
         assert result["echo"] == "Hello, World!"
         assert result["task_id"] == "echo-task-1"
@@ -1092,9 +1117,7 @@ class TestPrometheusWorker:
 
         agent = self._agent()
         worker = DemoWorker()
-        result = asyncio.run(
-            agent.run_worker(worker, self._context(), queue_, poll_interval=0.01)
-        )
+        result = asyncio.run(agent.run_worker(worker, self._context(), queue_, poll_interval=0.01))
 
         assert result == {"status": "success", "n": 2}
         kinds = [type(e).__name__ for e in queue_.events]
@@ -1104,12 +1127,11 @@ class TestPrometheusWorker:
             "TaskStatusUpdateEvent",
         ]
         # Status text is preserved and non-final (the base executor finalizes).
-        assert queue_.events[0].status.message.parts[0].root.text == "step 1"
-        assert queue_.events[0].final is False
+        assert queue_.events[0].status.message.parts[0].text == "step 1"
         # The JSON artifact carries the payload as a data part.
         artifact = queue_.events[1].artifact
         assert artifact.name == "partial"
-        assert artifact.parts[0].root.data == {"k": 1}
+        assert MessageToDict(artifact.parts[0].data) == {"k": 1.0}
 
     def test_run_worker_propagates_worker_exception(self):
         """An exception raised in worker.run() propagates out of run_worker (so the
@@ -1122,9 +1144,7 @@ class TestPrometheusWorker:
 
         agent = self._agent()
         with pytest.raises(RuntimeError, match="boom"):
-            asyncio.run(
-                agent.run_worker(BoomWorker(), self._context(), queue_, poll_interval=0.01)
-            )
+            asyncio.run(agent.run_worker(BoomWorker(), self._context(), queue_, poll_interval=0.01))
 
     def test_run_worker_cancellation_signals_worker_cooperatively(self):
         """Cancelling the run_worker task sets the worker's cancel flag so a
@@ -1182,17 +1202,14 @@ class TestDeclareLongRunning:
     def test_emits_nonfinal_working_with_background_metadata(self):
         agent = PrometheusAgent(agent_name="Long Agent")
         queue_ = self._RecordingQueue()
-        asyncio.run(
-            agent.declare_long_running(self._context(), queue_, estimate_seconds=120)
-        )
+        asyncio.run(agent.declare_long_running(self._context(), queue_, estimate_seconds=120))
         assert len(queue_.events) == 1
         event = queue_.events[0]
-        assert event.status.state == TaskState.working
-        assert event.final is False
+        assert event.status.state == TaskState.TASK_STATE_WORKING
         assert event.metadata["background"] is True
         assert event.metadata["estimate_seconds"] == 120.0
         # A default message naming the estimate is emitted.
-        assert "120" in event.status.message.parts[0].root.text
+        assert "120" in event.status.message.parts[0].text
 
     def test_custom_message_and_extra_metadata_merge(self):
         agent = PrometheusAgent(agent_name="Long Agent")
@@ -1209,4 +1226,4 @@ class TestDeclareLongRunning:
         assert event.metadata["background"] is True
         assert event.metadata["job_kind"] == "sim"
         assert "estimate_seconds" not in event.metadata
-        assert event.status.message.parts[0].root.text == "custom"
+        assert event.status.message.parts[0].text == "custom"

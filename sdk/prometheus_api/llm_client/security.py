@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from a2a.types import DataPart
+from google.protobuf.json_format import MessageToDict
 
 SECRET_FIELD_FRAGMENTS = (
     "api_key",
@@ -60,16 +60,15 @@ def _llm_api_key_from_data(data: Any) -> str | None:
 
 
 def extract_llm_api_key_from_a2a_context(context: Any) -> str | None:
-    """Read ``llm_api_key`` only from structured A2A ``DataPart`` payloads."""
+    """Read ``llm_api_key`` only from structured A2A v1 data parts."""
     message = getattr(context, "message", None)
     if message is None:
         return None
 
     for part in getattr(message, "parts", []) or []:
-        root = getattr(part, "root", None)
-        if not isinstance(root, DataPart):
+        if part.WhichOneof("content") != "data":
             continue
-        api_key = _llm_api_key_from_data(root.data)
+        api_key = _llm_api_key_from_data(MessageToDict(part.data))
         if api_key:
             return api_key
     return None

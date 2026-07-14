@@ -241,7 +241,7 @@ class AnalysisAgent(PrometheusAgent):
         return {"status": "completed", "answer": response.text}
 ```
 
-`from_a2a_context()` reads `llm_api_key` only from structured `DataPart` /
+`from_a2a_context()` reads `llm_api_key` only from structured A2A v1 `Part(data=...)` /
 `provided_inputs`; it does not parse keys out of visible text JSON payloads.
 
 See `examples/llm_client_usage.py` for sync chat and embedding usage, and

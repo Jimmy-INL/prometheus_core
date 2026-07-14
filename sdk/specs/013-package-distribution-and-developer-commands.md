@@ -11,7 +11,7 @@ Keep the package installable, versioned, testable, and container-buildable throu
 - REQ-013-01: The project metadata MUST publish the package as `prometheus-api`, require Python `>=3.12`, and use `README.md` as the package readme.
 - REQ-013-02: `prometheus_api.__version__` MUST read the installed distribution version for `prometheus-api` and MUST fall back to `0.0.0+unknown` in an uninstalled source checkout.
 - REQ-013-03: The setuptools package list MUST include the top-level package plus `llm_client`, `storage_client`, storage models/resources/async_resources/utils, and `agent`.
-- REQ-013-04: Runtime dependencies MUST include the A2A server stack, `fsspec`, `httpx`, `litellm`, `pydantic`, `pyyaml`, `python-dateutil`, `python-dotenv`, `redis`, `starlette`, and `uvicorn[standard]`.
+- REQ-013-04: Runtime dependencies MUST include the A2A server stack, `fsspec`, `httpx`, `litellm`, `pydantic`, `protobuf`, `pyyaml`, `python-dateutil`, `python-dotenv`, `redis`, `starlette`, and `uvicorn[standard]`.
 - REQ-013-05: Development dependencies MUST include pytest, pytest-asyncio, pytest-cov, mypy, ruff, and pre-commit.
 - REQ-013-06: `make lint`, `make format`, and `make typecheck` MUST run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy prometheus_api/`.
 - REQ-013-07: `make test` MUST alias the unit-test target, and `make test-unit` MUST run `uv run pytest -m "not integration"`.

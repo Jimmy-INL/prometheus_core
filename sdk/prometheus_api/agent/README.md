@@ -1,6 +1,6 @@
 # Agent Utilities
 
-Utilities for building A2A multi-agent systems with `PrometheusAgent`.
+Utilities for building A2A Protocol v1 multi-agent systems with `PrometheusAgent`.
 
 ## Core Contract
 
@@ -39,7 +39,12 @@ Use helper methods when needed:
 - `send_input_required(...)` for missing-input requests
 - `load_context_state(...)` / `save_context_state(...)` for resumable agent-local state keyed by `contextId`
 
-To enable streaming (`message/stream`), set `"capabilities": {"streaming": true}` in `agent_card.json`.
+To enable streaming (`SendStreamingMessage`), set
+`"capabilities": {"streaming": true}` in `agent_card.json`.
+
+The base class constructs the card's v1 JSON-RPC `supportedInterfaces` entry
+from `EXTERNAL_AGENT_URL` (or container hostname plus `AGENT_PORT`) and emits
+the initial `Task` required by v1 before any status or artifact updates.
 
 While `_execute()` runs, the base executor emits periodic non-final keepalive
 ("heartbeat") status events so streaming connections survive long gaps between

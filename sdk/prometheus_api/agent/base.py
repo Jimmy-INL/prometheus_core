@@ -16,6 +16,10 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping,
 from typing import Sequence, cast
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
+from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Value
+from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
@@ -23,20 +27,16 @@ import yaml
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
-from a2a.server.apps import A2AStarletteApplication
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 
 from .task_store import RedisTaskStore
 from a2a.types import (
     AgentCard,
-    AgentCapabilities,
-    AgentSkill,
+    AgentInterface,
     Artifact,
-    DataPart,
-    FilePart,
-    FileWithUri,
     Message,
     Part,
     Role,
@@ -44,9 +44,8 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
-from .middleware import BearerTokenMiddleware
+from .middleware import A2AContentSizeLimitMiddleware, BearerTokenMiddleware
 from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
@@ -54,9 +53,11 @@ from .debug_routes import add_debug_chat_route
 from .events import (
     build_artifact_metadata as _build_artifact_metadata,
     build_data_artifact_event,
+    build_initial_task,
     context_id as event_context_id,
     context_task_id,
     emit_status_update,
+    is_stopping_status_event,
     normalize_producer_agent_id as _normalize_producer_agent_id,
 )
 from .worker import PrometheusWorker
@@ -79,7 +80,7 @@ class _TrackedEventQueue:
 
     async def enqueue_event(self, event: Any) -> None:
         """Forward event to wrapped queue while tracking task-finalization signals."""
-        if isinstance(event, TaskStatusUpdateEvent) and event.final:
+        if is_stopping_status_event(event):
             self.seen_final_status = True
 
         await self._event_queue.enqueue_event(event)
@@ -208,15 +209,19 @@ class PrometheusAgentExecutor(AgentExecutor):
         try:
             logger.info(f"Starting {self.agent_name} execution")
 
+            tracked_queue = _TrackedEventQueue(event_queue)
+
+            # A2A v1 task streams must begin with the Task before any updates.
+            await tracked_queue.enqueue_event(build_initial_task(context))
+
             # Extract parameters from the message
             params = self._extract_params(context)
-            tracked_queue = _TrackedEventQueue(event_queue)
 
             # Send "working" status
             await emit_status_update(
                 context=context,
                 event_queue=tracked_queue,
-                state=TaskState.working,
+                state=TaskState.TASK_STATE_WORKING,
                 final=False,
             )
 
@@ -231,7 +236,7 @@ class PrometheusAgentExecutor(AgentExecutor):
                 await emit_status_update(
                     context=context,
                     event_queue=tracked_queue,
-                    state=TaskState.completed,
+                    state=TaskState.TASK_STATE_COMPLETED,
                     final=True,
                     message=json.dumps(result, default=str),
                 )
@@ -250,7 +255,7 @@ class PrometheusAgentExecutor(AgentExecutor):
                 await emit_status_update(
                     context=context,
                     event_queue=tracked_queue or event_queue,
-                    state=TaskState.failed,
+                    state=TaskState.TASK_STATE_FAILED,
                     final=True,
                 )
             raise
@@ -321,7 +326,7 @@ class PrometheusAgentExecutor(AgentExecutor):
                     await emit_status_update(
                         context=context,
                         event_queue=tracked_queue,
-                        state=TaskState.working,
+                        state=TaskState.TASK_STATE_WORKING,
                         final=False,
                         metadata={"heartbeat": True},
                     )
@@ -366,8 +371,9 @@ class PrometheusAgentExecutor(AgentExecutor):
         # Inject skill_id from message metadata so agents can dispatch on
         # which skill was invoked without needing an explicit 'action' param.
         message = getattr(context, "message", None)
-        if message and isinstance(message.metadata, dict):
-            skill_id = message.metadata.get("skillId")
+        if message:
+            message_metadata = MessageToDict(message.metadata)
+            skill_id = message_metadata.get("skillId")
             if skill_id and "skill_id" not in params:
                 params["skill_id"] = str(skill_id)
 
@@ -401,7 +407,7 @@ class PrometheusAgentExecutor(AgentExecutor):
                 await emit_status_update(
                     context=context,
                     event_queue=event_queue,
-                    state=TaskState.working,
+                    state=TaskState.TASK_STATE_WORKING,
                     final=False,
                     message="Running analysis.",
                 )
@@ -432,7 +438,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         await emit_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.canceled,
+            state=TaskState.TASK_STATE_CANCELED,
             final=True,
         )
 
@@ -552,16 +558,13 @@ class PrometheusAgent:
         """Build a stable default endpoint id from a path."""
         normalized = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
         normalized = "".join(
-            ch if ch.isalnum() or ch in ("_", "-", ".") else "_"
-            for ch in normalized
+            ch if ch.isalnum() or ch in ("_", "-", ".") else "_" for ch in normalized
         )
         return normalized or "root"
 
     def _assert_unique_endpoint_id(self, endpoint_id: str) -> None:
         """Reject duplicate endpoint ids before they reach agent-card metadata."""
-        existing_ids = {
-            route.metadata.id for route in self._custom_http_routes
-        } | {
+        existing_ids = {route.metadata.id for route in self._custom_http_routes} | {
             static.metadata.id for static in self._custom_static_endpoints
         }
         if endpoint_id in existing_ids:
@@ -676,9 +679,7 @@ class PrometheusAgent:
 
     def _custom_endpoint_metadata(self) -> List[Dict[str, Any]]:
         """Return custom endpoint metadata in registration order."""
-        return [
-            route.metadata.to_dict() for route in self._custom_http_routes
-        ] + [
+        return [route.metadata.to_dict() for route in self._custom_http_routes] + [
             static.metadata.to_dict() for static in self._custom_static_endpoints
         ]
 
@@ -736,7 +737,7 @@ class PrometheusAgent:
         agent_card: AgentCard,
     ) -> Dict[str, Any]:
         """Return an A2A-valid payload while preserving Prometheus card extensions."""
-        normalized_card = agent_card.model_dump(exclude_none=True)
+        normalized_card = MessageToDict(agent_card)
         payload = {**source_card, **normalized_card}
 
         source_skills = source_card.get("skills", [])
@@ -865,17 +866,16 @@ class PrometheusAgent:
         self.context_state_store.save(self._producer_agent_id, str(context_id or ""), state)
 
     def get_provided_inputs(self, context: RequestContext) -> Dict[str, Any]:
-        """Extract structured follow-up inputs from incoming DataParts."""
+        """Extract structured follow-up inputs from incoming v1 data parts."""
         message = getattr(context, "message", None)
         if message is None:
             return {}
 
         provided: Dict[str, Any] = {}
         for part in getattr(message, "parts", []) or []:
-            root = getattr(part, "root", None)
-            if not isinstance(root, DataPart):
+            if part.WhichOneof("content") != "data":
                 continue
-            data = dict(root.data or {})
+            data = MessageToDict(part.data)
             if isinstance(data.get("provided_inputs"), dict):
                 provided.update(data["provided_inputs"])
             else:
@@ -932,17 +932,15 @@ class PrometheusAgent:
             TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                final=True,
                 status=TaskStatus(
-                    state=TaskState.input_required,
+                    state=TaskState.TASK_STATE_INPUT_REQUIRED,
                     message=Message(
                         message_id=str(uuid.uuid4()),
-                        role=Role.agent,
+                        role=Role.ROLE_AGENT,
                         parts=[
                             Part(
-                                root=DataPart(
-                                    data=payload, metadata={"mime_type": "application/json"}
-                                )
+                                data=ParseDict(payload, Value()),
+                                metadata={"mime_type": "application/json"},
                             )
                         ],
                         context_id=context_id,
@@ -1004,7 +1002,7 @@ class PrometheusAgent:
                         context=context,
                         agent_name=self.agent_name,
                     ),
-                    parts=[Part(root=TextPart(text=text, metadata={"mime_type": "text/plain"}))],
+                    parts=[Part(text=text, metadata={"mime_type": "text/plain"})],
                 ),
                 append=append,
                 last_chunk=last_chunk,
@@ -1043,14 +1041,10 @@ class PrometheusAgent:
                     ),
                     parts=[
                         Part(
-                            root=FilePart(
-                                file=FileWithUri(
-                                    uri=uri,
-                                    mime_type=mime_type,
-                                    name=name,
-                                ),
-                                metadata=metadata,
-                            )
+                            url=uri,
+                            media_type=mime_type or "",
+                            filename=name,
+                            metadata=metadata,
                         )
                     ],
                 ),
@@ -1147,39 +1141,73 @@ class PrometheusAgent:
         import socket
 
         port = os.getenv("AGENT_PORT", "8000")
-        agent_card_dict["url"] = (
-            os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
-        )
+        runtime_url = os.getenv("EXTERNAL_AGENT_URL") or f"http://{socket.gethostname()}:{port}"
         self._insert_workflows_from_directory(agent_card_dict, agent_card_path)
 
-        # Convert capabilities dict to AgentCapabilities object
-        capabilities_dict = agent_card_dict.get("capabilities", {})
-        capabilities = AgentCapabilities(
-            streaming=capabilities_dict.get("streaming", False),
-            push_notifications=capabilities_dict.get("pushNotifications", False),
-        )
-
-        # Convert skills list to AgentSkill objects
-        skills = [
-            AgentSkill(
-                id=skill["id"],
-                name=skill["name"],
-                description=skill.get("description", ""),
-                tags=skill.get("tags", []),
+        # Normalize legacy cards into the protocol-v1 interface model. Existing
+        # v1 non-JSON-RPC interfaces retain their configured URLs; the JSON-RPC
+        # interface follows the runtime URL just as the v0.3 top-level URL did.
+        interfaces: List[AgentInterface] = []
+        has_jsonrpc = False
+        source_interfaces = agent_card_dict.get("supportedInterfaces", [])
+        if isinstance(source_interfaces, list):
+            for source_interface in source_interfaces:
+                if not isinstance(source_interface, dict):
+                    continue
+                protocol_binding = str(
+                    source_interface.get("protocolBinding")
+                    or source_interface.get("protocol_binding")
+                    or ""
+                ).upper()
+                interface_url = str(source_interface.get("url") or "").strip()
+                if protocol_binding == "JSONRPC":
+                    interface_url = runtime_url
+                    has_jsonrpc = True
+                if not protocol_binding or not interface_url:
+                    continue
+                interfaces.append(
+                    AgentInterface(
+                        url=interface_url,
+                        protocol_binding=protocol_binding,
+                        protocol_version=str(
+                            source_interface.get("protocolVersion")
+                            or source_interface.get("protocol_version")
+                            or "1.0"
+                        ),
+                        tenant=str(source_interface.get("tenant") or ""),
+                    )
+                )
+        if not has_jsonrpc:
+            interfaces.insert(
+                0,
+                AgentInterface(
+                    url=runtime_url,
+                    protocol_binding="JSONRPC",
+                    protocol_version="1.0",
+                ),
             )
-            for skill in agent_card_dict.get("skills", [])
-        ]
 
-        # Create the AgentCard object
-        agent_card = AgentCard(
-            name=agent_card_dict["name"],
-            description=agent_card_dict["description"],
-            url=agent_card_dict["url"],
-            version=agent_card_dict.get("version", "1.0.0"),
-            capabilities=capabilities,
-            skills=skills,
-            default_input_modes=agent_card_dict.get("defaultInputModes", ["text"]),
-            default_output_modes=agent_card_dict.get("defaultOutputModes", ["text"]),
+        agent_card_dict.pop("url", None)
+        agent_card_dict["supportedInterfaces"] = [MessageToDict(item) for item in interfaces]
+        agent_card_dict.setdefault("version", "1.0.0")
+        agent_card_dict.setdefault("defaultInputModes", ["text"])
+        agent_card_dict.setdefault("defaultOutputModes", ["text"])
+
+        capabilities_dict = dict(agent_card_dict.get("capabilities") or {})
+        legacy_extended_card = agent_card_dict.pop("supportsAuthenticatedExtendedCard", None)
+        if legacy_extended_card is not None:
+            capabilities_dict.setdefault("extendedAgentCard", bool(legacy_extended_card))
+        agent_card_dict["capabilities"] = capabilities_dict
+
+        # Parse all official v1 fields while ignoring Prometheus extensions such
+        # as workflows and tool input schemas retained in the raw card.
+        agent_card = cast(
+            AgentCard,
+            ParseDict(
+                agent_card_dict,
+                AgentCard(),
+                ignore_unknown_fields=True,
+            ),
         )
 
         # Store the raw card for registry registration and HTTP routes. The A2A
@@ -1188,7 +1216,7 @@ class PrometheusAgent:
         self.agent_card_dict = self._agent_card_payload_with_extensions(agent_card_dict, agent_card)
 
         logger.info(f"Loaded agent card: {agent_card.name} v{agent_card.version}")
-        logger.info(f"Agent URL: {agent_card.url}")
+        logger.info(f"Agent URL: {interfaces[0].url}")
 
         return agent_card
 
@@ -1316,7 +1344,7 @@ class PrometheusAgent:
         self,
         context: RequestContext,
         event_queue: EventQueue,
-        state: TaskState = TaskState.working,
+        state: TaskState = TaskState.TASK_STATE_WORKING,
         final: bool = False,
         message: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -1370,7 +1398,7 @@ class PrometheusAgent:
         await emit_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.working,
+            state=TaskState.TASK_STATE_WORKING,
             final=False,
             message=message,
             metadata=payload,
@@ -1762,7 +1790,12 @@ class PrometheusAgent:
         )
         logger.info("Bearer token authentication enabled")
 
-    def build_app(self, *, register_on_startup: bool = True):
+    def build_app(
+        self,
+        *,
+        register_on_startup: bool = True,
+        max_content_length: Optional[int] = 10 * 1024 * 1024,
+    ):
         """
         Build the Starlette app for this agent.
 
@@ -1776,6 +1809,8 @@ class PrometheusAgent:
         Args:
             register_on_startup: Whether to start background LiteLLM registry registration
                 when the app lifespan starts.
+            max_content_length: Maximum A2A request-body size in bytes. Set to
+                ``None`` to disable the default 10 MiB limit.
         """
         logger.info(f"Starting {self.agent_name}")
 
@@ -1799,10 +1834,23 @@ class PrometheusAgent:
         else:
             task_store = RedisTaskStore()
             logger.info("Using Redis-backed task store")
-        request_handler = DefaultRequestHandler(agent_executor=executor, task_store=task_store)
+        request_handler = DefaultRequestHandler(
+            agent_executor=executor,
+            task_store=task_store,
+            agent_card=agent_card,
+        )
 
-        # Create A2A application builder
-        builder = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
+        jsonrpc_interface = next(
+            (
+                interface
+                for interface in agent_card.supported_interfaces
+                if interface.protocol_binding.upper() == "JSONRPC"
+            ),
+            agent_card.supported_interfaces[0],
+        )
+        rpc_url = urlparse(jsonrpc_interface.url).path or "/"
+        if not rpc_url.startswith("/"):
+            rpc_url = f"/{rpc_url}"
 
         @asynccontextmanager
         async def app_lifespan(app) -> AsyncIterator[None]:
@@ -1813,8 +1861,11 @@ class PrometheusAgent:
             ):
                 yield
 
-        # Build the Starlette app
-        app = builder.build(lifespan=app_lifespan)
+        routes = [
+            *create_agent_card_routes(agent_card),
+            *create_jsonrpc_routes(request_handler, rpc_url=rpc_url),
+        ]
+        app = Starlette(routes=routes, lifespan=app_lifespan)
 
         # add health endpoint
         app.add_route(
@@ -1835,12 +1886,15 @@ class PrometheusAgent:
             """Return the raw agent card with Prometheus-specific skill metadata."""
             return JSONResponse(self.get_raw_agent_card())
 
-        for route_path in (
-            "/api/agent-card",
-            "/.well-known/agent.json",
-            "/.well-known/agent-card.json",
-        ):
-            app.router.routes.insert(0, Route(route_path, api_agent_card, methods=["GET"]))
+        async def legacy_agent_card(request):
+            """Serve the canonical v1 card at the former discovery path."""
+            return JSONResponse(MessageToDict(agent_card))
+
+        app.router.routes.insert(
+            0,
+            Route("/.well-known/agent.json", legacy_agent_card, methods=["GET"]),
+        )
+        app.router.routes.insert(0, Route("/api/agent-card", api_agent_card, methods=["GET"]))
 
         async def api_list_artifacts(request):
             """List metadata references available to a conversation/session."""
@@ -1861,6 +1915,11 @@ class PrometheusAgent:
         self.configure_app(app)
         self._apply_custom_endpoints(app)
 
+        if max_content_length is not None:
+            app.add_middleware(
+                A2AContentSizeLimitMiddleware,
+                max_content_length=max_content_length,
+            )
         self._configure_auth(app)
 
         return app

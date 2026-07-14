@@ -9,8 +9,9 @@
 ## How a Request Reaches `_execute`
 
 ```
-HTTP POST /  (A2A message/send)
+HTTP POST /  (A2A SendMessage or SendStreamingMessage)
   └─ PrometheusAgentExecutor.execute()
+      ├─ emits the initial Task required by A2A v1
       ├─ emits "working" status automatically
       ├─ extracts params from message JSON or text
       ├─ injects skill_id from message.metadata.skillId
@@ -22,7 +23,9 @@ HTTP POST /  (A2A message/send)
                        with your dict as the message payload
 ```
 
-The base class emits the initial `working` status and the final `completed` status automatically. You never call those yourself unless you have a specific reason to deviate.
+The base class emits the initial `Task`, the first `working` status, and the
+terminal `completed` status automatically. You never call those yourself unless
+you have a specific reason to deviate.
 
 ---
 
@@ -114,7 +117,6 @@ Unhandled exceptions from `_execute` are caught by the base class, which emits a
 {
   "name": "My Agent",
   "description": "One-sentence description used for orchestrator routing.",
-  "url": "http://localhost:8000",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
@@ -145,6 +147,10 @@ Unhandled exceptions from `_execute` are caught by the base class, which emits a
   ]
 }
 ```
+
+Do not hard-code a card URL. `load_agent_card()` adds the A2A v1
+`supportedInterfaces` JSON-RPC entry from `EXTERNAL_AGENT_URL` or the runtime
+container host and `AGENT_PORT`.
 
 **Important agent card conventions:**
 
@@ -239,7 +245,8 @@ await self.send_status_update(
 
 - Emit as many intermediate updates as needed — they are cheap
 - Do not manually emit the final `completed` or `failed` status; the base class does that from your return value
-- `send_status_update` always uses `final=False` by default — do not change this
+- Use `TaskState.TASK_STATE_*` enum names when selecting a non-default state
+- A2A v1 derives finality from `TaskState`; it has no `TaskStatusUpdateEvent.final` field
 
 ---
 
@@ -733,8 +740,10 @@ class MyAgent(PrometheusAgent):
 
 ## Lifecycle Hooks
 
-`agent.run()` calls `build_app()` and starts uvicorn. Use `build_app(register_on_startup=False)`
-when tests or custom hosts need a Starlette app without background registry registration.
+`agent.run()` calls `build_app()` and starts uvicorn. Use
+`build_app(register_on_startup=False)` when tests or custom hosts need a
+Starlette app without background registry registration. The app uses the A2A
+v1 route factories and defaults to a 10 MiB request-body limit.
 
 ### Custom HTTP endpoints
 
@@ -879,8 +888,9 @@ from starting the HTTP server.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/` | A2A `message/send` and `message/stream` |
-| `GET` | `/.well-known/agent.json` | Agent card (public, unauthenticated) |
+| `POST` | `/` | A2A v1 `SendMessage` and `SendStreamingMessage` |
+| `GET` | `/.well-known/agent-card.json` | Canonical A2A v1 agent card (public, unauthenticated) |
+| `GET` | `/.well-known/agent.json` | Canonical v1 card at the legacy discovery alias |
 | `GET` | `/health` | Health check — `{"ok": true}` (unauthenticated) |
 | `GET` | `/api/agent-card` | Raw agent card JSON |
 | `POST` | `/api/chat` | Debug endpoint: same execution path as A2A but simpler request/response |
@@ -991,11 +1001,13 @@ class MissingInput:
     required: bool = True                 # False = optional form field
 ```
 
-### `build_app(register_on_startup=True)`
+### `build_app(register_on_startup=True, max_content_length=10 * 1024 * 1024)`
 
 Build and return the Starlette app without starting uvicorn. Use
 `register_on_startup=False` in tests or custom hosts that should not start background
 registry registration.
+Set `max_content_length=None` only when the host intentionally permits A2A
+request bodies larger than the default 10 MiB.
 
 ### `create_executor()`
 
@@ -1012,9 +1024,13 @@ Build the app, start background registry registration during lifespan startup, a
 
 Emit a final `INPUT_REQUIRED` status. Must be followed by `return {}`.
 
-### `send_status_update(context, event_queue, state=TaskState.working, final=False, message=None, metadata=None)`
+### `send_status_update(context, event_queue, state=TaskState.TASK_STATE_WORKING, final=False, message=None, metadata=None)`
 
 Emit a transient progress update.
+
+The `final` argument remains for source compatibility with existing agents.
+A2A v1 does not serialize it; the selected `TaskState` determines whether the
+status is terminal or interrupted.
 
 ### `send_json_artifact(context, event_queue, payload, name="result", description=None, json_type=None, catalog_artifact=False, artifact_id=None, append=False, last_chunk=None, metadata=None) → str`
 
@@ -1042,7 +1058,8 @@ Persist agent-local state (Redis with in-memory fallback, TTL 24 h by default).
 
 ### `get_provided_inputs(context) → Dict`
 
-Extract user-submitted form values from incoming `DataPart`s. Returns `{}` on the first turn.
+Extract user-submitted form values from incoming v1 `Part(data=...)` values.
+Returns `{}` on the first turn.
 
 ### `list_artifact_references(conversation_id, limit=None) → List[ArtifactReference]`
 

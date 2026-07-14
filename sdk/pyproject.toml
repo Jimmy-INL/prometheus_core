@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prometheus-api"
-version = "0.8.0"
+version = "0.9.0"
 description = "Storage client and agent utilities for building A2A multi-agent systems"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,11 +21,12 @@ classifiers = [
 ]
 
 dependencies = [
-    "a2a-sdk[http-server]>=0.3.23,<1",
+    "a2a-sdk[http-server]>=1.0.0,<2",
     "fsspec>=2026.2.0",
     "httpx>=0.26.0",
     "litellm>=1.80,<2",
     "pydantic>=2.0.0",
+    "protobuf>=5.29.5,<7",
     "pyyaml>=6.0",
     "python-dateutil>=2.8.0",
     "python-dotenv>=1.0.0",
@@ -42,6 +43,8 @@ dev = [
     "mypy>=1.0.0",
     "ruff>=0.1.0",
     "pre-commit>=4.6.0",
+    "types-protobuf>=6.30.2",
+    "types-pyyaml>=6.0.12",
 ]
 
 [project.urls]
