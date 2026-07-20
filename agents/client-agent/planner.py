@@ -2,7 +2,7 @@
 LLM tool-calling planner for control-plane routing decisions.
 
 `compile_plan_with_tools` is the single entry point. It is called by `chat()`
-in `agent.py` whenever a new query needs to be routed. It drives a Claude LLM
+in `agent.py` whenever a new query needs to be routed. It drives an LLM
 through a structured tool-call loop and returns a `PlanningResult` describing
 what to do next — no subagents are invoked here.
 
@@ -50,15 +50,11 @@ skill sequences, input bindings, and execution order.
 """
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
@@ -73,8 +69,7 @@ from param_schema import (
     set_nested_value,
 )
 from workflow_library.naming import workflow_tool_name
-
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
+from orchestrator import runtime
 
 PROMPTS_DIR = Path(__file__).with_name("prompts")
 
@@ -765,6 +760,74 @@ def _default_steps_from_selection(
     return steps
 
 
+def _value(item: Any, key: str, default: Any = None) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
+def _planning_tool_schema(tool: StructuredTool) -> Dict[str, Any]:
+    args_schema = getattr(tool, "args_schema", None)
+    if isinstance(args_schema, dict):
+        parameters = args_schema
+    elif hasattr(args_schema, "model_json_schema"):
+        parameters = args_schema.model_json_schema()
+    elif hasattr(args_schema, "schema"):
+        parameters = args_schema.schema()
+    else:
+        parameters = {"type": "object", "properties": {}}
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": parameters,
+        },
+    }
+
+
+def _planning_tool_calls(raw: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    choices = _value(raw, "choices", []) or []
+    message = _value(choices[0], "message", {}) if choices else {}
+    content = _value(message, "content", "")
+    raw_calls = _value(message, "tool_calls", []) or []
+
+    assistant_message: Dict[str, Any] = {
+        "role": "assistant",
+        "content": content or "Planning tool calls requested.",
+    }
+    tool_calls: List[Dict[str, Any]] = []
+    assistant_calls: List[Dict[str, Any]] = []
+    for call in raw_calls:
+        function = _value(call, "function", {}) or {}
+        name = str(_value(function, "name", ""))
+        arguments = _value(function, "arguments", {})
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                parsed_arguments = {}
+            wire_arguments = arguments
+        elif isinstance(arguments, Mapping):
+            parsed_arguments = dict(arguments)
+            wire_arguments = json.dumps(parsed_arguments)
+        else:
+            parsed_arguments = {}
+            wire_arguments = "{}"
+        call_id = str(_value(call, "id", ""))
+        tool_calls.append({"name": name, "args": parsed_arguments, "id": call_id})
+        assistant_calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": wire_arguments},
+            }
+        )
+    if assistant_calls:
+        assistant_message["tool_calls"] = assistant_calls
+    return assistant_message, tool_calls
+
+
 async def compile_plan_with_tools(
     query: str,
     capabilities: List[AgentCapability],
@@ -831,58 +894,61 @@ async def compile_plan_with_tools(
         workflow_candidates=candidate_list,
     )
 
-    llm = ChatAnthropic(
-        model=MODEL_NAME,
-        temperature=0,
-        max_tokens=2048,
-    ).bind_tools(tools)
-
     messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
+    tool_schemas = [_planning_tool_schema(tool) for tool in tools]
 
-    for _ in range(max(1, max_turns)):
-        if status_callback:
-            status_callback("Planner LLM evaluating routing/tool calls.")
-        ai_message = await asyncio.to_thread(llm.invoke, messages)
-        messages.append(ai_message)
+    async with runtime.create_llm() as llm:
+        for _ in range(max(1, max_turns)):
+            if status_callback:
+                status_callback("Planner LLM evaluating routing/tool calls.")
+            response = await llm.medium(
+                messages,
+                temperature=0,
+                max_tokens=2048,
+                tools=tool_schemas,
+            )
+            assistant_message, tool_calls = _planning_tool_calls(response.raw)
+            messages.append(assistant_message)
 
-        tool_calls = getattr(ai_message, "tool_calls", None) or []
-        if not tool_calls:
+            if not tool_calls:
+                if draft.finalized:
+                    break
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Planning is not complete. You must call finalize_plan for an agent "
+                            "plan or fallback_to_chat for a direct answer."
+                        ),
+                    }
+                )
+                continue
+
+            for call in tool_calls:
+                tool_name = str(call.get("name"))
+                tool_args = call.get("args", {}) or {}
+                tool_id = str(call.get("id") or "")
+                tool = tools_by_name.get(tool_name)
+                if tool is None:
+                    tool_result = {"ok": False, "error": f"Unknown tool '{tool_name}'"}
+                else:
+                    try:
+                        tool_result = tool.invoke(tool_args)
+                    except Exception as exc:
+                        tool_result = {"ok": False, "error": f"{tool_name} failed: {exc}"}
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(tool_result, default=str),
+                        "tool_call_id": tool_id,
+                    }
+                )
             if draft.finalized:
                 break
-            messages.append(
-                HumanMessage(
-                    content=(
-                        "Planning is not complete. You must call finalize_plan for an agent plan "
-                        "or fallback_to_chat for a direct answer."
-                    )
-                )
-            )
-            continue
-
-        for call in tool_calls:
-            tool_name = str(call.get("name"))
-            tool_args = call.get("args", {}) or {}
-            tool_id = str(call.get("id") or "")
-            tool = tools_by_name.get(tool_name)
-            if tool is None:
-                tool_result = {"ok": False, "error": f"Unknown tool '{tool_name}'"}
-            else:
-                try:
-                    tool_result = tool.invoke(tool_args)
-                except Exception as exc:
-                    tool_result = {"ok": False, "error": f"{tool_name} failed: {exc}"}
-
-            messages.append(
-                ToolMessage(
-                    content=json.dumps(tool_result, default=str),
-                    tool_call_id=tool_id,
-                )
-            )
-        if draft.finalized:
-            break
 
     if not draft.finalized and not draft.primary_skill and not draft.workflow_id:
         return PlanningResult(

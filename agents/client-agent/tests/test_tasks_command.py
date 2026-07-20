@@ -14,18 +14,7 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-# Stub heavy LLM deps so the orchestrator import chain loads (mirrors
-# test_execution_path.py); the /tasks path never touches them.
-if "langchain_anthropic" not in sys.modules:
-    _la = types.ModuleType("langchain_anthropic")
-    _la.ChatAnthropic = object
-    sys.modules["langchain_anthropic"] = _la
-if "langchain_core.messages" not in sys.modules:
-    _lc = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-    _msgs = types.ModuleType("langchain_core.messages")
-    _msgs.HumanMessage = _msgs.SystemMessage = _msgs.ToolMessage = object
-    sys.modules["langchain_core.messages"] = _msgs
-    _lc.messages = _msgs
+# Stub the remaining LangChain tool dependency; the /tasks path never touches it.
 if "langchain_core.tools" not in sys.modules:
     _tools = types.ModuleType("langchain_core.tools")
 

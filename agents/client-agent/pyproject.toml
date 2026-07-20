@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "LangGraph orchestrator for multi-agent nuclear analysis workflows"
 requires-python = ">=3.12"
 dependencies = [
-    "langchain>=0.3.0",
-    "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
     "pydantic>=2.5.3",
     "httpx>=0.26.0",

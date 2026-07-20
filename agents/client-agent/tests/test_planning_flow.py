@@ -47,9 +47,15 @@ def test_extract_refinement_param_updates_resolves_nested_paths(monkeypatch) -> 
     monkeypatch.setattr(parameters, "get_capability_cache", lambda: fake_cache)
 
     class _FakeLLM:
-        def invoke(self, messages):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def medium(self, messages, **kwargs):
             return SimpleNamespace(
-                content='{"context": {"temperature_c": 400}, "material_id": ""}'
+                text='{"context": {"temperature_c": 400}, "material_id": ""}'
             )
 
     monkeypatch.setattr(planning_flow.runtime, "create_llm", lambda: _FakeLLM())

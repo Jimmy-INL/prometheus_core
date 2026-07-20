@@ -13,7 +13,7 @@ graph TD
   end
 
   subgraph Orchestration
-    CA[Client Agent<br/>LangGraph + Claude]
+    CA[Client Agent<br/>LangGraph + Prometheus LLMClient]
     LLM[LiteLLM Agent Gateway<br/>A2A routing + agent directory]
     RED[(Redis<br/>conversation state + status)]
   end
@@ -173,18 +173,18 @@ The client-agent streams frontend-facing status updates as A2A task events. Down
 LiteLLM is part of the active deployment. It serves two roles:
 
 1. Agent registration/discovery for A2A routing
-2. Optional shared model proxy for LLM calls
+2. Shared model proxy for all agent LLM calls
 
 ```yaml
 # litellm config.yaml
 model_list:
-  - model_name: "claude-sonnet"
+  - model_name: "medium"
     litellm_params:
       model: "anthropic/claude-sonnet-4-6"
-      api_key: "${ANTHROPIC_API_KEY}"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
 ```
 
-Agents call litellm's OpenAI-compatible endpoint instead of Anthropic directly. This centralizes model configuration and enables provider switching without agent changes.
+Agents call the provider-independent `prometheus_api.llm_client` interface, which targets LiteLLM's OpenAI-compatible endpoint. This centralizes provider credentials and model mapping and enables provider switching without agent changes.
 
 ## Deployment
 

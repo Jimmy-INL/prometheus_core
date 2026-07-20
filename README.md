@@ -124,7 +124,7 @@ Notable environment variables (see `.env.example` for the full list):
 
 | Variable | Purpose |
 |---|---|
-| `MODEL_NAME` | Claude model name (default `claude-sonnet-4-6`) |
+| `LLM_DEFAULT_MODEL` | Provider-independent LLM alias (default `medium`) |
 | `AGENT_SECRET_REQUIRED` | Enforce Bearer auth on specialist agents (default `true`) |
 | `LOCAL_CERT_FILE` / `CERT_FILE` | CA bundle path on host / inside containers |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | Corporate proxy settings |

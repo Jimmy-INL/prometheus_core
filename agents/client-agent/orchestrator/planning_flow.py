@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from langchain_core.messages import HumanMessage
 
 from artifact_handling import collect_chain_required_paths
 from capability_cache import get_capability_cache
@@ -521,9 +518,9 @@ async def extract_refinement_param_updates(
         param_schema_json=json.dumps(param_schema, indent=2, default=str),
     )
 
-    llm = runtime.create_llm()
-    response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
-    parsed = extract_json_from_text(response.content)
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+    parsed = extract_json_from_text(response.text)
     if not isinstance(parsed, dict):
         return {}
 

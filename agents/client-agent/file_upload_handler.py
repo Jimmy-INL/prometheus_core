@@ -21,7 +21,6 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
 
-from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
@@ -264,8 +263,8 @@ async def infer_file_descriptions(
         "Respond ONLY with a JSON object mapping each exact filename to its description:\n"
         '{"filename1": "description", "filename2": "description", ...}'
     )
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
-    text = response.content.strip()
+    response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+    text = response.text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:

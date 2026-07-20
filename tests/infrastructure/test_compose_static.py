@@ -61,6 +61,17 @@ def test_litellm_image_pinned(compose_data):
     )
 
 
+def test_llm_configuration_is_centralized_in_proxy(compose_data):
+    common_env = compose_data["x-common-env"]
+    assert common_env["REGISTRY_URL"] == "${REGISTRY_URL:-http://litellm:4000}"
+    assert common_env["LLM_DEFAULT_MODEL"] == "${LLM_DEFAULT_MODEL:-medium}"
+    assert "ANTHROPIC_API_KEY" not in common_env
+    assert "MODEL_NAME" not in common_env
+
+    proxy_env = compose_data["services"]["litellm"]["environment"]
+    assert proxy_env["ANTHROPIC_API_KEY"] == "${ANTHROPIC_API_KEY}"
+
+
 def test_restart_policies(compose_data, infrastructure_services):
     for svc_name in infrastructure_services:
         svc = compose_data["services"][svc_name]

@@ -13,20 +13,6 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-if "langchain_anthropic" not in sys.modules:
-    langchain_anthropic = types.ModuleType("langchain_anthropic")
-    langchain_anthropic.ChatAnthropic = object
-    sys.modules["langchain_anthropic"] = langchain_anthropic
-
-if "langchain_core.messages" not in sys.modules:
-    langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-    messages_module = types.ModuleType("langchain_core.messages")
-    messages_module.HumanMessage = object
-    messages_module.SystemMessage = object
-    messages_module.ToolMessage = object
-    sys.modules["langchain_core.messages"] = messages_module
-    langchain_core.messages = messages_module
-
 if "langchain_core.tools" not in sys.modules:
     tools_module = types.ModuleType("langchain_core.tools")
 

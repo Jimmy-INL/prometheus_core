@@ -1,0 +1,103 @@
+"""Provider-agnostic LLM client integration tests for the orchestrator."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from types import SimpleNamespace
+
+from capability_cache import AgentCapability
+from orchestrator import runtime
+from planner import compile_plan_with_tools
+
+
+class _FakePlannerLLM:
+    def __init__(self):
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def medium(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return SimpleNamespace(
+            raw={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "select-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "select_capabilities",
+                                        "arguments": json.dumps(
+                                            {
+                                                "primary_skill": "analyze_thermal",
+                                                "supporting_skills": [],
+                                                "workflow_type": "single",
+                                                "reasoning": "Thermal request",
+                                                "confidence": 0.9,
+                                            }
+                                        ),
+                                    },
+                                },
+                                {
+                                    "id": "finalize-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "finalize_plan",
+                                        "arguments": "{}",
+                                    },
+                                },
+                            ],
+                        }
+                    }
+                ]
+            }
+        )
+
+
+def test_planner_uses_llm_client_raw_tool_calls(monkeypatch):
+    fake_llm = _FakePlannerLLM()
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+    capability = AgentCapability(
+        agent_id="thermal-agent",
+        agent_name="Thermal Agent",
+        agent_url="http://thermal-agent:8000",
+        skill_id="analyze_thermal",
+        skill_name="Analyze thermal behavior",
+        description="Analyze material thermal behavior.",
+    )
+
+    result = asyncio.run(
+        compile_plan_with_tools(
+            query="Analyze the thermal behavior of SS316",
+            capabilities=[capability],
+        )
+    )
+
+    assert result.outcome == "agent_plan"
+    assert result.primary_skill == "analyze_thermal"
+    messages, kwargs = fake_llm.calls[0]
+    assert [message["role"] for message in messages[:2]] == ["system", "user"]
+    assert "Analyze the thermal behavior of SS316" in messages[1]["content"]
+    assert {tool["function"]["name"] for tool in kwargs["tools"]} >= {
+        "select_capabilities",
+        "finalize_plan",
+    }
+
+
+def test_runtime_client_uses_proxy_configuration(monkeypatch):
+    monkeypatch.setenv("REGISTRY_URL", "http://litellm:4000")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "proxy-key")
+
+    client = runtime.create_llm()
+
+    assert client.config.proxy_url == "http://litellm:4000"
+    assert client.config.api_key == "proxy-key"
+    assert client.config.app_name == "Nuclear Analysis Client Agent"

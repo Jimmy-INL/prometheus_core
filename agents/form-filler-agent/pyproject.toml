@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "Form completion agent"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.18.0",
     "httpx>=0.26.0",
     "redis>=5.0.0",
 ]
-

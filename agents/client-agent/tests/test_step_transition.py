@@ -22,11 +22,17 @@ class _FakeLLM:
         self._payload = payload
         self.prompts = []
 
-    def invoke(self, prompt):
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def medium(self, prompt, **kwargs):
         self.prompts.append(prompt)
         if isinstance(self._payload, Exception):
             raise self._payload
-        return SimpleNamespace(content=self._payload)
+        return SimpleNamespace(text=self._payload)
 
 
 SCHEMA = {

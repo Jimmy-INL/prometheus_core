@@ -20,7 +20,6 @@ input schema, and returns parameter updates. Guardrails keep it honest:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -239,9 +238,9 @@ async def resolve_step_transition_params(
             conversation_id,
             f"Mapping completed-step outputs onto '{skill_id}' inputs.",
         )
-        llm = runtime.create_llm()
-        response = await asyncio.to_thread(llm.invoke, prompt)
-        parsed = _parse_param_updates(str(getattr(response, "content", "")))
+        async with runtime.create_llm() as llm:
+            response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+        parsed = _parse_param_updates(response.text)
     except Exception as exc:
         print(f"[WARN] Step-transition LLM mapping failed for '{skill_id}': {exc}")
 

@@ -121,8 +121,7 @@ AGENT_SECRET=your-shared-secret
 AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://localhost:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
-ANTHROPIC_API_KEY=your-api-key
-MODEL_NAME=claude-sonnet-4-6
+LLM_DEFAULT_MODEL=medium
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -166,11 +165,10 @@ my-analysis-agent:
   environment:
     - AGENT_HOST=my-analysis-agent
     - AGENT_PORT=8000
-    - REGISTRY_URL=${REGISTRY_URL:-}
+    - REGISTRY_URL=${REGISTRY_URL:-http://litellm:4000}
     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - REDIS_URL=${REDIS_URL}
-    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-6}
+    - LLM_DEFAULT_MODEL=${LLM_DEFAULT_MODEL:-medium}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:

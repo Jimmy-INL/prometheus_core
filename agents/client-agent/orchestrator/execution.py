@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage
-
 from capability_cache import get_capability_cache
 from param_schema import get_nested_value, has_param_path
 from workflow_library import execute_workflow, get_workflow_registry, verify_workflow_source_health
@@ -505,10 +503,10 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
         missing_params_json=json.dumps(missing_params),
     )
 
-    llm = runtime.create_llm()
     runtime.store_status_update(state.get("conversation_id"), "Calling planner LLM to extract follow-up answers.")
-    response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
-    parsed = extract_json_from_text(response.content)
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+    parsed = extract_json_from_text(response.text)
     if not isinstance(parsed, dict):
         return {}
 
