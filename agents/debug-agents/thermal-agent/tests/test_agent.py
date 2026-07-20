@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import DataPart, TaskStatusUpdateEvent, TaskState
+from a2a.types import TaskStatusUpdateEvent, TaskState
+from google.protobuf.json_format import MessageToDict
 
 THERMAL_DIR = Path(__file__).resolve().parents[1]
-PROMETHEUS_API_DIR = Path(__file__).resolve().parents[3] / "prometheus_api"
-if str(PROMETHEUS_API_DIR) not in sys.path:
-    sys.path.insert(0, str(PROMETHEUS_API_DIR))
 
 _SPEC = importlib.util.spec_from_file_location("thermal_agent_module", THERMAL_DIR / "agent.py")
 assert _SPEC and _SPEC.loader
@@ -39,10 +36,11 @@ def test_thermal_agent_requests_temperature_and_persists_context_state():
     assert len(calls) == 1
     event = calls[0][0][0]
     assert isinstance(event, TaskStatusUpdateEvent)
-    assert event.status.state == TaskState.input_required
-    payload = event.status.message.parts[0].root
-    assert isinstance(payload, DataPart)
-    assert payload.data["missing_inputs"][0]["name"] == "temperature_c"
+    assert event.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    part = event.status.message.parts[0]
+    assert part.WhichOneof("content") == "data"
+    payload = MessageToDict(part.data)
+    assert payload["missing_inputs"][0]["name"] == "temperature_c"
 
     saved = agent.load_context_state("ctx-1")
     assert saved["resolved"]["material_id"] == "SS316"
