@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@chainlit/react-client": "^0.4.2",
+    "@kitware/vtk.js": "^36.5.1",
     "@tailwindcss/vite": "^4.2.2",
     "@thatopen/components": "^3.4.0",
     "@thatopen/fragments": "^3.4.0",
