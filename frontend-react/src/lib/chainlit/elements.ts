@@ -1,6 +1,4 @@
 /**
- * src/lib/chainlit/elements.ts
- *
  * Classifies Chainlit IElement objects and holds the viewer registry.
  *
  * ADDING A VIEWER
@@ -118,7 +116,7 @@ const IFCViewerElement = import.meta.env.DEV
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 import { FileDownloadElement }             from "../../viewers/FileDownloadElement";
 import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
-// import { CollapsibleJsonElement }      from "../../viewers/CollapsibleJsonElement";
+import { JSONViewer }                      from "../../viewers/JSONViewer";
 import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
 import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
 // import { MermaidElement }              from "../../viewers/MermaidElement";
@@ -130,7 +128,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   pdf:          PdfViewerElement,
   file:         FileDownloadElement,
   image:        ImageViewerElement,
-  json:         null,  // → CollapsibleJsonElement
+  json:         JSONViewer,
   suggestions:  FollowUpSuggestionsElement,
   plan_viewer:  PlanViewerElement,
   dynamic_form: DynamicFormElement,
