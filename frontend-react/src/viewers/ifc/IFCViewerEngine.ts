@@ -1,6 +1,7 @@
 import * as OBC from "@thatopen/components";
 import * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
+import * as WEBIFC from "web-ifc";
 
 export type LoadProgress = {
   stage: "downloading" | "parsing" | "rendering";
@@ -14,7 +15,12 @@ export type ViewerOptions = {
 };
 
 export type EquipmentItem = { key: string; label: string };
-export type PipeItem      = { key: string; label: string };
+
+// A single pipe segment/fitting, nested under its parent run.
+export type PipeMemberItem = { key: string; label: string };
+
+// A connected pipe run, with its member segments/fittings nested inside.
+export type PipeRunItem = { key: string; label: string; members: PipeMemberItem[] };
 
 // IFC entity types that count as "pipe" elements.
 const PIPE_MEMBER_IFC_CLASSES = ["IfcPipeSegment", "IfcPipeFitting"];
@@ -32,7 +38,9 @@ const EQUIPMENT_IFC_CLASSES = [
   "IfcFlowTreatmentDevice", "IfcEnergyConversionDevice",
 ];
 
-// Categories matched by IFC entity type.
+// Categories matched by IFC entity type. This is the full catalog the engine
+// understands — products decide which subset to expose as toggles; presence
+// on a given model is resolved at runtime via enumerateCategories().
 const CATEGORY_IFC_CLASSES: Record<string, string[]> = {
   walls:     ["IfcWall", "IfcWallStandardCase"],
   floors:    ["IfcSlab"],
@@ -56,20 +64,75 @@ const CATEGORY_NAME_PATTERNS: Record<string, { pattern: RegExp; categories?: Reg
   },
 };
 
+// ============================================================================
+// Pipe-run grouping — port connectivity (mirrors the backend Python splitter's
+// group_piping_systems: connected-component analysis over the port graph,
+// restricted to pipe segment/fitting entities, severed at equipment ports).
+// ============================================================================
+
+class UnionFind {
+  private parent = new Map<string, string>();
+  private rank = new Map<string, number>();
+
+  find(x: string): string {
+    if (!this.parent.has(x)) {
+      this.parent.set(x, x);
+      this.rank.set(x, 0);
+    }
+    let root = x;
+    while (this.parent.get(root) !== root) root = this.parent.get(root)!;
+    let cur = x;
+    while (cur !== root) {
+      const next = this.parent.get(cur)!;
+      this.parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  }
+
+  union(a: string, b: string): void {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra === rb) return;
+    const rankA = this.rank.get(ra)!;
+    const rankB = this.rank.get(rb)!;
+    if (rankA < rankB) {
+      this.parent.set(ra, rb);
+    } else if (rankA > rankB) {
+      this.parent.set(rb, ra);
+    } else {
+      this.parent.set(rb, ra);
+      this.rank.set(ra, rankA + 1);
+    }
+  }
+
+  components(ids: Iterable<string>): Map<string, Set<string>> {
+    const groups = new Map<string, Set<string>>();
+    for (const id of ids) {
+      const root = this.find(id);
+      if (!groups.has(root)) groups.set(root, new Set());
+      groups.get(root)!.add(id);
+    }
+    return groups;
+  }
+}
+
 export default class IFCViewerEngine {
   private components: OBC.Components;
   private world: OBC.SimpleWorld<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer>;
   private fragments: OBC.FragmentsManager;
   private hider: OBC.Hider;
   private disposed = false;
-  private equipmentIdMaps = new Map<string, OBC.ModelIdMap>();
-  private pipeRunIdMaps   = new Map<string, OBC.ModelIdMap>();
+  private equipmentIdMaps  = new Map<string, OBC.ModelIdMap>();
+  private pipeRunIdMaps    = new Map<string, OBC.ModelIdMap>(); // whole-run toggle
+  private pipeMemberIdMaps = new Map<string, OBC.ModelIdMap>(); // single-segment toggle
+  private ifcBuffers       = new Map<string, Uint8Array>();     // raw bytes per modelId, for pipe-run grouping
 
   constructor(private opts: ViewerOptions) {
     this.components = new OBC.Components();
 
     const worlds = this.components.get(OBC.Worlds);
-    this.world = worlds.create<
+    this.world = worlds.create <
       OBC.SimpleScene,
       OBC.SimpleCamera,
       OBC.SimpleRenderer
@@ -96,18 +159,16 @@ export default class IFCViewerEngine {
     this.hider     = this.components.get(OBC.Hider);
   }
 
-  // ── Init ────────────────────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
 
   async init(): Promise<void> {
     const workerUrl = await OBC.FragmentsManager.getWorker();
     this.fragments.init(workerUrl);
 
-    // Keep culling/LOD up to date with camera movement
     this.world.camera.controls.addEventListener("update", () => {
       this.fragments.core.update();
     });
 
-    // Fix z-fighting on newly added materials
     this.fragments.core.models.materials.list.onItemSet.add(({ value: material }: { value: THREE.Material }) => {
       if (!("isLodMaterial" in material && material.isLodMaterial)) {
         material.polygonOffset = true;
@@ -116,7 +177,6 @@ export default class IFCViewerEngine {
       }
     });
 
-    // Wire camera and add to scene when a model loads
     this.fragments.list.onItemSet.add(({ value: model }: { value: FRAGS.FragmentsModel }) => {
       model.useCamera(this.world.camera.three);
       this.world.scene.three.add(model.object);
@@ -124,7 +184,7 @@ export default class IFCViewerEngine {
     });
   }
 
-  // ── Load ────────────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
 
   async loadIfcFromUrl(
     url: string,
@@ -132,6 +192,11 @@ export default class IFCViewerEngine {
   ): Promise<void> {
     const ifcLoader = this.components.get(OBC.IfcLoader);
 
+    // Pipe-run grouping (see enumeratePipeRuns) is computed by parsing the
+    // raw IFC bytes directly with web-ifc — bypassing @thatopen/fragments'
+    // IfcImporter entirely for that purpose — so ports/relations don't need
+    // to survive the Fragments conversion at all. The buffer is kept so
+    // enumeratePipeRuns can re-parse it later without re-fetching the file.
     await ifcLoader.setup({
       autoSetWasm: false,
       wasm: {
@@ -145,6 +210,7 @@ export default class IFCViewerEngine {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`IFC fetch failed: ${resp.status}`);
     const buffer = new Uint8Array(await resp.arrayBuffer());
+    this.ifcBuffers.set("model", buffer);
 
     onProgress?.({ stage: "parsing", progress: 0, message: "Processing geometry…" });
 
@@ -162,25 +228,18 @@ export default class IFCViewerEngine {
 
     onProgress?.({ stage: "rendering", progress: 100, message: "Complete!" });
 
-    // Fit camera once the model is in the scene
     this.fitToFrame();
   }
 
   // ── Visibility ────────────────────────────────────────────────────────────
 
   async setCategoryVisible(category: string, visible: boolean): Promise<void> {
-    // Name-based categories (e.g. roofs → IfcSlab elements named "Roof *").
-    // After running the name-pattern path, fall through to the entity-type path
-    // when the category also has an entry in CATEGORY_IFC_CLASSES (e.g. "roofs"
-    // needs to catch both IfcSlab "Roof Slab" elements AND IfcRoof entities like
-    // a reactor containment dome).
     if (category in CATEGORY_NAME_PATTERNS) {
       const { pattern, categories } = CATEGORY_NAME_PATTERNS[category];
       await this.setCategoryVisibleByName(pattern, visible, categories);
       if (!(category in CATEGORY_IFC_CLASSES)) return;
     }
 
-    // Entity-type-based categories
     const classes = CATEGORY_IFC_CLASSES[category];
     if (!classes) {
       console.warn(`[IFCViewerEngine] Unknown category: "${category}"`);
@@ -206,8 +265,6 @@ export default class IFCViewerEngine {
     await this.hider.set(visible, modelIdMap);
   }
 
-  // Match elements whose IFC Name attribute satisfies namePattern,
-  // regardless of entity type.
   private async setCategoryVisibleByName(
     namePattern: RegExp,
     visible: boolean,
@@ -243,9 +300,11 @@ export default class IFCViewerEngine {
     await this.hider.set(true);
   }
 
-  // ── Category presence ───────────────────────────────────────────────────
+  // ── Category presence ────────────────────────────────────────────────────
   // An IFC can contain anything, so the UI only shows toggles for categories
   // the loaded model actually has. Returns the subset of `categories` present.
+  // This is purely a tidiness/fallback layer — it doesn't gate any capability,
+  // it just keeps the panel from showing empty accordions.
 
   async enumerateCategories(categories: string[]): Promise<string[]> {
     const present: string[] = [];
@@ -256,11 +315,9 @@ export default class IFCViewerEngine {
   }
 
   private async categoryHasItems(category: string): Promise<boolean> {
-    // Name-pattern path (e.g. IfcSlab named "Roof Slab")
     if (category in CATEGORY_NAME_PATTERNS) {
       const { pattern, categories } = CATEGORY_NAME_PATTERNS[category];
       if (await this.nameQueryHasItems(pattern, categories)) return true;
-      // fall through to the entity-type path when the category has both
     }
 
     const classes = CATEGORY_IFC_CLASSES[category];
@@ -295,8 +352,6 @@ export default class IFCViewerEngine {
 
     try {
       const modelIdMap = await query.test();
-      // test() can return model keys with empty id sets when nothing matches —
-      // count actual ids, not keys, or every name query reads as "present".
       return Object.values(modelIdMap).some((ids) => (ids as Set<number>).size > 0);
     } catch (err) {
       console.warn(`[IFCViewerEngine] ItemsFinder query failed for pattern "${namePattern}":`, err);
@@ -304,7 +359,7 @@ export default class IFCViewerEngine {
     }
   }
 
-  // ── Equipment enumeration / toggling ────────────────────────────────────
+  // ── Equipment enumeration / toggling ──────────────────────────────────────
 
   async enumerateEquipment(): Promise<EquipmentItem[]> {
     this.equipmentIdMaps.clear();
@@ -359,62 +414,251 @@ export default class IFCViewerEngine {
     await this.hider.set(visible, idMap);
   }
 
-  // ── Pipe enumeration / toggling ─────────────────────────────────────────
-  // The backend doesn't currently author IfcDistributionSystem groupings, so
-  // we list each segment / fitting individually rather than per logical run.
+  // ── Pipe run enumeration / toggling ───────────────────────────────────────
+  // Groups pipe segments/fittings into continuous runs via port connectivity,
+  // mirroring the backend splitter's group_piping_systems(): union-find over
+  // the port graph, restricted to piping entities, severed at equipment ports.
+  //
+  // @thatopen/fragments' IfcImporter filters out IfcDistributionPort and the
+  // IfcRelNests/IfcRelConnectsPorts relations during IFC->Fragments
+  // conversion (confirmed: adding them to importer.classes/importer.relations
+  // has no effect on actual output — those configs are apparently snapshotted
+  // before onIfcImporterInitialized fires). Rather than fight that, this
+  // parses the *raw* IFC bytes a second time with web-ifc directly (the same
+  // underlying parser Fragments itself uses, with zero filtering), computes
+  // the grouping there, and bridges the result back to Fragments local ids
+  // via GlobalId, which does survive the Fragments conversion normally.
+  //
+  // If a model's ports/nest relations aren't authored (or don't survive
+  // export), every pipe simply falls back to its own single-member run below
+  // — grouping degrades gracefully rather than requiring the relations.
 
-  async enumeratePipes(): Promise<PipeItem[]> {
+  private async computePipeRunGlobalIdGroups(buffer: Uint8Array): Promise<Set<string>[]> {
+    const ifcApi = new WEBIFC.IfcAPI();
+    ifcApi.SetWasmPath(this.opts.wasmCdnPath ?? "https://unpkg.com/web-ifc@0.0.77/", true);
+    await ifcApi.Init();
+
+    let modelID: number | null = null;
+    try {
+      modelID = ifcApi.OpenModel(buffer);
+      const mid = modelID;
+
+      const getIds = (type: number | undefined): number[] => {
+        if (type === undefined) return [];
+        const ids: number[] = [];
+        const vec = ifcApi.GetLineIDsWithType(mid, type);
+        for (let i = 0; i < vec.size(); i++) ids.push(vec.get(i));
+        return ids;
+      };
+      const getLine = (id: number): Record<string, unknown> =>
+        ifcApi.GetLine(mid, id) as unknown as Record<string, unknown>;
+      const asHandleArray = (raw: unknown): { value?: number }[] => {
+        if (raw == null) return [];
+        return (Array.isArray(raw) ? raw : [raw]) as { value?: number }[];
+      };
+
+      const pipeIds = [
+        ...getIds(WEBIFC.IFCPIPESEGMENT),
+        ...getIds(WEBIFC.IFCPIPEFITTING),
+      ];
+      const pipeIdSet = new Set(pipeIds);
+      if (pipeIds.length === 0) return [];
+
+      const equipmentIds = new Set<number>();
+      for (const className of EQUIPMENT_IFC_CLASSES) {
+        const type = (WEBIFC as unknown as Record<string, number>)[className.toUpperCase()];
+        for (const id of getIds(type)) equipmentIds.add(id);
+      }
+
+      const portToParent = new Map<number, number>();
+      for (const relId of getIds(WEBIFC.IFCRELNESTS)) {
+        const rel = getLine(relId);
+        const parent = (rel.RelatingObject as { value?: number } | undefined)?.value;
+        if (parent === undefined || !pipeIdSet.has(parent)) continue;
+        for (const child of asHandleArray(rel.RelatedObjects)) {
+          if (child.value !== undefined) portToParent.set(child.value, parent);
+        }
+      }
+
+      const uf = new UnionFind();
+      for (const id of pipeIds) uf.find(String(id));
+
+      for (const relId of getIds(WEBIFC.IFCRELCONNECTSPORTS)) {
+        const rel = getLine(relId);
+        const a = (rel.RelatingPort as { value?: number } | undefined)?.value;
+        const b = (rel.RelatedPort as { value?: number } | undefined)?.value;
+        if (a === undefined || b === undefined) continue;
+        const parentA = portToParent.get(a);
+        const parentB = portToParent.get(b);
+        if (parentA === undefined || parentB === undefined) continue;
+        if (equipmentIds.has(parentA) || equipmentIds.has(parentB)) continue;
+        uf.union(String(parentA), String(parentB));
+      }
+
+      const groups = uf.components(pipeIds.map(String));
+
+      const idToGlobalId = new Map<number, string>();
+      for (const id of pipeIds) {
+        const globalIdAttr = getLine(id).GlobalId as { value?: string } | undefined;
+        if (globalIdAttr?.value) idToGlobalId.set(id, globalIdAttr.value);
+      }
+
+      return [...groups.values()].map((members) => {
+        const globalIds = new Set<string>();
+        for (const memberIdStr of members) {
+          const gid = idToGlobalId.get(Number(memberIdStr));
+          if (gid) globalIds.add(gid);
+        }
+        return globalIds;
+      });
+    } finally {
+      if (modelID !== null) {
+        try { ifcApi.CloseModel(modelID); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  async enumeratePipeRuns(): Promise<PipeRunItem[]> {
     this.pipeRunIdMaps.clear();
-    const regexes = PIPE_MEMBER_IFC_CLASSES.map((c) => new RegExp(`^${c}$`, "i"));
-    const items: PipeItem[] = [];
+    this.pipeMemberIdMaps.clear();
+    const runs: PipeRunItem[] = [];
 
     for (const [, model] of this.fragments.list) {
-      let byCategory: { [category: string]: number[] };
+      const pipeRegexes = PIPE_MEMBER_IFC_CLASSES.map((c) => new RegExp(`^${c}$`, "i"));
+
+      let pipeByCategory: { [category: string]: number[] };
       try {
-        byCategory = await model.getItemsOfCategories(regexes);
+        pipeByCategory = await model.getItemsOfCategories(pipeRegexes);
       } catch (err) {
-        console.warn(`[IFCViewerEngine] getItemsOfCategories(pipes) failed:`, err);
+        console.warn("[IFCViewerEngine] getItemsOfCategories(pipe runs) failed:", err);
         continue;
       }
 
-      const localIds = Object.values(byCategory).flat();
-      if (localIds.length === 0) continue;
+      const pipeIds = Object.values(pipeByCategory).flat();
+      if (pipeIds.length === 0) continue;
 
-      let dataList: FRAGS.ItemData[] = [];
+      let itemData: FRAGS.ItemData[] = [];
       try {
-        dataList = await model.getItemsData(localIds, {
+        itemData = await model.getItemsData(pipeIds, {
           attributes: ["Name"],
           attributesDefault: false,
           relationsDefault: { attributes: false, relations: false },
         });
       } catch (err) {
-        console.warn(`[IFCViewerEngine] getItemsData(pipes) failed:`, err);
+        console.warn("[IFCViewerEngine] getItemsData(pipe Name) failed:", err);
       }
 
-      for (let i = 0; i < localIds.length; i++) {
-        const localId = localIds[i];
-        const nameAttr = dataList[i]?.Name as { value?: unknown } | undefined;
-        const rawName = nameAttr && "value" in nameAttr ? nameAttr.value : undefined;
-        const label = (typeof rawName === "string" && rawName.length > 0)
-          ? rawName
-          : `#${localId}`;
-        const key = `${model.modelId}:${localId}`;
-        this.pipeRunIdMaps.set(key, { [model.modelId]: new Set([localId]) });
-        items.push({ key, label });
+      let guids: (string | null)[] = [];
+      try {
+        guids = await model.getGuidsByLocalIds(pipeIds);
+      } catch (err) {
+        console.warn("[IFCViewerEngine] getGuidsByLocalIds failed:", err);
       }
+
+      const nameByLocalId = new Map<number, string>();
+      const localIdByGlobalId = new Map<string, number>();
+      pipeIds.forEach((localId, i) => {
+        const nameAttr = itemData[i]?.Name as { value?: unknown } | undefined;
+        const rawName = nameAttr && typeof nameAttr === "object" && "value" in nameAttr
+          ? nameAttr.value
+          : undefined;
+        nameByLocalId.set(
+          localId,
+          typeof rawName === "string" && rawName.length > 0 ? rawName : `#${localId}`,
+        );
+
+        const guid = guids[i];
+        if (typeof guid === "string" && guid.length > 0) {
+          localIdByGlobalId.set(guid, localId);
+        }
+      });
+
+      const buffer = this.ifcBuffers.get(model.modelId);
+      let globalIdGroups: Set<string>[] = [];
+      if (!buffer) {
+        console.warn(
+          `[IFCViewerEngine] No stored IFC buffer for model "${model.modelId}" — ` +
+          "pipe runs will fall back to one run per segment. This shouldn't happen " +
+          "if the model was loaded via loadIfcFromUrl()."
+        );
+      } else {
+        try {
+          globalIdGroups = await this.computePipeRunGlobalIdGroups(buffer);
+        } catch (err) {
+          console.warn("[IFCViewerEngine] computePipeRunGlobalIdGroups failed:", err);
+        }
+      }
+
+      const usedLocalIds = new Set<number>();
+      let runIndex = 0;
+      for (const globalIds of globalIdGroups) {
+        const memberLocalIds: number[] = [];
+        for (const gid of globalIds) {
+          const localId = localIdByGlobalId.get(gid);
+          if (localId !== undefined) memberLocalIds.push(localId);
+        }
+        if (memberLocalIds.length === 0) continue;
+
+        runIndex += 1;
+        const runKey = `run:${model.modelId}:${runIndex}`;
+        const runIdMap: OBC.ModelIdMap = { [model.modelId]: new Set() };
+        const memberItems: PipeMemberItem[] = [];
+
+        for (const localId of memberLocalIds) {
+          usedLocalIds.add(localId);
+          const memberKey = `${model.modelId}:${localId}`;
+          runIdMap[model.modelId]!.add(localId);
+          this.pipeMemberIdMaps.set(memberKey, { [model.modelId]: new Set([localId]) });
+          memberItems.push({ key: memberKey, label: nameByLocalId.get(localId) ?? `#${localId}` });
+        }
+
+        memberItems.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+        this.pipeRunIdMaps.set(runKey, runIdMap);
+        runs.push({
+          key: runKey,
+          label: `Pipe run ${runIndex} (${memberItems.length} segments)`,
+          members: memberItems,
+        });
+      }
+
+      let fallbackCount = 0;
+      for (const localId of pipeIds) {
+        if (usedLocalIds.has(localId)) continue;
+        fallbackCount++;
+        runIndex += 1;
+        const runKey = `run:${model.modelId}:${runIndex}`;
+        const memberKey = `${model.modelId}:${localId}`;
+        this.pipeMemberIdMaps.set(memberKey, { [model.modelId]: new Set([localId]) });
+        this.pipeRunIdMaps.set(runKey, { [model.modelId]: new Set([localId]) });
+        runs.push({
+          key: runKey,
+          label: `Pipe run ${runIndex} (1 segments)`,
+          members: [{ key: memberKey, label: nameByLocalId.get(localId) ?? `#${localId}` }],
+        });
+      }
+      console.debug(
+        `[IFCViewerEngine] model "${model.modelId}": ${runIndex} pipe run(s) ` +
+        `(${fallbackCount} ungrouped fallback${fallbackCount === 1 ? "" : "s"} out of ${pipeIds.length} pipe elements)`
+      );
     }
 
-    items.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
-    return items;
+    runs.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+    return runs;
   }
 
-  async setPipeVisible(key: string, visible: boolean): Promise<void> {
+  async setPipeRunVisible(key: string, visible: boolean): Promise<void> {
     const idMap = this.pipeRunIdMaps.get(key);
     if (!idMap) return;
     await this.hider.set(visible, idMap);
   }
 
-  // ── Camera ──────────────────────────────────────────────────────────────
+  async setPipeMemberVisible(key: string, visible: boolean): Promise<void> {
+    const idMap = this.pipeMemberIdMaps.get(key);
+    if (!idMap) return;
+    await this.hider.set(visible, idMap);
+  }
+
+  // ── Camera ────────────────────────────────────────────────────────────────
 
   fitToFrame(): void {
     const bbox = new THREE.Box3();
@@ -489,6 +733,7 @@ export default class IFCViewerEngine {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.ifcBuffers.clear();
     try {
       this.components.dispose();
     } catch (e) {

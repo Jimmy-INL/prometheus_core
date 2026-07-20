@@ -1,5 +1,5 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
-import IFCViewerEngine, { EquipmentItem, PipeItem } from "./IFCViewerEngine";
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import IFCViewerEngine, { EquipmentItem, PipeRunItem } from "./IFCViewerEngine";
 
 type Props = {
   modelUrl: string;
@@ -21,8 +21,9 @@ export type IFCViewerHandles = {
   enumerateCategories: (categories: string[]) => Promise<string[]>;
   enumerateEquipment: () => Promise<EquipmentItem[]>;
   setEquipmentVisible: (key: string, visible: boolean) => Promise<void>;
-  enumeratePipes: () => Promise<PipeItem[]>;
-  setPipeVisible: (key: string, visible: boolean) => Promise<void>;
+  enumeratePipeRuns: () => Promise<PipeRunItem[]>;
+  setPipeRunVisible: (key: string, visible: boolean) => Promise<void>;
+  setPipeMemberVisible: (key: string, visible: boolean) => Promise<void>;
   getEngine: () => IFCViewerEngine | null;
 };
 
@@ -36,7 +37,6 @@ const IfcViewer = forwardRef<IFCViewerHandles, Props>(({
   const hostRef   = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<IFCViewerEngine | null>(null);
 
-  // Stable ref so the effect doesn't remount on every parent re-render
   const onLoadRef = useRef(onLoad);
   useEffect(() => { onLoadRef.current = onLoad; });
 
@@ -56,9 +56,11 @@ const IfcViewer = forwardRef<IFCViewerHandles, Props>(({
     enumerateEquipment: () => engineRef.current?.enumerateEquipment() ?? Promise.resolve([]),
     setEquipmentVisible: (key, visible) =>
       engineRef.current?.setEquipmentVisible(key, visible) ?? Promise.resolve(),
-    enumeratePipes: () => engineRef.current?.enumeratePipes() ?? Promise.resolve([]),
-    setPipeVisible: (key, visible) =>
-      engineRef.current?.setPipeVisible(key, visible) ?? Promise.resolve(),
+    enumeratePipeRuns: () => engineRef.current?.enumeratePipeRuns() ?? Promise.resolve([]),
+    setPipeRunVisible: (key, visible) =>
+      engineRef.current?.setPipeRunVisible(key, visible) ?? Promise.resolve(),
+    setPipeMemberVisible: (key, visible) =>
+      engineRef.current?.setPipeMemberVisible(key, visible) ?? Promise.resolve(),
     getEngine:          () => engineRef.current,
   }));
 
@@ -100,7 +102,7 @@ const IfcViewer = forwardRef<IFCViewerHandles, Props>(({
     };
   }, [modelUrl, wasmCdnPath]);
 
-  return <div ref={hostRef} className={`w-full h-full [&_canvas]: -ml-2 -mt-2 ${className}`} style={style} />;
+  return <div ref={hostRef} className={`w-full h-full ${className}`} style={style} />;
 });
 
 IfcViewer.displayName = "IfcViewer";
