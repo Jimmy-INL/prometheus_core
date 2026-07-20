@@ -616,7 +616,12 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
     assert statuses == ["Searching publications..."]
     assert request_capture["method"] == "POST"
     assert request_capture["url"] == "http://example.test/a2a/osti-research-agent"
-    assert request_capture["json"]["method"] == "message/stream"
+    assert request_capture["json"]["method"] == "SendStreamingMessage"
+    assert request_capture["json"]["params"]["message"]["role"] == "ROLE_USER"
+    assert request_capture["json"]["params"]["configuration"] == {
+        "returnImmediately": False
+    }
+    assert request_capture["headers"]["A2A-Version"] == "1.0"
     assert "application/x-ndjson" in request_capture["headers"]["Accept"]
     assert result["status"] == "completed"
     assert result["message"] == "Research complete."

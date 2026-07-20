@@ -22,9 +22,9 @@ x-common-volumes: &common-volumes
 
 x-build-args: &prometheus-api-build-args
   PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
-  HTTP_PROXY: ${HTTP_PROXY:-""}
-  HTTPS_PROXY: ${HTTPS_PROXY:-""}
-  NO_PROXY: ${NO_PROXY:-""}
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
 
 networks:
   agent-network:
@@ -57,7 +57,7 @@ services:
 
   # LiteLLM proxy — A2A agent gateway and optional LLM proxy
   litellm:
-    image: ghcr.io/berriai/litellm:v1.83.3-stable
+    image: ghcr.io/berriai/litellm:v1.92.0
     container_name: litellm-proxy
     ports:
       - "${LITELLM_LOCAL_PORT}:4000"

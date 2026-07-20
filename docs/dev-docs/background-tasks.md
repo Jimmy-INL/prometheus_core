@@ -328,41 +328,28 @@ autocomplete) while keeping the manual parser for `/history` parity.
 
 ## LiteLLM readiness assessment
 
-**Is the current LiteLLM (`v1.83.3-stable`, pinned in `docker-compose.yml`) ready for
-this plan?**
+Prometheus requires LiteLLM 1.92.0 or newer for A2A protocol v1. LiteLLM 1.92.0
+is the first release whose gateway routes both legacy 0.3 and v1 agents using the
+corresponding JSON-RPC method names. The platform pins that version in
+`docker-compose.yml`.
 
-**For Phase 0 and Phase 1: yes — no LiteLLM change required.** The reason is that the
-detach/watch design deliberately uses *only* the two methods LiteLLM already forwards:
+All v1 operations use one `POST /a2a/{agent}` JSON-RPC endpoint. The operation is
+selected by the PascalCase method in the body:
 
-| A2A method | LiteLLM routing today | Needed in Phase 0/1? |
-|---|---|---|
-| `message/send` | ✅ `POST /a2a/{agent}/message/send` (method in URL path, `tool_discovery.py:512`) | yes (existing) |
-| `message/stream` | ✅ `POST /a2a/{agent}` with method in the JSON-RPC body — LiteLLM exposes **no** `/message/stream` sub-route (`tool_discovery.py:521-527`) | yes — this is what the watcher rides |
-| `tasks/get` | ❌ not forwarded | no |
-| `tasks/resubscribe` | ❌ not forwarded | no |
-| `tasks/cancel` | ❌ not forwarded | no (Phase 1 cancel marks the graph + stops the watcher; true downstream cancel is best-effort) |
-| `tasks/pushNotificationConfig/*` | ❌ not forwarded | no |
+| A2A v1 operation | JSON-RPC method |
+|---|---|
+| Blocking send | `SendMessage` |
+| Streaming send | `SendStreamingMessage` |
+| Task lookup/listing | `GetTask` / `ListTasks` |
+| Stream re-attachment | `SubscribeToTask` |
+| Cancellation | `CancelTask` |
+| Push configuration | `CreateTaskPushNotificationConfig`, `GetTaskPushNotificationConfig`, `ListTaskPushNotificationConfigs`, `DeleteTaskPushNotificationConfig` |
 
-LiteLLM's A2A gateway is **path-routed, not a transparent JSON-RPC relay**: it forwards
-specific URL paths to the registered agent base URL (stored from the `url` field at
-`POST /v1/agents`). The orchestrator keeping a server-side `message/stream` open is a
-plain long-lived HTTP/SSE call through a path LiteLLM already proxies — so a backgrounded
-task is fully supported on the current version.
-
-**For Phase 2b/3: not ready — requires work.** Restart-survivable re-attachment
-(`tasks/resubscribe`), pull-based status (`tasks/get`), true downstream cancellation
-(`tasks/cancel`), and native A2A push notifications (`tasks/pushNotificationConfig/*`)
-all require those JSON-RPC methods to reach specialist agents. Because all agent traffic
-must go through LiteLLM (`project_litellm_routing`), enabling them means **extending
-LiteLLM's A2A passthrough** to forward `/a2a/{agent}/tasks/*` (and the push-config
-paths) to the agent's base URL — either an upstream contribution or a thin proxy/shim in
-front of (or configured into) LiteLLM. This is the single long-pole dependency for the
-durable/hierarchical phases and should be scoped before Phase 2b starts.
-
-**Net:** the plan is sequenced so that everything user-visible (durable task state, the
-Task Graph, backgrounding, `/tasks`, notifications, inspection) ships on the **current
-LiteLLM**, and the LiteLLM passthrough work is isolated to the later durability/scale
-phases.
+The registered copy of each v1 agent card must include the top-level `url` and
+`protocolVersion` fields LiteLLM still uses to locate the upstream agent. The
+`prometheus_api` registry client derives those compatibility fields from the card's
+JSON-RPC `supportedInterfaces` entry. They are registration metadata only and are not
+added to the strict v1 card served by the agent itself.
 
 ---
 
@@ -373,8 +360,8 @@ phases.
 | **0 — Foundations** | `RedisTaskStore` (base image); align `TaskState`; Task Graph registry + `reconcile` + pub/sub in client-agent. | No |
 | **1 — Single background task, end-to-end** | Soft-promotion + `declare_long_running`; orchestrator stream-watcher + `backgrounded` response; frontend subscriber + `cl.TaskList`; `/tasks`, `/tasks <id>`; completion notification. | No |
 | **2a — Centralized continuation** | Long-running *workflow steps*: persist plan, detach, resume-on-completion; `/cancel`. | No |
-| **2b — Distributed continuation + durability** | Agent-to-agent non-blocking dispatch; continuation via `ContextStateStore`; durable watcher queue (restart-survivable); full multi-level percolation. | Partly (`tasks/resubscribe`) |
-| **3 — Polish** | Native A2A push notifications + `tasks/get`/`tasks/resubscribe`/`tasks/cancel` through LiteLLM; cancellation propagation; retries; TTL/GC. | **Yes (extend passthrough)** |
+| **2b — Distributed continuation + durability** | Agent-to-agent non-blocking dispatch; continuation via `ContextStateStore`; durable watcher queue (restart-survivable); full multi-level percolation. | No; requires the pinned v1-capable gateway |
+| **3 — Polish** | Native A2A push notifications + `GetTask`/`SubscribeToTask`/`CancelTask` through LiteLLM; cancellation propagation; retries; TTL/GC. | No; v1.92.0 forwards these methods |
 
 ### Phase 0 work items
 

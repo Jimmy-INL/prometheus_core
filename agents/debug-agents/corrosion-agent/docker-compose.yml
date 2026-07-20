@@ -4,9 +4,9 @@ services:
       context: .
       args:
         - PROMETHEUS_API_BASE_IMAGE_HASH=${PROMETHEUS_API_BASE_IMAGE_HASH}
-        - HTTP_PROXY=${HTTP_PROXY-""}
-        - HTTPS_PROXY=${HTTPS_PROXY-""}
-        - NO_PROXY=${NO_PROXY-""}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
     container_name: corrosion-agent
     networks:
       - agent-network
