@@ -18,14 +18,29 @@
  *   ✓ ask_form (AskElementMessage — DynamicForm)
  *   ✓ elements[] on IStepExtended — wired to ElementList in Chat.tsx
  *   ✓ element pipeline — classifyElement() + VIEWER_REGISTRY in elements.ts
- *   ✓ element fallback — non-custom unregistered kinds show download card;
- *                        custom elements without a registered viewer are hidden
- *   ✓ viewers — PDF, Image, FollowUpSuggestions, PlanViewer
+ *   ✓ element fallback — non-custom unregistered kinds show FileCard-based
+ *                        download card; custom elements without a registered
+ *                        viewer are hidden
+ *   ✓ viewers — PDF, Image, FollowUpSuggestions, PlanViewer, JSON, IFC, Mesh
+ *     - MeshViewer (shared STL/Exodus) is wired and live in VIEWER_REGISTRY.
+ *       Known pipeline limitations, not blockers:
+ *         · `representation` field ("surface" | "volume") from the manifest
+ *           is never read — everything renders as surface polydata, even if
+ *           an agent emits a volume mesh expecting volumetric rendering.
+ *         · No post-load block visibility toggling — block selection happens
+ *           once, backend-side, at VTP conversion time. The VTP output has
+ *           no per-cell block ID, so the frontend has no data to toggle
+ *           individual blocks after load. Fixing either of these requires a
+ *           backend/pipeline change (branch on `representation`, carry block
+ *           IDs into the VTP), not a frontend one.
  *   ✓ file upload UI — Paperclip button + multi-file picker, IFileRef wiring
  *
  * Not yet implemented:
  *   ✗ ask_plain (AskUserMessage)
- *   ✗ viewers — IFC, Exodus, file download, JSON, Mermaid, ThermalAnalysis
+ *   ✗ viewers — Mermaid, ThermalAnalysis
+ *
+ * Open question (not a frontend TODO, needs backend confirmation):
+ *   ? PDF viewer — whether cl.Pdf emission is actually live on the backend
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -128,21 +143,16 @@ export const isWaitingForInput  = (item: FlatItem) =>
   item.kind === "ask_action" || item.kind === "ask_form" || item.kind === "ask_plain";
 
 // ---------------------------------------------------------------------------
-// ─── TODO: Artifact viewers ──────────────────────────────────────────────────
+// ─── TODO: Remaining artifact viewers ────────────────────────────────────────
 //
-// All arrive in step.elements[] and currently show NoViewerFallback.
-// Register in VIEWER_REGISTRY (elements.ts) as each is built.
+// Arrive in step.elements[], currently show FileCard fallback until registered.
 //
-// Priority order:
-//   1. FileDownloadElement  — cl.File; simple <a download> with mime badge
-//   2. CollapsibleJsonElement — cl.CustomElement CollapsibleJson
-//   3. IFCViewerElement     — cl.CustomElement IFCViewer (nearly ready)
-//   4. ExodusViewerElement  — cl.CustomElement ExodusViewer
-//   5. MermaidElement       — cl.CustomElement Mermaid
-//   6. ThermalAnalysisElement — cl.CustomElement ThermalAnalysis (Plotly)
+//   1. MermaidElement — not started
+//   2. ThermalAnalysisElement — not started (Plotly)
 //
-// NOTE: Audit plugins/ folder to confirm CustomElement names before building
-//   IFC, Mermaid, and ThermalAnalysis viewers — names above are assumed.
+// MeshViewer (STL/Exodus, shared component) and IFCViewer are both done and
+// live in VIEWER_REGISTRY — see IMPLEMENTATION STATUS above for MeshViewer's
+// known (non-blocking) pipeline limitations.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ---------------------------------------------------------------------------

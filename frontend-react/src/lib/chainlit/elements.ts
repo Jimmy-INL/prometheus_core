@@ -76,12 +76,11 @@ export function classifyElement(el: AnyElement): ElementKind {
   if (type === "custom") {
     switch (el.name) {
       case "IFCViewer":           return "ifc";
-      // NOTE: backend emits this custom element as "MeshViewer" for BOTH
-      // Exodus and STL artifacts (see components/stl_integration.py /
+      // Confirmed: backend emits this custom element as "MeshViewer" for BOTH
+      // Exodus and STL artifacts (components/stl_integration.py /
       // exodus_integration.py — both route through MeshDataset.to_chainlit_element()
       // using the shared COMPONENT_NAME="MeshViewer"). There is no separate
-      // "ExodusViewer" name on the wire — confirm this against the actual
-      // cl.CustomElement(name=...) call before relying on it.
+      // "ExodusViewer" name on the wire.
       case "MeshViewer":          return "mesh";
       case "CollapsibleJson":     return "json";
       case "FollowUpSuggestions": return "suggestions";
@@ -123,6 +122,14 @@ const IFCViewerElement = import.meta.env.DEV
 // vtk.js's own render-window lifecycle isn't WASM-worker-based like ThatOpen's,
 // so re-init on HMR is less fraught, but keeping the pattern identical avoids
 // having two different loading conventions for the two heaviest viewers.
+//
+// Shared by STL and Exodus (both emit COMPONENT_NAME="MeshViewer" — see
+// classifyElement above). Known pipeline limitations, not blockers to
+// shipping: the manifest's `representation` field ("surface" | "volume") is
+// never read, so everything renders as surface polydata; and block
+// visibility can't be toggled post-load since block selection happens once,
+// backend-side, at VTP conversion time (no per-cell block ID in the VTP
+// output). Both require a backend/pipeline change to fix, not a frontend one.
 const MeshViewerElement = import.meta.env.DEV
   ? (await import("../../viewers/mesh/MeshViewerElement")).default
   : lazy(() => import("../../viewers/mesh/MeshViewerElement"));
@@ -137,7 +144,7 @@ import { PlanViewerElement }               from "../../viewers/PlanViewerElement
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          IFCViewerElement,
-  mesh:         MeshViewerElement,
+  mesh:         MeshViewerElement, // wired and live — see notes above
   pdf:          PdfViewerElement,
   file:         FileDownloadElement,
   image:        ImageViewerElement,
