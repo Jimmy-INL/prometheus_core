@@ -17,4 +17,5 @@
 
 .mesh-viewer-root canvas {
   display: block;
+  margin: 0 !important;
 }
