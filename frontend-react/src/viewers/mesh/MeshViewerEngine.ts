@@ -7,6 +7,15 @@
  * wrapper (MeshViewer.tsx) just mounts a host div and forwards a ref.
  */
 
+// Registers the OpenGL rendering backend for core vtk.js classes (Actor,
+// Mapper, Renderer, RenderWindow, etc). vtk.js separates "what a class is"
+// from "how to draw it with WebGL" — nothing wires the second part up
+// automatically, it only happens as a side effect of importing a Profile
+// module once, anywhere in the app. Without this, vtkFullScreenRenderWindow
+// constructs a renderer with no registered OpenGL view node factory, and
+// internal factory lookups return undefined instead of throwing a clear error.
+import "@kitware/vtk.js/Rendering/Profiles/Geometry";
+
 import vtkFullScreenRenderWindow from "@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow";
 import vtkColorTransferFunction from "@kitware/vtk.js/Rendering/Core/ColorTransferFunction";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
@@ -178,13 +187,13 @@ export default class MeshViewerEngine {
 
   setBackground(rgb: RGB): void {
     this.renderer.setBackground(rgb);
-    this.renderWindow.render();
+    if (this.currentPolyData) this.renderWindow.render();
   }
 
   setEdgeColor(rgb: RGB): void {
     const actorProperty = this.actor.getProperty();
     if (actorProperty.setEdgeColor) actorProperty.setEdgeColor(...rgb);
-    this.renderWindow.render();
+    if (this.currentPolyData) this.renderWindow.render();
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -261,12 +270,12 @@ export default class MeshViewerEngine {
   clearVariableColoring(): void {
     this.mapper.setScalarVisibility(false);
     this.currentArrayName = null;
-    this.renderWindow.render();
+    if (this.currentPolyData) this.renderWindow.render();
   }
 
   setColorPreset(name: ColorPreset): void {
     this.applyColorPreset(name);
-    this.renderWindow.render();
+    if (this.currentPolyData) this.renderWindow.render();
   }
 
   private applyColorPreset(name: ColorPreset): void {
@@ -280,7 +289,7 @@ export default class MeshViewerEngine {
   setScalarRange(range: [number, number]): void {
     this.lookupTable.setMappingRange(range[0], range[1]);
     this.lookupTable.updateRange();
-    this.renderWindow.render();
+    if (this.currentPolyData) this.renderWindow.render();
   }
 
   // ── Camera ────────────────────────────────────────────────────────────────

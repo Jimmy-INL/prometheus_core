@@ -79,6 +79,10 @@ const MeshViewerControls: React.FC<Props> = ({
   const hasPlayback = numTimesteps > 1;
   const hasVariables = variableOptions.length > 0;
 
+  if (!hasPlayback && !hasVariables) {
+    return null;
+  }
+
   if (!open) {
     return (
       <button
@@ -167,6 +171,7 @@ const MeshViewerControls: React.FC<Props> = ({
           </div>
         )}
 
+        {hasVariables && (
         <div className="border-b border-base-300 last:border-b-0">
           <button
             type="button"
@@ -178,35 +183,33 @@ const MeshViewerControls: React.FC<Props> = ({
           </button>
           {appearanceOpen && (
             <div className="p-3 flex flex-col gap-3">
-              {hasVariables && (
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10px] uppercase tracking-wide text-base-content/50 font-semibold">
-                    Variable
-                  </span>
-                  <select
-                    className="select select-xs select-bordered w-full"
-                    value={currentVariable ?? ""}
-                    onChange={(e) => onVariableChange(e.target.value || null)}
-                    disabled={disabled}
-                  >
-                    <option value="">None</option>
-                    {variableOptions.some((v) => v.group === "point") && (
-                      <optgroup label="Point">
-                        {variableOptions.filter((v) => v.group === "point").map((v) => (
-                          <option key={v.value} value={v.value}>{v.label}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {variableOptions.some((v) => v.group === "cell") && (
-                      <optgroup label="Cell">
-                        {variableOptions.filter((v) => v.group === "cell").map((v) => (
-                          <option key={v.value} value={v.value}>{v.label}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                </label>
-              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wide text-base-content/50 font-semibold">
+                  Variable
+                </span>
+                <select
+                  className="select select-xs select-bordered w-full"
+                  value={currentVariable ?? ""}
+                  onChange={(e) => onVariableChange(e.target.value || null)}
+                  disabled={disabled}
+                >
+                  <option value="">None</option>
+                  {variableOptions.some((v) => v.group === "point") && (
+                    <optgroup label="Point">
+                      {variableOptions.filter((v) => v.group === "point").map((v) => (
+                        <option key={v.value} value={v.value}>{v.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {variableOptions.some((v) => v.group === "cell") && (
+                    <optgroup label="Cell">
+                      {variableOptions.filter((v) => v.group === "cell").map((v) => (
+                        <option key={v.value} value={v.value}>{v.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
 
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wide text-base-content/50 font-semibold">
@@ -265,6 +268,7 @@ const MeshViewerControls: React.FC<Props> = ({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
