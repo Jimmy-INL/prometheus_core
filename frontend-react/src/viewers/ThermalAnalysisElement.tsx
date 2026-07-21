@@ -113,6 +113,29 @@ export function ThermalAnalysisElement({ element }: ViewerProps) {
     analysis = {},
   } = (element.props ?? {}) as ThermalAnalysisProps;
 
+  // Backend agent calls (e.g. the AI interpretation/analysis step) can fail
+  // upstream and still return a 200 with a dict shaped as { error: string }
+  // instead of the expected analysis fields. Surface that explicitly rather
+  // than silently rendering an empty card with no headline items or sections.
+  if (typeof analysis.error === "string" && analysis.error) {
+    return (
+      <div className="card bg-base-200 border border-error/30 shadow-sm">
+        <div className="card-body p-5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-error">
+            Thermal Analysis — Failed
+          </div>
+          <div className="text-lg font-bold">{name}</div>
+          {description ? (
+            <div className="mt-1 text-sm text-base-content/70">{description}</div>
+          ) : null}
+          <div className="mt-3 rounded-lg bg-error/10 p-4 text-sm text-error">
+            {analysis.error}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const status = String(analysis.status ?? "unknown");
 
   const headlineItems = (
