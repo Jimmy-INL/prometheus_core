@@ -24,7 +24,7 @@ export type ElementKind =
   | "plan_viewer"    // PlanViewer custom element
   | "dynamic_form"   // DynamicForm custom element (ask_form path)
   | "ifc"            // IFCViewer custom element
-  | "exodus"         // ExodusViewer custom element
+  | "mesh"           // MeshViewer custom element — shared by Exodus and STL
   | "mermaid"        // Mermaid custom element
   | "thermal"        // ThermalAnalysis custom element
   | "unknown";
@@ -76,7 +76,12 @@ export function classifyElement(el: AnyElement): ElementKind {
   if (type === "custom") {
     switch (el.name) {
       case "IFCViewer":           return "ifc";
-      case "ExodusViewer":        return "exodus";
+      // Confirmed: backend emits this custom element as "MeshViewer" for BOTH
+      // Exodus and STL artifacts (components/stl_integration.py /
+      // exodus_integration.py — both route through MeshDataset.to_chainlit_element()
+      // using the shared COMPONENT_NAME="MeshViewer"). There is no separate
+      // "ExodusViewer" name on the wire.
+      case "MeshViewer":          return "mesh";
       case "CollapsibleJson":     return "json";
       case "FollowUpSuggestions": return "suggestions";
       case "PlanViewer":          return "plan_viewer";
@@ -112,7 +117,22 @@ import { DynamicFormElement }                from "../../viewers/DynamicFormElem
 const IFCViewerElement = import.meta.env.DEV
   ? (await import("../../viewers/ifc/IFCViewerElement")).default
   : lazy(() => import("../../viewers/ifc/IFCViewerElement"));
-// import { ExodusViewerElement }         from "../../viewers/ExodusViewerElement";
+// @kitware/vtk.js is a comparably heavy dependency (bundle-only builds of vtk.js
+// itself run well over 1 MB) — same lazy-chunk / dev-HMR reasoning as IFC above.
+// vtk.js's own render-window lifecycle isn't WASM-worker-based like ThatOpen's,
+// so re-init on HMR is less fraught, but keeping the pattern identical avoids
+// having two different loading conventions for the two heaviest viewers.
+//
+// Shared by STL and Exodus (both emit COMPONENT_NAME="MeshViewer" — see
+// classifyElement above). Known pipeline limitations, not blockers to
+// shipping: the manifest's `representation` field ("surface" | "volume") is
+// never read, so everything renders as surface polydata; and block
+// visibility can't be toggled post-load since block selection happens once,
+// backend-side, at VTP conversion time (no per-cell block ID in the VTP
+// output). Both require a backend/pipeline change to fix, not a frontend one.
+const MeshViewerElement = import.meta.env.DEV
+  ? (await import("../../viewers/mesh/MeshViewerElement")).default
+  : lazy(() => import("../../viewers/mesh/MeshViewerElement"));
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 import { FileDownloadElement }             from "../../viewers/FileDownloadElement";
 import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
@@ -124,7 +144,7 @@ import { PlanViewerElement }               from "../../viewers/PlanViewerElement
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          IFCViewerElement,
-  exodus:       null,  // → ExodusViewerElement
+  mesh:         MeshViewerElement, // wired and live — see notes above
   pdf:          PdfViewerElement,
   file:         FileDownloadElement,
   image:        ImageViewerElement,
