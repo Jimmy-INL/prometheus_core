@@ -27,4 +27,5 @@
    filling its host. Block makes it sit flush to the viewer's edges. */
 .ifc-viewer-root canvas {
   display: block;
+  margin: 0 !important;
 }
