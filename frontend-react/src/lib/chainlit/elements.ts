@@ -26,7 +26,7 @@ export type ElementKind =
   | "ifc"            // IFCViewer custom element
   | "mesh"           // MeshViewer custom element — shared by Exodus and STL
   | "mermaid"        // Mermaid custom element
-  | "thermal"        // ThermalAnalysis custom element
+  | "thermal"        // ThermalAnalysisViewer custom element
   | "unknown";
 
 export type AnyElement = IElement & {
@@ -86,8 +86,10 @@ export function classifyElement(el: AnyElement): ElementKind {
       case "FollowUpSuggestions": return "suggestions";
       case "PlanViewer":          return "plan_viewer";
       case "DynamicForm":         return "dynamic_form";
-      case "Mermaid":             return "mermaid";
-      case "ThermalAnalysis":     return "thermal";
+      case "MermaidViewer":       return "mermaid";
+      // Backend COMPONENT_NAME is "ThermalAnalysisViewer", not "ThermalAnalysis"
+      // (see prometheus.thermal_analysis.result.v1 plugin __init__.py).
+      case "ThermalAnalysisViewer": return "thermal";
       case "SVGViewer":           return "image";
       default:                    return "unknown";
     }
@@ -133,14 +135,19 @@ const IFCViewerElement = import.meta.env.DEV
 const MeshViewerElement = import.meta.env.DEV
   ? (await import("../../viewers/mesh/MeshViewerElement")).default
   : lazy(() => import("../../viewers/mesh/MeshViewerElement"));
+// Lazy — the mermaid npm package plus its parser (~500KB+) shouldn't sit in
+// the main chunk when most sessions won't render a diagram. Unlike IFC/Mesh,
+// mermaid's render lifecycle is stateless per-call (no persistent WASM
+// worker, no long-lived render window), so re-suspending on HMR is harmless
+// here — no DEV/prod branch needed.
+const MermaidElement = lazy(() => import("../../viewers/MermaidElement"));
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 import { FileDownloadElement }             from "../../viewers/FileDownloadElement";
 import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
 import { JSONViewer }                      from "../../viewers/JSONViewer";
 import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
 import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
-// import { MermaidElement }              from "../../viewers/MermaidElement";
-// import { ThermalAnalysisElement }      from "../../viewers/ThermalAnalysisElement";
+import { ThermalAnalysisElement }          from "../../viewers/ThermalAnalysisElement";
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          IFCViewerElement,
@@ -152,7 +159,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   suggestions:  FollowUpSuggestionsElement,
   plan_viewer:  PlanViewerElement,
   dynamic_form: DynamicFormElement,
-  mermaid:      null,  // → MermaidElement
-  thermal:      null,  // → ThermalAnalysisElement
+  mermaid:      MermaidElement,
+  thermal:      ThermalAnalysisElement,
   unknown:      null,
 };
