@@ -26,6 +26,8 @@ import {
 } from "../lib/chainlit/chainlit";
 import { ElementList } from "./ElementRenderer";
 import type { AnyElement } from "../lib/chainlit/elements";
+// ViewerTestHarness is to render Viewers for testing outside of the Chat
+// import { ViewerTestHarness } from "../dev/ViewerTestHarness"; 
 
 // ---------------------------------------------------------------------------
 // Markdown renderers
@@ -433,6 +435,8 @@ export function Chat() {
 
   return (
     <div className="flex flex-col flex-1 w-full max-w-4xl mx-auto overflow-hidden">
+      {/* For testing Viewers, uncomment the line below and its import and edit Test Harness */} 
+      {/* <ViewerTestHarness /> */} 
       {flat.length === 0 ? (
         <WelcomeScreen onSelect={(text) => handleSend(text)} />
       ) : (

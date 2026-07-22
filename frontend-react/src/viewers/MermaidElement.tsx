@@ -133,62 +133,6 @@ export function MermaidElement({ element }: ViewerProps) {
     URL.revokeObjectURL(url);
   };
 
-  const downloadPng = async () => {
-    const svg = containerRef.current?.querySelector("svg");
-    if (!svg) {
-      setDownloadError("Diagram is not ready yet.");
-      return;
-    }
-    setDownloadError("");
-
-    try {
-      let svgText = new XMLSerializer().serializeToString(svg);
-      svgText = svgText.replace(/@import[^;]+;/g, "");
-      if (!svgText.includes("http://www.w3.org/2000/svg")) {
-        svgText = svgText.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-      }
-
-      const url = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml;charset=utf-8" }));
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-
-      image.onload = () => {
-        const width = image.naturalWidth || svg.viewBox.baseVal.width || svg.getBoundingClientRect().width || 800;
-        const height = image.naturalHeight || svg.viewBox.baseVal.height || svg.getBoundingClientRect().height || 600;
-
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.ceil(width));
-        canvas.height = Math.max(1, Math.ceil(height));
-
-        const ctx = canvas.getContext("2d");
-        URL.revokeObjectURL(url);
-        if (!ctx) return;
-
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-        try {
-          const link = document.createElement("a");
-          link.href = canvas.toDataURL("image/png");
-          link.download = "mermaid-diagram.png";
-          link.click();
-        } catch {
-          setDownloadError("PNG export blocked by the browser. Try the SVG download instead.");
-        }
-      };
-
-      image.onerror = () => {
-        URL.revokeObjectURL(url);
-        setDownloadError("Unable to export image.");
-      };
-
-      image.src = url;
-    } catch {
-      setDownloadError("Unable to export image.");
-    }
-  };
-
   const copyCode = async () => {
     if (!diagram) return;
     try {
@@ -226,9 +170,6 @@ export function MermaidElement({ element }: ViewerProps) {
 
         {view === "diagram" && (
           <div className="ml-auto flex gap-1.5">
-            <button type="button" className="btn btn-ghost btn-xs" onClick={downloadPng}>
-              Download PNG
-            </button>
             <button type="button" className="btn btn-ghost btn-xs" onClick={downloadSvg}>
               Download SVG
             </button>
