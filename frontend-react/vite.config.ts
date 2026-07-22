@@ -4,6 +4,8 @@ import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
+const CHAINLIT_TARGET = process.env.VITE_CHAINLIT_SERVER || "http://localhost:8500";
+
 export default defineConfig({
   plugins: [
     react(),
@@ -16,15 +18,19 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5150,
+    watch: {
+      usePolling: true,
+      interval: 100,
+    },
     proxy: {
       "/chainlit": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
         ws: true,
       },
       "/ws": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
         ws: true,
         timeout: 0,
@@ -32,48 +38,48 @@ export default defineConfig({
         secure: false,
       },
       "/user": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/login": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
         bypass(req) {
           if (req.method === "GET") return req.url;
         },
       },
       "/logout": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/project": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/auth": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/feedback": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/mcp": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/set-session-cookie": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
       "/files": {
-        target: "http://localhost:8500",
-        changeOrigin: true
+        target: CHAINLIT_TARGET,
+        changeOrigin: true,
       },
       // IFC (and other) static assets served by the Chainlit API:
       // /public/ifc-data/{id}/{file}.ifc
       "/public": {
-        target: "http://localhost:8500",
+        target: CHAINLIT_TARGET,
         changeOrigin: true,
       },
     },
