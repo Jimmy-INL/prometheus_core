@@ -8,26 +8,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, cast
 
+from prometheus_api.llm_configs import get_llm_config_path
+
 
 def _env_flag(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_env_references(value: Any) -> Any:
+def _resolve_env_references(value: Any, env: Mapping[str, str] | None = None) -> Any:
     """Resolve LiteLLM YAML ``os.environ/NAME`` values when available."""
+    source = os.environ if env is None else env
     if isinstance(value, str) and value.startswith("os.environ/"):
         env_name = value.split("/", 1)[1]
-        return os.getenv(env_name, value)
+        return source.get(env_name, value)
     if isinstance(value, dict):
-        return {str(key): _resolve_env_references(item) for key, item in value.items()}
+        return {str(key): _resolve_env_references(item, source) for key, item in value.items()}
     if isinstance(value, list):
-        return [_resolve_env_references(item) for item in value]
+        return [_resolve_env_references(item, source) for item in value]
     return value
 
 
 @dataclass(frozen=True)
 class FallbackModelConfig:
-    """One LiteLLM fallback model entry loaded from ``LLM_CONFIG_FILE``."""
+    """One direct LiteLLM model entry loaded from the selected YAML config."""
 
     alias: str
     provider_model: str
@@ -40,7 +43,6 @@ class LLMConfig:
 
     proxy_url: str | None = None
     config_file: Path | None = None
-    default_model: str = "default"
     debug_log_messages: bool = False
     enable_mlflow_tracing: bool = False
     app_name: str | None = None
@@ -50,6 +52,18 @@ class LLMConfig:
     _fallback_models_cache: dict[str, FallbackModelConfig] | None = field(
         default=None, init=False, repr=False
     )
+    _config_payload_cache: dict[str, Any] | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.config_file is None:
+            self.config_file = get_llm_config_path()
+        else:
+            self.config_file = Path(self.config_file).expanduser()
+
+        if self.proxy_url:
+            self.proxy_url = self.proxy_url.strip() or None
+        elif self.config_file.is_file():
+            self.proxy_url = self._proxy_url_from_config()
 
     @classmethod
     def from_env(
@@ -71,22 +85,34 @@ class LLMConfig:
             value = env_file_vars.get(name) or source.get(name) or default
             return str(value)
 
-        config_file = lookup("LLM_CONFIG_FILE").strip()
-        default_model = lookup("LLM_DEFAULT_MODEL", "default").strip()
-        return cls(
-            proxy_url=lookup("REGISTRY_URL").strip() or None,
-            config_file=Path(config_file).expanduser() if config_file else None,
-            default_model=default_model or "default",
+        config_file_value = lookup("LLM_CONFIG_FILE").strip()
+        config_profile = lookup("LLM_CONFIG_PROFILE").strip()
+        if config_file_value:
+            config_file = Path(config_file_value).expanduser()
+        else:
+            config_file = get_llm_config_path(config_profile or "registry")
+
+        config = cls(
+            config_file=config_file,
             debug_log_messages=_env_flag(lookup("LLM_DEBUG_LOG_MESSAGES")),
             enable_mlflow_tracing=_env_flag(lookup("ENABLE_MLFLOW_TRACING")),
         )
+
+        environment = {
+            str(key): str(value)
+            for key, value in (source.items() if env is not None else os.environ.items())
+        }
+        environment.update(
+            {str(key): str(value) for key, value in env_file_vars.items() if value is not None}
+        )
+        config.proxy_url = config._proxy_url_from_config(environment)
+        return config
 
     def with_api_key(self, api_key: str | None) -> "LLMConfig":
         """Return a shallow copy with an A2A-provided API key attached."""
         clone = LLMConfig(
             proxy_url=self.proxy_url,
             config_file=self.config_file,
-            default_model=self.default_model,
             debug_log_messages=self.debug_log_messages,
             enable_mlflow_tracing=self.enable_mlflow_tracing,
             app_name=self.app_name,
@@ -95,6 +121,7 @@ class LLMConfig:
             timeout=self.timeout,
         )
         clone._fallback_models_cache = self._fallback_models_cache
+        clone._config_payload_cache = self._config_payload_cache
         return clone
 
     def with_trace_options(
@@ -112,7 +139,6 @@ class LLMConfig:
         clone = LLMConfig(
             proxy_url=self.proxy_url,
             config_file=self.config_file,
-            default_model=self.default_model,
             debug_log_messages=self.debug_log_messages,
             enable_mlflow_tracing=self.enable_mlflow_tracing,
             app_name=str(app_name).strip() if app_name else self.app_name,
@@ -121,15 +147,14 @@ class LLMConfig:
             timeout=self.timeout,
         )
         clone._fallback_models_cache = self._fallback_models_cache
+        clone._config_payload_cache = self._config_payload_cache
         return clone
 
-    def load_fallback_models(self) -> dict[str, FallbackModelConfig]:
-        """Load LiteLLM YAML fallback aliases from ``config_file``."""
-        if self._fallback_models_cache is not None:
-            return dict(self._fallback_models_cache)
-        if self.config_file is None:
-            self._fallback_models_cache = {}
-            return {}
+    def _load_config_payload(self) -> dict[str, Any]:
+        if self._config_payload_cache is not None:
+            return dict(self._config_payload_cache)
+        if self.config_file is None:  # pragma: no cover - guarded by __post_init__
+            raise RuntimeError("LLM config file was not resolved")
         if not self.config_file.exists():
             raise FileNotFoundError(f"LLM_CONFIG_FILE does not exist: {self.config_file}")
 
@@ -138,6 +163,25 @@ class LLMConfig:
             payload = yaml.safe_load(handle) or {}
         if not isinstance(payload, dict):
             raise ValueError("LLM_CONFIG_FILE must contain a YAML mapping")
+
+        self._config_payload_cache = {str(key): value for key, value in payload.items()}
+        return dict(self._config_payload_cache)
+
+    def _proxy_url_from_config(self, env: Mapping[str, str] | None = None) -> str | None:
+        value = _resolve_env_references(self._load_config_payload().get("proxy_url"), env)
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("LLM_CONFIG_FILE proxy_url must be a string")
+        if value.startswith("os.environ/"):
+            return None
+        return value.strip() or None
+
+    def load_fallback_models(self) -> dict[str, FallbackModelConfig]:
+        """Load direct LiteLLM aliases from the selected ``config_file``."""
+        if self._fallback_models_cache is not None:
+            return dict(self._fallback_models_cache)
+        payload = self._load_config_payload()
 
         model_list = payload.get("model_list", [])
         if not isinstance(model_list, list):

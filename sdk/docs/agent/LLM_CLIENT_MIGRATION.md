@@ -52,23 +52,34 @@ With these shared utilities:
   inside a `PrometheusAgent` subclass
 - `LLMClient()` in sync scripts
 - Generic aliases: `default`, `small`, `medium`, `large`, `vision`, `embedding`
-- `REGISTRY_URL` for the LiteLLM registry/proxy path
-- `LLM_CONFIG_FILE` for local fallback LiteLLM YAML
+- `LLM_CONFIG_PROFILE` for an installed registry or provider mapping
+- `LLM_CONFIG_FILE` when a deployment needs a custom mapping
 - `response.text`, `response.embeddings`, `response.usage`, and `response.provider_model`
 
 ## Configuration
 
-Use the LiteLLM registry/proxy as the primary path:
+Use the default installed registry profile:
 
 ```bash
 REGISTRY_URL=http://litellm:4000
-LLM_DEFAULT_MODEL=default
+LLM_CONFIG_PROFILE=registry
 LLM_DEBUG_LOG_MESSAGES=false
 ENABLE_MLFLOW_TRACING=false
 ```
 
-For local development without a reachable registry/proxy, copy the fallback
-template:
+Or select an installed provider profile and export its credentials:
+
+```bash
+LLM_CONFIG_PROFILE=openai
+OPENAI_API_KEY=...
+```
+
+Available profiles are `registry`, `inl_hpc`, `inl_litellm`, `amsc`,
+`anthropic`, and `openai`. Their YAML files are installed in
+`prometheus_api.llm_configs` and
+contain every semantic flavor used by agents. Customize placeholder model IDs
+and endpoints in the profile source before building a deployment image, or
+copy a profile and select it with `LLM_CONFIG_FILE`:
 
 ```bash
 cp llm_config.example.yaml llm_config.yaml
@@ -87,9 +98,10 @@ model_list:
       # api_base: http://localhost:8000/v1
 ```
 
-Fallback is used only when the registry/proxy cannot be reached. If the
-registry/proxy is reachable but rejects a request or alias, the client surfaces
-that error instead of silently bypassing the proxy.
+A configuration with `proxy_url` uses proxy aliases. A configuration with
+`model_list` calls those providers directly. If a custom file contains both,
+direct aliases are used only when the proxy cannot be reached; a reachable
+proxy rejection is surfaced instead of silently bypassing proxy policy.
 
 ## Migration Checklist
 
@@ -124,8 +136,8 @@ that error instead of silently bypassing the proxy.
 5. Move model selection to configuration.
 
    If the old code selected `gpt-4o`, `claude-*`, or deployment names directly,
-   map that choice into LiteLLM aliases in the registry/proxy or
-   `llm_config.yaml`.
+   map that choice into the selected profile's aliases. Keep the agent call at
+   the semantic flavor it needs.
 
 6. Remove visible key plumbing.
 
@@ -347,6 +359,7 @@ Before merging, verify:
 - No hard-coded provider model names remain in agent logic
 - No API keys are parsed from visible text JSON
 - Prompt content is not logged by the agent
-- `REGISTRY_URL` and optional `LLM_CONFIG_FILE` are documented for the agent
+- `REGISTRY_URL` plus any `LLM_CONFIG_PROFILE` or `LLM_CONFIG_FILE` selection
+  are documented for the agent
 - Tests pass without real network calls or provider credentials
 - Any agent-specific examples use aliases, not vendor names

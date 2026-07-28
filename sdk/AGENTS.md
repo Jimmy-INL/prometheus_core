@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. Keep sync and async storage resources aligned when changing endpoint behavior.
+`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. `llm_configs/` contains the installed registry and provider YAML profiles; every provider profile must keep the `default`, `small`, `medium`, `large`, `vision`, and `embedding` flavor contract. Keep sync and async storage resources aligned when changing endpoint behavior.
 
 `specs/` contains the spec-driven-development contract for implemented capabilities, with `specs/000-index.md` as the entry point and one numbered file per capability. Requirement and behavior bullets use front-loaded IDs such as `REQ-001-01:` and `BEH-001-01:`. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 The agent framework targets A2A SDK and Protocol v1. Use protobuf-native
@@ -17,7 +17,7 @@ authentication, and lifecycle behavior stay aligned.
 `artifactUpdate` envelopes with direct `Part` fields; do not add pre-v1 wire
 shape fallbacks.
 
-`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
+`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked custom local-development template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 
 ## Build, Test, and Development Commands
 
@@ -58,6 +58,11 @@ Environment variables passed through Docker Compose may be present with an empty
 
 Keep debug/compatibility HTTP route logic (including `/api/chat`) in `agent/debug_routes.py` rather than growing `agent/base.py`.
 
+LLM agents choose semantic flavors in code; deployments map those flavors to
+provider models in YAML. `LLM_CONFIG_FILE` overrides `LLM_CONFIG_PROFILE`, and
+an unset selector uses the installed `registry` profile. Do not reintroduce a
+configurable default model alias.
+
 Keep task status event construction in `agent/events.py` and route public helper methods through those helpers instead of duplicating `TaskStatusUpdateEvent` boilerplate.
 
 Base-agent behavior changes that downstream agents may need to react to should be documented in `docs/agent/AGENT_MIGRATIONS.md` under a version heading, with each migration as a short subheading followed by migration steps and a compact code example.
@@ -80,7 +85,7 @@ Recent commits use short, direct summaries such as `fix tag ids` or `Cleaned up 
 
 ## Security & Configuration Tips
 
-Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `REGISTRY_MAX_RETRIES`, `AM_SC_API_KEY`, MLflow tracking settings, and LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, structured A2A `llm_api_key` values must be redacted from logs, and agent parameter/registration logging must not emit prompt content or bearer tokens. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
+Do not commit `.env`, secrets, API keys, generated certificates, or local caches. Use `.env.example` for documenting required variables. Treat integration credentials, DeepLynx IDs, `REGISTRY_URL`, `REGISTRY_MAX_RETRIES`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, MLflow tracking settings, and other LLM provider keys as environment-specific configuration, not hard-coded defaults. LLM debug logging must keep prompt and embedding content hidden unless `LLM_DEBUG_LOG_MESSAGES=true`, structured A2A `llm_api_key` values must be redacted from logs, and agent parameter/registration logging must not emit prompt content or bearer tokens. `ENABLE_MLFLOW_TRACING` must remain opt-in because MLflow traces can record chat inputs and outputs.
 
 ## Additional Instructions
 

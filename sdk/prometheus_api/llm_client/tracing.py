@@ -14,7 +14,7 @@ from .exceptions import LLMClientError
 
 logger = logging.getLogger("prometheus_api.llm_client")
 
-AMSC_API_KEY_ENV = "AM_SC_API_KEY"
+AMSC_API_KEY_ENV = "AMSC_I2_API_KEY"
 
 _MLFLOW_SETUP_DONE = False
 

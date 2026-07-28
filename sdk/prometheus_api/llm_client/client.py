@@ -28,7 +28,7 @@ def _missing_alias_error(alias: str, aliases: list[str]) -> LLMAliasError:
     available = ", ".join(sorted(aliases)) if aliases else "none"
     return LLMAliasError(
         f"LLM alias {alias!r} is not available. Available aliases: {available}.\n"
-        "Configure it in LiteLLM or fallback LLM_CONFIG_FILE."
+        "Configure it in LiteLLM or the selected LLM config file."
     )
 
 
@@ -348,7 +348,7 @@ class LLMClient(_ClientMixin):
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
-        alias = str(model or self.config.default_model)
+        alias = str(model or "default")
         messages = normalize_messages(text_or_messages)
         start = time.perf_counter()
         mode, provider_model, fallback_model = self._select_model(alias)
@@ -624,7 +624,7 @@ class AsyncLLMClient(_ClientMixin):
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
-        alias = str(model or self.config.default_model)
+        alias = str(model or "default")
         messages = normalize_messages(text_or_messages)
         start = time.perf_counter()
         mode, provider_model, fallback_model = await self._select_model(alias)
