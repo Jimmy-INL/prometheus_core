@@ -45,8 +45,9 @@ for the schema, ownership model, and authoring rules.
 
 ```bash
 cp .env.example .env
-# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
-#      LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, and LITELLM_LOCAL_PORT
+# Set: AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET, LITELLM_MASTER_KEY,
+#      LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT, LLM_CONFIG_PROFILE, and the
+#      provider keys referenced by the selected profile
 docker-compose up --build
 ```
 

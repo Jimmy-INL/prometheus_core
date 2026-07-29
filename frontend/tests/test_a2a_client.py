@@ -211,28 +211,28 @@ def test_send_accepts_ndjson_stream(monkeypatch) -> None:
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": False,
-                    "status": {
-                        "state": "working",
-                        "message": {"parts": [{"kind": "text", "text": "Working..."}]},
-                    },
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {"parts": [{"text": "Working..."}]},
+                        },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": True,
-                    "status": {
-                        "state": "completed",
-                        "message": {"parts": [{"kind": "text", "text": json.dumps(final_payload)}]},
-                    },
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_COMPLETED",
+                            "message": {"parts": [{"text": json.dumps(final_payload)}]},
+                        },
+                    }
                 }
             }
         ),

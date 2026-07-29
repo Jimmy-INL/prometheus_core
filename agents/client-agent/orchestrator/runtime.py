@@ -43,7 +43,9 @@ _llm_request_context: ContextVar[Any] = ContextVar("llm_request_context", defaul
 
 def create_llm(context: Any = None) -> AsyncLLMClient:
     """Create a provider-agnostic async client for the active A2A request."""
-    config = LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+    config = LLMConfig.from_env()
+    if config.proxy_url:
+        config = config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
     return AsyncLLMClient.from_a2a_context(
         context if context is not None else _llm_request_context.get(),
         config=config,

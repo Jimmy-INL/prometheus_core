@@ -165,3 +165,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When replacing an implementation path, delete the obsolete path and tests instead of leaving quarantined fallback code.
 - Raw A2A v1 callers use PascalCase JSON-RPC methods, ProtoJSON enum/part/configuration shapes, and `A2A-Version: 1.0`; keep the LiteLLM gateway at version 1.92.0 or newer.
 - Never place Markdown backticks inside shell command arguments; use shell-safe plain text or a non-shell file-editing interface.
+- Until identity-backed credential storage exists, each LLM-using agent selects its own LLM config and receives that config's provider keys; semantic model flavors remain hardcoded in agent code.

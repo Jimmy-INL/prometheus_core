@@ -12,6 +12,17 @@ REQUIRED_VARS = [
     "LITELLM_DB_PASSWORD",
 ]
 
+LLM_CONFIG_VARS = [
+    "LLM_CONFIG_PROFILE",
+    "LLM_CONFIG_FILE",
+    "ANTHROPIC_API_KEY",
+    "EMBEDDING_API_KEY",
+    "OPENAI_API_KEY",
+    "INL_HPC_API_KEY",
+    "INL_LITELLM_API_KEY",
+    "AMSC_I2_API_KEY",
+]
+
 
 def test_env_example_exists(env_example_path):
     assert env_example_path.exists(), ".env.example file does not exist"
@@ -20,6 +31,11 @@ def test_env_example_exists(env_example_path):
 @pytest.mark.parametrize("var", REQUIRED_VARS)
 def test_required_var_present(env_example_vars, var):
     assert var in env_example_vars, f"Required variable '{var}' missing from .env.example"
+
+
+@pytest.mark.parametrize("var", LLM_CONFIG_VARS)
+def test_llm_config_var_present(env_example_vars, var):
+    assert var in env_example_vars, f"LLM configuration variable '{var}' missing from .env.example"
 
 
 def test_all_compose_var_refs_have_entry_or_default(compose_var_refs, env_example_vars):

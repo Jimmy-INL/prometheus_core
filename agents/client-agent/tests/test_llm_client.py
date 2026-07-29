@@ -101,3 +101,28 @@ def test_runtime_client_uses_proxy_configuration(monkeypatch):
     assert client.config.proxy_url == "http://litellm:4000"
     assert client.config.api_key == "proxy-key"
     assert client.config.app_name == "Nuclear Analysis Client Agent"
+
+
+def test_runtime_client_preserves_direct_profile_key(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "direct.yaml"
+    config_path.write_text(
+        """
+model_list:
+  - model_name: medium
+    litellm_params:
+      model: openai/test-model
+      api_key: os.environ/OPENAI_API_KEY
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLM_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
+    monkeypatch.setenv("LITELLM_MASTER_KEY", "proxy-key")
+
+    client = runtime.create_llm()
+    medium = client.config.load_fallback_models()["medium"]
+
+    assert client.config.proxy_url is None
+    assert client.config.api_key is None
+    assert medium.litellm_params["api_key"] == "provider-key"

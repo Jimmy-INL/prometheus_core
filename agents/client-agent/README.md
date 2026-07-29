@@ -138,7 +138,6 @@ Major functions:
 Important globals:
 
 - `AGENT_PORT`
-- `LLM_DEFAULT_MODEL`
 - `DISCOVERY_REFRESH_SECONDS`
 - `ENABLE_WORKFLOW_LIBRARY`
 - `_tools_cache`

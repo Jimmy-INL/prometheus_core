@@ -500,74 +500,72 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "final": False,
-                    "status": {
-                        "state": "working",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": "Searching publications...",
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": "Searching publications...",
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "artifact-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "artifact": {
-                        "artifactId": "artifact-1",
-                        "name": "paper-summary.json",
-                        "parts": [
-                            {
-                                "kind": "data",
-                                "data": {"count": 4},
-                                "metadata": {
-                                    "mime_type": "application/json",
-                                    "json_type": "prometheus.analysis.summary.v1",
-                                },
-                            }
-                        ],
-                        "metadata": {
-                            "conversation_id": "conv-1",
-                            "producer_agent_id": "osti-research-agent",
+                    "artifactUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "artifact": {
+                            "artifactId": "artifact-1",
+                            "name": "paper-summary.json",
+                            "parts": [
+                                {
+                                    "data": {"count": 4},
+                                    "metadata": {
+                                        "mime_type": "application/json",
+                                        "json_type": "prometheus.analysis.summary.v1",
+                                    },
+                                }
+                            ],
+                            "metadata": {
+                                "conversation_id": "conv-1",
+                                "producer_agent_id": "osti-research-agent",
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "final": True,
-                    "status": {
-                        "state": "completed",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": json.dumps(
-                                        {
-                                            "status": "completed",
-                                            "message": "Research complete.",
-                                        }
-                                    ),
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "status": {
+                            "state": "TASK_STATE_COMPLETED",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": json.dumps(
+                                            {
+                                                "status": "completed",
+                                                "message": "Research complete.",
+                                            }
+                                        ),
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
@@ -634,42 +632,41 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": False,
-                    "status": {
-                        "state": "working",
-                        "message": {
-                            "parts": [{"kind": "text", "text": "Rendering SVG..."}]
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "parts": [{"text": "Rendering SVG..."}]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": True,
-                    "status": {
-                        "state": "completed",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": json.dumps(
-                                        {
-                                            "status": "completed",
-                                            "message": "SVG ready.",
-                                        }
-                                    ),
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_COMPLETED",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": json.dumps(
+                                            {
+                                                "status": "completed",
+                                                "message": "SVG ready.",
+                                            }
+                                        ),
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
@@ -720,10 +717,10 @@ def test_apply_stream_event_fires_background_callback_on_flag() -> None:
 
     envelope = {
         "result": {
-            "kind": "status-update",
-            "metadata": {"background": True, "estimate_seconds": 30},
-            "status": {},
-            "final": False,
+            "statusUpdate": {
+                "metadata": {"background": True, "estimate_seconds": 30},
+                "status": {},
+            }
         }
     }
     asyncio.run(
@@ -743,7 +740,14 @@ def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
     async def bg(meta):
         fired.append(meta)
 
-    envelope = {"result": {"kind": "status-update", "metadata": {"heartbeat": True, "background": True}}}
+    envelope = {
+        "result": {
+            "statusUpdate": {
+                "metadata": {"heartbeat": True, "background": True},
+                "status": {},
+            }
+        }
+    }
     asyncio.run(
         a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg

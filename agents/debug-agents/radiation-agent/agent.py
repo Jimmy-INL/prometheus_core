@@ -221,7 +221,9 @@ class RadiationDamageAgent(PrometheusAgent):
         )
 
         try:
-            llm_config = LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+            llm_config = LLMConfig.from_env()
+            if llm_config.proxy_url:
+                llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
             async with self.llm_client(context, config=llm_config) as llm:
                 response = await llm.medium(
                     prompt,

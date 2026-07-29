@@ -37,8 +37,9 @@ graph TD
 
 ```bash
 cp .env.example .env
-# Required: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
-#           LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT
+# Required: AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
+#           LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT,
+#           and the API keys referenced by the selected LLM_CONFIG_PROFILE
 # Optional: DEEPLYNX_*, OAUTH_OKTA_*, HTTP_PROXY / HTTPS_PROXY / NO_PROXY
 ```
 
@@ -124,7 +125,9 @@ Notable environment variables (see `.env.example` for the full list):
 
 | Variable | Purpose |
 |---|---|
-| `LLM_DEFAULT_MODEL` | Provider-independent LLM alias (default `medium`) |
+| `LLM_CONFIG_PROFILE` | Installed agent LLM mapping: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai` |
+| `LLM_CONFIG_FILE` | Optional custom YAML path inside the agent container; overrides `LLM_CONFIG_PROFILE` |
+| Provider API keys | Credentials referenced by the selected profile; see `.env.example` |
 | `AGENT_SECRET_REQUIRED` | Enforce Bearer auth on specialist agents (default `true`) |
 | `LOCAL_CERT_FILE` / `CERT_FILE` | CA bundle path on host / inside containers |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | Corporate proxy settings |
