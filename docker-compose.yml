@@ -151,3 +151,45 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
+
+  frontend-react-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: frontend-react/Dockerfile
+      target: dev
+      additional_contexts:
+        certs: ./certs
+    container_name: frontend-react-dev
+    ports:
+      - "${FRONTEND_REACT_DEV_PORT:-5150}:5150"
+    networks:
+      - agent-network
+    environment:
+      VITE_CHAINLIT_SERVER: http://chainlit-frontend:8500
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend-react:/app
+      - /app/node_modules
+    depends_on:
+      chainlit-frontend:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend-react-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: frontend-react/Dockerfile
+      target: prod
+      additional_contexts:
+        certs: ./certs
+    container_name: frontend-react-prod
+    ports:
+      - "${FRONTEND_REACT_PROD_PORT:-8080}:8080"
+    networks:
+      - agent-network
+    depends_on:
+      chainlit-frontend:
+        condition: service_started
+    restart: unless-stopped

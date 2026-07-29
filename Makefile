@@ -28,6 +28,11 @@ export PROMETHEUS_API_BASE_IMAGE_HASH
 # Default: false.
 DEBUG_AGENTS ?= false
 
+# Set PROFILE=prod to bring up the React frontend in production mode instead,
+# or PROFILE= (empty) to exclude the React frontend entirely. Default: dev.
+PROFILE ?= dev
+PROFILE_FLAGS := $(if $(PROFILE),--profile $(PROFILE),)
+
 # All per-agent compose files found on disk (checked-out submodules only).
 AGENT_COMPOSE_FILES := $(shell find agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
 ifeq ($(DEBUG_AGENTS),true)
@@ -129,41 +134,41 @@ test-infra: ##@ Run all infrastructure tests
 ##@ Compose
 ##@
 
-up: ##@ Clear LiteLLM DB, then build and start all services (detached)
+up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
 up: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
-	$(COMPOSE) $(COMPOSE_FILES) up --build -d
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d
 
-up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground)
+up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
 up-fg: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
-	$(COMPOSE) $(COMPOSE_FILES) up --build
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build
 
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
 restart: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
-	$(COMPOSE) $(COMPOSE_FILES) up -d
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d
 
 restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
 restart-fg: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES)"
-	$(COMPOSE) $(COMPOSE_FILES) up
+	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
 	$(MAKE) --no-print-directory clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) up --build -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d
 
 ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
 	$(MAKE) --no-print-directory clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) up --build
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build
 
 ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
 	$(MAKE) --no-print-directory clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) up -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up -d
 
 ng-restart-fg: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating (foreground).
 	$(MAKE) --no-print-directory clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) up
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up
 
 clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	$(COMPOSE) $(CLEAR_COMPOSE_FILES) down --remove-orphans
@@ -178,18 +183,18 @@ clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	fi
 
 down: ##@ Stop all services
-	$(COMPOSE) $(COMPOSE_FILES) down
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down
 
 down-v: ##@ Stop all services and remove volumes
-	$(COMPOSE) $(COMPOSE_FILES) down -v
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down -v
 
 build: ##@ Build images without starting
 build: generate
-	$(COMPOSE) $(COMPOSE_FILES) build
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) build
 
 build-plain: ##@ Build images with plain (verbose) progress output
 build-plain: generate
-	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) build --progress=plain
+	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) $(PROFILE_FLAGS) build --progress=plain
 
 logs: ##@ Tail logs for all services (SERVICE=<name> to filter)
 	$(COMPOSE) $(COMPOSE_FILES) logs -f $(SERVICE)
@@ -202,3 +207,19 @@ clean-generated: ##@ Remove the generated agents compose file.
 
 regenerate: ##@ Regenerate the agents compose file
 regenerate: clean-generated generate
+
+##@
+##@ Frontend (React)
+##@
+
+.PHONY: react-dev react-build react-check
+
+react-dev: ##@ Run React frontend dev server on host, no Docker (frontend-react/)
+	$(MAKE) -C frontend-react dev
+
+react-build: ##@ Build React frontend for production (frontend-react/)
+	$(MAKE) -C frontend-react build
+
+react-check: ##@ Run React frontend lint + typecheck (frontend-react/)
+	$(MAKE) -C frontend-react check
+	
