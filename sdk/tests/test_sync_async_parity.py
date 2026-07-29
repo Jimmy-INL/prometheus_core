@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from prometheus_api.storage_client.async_resources.items import AsyncItemsResource
 from prometheus_api.storage_client.async_resources.search import AsyncSearchResource
 from prometheus_api.storage_client.models.item import ItemCreate, ItemUpdate
@@ -140,3 +142,78 @@ async def test_search_query_payloads_and_parsing_match_between_sync_and_async():
     assert sync_result.items[0] == async_result.items[0]
     assert async_result.items[0].properties == {"kind": "search"}
     assert async_result.items[0].tags[0].name == "indexed"
+
+
+async def test_advanced_query_payloads_and_parsing_match_between_sync_and_async():
+    """Covers REQ-002-14 and BEH-002-04."""
+    response_payload = {
+        "items": [item_payload(properties='{"metadata": {"nexus": {"test_id": "abc"}}}')],
+        "pageNumber": 2,
+        "pageSize": 10,
+        "totalCount": 11,
+        "totalPages": 2,
+        "hasPrevious": True,
+        "hasNext": False,
+    }
+    sync_client = SyncClient(response_payload)
+    async_client = AsyncClient(response_payload)
+    filters = [
+        {
+            "filter": "properties",
+            "operator": "KEY_VALUE",
+            "json": '{"metadata": {"nexus": {"test_id": "abc"}}}',
+        }
+    ]
+
+    sync_result = SearchResource(sync_client).advanced_query(
+        filters=filters,
+        project_ids=[2],
+        text_search="sample",
+        page=2,
+        page_size=10,
+    )
+    async_result = await AsyncSearchResource(async_client).advanced_query(
+        filters=filters,
+        project_ids=[2],
+        text_search="sample",
+        page=2,
+        page_size=10,
+    )
+
+    assert sync_client.calls == async_client.calls
+    assert sync_client.calls[0] == (
+        "POST",
+        "/organizations/1/query/records/advanced/paginated",
+        {
+            "params": {
+                "projects": [2],
+                "PageNumber": 2,
+                "PageSize": 10,
+                "textSearch": "sample",
+            },
+            "json": filters,
+        },
+    )
+    assert sync_result == async_result
+    assert async_result.items[0].properties == {"metadata": {"nexus": {"test_id": "abc"}}}
+    assert async_result.page_info.has_previous is True
+    assert async_result.page_info.has_next is False
+
+
+@pytest.mark.parametrize(
+    ("page", "page_size", "message"),
+    [
+        (0, 25, "page must be 1 or greater"),
+        (1, 0, "page_size must be between 1 and 500"),
+        (1, 501, "page_size must be between 1 and 500"),
+    ],
+)
+async def test_advanced_query_validation_matches_between_sync_and_async(page, page_size, message):
+    """Covers REQ-002-14."""
+    sync_resource = SearchResource(SyncClient({}))
+    async_resource = AsyncSearchResource(AsyncClient({}))
+
+    with pytest.raises(ValueError, match=message):
+        sync_resource.advanced_query([], [2], page=page, page_size=page_size)
+    with pytest.raises(ValueError, match=message):
+        await async_resource.advanced_query([], [2], page=page, page_size=page_size)

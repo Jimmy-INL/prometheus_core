@@ -21,11 +21,13 @@ Expose DeepLynx records as typed `Item` objects with predictable CRUD, tagging, 
 - REQ-002-11: Simple search MUST call `/organizations/{org}/query/records` with `userQuery` and the active project ID; advanced and tag search MUST return `Page[Item]`.
 - REQ-002-12: Item/search parsing MUST accept DeepLynx camelCase fields and JSON-string `properties` or `tags`, producing typed `Item` and `Tag` values.
 - REQ-002-13: Sync and async item create/update payloads and search query parsing MUST remain aligned.
+- REQ-002-14: Sync and async advanced query MUST accept a list of structured filters and project IDs, optionally accept text search, validate page numbers and page sizes, POST matching payloads to `/organizations/{org}/query/records/advanced/paginated`, and parse server pagination into `Page[Item]`.
 
 ## Behavior
 - BEH-002-01: GIVEN a tag list with duplicate and blank names WHEN IDs are resolved THEN each non-empty normalized name is resolved once.
 - BEH-002-02: GIVEN search results with JSON-string properties and tags WHEN parsed THEN properties become a dict and tags become `Tag` models.
 - BEH-002-03: GIVEN a full page from a list-shaped response WHEN total count is absent THEN `has_next` is conservatively true.
+- BEH-002-04: GIVEN equivalent sync and async advanced queries WHEN they execute THEN they send the same filters and pagination parameters and return equivalent typed pages.
 
 ## Interfaces
 - `Tag(id: int | None = None, name: str)`
@@ -42,10 +44,10 @@ Expose DeepLynx records as typed `Item` objects with predictable CRUD, tagging, 
 - `ItemsResource.create/get/update/delete/list/iter_all/bulk_create/add_tags/remove_tags`
 - `AsyncItemsResource.create/get/update/delete/list/iter_all/bulk_create/add_tags/remove_tags`
 - `SearchResource.query(query: str, page: int = 1, page_size: int = 100) -> Page[Item]`
-- `SearchResource.advanced_query(filters: dict, page: int = 1, page_size: int = 100) -> Page[Item]`
+- `SearchResource.advanced_query(filters: list[dict], project_ids: list[int], text_search: str | None = None, page: int = 1, page_size: int = 25) -> Page[Item]`
 - `SearchResource.by_tags(tags: list[str], match_all: bool = False, page: int = 1, page_size: int = 100) -> Page[Item]`
 - `SearchResource.recent(limit: int = 100) -> list[Item]`
-- `AsyncSearchResource.query/advanced_query/by_tags/recent`
+- `AsyncSearchResource.query/advanced_query/by_tags/recent` with an `advanced_query(...)` signature matching `SearchResource`
 - `paginate_iterator(fetch_page: Callable[[int, int], list[T]], page_size: int = 100, start_page: int = 1) -> Iterator[T]`
 
 ## Constraints
@@ -58,5 +60,5 @@ Expose DeepLynx records as typed `Item` objects with predictable CRUD, tagging, 
 - Search result ranking and filtering correctness remain DeepLynx responsibilities.
 
 ## Open questions
-- `remove_tags(...)`, `advanced_query(...)`, `by_tags(...)`, and `recent(...)` have less unit coverage than create/update/query paths.
+- `remove_tags(...)`, `by_tags(...)`, and `recent(...)` have less unit coverage than create/update/query paths.
 - Page totals are inferred for some list-shaped responses; callers needing exact totals must rely on backend response support.

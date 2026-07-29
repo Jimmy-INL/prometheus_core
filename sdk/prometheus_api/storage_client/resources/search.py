@@ -1,6 +1,6 @@
 """Search resource for synchronous operations."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from ..models.item import Item
 from ..models.pagination import Page, PageInfo
 from .base import BaseResource
@@ -49,39 +49,48 @@ class SearchResource(BaseResource):
         return self._parse_search_results(items, page, page_size)
 
     def advanced_query(
-        self, filters: Dict[str, Any], page: int = 1, page_size: int = 100
-    ) -> Page[Item]:
-        """Perform an advanced search with structured filters.
+        self,
+        filters: List[Dict[str, Any]],
+        project_ids: List[int],
+        text_search: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> Page:
+        """Perform an advanced, server-paginated search with structured filters.
 
         Args:
-            filters: Dictionary of filter criteria
+            filters: List of filter component dicts matching CustomQueryRequestDto, e.g.
+                [{"Filter": "properties", "Operator": "LIKE", "Value": "active"},
+                 {"Filter": "priority", "Operator": ">", "Value": "5", "Connector": "AND"}]
+            project_ids: Project IDs to search across
+            text_search: Optional full text search phrase
             page: Page number (1-indexed)
-            page_size: Number of results per page
+            page_size: Results per page (server max is 500)
 
         Returns:
             Paginated search results
-
-        Example:
-            ```python
-            results = client.search.advanced_query({
-                "properties.status": "active",
-                "properties.priority": {"$gt": 5}
-            })
-            ```
         """
-        payload = {
-            "filters": filters,
-            "page": page,
-            "limit": page_size,
+        if not 1 <= page_size <= 500:
+            raise ValueError("page_size must be between 1 and 500")
+        if page < 1:
+            raise ValueError("page must be 1 or greater")
+
+        params: Dict[str, Any] = {
+            "projects": project_ids,
+            "PageNumber": page,
+            "PageSize": page_size,
         }
+        if text_search:
+            params["textSearch"] = text_search
 
         response = self._client._request(
             "POST",
-            f"/organizations/{self._client.config.organization_id}/query/advanced",
-            json=payload,
+            f"/organizations/{self._client.config.organization_id}/query/records/advanced/paginated",
+            params=params,
+            json=filters,
         )
 
-        return self._parse_search_results(response.json(), page, page_size)
+        return self._parse_paginated_results(response.json())
 
     def by_tags(
         self, tags: List[str], match_all: bool = False, page: int = 1, page_size: int = 100
@@ -178,6 +187,30 @@ class SearchResource(BaseResource):
             total_count=total_count,
             has_next=page * page_size < total_count,
             has_previous=page > 1,
+        )
+
+        return Page(items=items, page_info=page_info)
+
+    def _parse_paginated_results(self, data: Dict[str, Any]) -> Page[Item]:
+        """Parse a PaginatedResponse<QueryRecordViewResponseDto> payload.
+
+        Args:
+            data: Raw API response matching the C# PaginatedResponse<T> shape:
+                {"items": [...], "pageNumber": int, "pageSize": int,
+                "totalCount": int, "totalPages": int,
+                "hasPrevious": bool, "hasNext": bool}
+
+        Returns:
+            Paginated results
+        """
+        items = [self._parse_item(item_data) for item_data in data["items"]]
+
+        page_info = PageInfo(
+            page_number=data["pageNumber"],
+            page_size=data["pageSize"],
+            total_count=data["totalCount"],
+            has_next=data["hasNext"],
+            has_previous=data["hasPrevious"],
         )
 
         return Page(items=items, page_info=page_info)

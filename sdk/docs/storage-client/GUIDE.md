@@ -286,10 +286,16 @@ graph = client.relationships.get_item_graph(item_id=123, depth=2)
 results = client.search.query("experiment data", page_size=50)
 
 # Advanced search with filters
-results = client.search.advanced_query({
-    "properties.status": "active",
-    "properties.priority": {"$gt": 5}
-})
+results = client.search.advanced_query(
+    filters=[
+        {
+            "filter": "properties",
+            "operator": "KEY_VALUE",
+            "json": '{"status": "active", "priority": 5}',
+        }
+    ],
+    project_ids=[client.config.project_id],
+)
 
 # Search by tags
 results = client.search.by_tags(["important", "urgent"])

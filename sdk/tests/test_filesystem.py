@@ -50,6 +50,16 @@ def make_page(items):
     )
 
 
+def make_config(organization_id: int = 1, project_id: int = 2) -> SimpleNamespace:
+    """Build a fake ConnectionConfig-like object.
+
+    Required by any fake client exercising the search-fallback path, since
+    ``_search_advanced_items`` reads ``self._client.config.project_id`` to
+    satisfy ``SearchResource.advanced_query``'s required ``project_ids`` arg.
+    """
+    return SimpleNamespace(organization_id=organization_id, project_id=project_id)
+
+
 def test_init_prefers_explicit_client(monkeypatch):
     """Explicit client should win over environment/config resolution."""
     fake_client = SimpleNamespace()
@@ -194,7 +204,7 @@ def test_get_selects_latest_valid_version_and_ignores_invalid(tmp_path):
     search.advanced_query.return_value = make_page([invalid, older, newer])
     search.query.return_value = make_page([])
     search.recent.return_value = []
-    client = SimpleNamespace(files=files, items=items, search=search)
+    client = SimpleNamespace(files=files, items=items, search=search, config=make_config())
 
     fs = DeepLynxFileSystem(client=client)
     output_dir = tmp_path / "out"
@@ -205,6 +215,11 @@ def test_get_selects_latest_valid_version_and_ignores_invalid(tmp_path):
     files.download.assert_called_once()
     assert files.download.call_args.args[0] == 3
     assert files.download.call_args.args[1] == output_dir / "file.txt"
+
+    # Fallback resolution should have gone through advanced_query with the
+    # configured client project, not been silently skipped.
+    search.advanced_query.assert_called()
+    assert search.advanced_query.call_args.kwargs["project_ids"] == [2]
 
 
 def test_get_supports_deeplynx_item_uri(tmp_path):
@@ -264,7 +279,7 @@ def test_rm_file_deletes_all_versions_for_exact_path():
     search.advanced_query.return_value = make_page([v1, v2])
     search.query.return_value = make_page([])
     search.recent.return_value = []
-    client = SimpleNamespace(files=files, items=items, search=search)
+    client = SimpleNamespace(files=files, items=items, search=search, config=make_config())
     fs = DeepLynxFileSystem(client=client)
 
     fs.rm("deeplynx://session/data/file.txt")
@@ -309,7 +324,7 @@ def test_rm_recursive_deletes_all_versions_under_prefix():
     search.advanced_query.return_value = make_page(items_for_prefix)
     search.query.return_value = make_page([])
     search.recent.return_value = []
-    client = SimpleNamespace(files=files, items=items, search=search)
+    client = SimpleNamespace(files=files, items=items, search=search, config=make_config())
     fs = DeepLynxFileSystem(client=client)
 
     fs.rm("deeplynx://session/run", recursive=True)
@@ -336,7 +351,7 @@ def test_get_warns_on_recent_and_full_scan_fallback(tmp_path):
     search.advanced_query.side_effect = RuntimeError("advanced unavailable")
     search.query.side_effect = RuntimeError("query unavailable")
     search.recent.return_value = []
-    client = SimpleNamespace(files=files, items=items, search=search)
+    client = SimpleNamespace(files=files, items=items, search=search, config=make_config())
 
     fs = DeepLynxFileSystem(client=client)
     output_dir = tmp_path / "download"
@@ -387,7 +402,7 @@ def test_glob_includes_virtual_directories_and_files():
     search.advanced_query.return_value = make_page([])
     search.query.return_value = make_page([])
     search.recent.return_value = []
-    client = SimpleNamespace(files=files, items=items, search=search)
+    client = SimpleNamespace(files=files, items=items, search=search, config=make_config())
     fs = DeepLynxFileSystem(client=client)
 
     listed = sorted(fs.glob("deeplynx://session/**", detail=False))
