@@ -64,6 +64,7 @@ def _needs_info_response(
         status="needs_info",
         message=PrometheusAgent.pending_hint(state.get("pending_subagent_requests"), hint),
         followup_questions=latest.get("questions", []),
+        plan=_format_plan_for_response(state) if state.get("plan") else None,
     )
 
 

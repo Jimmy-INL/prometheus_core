@@ -94,6 +94,10 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
         conversation_id="conv-1",
         status="needs_info",
         message="Butterfly valve dimensions required",
+        plan={
+            "skills": ["author_equipment_geometry"],
+            "missing_info": ["hole_diameter", "rod_diameter"],
+        },
         followup_questions=[
             {
                 "field": "hole_diameter",

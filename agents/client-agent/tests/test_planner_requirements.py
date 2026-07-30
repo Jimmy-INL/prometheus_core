@@ -35,6 +35,43 @@ CONVERT_SCHEMA = {
     "required": ["artifact_id"],
 }
 
+CORROSION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to analyze",
+        },
+        "context": {
+            "type": "object",
+            "properties": {
+                "temperature_c": {
+                    "type": "number",
+                    "description": "Operating temperature in Celsius",
+                },
+                "pressure_mpa": {
+                    "type": "number",
+                    "description": "Operating pressure in MPa",
+                },
+            },
+            "required": ["temperature_c", "pressure_mpa"],
+        },
+    },
+    "required": ["material_id", "context"],
+}
+
+RUNTIME_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "material_id": {"type": "string"},
+        "tool_results": {
+            "type": "object",
+            "x_input_source": "runtime",
+        },
+    },
+    "required": ["material_id", "tool_results"],
+}
+
 CAPABILITIES = {
     "create_svg_artifact": SimpleNamespace(input_schema=CREATE_SCHEMA),
     "convert_svg_to_png": SimpleNamespace(input_schema=CONVERT_SCHEMA),
@@ -109,9 +146,8 @@ def test_sequential_plan_defers_downstream_artifact_refs():
     assert draft.workflow_type == "sequential"
 
 
-def test_single_plan_still_requires_artifact_refs():
-    """Invoking the converter alone (no upstream producer) must still demand
-    the artifact id, e.g. from the conversation's artifact catalog."""
+def test_single_plan_preserves_missing_artifact_ref_for_followup():
+    """A missing user-supplied artifact ref belongs in the incomplete plan."""
     draft = planner._PlanDraft()
     tools = _tools_by_name(draft)
 
@@ -124,7 +160,67 @@ def test_single_plan_still_requires_artifact_refs():
     assert status["deferred_runtime_paths"] == []
 
     finalized = tools["finalize_plan"]()
+    assert finalized == {
+        "ok": True,
+        "finalized": True,
+        "missing_paths": ["artifact_id"],
+    }
+    assert draft.finalized is True
+
+
+def test_plan_with_missing_user_fields_finalizes_for_followup_collection():
+    draft = planner._PlanDraft()
+    tools = planner._build_planning_tools(
+        draft,
+        {"analyze_corrosion": SimpleNamespace(input_schema=CORROSION_SCHEMA)},
+        context={},
+    )
+    funcs = {tool.name: tool.func for tool in tools}
+
+    funcs["select_capabilities"](
+        primary_skill="analyze_corrosion",
+        workflow_type="single",
+        reasoning="Analyze corrosion risk in high-temperature water",
+        confidence=0.95,
+    )
+    funcs["set_extracted_params"](
+        {
+            "material_id": "SS316",
+            "context": {"temperature_c": 300},
+        }
+    )
+
+    finalized = funcs["finalize_plan"]()
+
+    assert finalized == {
+        "ok": True,
+        "finalized": True,
+        "missing_paths": ["context.pressure_mpa"],
+    }
+    assert draft.primary_skill == "analyze_corrosion"
+    assert draft.finalized is True
+
+
+def test_plan_with_unresolved_runtime_field_still_cannot_finalize():
+    draft = planner._PlanDraft()
+    tools = planner._build_planning_tools(
+        draft,
+        {"synthesize": SimpleNamespace(input_schema=RUNTIME_INPUT_SCHEMA)},
+        context={},
+    )
+    funcs = {tool.name: tool.func for tool in tools}
+
+    funcs["select_capabilities"](
+        primary_skill="synthesize",
+        workflow_type="single",
+    )
+    funcs["set_extracted_params"]({"material_id": "SS316"})
+
+    finalized = funcs["finalize_plan"]()
+
     assert finalized["ok"] is False
+    assert finalized["unresolved_runtime_paths"] == ["tool_results"]
+    assert draft.finalized is False
 
 
 def test_compile_query_plan_does_not_ask_for_deferred_artifact_ids(monkeypatch):

@@ -9,6 +9,7 @@ PLANNING RULES
 - Select capabilities via select_capabilities or choose a workflow by calling its workflow_* tool or select_workflow_template before calling finalize_plan.
 - Prefer a workflow_* tool when a registered workflow clearly fits the request.
 - Use get_requirement_status to check which required parameters are still missing.
+- Missing user-supplied required parameters are not a reason to use fallback_to_chat. Finalize the selected plan after extracting known values; the platform will collect missing_paths from the user before execution.
 - Do not finalize a direct capability plan when required inputs are runtime-only and cannot be collected from the user; choose a workflow template or different capabilities instead.
 - If required values are already present in the query, history, or context, extract them with set_extracted_params.
 - If no capability should run and intent is clear (e.g. a general question), use fallback_to_chat to respond directly.

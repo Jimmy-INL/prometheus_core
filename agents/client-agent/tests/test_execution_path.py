@@ -414,57 +414,78 @@ def test_execute_current_plan_reports_tool_errors_in_final_status(monkeypatch) -
     assert statuses[-1] == ("Execution finished with errors.", True)
 
 
-def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(monkeypatch) -> None:
+def test_chat_returns_incomplete_plan_and_form_for_missing_required_params(monkeypatch) -> None:
     async def fake_compile_query_plan(state, **kwargs):
         return {
             "routing_decision": {
-                "primary_skill": "analyze_thermal",
+                "primary_skill": "analyze_corrosion",
                 "supporting_skills": [],
                 "workflow_type": "single",
-                "extracted_params": {"material_id": "SS316"},
+                "extracted_params": {
+                    "material_id": "SS316",
+                    "context": {"temperature_c": 300},
+                },
                 "requires_approval": True,
-                "required_params": ["material_id", "context.temperature_c"],
-                "missing_required_params": ["context.temperature_c"],
+                "required_params": [
+                    "context.pressure_mpa",
+                    "context.temperature_c",
+                    "material_id",
+                ],
+                "missing_required_params": ["context.pressure_mpa"],
             },
             "plan": {
-                "intent": "Perform a thermal analysis of ss316",
+                "intent": "Analyze corrosion risk in high-temperature water",
                 "workflow_type": "single",
-                "skills": ["analyze_thermal"],
-                "required_params": ["material_id", "context.temperature_c"],
-                "steps": ["Invoke analyze_thermal"],
-                "missing_info": ["context.temperature_c"],
+                "skills": ["analyze_corrosion"],
+                "required_params": [
+                    "context.pressure_mpa",
+                    "context.temperature_c",
+                    "material_id",
+                ],
+                "steps": ["Invoke analyze_corrosion"],
+                "missing_info": ["context.pressure_mpa"],
                 "estimated_duration_seconds": 5,
                 "param_metadata": {},
             },
-            "missing_info": ["context.temperature_c"],
-            "context": {},
+            "missing_info": ["context.pressure_mpa"],
+            "context": {"temperature_c": 300},
             "material_id": "SS316",
         }
 
-    async def fake_ask_followup_dynamic(state):
-        return {
-            "conversation_history": state.get("conversation_history", []) + [
-                {
-                    "role": "assistant",
-                    "type": "followup_questions",
-                    "questions": [
-                        {
-                            "field": "context.temperature_c",
-                            "question": "Operating temperature in Celsius",
-                            "type": "number",
-                        }
-                    ],
-                }
-            ],
-            "missing_info": ["context.temperature_c"],
-            "awaiting_approval": False,
-        }
+    async def fake_get_capability_by_skill_id(skill_id):
+        assert skill_id == "analyze_corrosion"
+        return SimpleNamespace(
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "material_id": {"type": "string"},
+                    "context": {
+                        "type": "object",
+                        "properties": {
+                            "temperature_c": {"type": "number"},
+                            "pressure_mpa": {
+                                "type": "number",
+                                "description": "Operating pressure in MPa",
+                            },
+                        },
+                        "required": ["temperature_c", "pressure_mpa"],
+                    },
+                },
+                "required": ["material_id", "context"],
+            }
+        )
 
     async def should_not_extract(*args, **kwargs):
         raise AssertionError("Initial turn should not auto-extract missing follow-up answers from the query.")
 
     monkeypatch.setattr(agent_module, "compile_query_plan", fake_compile_query_plan)
-    monkeypatch.setattr(agent_module, "ask_followup_dynamic", fake_ask_followup_dynamic)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id
+        ),
+    )
     monkeypatch.setattr(agent_module, "extract_followup_answers_from_query", should_not_extract)
     monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
     monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
@@ -473,7 +494,10 @@ def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(mon
     response = asyncio.run(
         agent_module.chat(
             agent_module.ConversationRequest(
-                query="Perform a thermal analysis of ss316",
+                query=(
+                    "Analyze corrosion risk for SS316 in a high-temperature "
+                    "water environment at 300 C."
+                ),
                 conversation_id="conv-1",
             )
         )
@@ -482,10 +506,16 @@ def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(mon
     assert response.status == "needs_info"
     assert response.followup_questions == [
         {
-            "field": "context.temperature_c",
-            "question": "Operating temperature in Celsius",
+            "field": "context.pressure_mpa",
+            "question": "Operating pressure in MPa",
             "type": "number",
         }
+    ]
+    assert response.plan["skills"] == ["analyze_corrosion"]
+    assert response.plan["required_params"] == [
+        "context.pressure_mpa",
+        "context.temperature_c",
+        "material_id",
     ]
 
 

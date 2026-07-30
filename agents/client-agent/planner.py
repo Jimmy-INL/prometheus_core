@@ -27,7 +27,7 @@ PLANNING TOOLS (called by the LLM, not external code)
 - `set_extracted_params`     — store param values extracted from the query/context
 - `set_plan_steps`           — set human-readable steps shown in the approval UI
 - `set_user_message`         — set the planning summary shown to the user
-- `finalize_plan`            — commit the plan (validates all required params met)
+- `finalize_plan`            — commit the plan (preserves missing user inputs for collection)
 - `fallback_to_chat`         — respond directly without invoking any skill
 
 OUTCOMES (`PlanningResult.outcome`)
@@ -618,12 +618,6 @@ def _build_planning_tools(
         status = get_requirement_status()
         missing = status.get("missing_paths", [])
         unresolved_runtime = status.get("unresolved_runtime_paths", [])
-        if missing:
-            return {
-                "ok": False,
-                "error": "Required fields are still missing.",
-                "missing_paths": missing,
-            }
         if unresolved_runtime and not get_selected_workflow_candidate():
             return {
                 "ok": False,
@@ -733,7 +727,10 @@ def _build_planning_tools(
         StructuredTool.from_function(
             func=finalize_plan,
             name="finalize_plan",
-            description="Finalize the planning decision after selecting capabilities and parameters.",
+            description=(
+                "Finalize the planning decision after selecting capabilities and extracting known "
+                "parameters. Missing user-supplied parameters remain in the plan for form collection."
+            ),
         ),
         StructuredTool.from_function(
             func=fallback_to_chat,
