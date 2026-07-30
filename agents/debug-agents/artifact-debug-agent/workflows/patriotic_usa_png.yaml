@@ -1,7 +1,7 @@
 id: artifact_debug.patriotic_usa_png
 name: Patriotic USA PNG
 version: "1.0.0"
-description: Create a patriotic USA image and convert it to PNG when the user makes a patriotic, Independence Day, USA, or red-white-and-blue request.
+description: Create a patriotic USA image and convert it to PNG when the user explicitly makes a patriotic, Independence Day, USA image request with no specific text specified.
 
 inputs:
   required: []
