@@ -9,9 +9,8 @@ PLANNING RULES
 - Select capabilities via select_capabilities or choose a workflow by calling its workflow_* tool or select_workflow_template before calling finalize_plan.
 - Prefer a workflow_* tool when a registered workflow clearly fits the request.
 - Use get_requirement_status to check which required parameters are still missing.
-- Missing user-supplied required parameters are not a reason to use fallback_to_chat. Finalize the selected plan after extracting known values; the platform will collect missing_paths from the user before execution.
+- Missing user-supplied required parameters are not a reason to use fallback_to_chat. Finalize the selected plan; a separate schema-bound stage will extract known values and the platform will collect remaining missing_paths from the user before execution.
 - Do not finalize a direct capability plan when required inputs are runtime-only and cannot be collected from the user; choose a workflow template or different capabilities instead.
-- If required values are already present in the query, history, or context, extract them with set_extracted_params.
 - If no capability should run and intent is clear (e.g. a general question), use fallback_to_chat to respond directly.
 - MULTI-STEP REQUESTS: when the user chains operations ("X, then Y", "... and convert the result", "afterwards export it"), select EVERY skill in the chain: primary_skill is the first step, supporting_skills the later steps in order, workflow_type="sequential". Artifact-reference parameters of later steps (marked "[accepts artifact id]") are filled at runtime from earlier steps' outputs - get_requirement_status reports them as deferred_runtime_paths. Never ask the user for them, and never drop a requested later step just because its artifact id does not exist yet.
 - Prefer minimal, high-confidence plans. Avoid over-engineering - but minimal means covering every operation the user asked for, not fewer.
@@ -19,8 +18,7 @@ PLANNING RULES
 - Every planning turn must end by calling finalize_plan or fallback_to_chat.
 
 ARTIFACT PARAMETERS
-- Parameters marked "[accepts artifact id]" in the capability list expect an artifact_id UUID from the Available artifacts section, not a filename or description.
-- When the user uploads a file, it appears in Available artifacts with a prefix "[User-uploaded ... for this request]". Match it to the appropriate skill parameter using set_extracted_params with its artifact_id.
+- Parameters marked "[accepts artifact id]" in the capability list expect an artifact_id UUID from the Available artifacts section, not a filename or description. The schema-bound extraction stage resolves those values after routing.
 
 FILE UPLOADS WITHOUT A TASK REQUEST
 - When the user uploads a file and Available artifacts contains an entry marked "[User-uploaded ... for this request]" but the message is a description or label rather than a task request, call fallback_to_chat acknowledging the stored artifact and asking what to do. Base the acknowledgment on what is actually in Available artifacts - never claim to have stored a file if it does not appear there.

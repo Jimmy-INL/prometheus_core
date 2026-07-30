@@ -131,7 +131,7 @@ def test_sequential_plan_defers_downstream_artifact_refs():
     )
     assert selected["ok"] is True
 
-    tools["set_extracted_params"]({"word": "LBNL is a cool lab"})
+    draft.extracted_params = {"word": "LBNL is a cool lab"}
 
     status = tools["get_requirement_status"]()
     # artifact_id is produced by step 1 at runtime: deferred, not missing.
@@ -183,12 +183,10 @@ def test_plan_with_missing_user_fields_finalizes_for_followup_collection():
         reasoning="Analyze corrosion risk in high-temperature water",
         confidence=0.95,
     )
-    funcs["set_extracted_params"](
-        {
-            "material_id": "SS316",
-            "context": {"temperature_c": 300},
-        }
-    )
+    draft.extracted_params = {
+        "material_id": "SS316",
+        "context": {"temperature_c": 300},
+    }
 
     finalized = funcs["finalize_plan"]()
 
@@ -214,7 +212,7 @@ def test_plan_with_unresolved_runtime_field_still_cannot_finalize():
         primary_skill="synthesize",
         workflow_type="single",
     )
-    funcs["set_extracted_params"]({"material_id": "SS316"})
+    draft.extracted_params = {"material_id": "SS316"}
 
     finalized = funcs["finalize_plan"]()
 
@@ -279,12 +277,21 @@ def test_compile_query_plan_does_not_ask_for_deferred_artifact_ids(monkeypatch):
             primary_skill="create_svg_artifact",
             supporting_skills=["convert_svg_to_png"],
             workflow_type="sequential",
-            extracted_params={"word": "LBNL is a cool lab"},
             reasoning="create then convert",
             confidence=0.9,
         )
 
     monkeypatch.setattr(planning_flow, "compile_plan_with_tools", fake_compile_plan_with_tools)
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        assert kwargs["capabilities"] == [create_cap, convert_cap]
+        return {"word": "LBNL is a cool lab"}
+
+    monkeypatch.setattr(
+        planning_flow,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
 
     state = {
         "conversation_id": "conv-1",

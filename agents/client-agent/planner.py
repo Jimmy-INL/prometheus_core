@@ -16,6 +16,7 @@ HOW IT WORKS
 3. The LLM calls planning tools until it calls `finalize_plan` or
    `fallback_to_chat`, at which point the loop exits.
 4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+5. Parameter extraction runs separately after the planner selects capabilities.
 
 PLANNING TOOLS (called by the LLM, not external code)
 ------------------------------------------------------
@@ -24,7 +25,6 @@ PLANNING TOOLS (called by the LLM, not external code)
 - `select_workflow_template` — choose a pre-built workflow blueprint by id/version
 - `get_workflow_candidates`  — inspect registered workflow options
 - `get_requirement_status`   — check which required params are still missing
-- `set_extracted_params`     — store param values extracted from the query/context
 - `set_plan_steps`           — set human-readable steps shown in the approval UI
 - `set_user_message`         — set the planning summary shown to the user
 - `finalize_plan`            — commit the plan (preserves missing user inputs for collection)
@@ -113,17 +113,6 @@ class SelectWorkflowTemplateInput(BaseModel):
 class SelectRegisteredWorkflowInput(BaseModel):
     reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-
-
-class SetParamsInput(BaseModel):
-    params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Extracted parameter values keyed by input-schema field names",
-    )
-    merge: bool = Field(
-        default=True,
-        description="If true, merge into current params. If false, replace params.",
-    )
 
 
 class SetPlanStepsInput(BaseModel):
@@ -578,20 +567,6 @@ def _build_planning_tools(
             "missing_paths": status.get("missing_paths", []),
         }
 
-    def set_extracted_params(params: Dict[str, Any], merge: bool = True) -> Dict[str, Any]:
-        if merge:
-            merged = dict(draft.extracted_params)
-            merged.update(dict(params or {}))
-            draft.extracted_params = merged
-        else:
-            draft.extracted_params = dict(params or {})
-        status = get_requirement_status()
-        return {
-            "ok": True,
-            "params": draft.extracted_params,
-            "missing_paths": status.get("missing_paths", []),
-        }
-
     def set_plan_steps(
         steps: List[str],
         estimated_duration_seconds: int = 120,
@@ -691,12 +666,6 @@ def _build_planning_tools(
             args_schema=SelectCapabilitiesInput,
         ),
         StructuredTool.from_function(
-            func=set_extracted_params,
-            name="set_extracted_params",
-            description="Set or update parameters extracted from the user request for the selected capability.",
-            args_schema=SetParamsInput,
-        ),
-        StructuredTool.from_function(
             func=get_workflow_candidates,
             name="get_workflow_candidates",
             description="Return registered workflow templates available as workflow_* tools.",
@@ -728,8 +697,8 @@ def _build_planning_tools(
             func=finalize_plan,
             name="finalize_plan",
             description=(
-                "Finalize the planning decision after selecting capabilities and extracting known "
-                "parameters. Missing user-supplied parameters remain in the plan for form collection."
+                "Finalize the planning decision after selecting capabilities. Parameter extraction "
+                "and missing-input collection run after routing."
             ),
         ),
         StructuredTool.from_function(

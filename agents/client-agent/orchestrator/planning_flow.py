@@ -24,7 +24,8 @@ from .parameters import (
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
 )
-from .utils import enrich_material_params, extract_json_from_text, extract_material_ids_from_text
+from .parameter_extraction import extract_parameters_with_schemas
+from .utils import extract_json_from_text, extract_material_ids_from_text
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -126,7 +127,21 @@ async def compile_query_plan(
             f"Using selected workflow template '{matched_workflow.definition.id}'.",
         )
         selected_skills = _unique_workflow_skills(matched_workflow)
-        extracted_params = enrich_material_params(query, seed_params)
+        runtime.store_status_update(
+            conversation_id,
+            "Extracting parameters with selected capability schemas.",
+        )
+        extracted_params = await extract_parameters_with_schemas(
+            query=query,
+            capabilities=[
+                capabilities_by_skill[skill_id]
+                for skill_id in selected_skills
+                if skill_id in capabilities_by_skill
+            ],
+            history=conversation_history,
+            context=context,
+            existing_params=seed_params,
+        )
         extracted_params = await resolve_params_via_capability_metadata(
             query=query,
             extracted_params=extracted_params,
@@ -299,7 +314,21 @@ async def compile_query_plan(
     if selected_workflow_candidate and selected_workflow_candidate.extracted_params:
         extracted_seed.update(selected_workflow_candidate.extracted_params)
     extracted_seed.update(planning_result.extracted_params)
-    extracted_params = enrich_material_params(query, extracted_seed)
+    runtime.store_status_update(
+        conversation_id,
+        "Extracting parameters with selected capability schemas.",
+    )
+    extracted_params = await extract_parameters_with_schemas(
+        query=query,
+        capabilities=[
+            capability
+            for capability in chain_capabilities
+            if capability is not None
+        ],
+        history=conversation_history,
+        context=context,
+        existing_params=extracted_seed,
+    )
     extracted_params = await resolve_params_via_capability_metadata(
         query=query,
         extracted_params=extracted_params,

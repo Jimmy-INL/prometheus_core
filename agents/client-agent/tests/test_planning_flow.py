@@ -121,11 +121,14 @@ def test_compile_query_plan_populates_missing_info_for_incomplete_plan(monkeypat
             workflow_type="single",
             confidence=0.95,
             reasoning="Analyze corrosion risk in high-temperature water.",
-            extracted_params={
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        assert kwargs["capabilities"] == [capability]
+        return {
                 "material_id": "SS316",
                 "context": {"temperature_c": 300},
-            },
-        )
+        }
 
     async def keep_extracted_params(
         query,
@@ -146,6 +149,11 @@ def test_compile_query_plan_populates_missing_info_for_incomplete_plan(monkeypat
         planning_flow,
         "compile_plan_with_tools",
         fake_compile_plan_with_tools,
+    )
+    monkeypatch.setattr(
+        planning_flow,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
     )
     monkeypatch.setattr(
         planning_flow,
@@ -179,3 +187,126 @@ def test_compile_query_plan_populates_missing_info_for_incomplete_plan(monkeypat
     ]
     assert result["missing_info"] == ["context.pressure_mpa"]
     assert result["plan"]["skills"] == ["analyze_corrosion"]
+
+
+def test_compile_query_plan_extracts_nested_bim_params_before_missing_form(
+    monkeypatch,
+) -> None:
+    capability = SimpleNamespace(
+        skill_id="author_equipment_geometry",
+        skill_name="Author Equipment Geometry",
+        description="Create parameterized equipment geometry.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "input_data": {
+                    "type": "object",
+                    "properties": {
+                        "equipment_type": {
+                            "type": "string",
+                            "enum": ["butterfly_valve"],
+                        },
+                        "pipe_diameter": {"type": "number"},
+                        "num_holes": {"type": "integer"},
+                        "hole_diameter": {"type": "number"},
+                        "rod_diameter": {"type": "number"},
+                    },
+                    "required": [
+                        "equipment_type",
+                        "pipe_diameter",
+                        "num_holes",
+                        "hole_diameter",
+                        "rod_diameter",
+                    ],
+                }
+            },
+            "required": ["input_data"],
+        },
+        requires_approval=False,
+        agent_url="http://bim-agent:8000",
+        expected_duration_seconds=10,
+        provides=[],
+    )
+
+    async def fake_get_capabilities():
+        return [capability]
+
+    async def fake_compile_plan_with_tools(**kwargs):
+        return planner.PlanningResult(
+            outcome="agent_plan",
+            primary_skill="author_equipment_geometry",
+            workflow_type="single",
+            confidence=0.95,
+            reasoning="Create the requested butterfly valve.",
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        assert kwargs["capabilities"] == [capability]
+        return {
+            "input_data": {
+                "equipment_type": "butterfly_valve",
+                "pipe_diameter": 0.9,
+                "num_holes": 6,
+                "hole_diameter": 0.05,
+            }
+        }
+
+    async def keep_extracted_params(
+        query,
+        extracted_params,
+        selected_skills,
+        context,
+        conversation_history,
+    ):
+        return extracted_params
+
+    monkeypatch.setattr(
+        planning_flow,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(planning_flow.runtime, "ENABLE_WORKFLOW_LIBRARY", False)
+    monkeypatch.setattr(
+        planning_flow,
+        "compile_plan_with_tools",
+        fake_compile_plan_with_tools,
+    )
+    monkeypatch.setattr(
+        planning_flow,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(
+        planning_flow,
+        "resolve_params_via_capability_metadata",
+        keep_extracted_params,
+    )
+    monkeypatch.setattr(
+        planning_flow.runtime,
+        "store_status_update",
+        lambda *args, **kwargs: None,
+    )
+
+    result = asyncio.run(
+        planning_flow.compile_query_plan(
+            {
+                "conversation_id": "conv-bim",
+                "user_query": (
+                    "Create a butterfly valve for a pipe diameter of 0.9m and "
+                    "6 holes with a 5cm diameter each."
+                ),
+                "conversation_history": [],
+                "context": {},
+            }
+        )
+    )
+
+    assert result["routing_decision"]["extracted_params"] == {
+        "input_data": {
+            "equipment_type": "butterfly_valve",
+            "pipe_diameter": 0.9,
+            "num_holes": 6,
+            "hole_diameter": 0.05,
+        }
+    }
+    assert result["missing_info"] == ["input_data.rod_diameter"]
