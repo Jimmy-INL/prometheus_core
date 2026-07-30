@@ -15,7 +15,8 @@ Assemble custom servers with `a2a.server.routes` factories; prefer
 authentication, and lifecycle behavior stay aligned.
 `prometheus_api.a2a_stream` accepts only v1 `task`, `statusUpdate`, and
 `artifactUpdate` envelopes with direct `Part` fields; do not add pre-v1 wire
-shape fallbacks.
+shape fallbacks. Preserve exact ProtoJSON `TASK_STATE_*` values in accumulated
+statuses and reject invalid state spellings instead of normalizing them.
 
 `tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked custom local-development template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
 

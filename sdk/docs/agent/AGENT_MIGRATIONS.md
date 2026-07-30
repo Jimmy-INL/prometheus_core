@@ -60,8 +60,10 @@ Downstream code that directly constructs or inspects SDK objects must migrate:
    `SendStreamingMessage` and send `A2A-Version: 1.0`.
 6. The shared `prometheus_api.a2a_stream` parser accepts only v1 `task`,
    `statusUpdate`, and `artifactUpdate` envelopes with direct `Part` fields.
-   Remove pre-v1 dashed event kinds, root-wrapped parts, and `final` fields
-   from downstream stream producers and test fixtures.
+   It preserves exact ProtoJSON `TASK_STATE_*` values and raises
+   `A2AStreamError` for invalid state spellings or malformed parts. Remove
+   lowercase state aliases, pre-v1 dashed event kinds, root-wrapped parts, and
+   `final` fields from downstream stream producers and test fixtures.
 
 LiteLLM deployments that route A2A traffic must use version 1.92.0 or newer;
 older releases embed the 0.3 SDK and cannot invoke a protocol-v1 agent. The
