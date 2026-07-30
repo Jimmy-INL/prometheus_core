@@ -591,7 +591,11 @@ def _update_step_statuses(statuses: dict, steps: list, status_msg: str):
 async def _handle_final_response(response: ConversationResponse):
     metadata = response.message_metadata or {}
     is_slash_command = bool(metadata.get("slash_command"))
-    artifacts_to_render = [] if is_slash_command else (response.new_artifacts or response.artifacts or [])
+    artifacts_to_render = [] if is_slash_command else [
+        artifact
+        for artifact in (response.new_artifacts or [])
+        if (artifact.get("metadata") or {}).get("source") != "user-upload"
+    ]
     text = _coerce_final_text(response, len(artifacts_to_render))
     elements = []
 
