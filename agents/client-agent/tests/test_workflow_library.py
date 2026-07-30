@@ -665,3 +665,57 @@ def test_executor_collects_all_parallel_input_required_steps() -> None:
 
     assert len(result["input_required_steps"]) == 2
     assert {entry["step_id"] for entry in result["input_required_steps"]} == {"first", "second"}
+
+
+def test_executor_stops_sequential_workflow_on_input_required() -> None:
+    invoked: list[str] = []
+
+    async def invoke(skill_id: str, params: Dict[str, Any], conversation_id: str) -> Dict[str, Any]:
+        invoked.append(skill_id)
+        if skill_id == "author_equipment_geometry":
+            return {
+                "input_required": {
+                    "missing_inputs": [{"name": "input_data", "type": "string"}],
+                    "hint": "rod_diameter is required.",
+                }
+            }
+        raise AssertionError("Dependent mesh step must wait for the requested input.")
+
+    workflow = _compile(
+        {
+            "id": "bim_geometry",
+            "name": "BIM Geometry",
+            "version": "1.0.0",
+            "description": "test",
+            "matching": {"patterns": ["geometry"]},
+            "execution": {"mode": "sequential", "on_error": "fail_fast"},
+            "steps": [
+                {
+                    "id": "author",
+                    "skill_id": "author_equipment_geometry",
+                },
+                {
+                    "id": "mesh",
+                    "skill_id": "mesh_geometry",
+                    "depends_on": ["author"],
+                },
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        execute_workflow(
+            workflow=workflow,
+            input_params={},
+            context={},
+            invoke_skill=invoke,
+            conversation_id="conv-1",
+        )
+    )
+
+    assert invoked == ["author_equipment_geometry"]
+    assert result["step_statuses"] == {
+        "author": "input_required",
+        "mesh": "blocked",
+    }
+    assert result["input_required_steps"][0]["skill_id"] == "author_equipment_geometry"

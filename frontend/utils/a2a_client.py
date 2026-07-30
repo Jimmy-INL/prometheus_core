@@ -143,7 +143,7 @@ class A2AClient:
 
         result = await self._stream_request(message, headers, on_status=on_status)
 
-        return self._parse_response(result, conversation_id)
+        return self._parse_response(result)
 
     async def _stream_request(
         self,
@@ -168,48 +168,50 @@ class A2AClient:
 
         return {"result": a2a_result}
 
-    def _parse_response(self, result: Dict[str, Any], fallback_conv_id: str) -> ConversationResponse:
+    def _parse_response(self, result: Dict[str, Any]) -> ConversationResponse:
         """Parse A2A JSON-RPC response into ConversationResponse.
 
         Expects the canonical final response in result.status.message.parts[].
         """
         a2a_result = result.get("result", {})
 
-        parsed = self._extract_from_status(a2a_result)
-        if parsed:
-            return parsed
+        return self._extract_from_status(a2a_result)
 
-        return ConversationResponse(
-            conversation_id=fallback_conv_id,
-            status="error",
-            message="Agent response missing canonical final status payload.",
-        )
-
-    def _extract_from_status(self, a2a_result: Dict) -> Optional[ConversationResponse]:
-        """Extract ConversationResponse from status.message.parts."""
-        status = a2a_result.get("status", {})
-        message = status.get("message", {})
-        parts = message.get("parts", [])
-
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            root = part.get("root") if isinstance(part.get("root"), dict) else None
-            part_kind = str(part.get("kind") or (root or {}).get("kind") or "").strip().lower()
-            if not part_kind and "text" in part:
-                part_kind = "text"
-            if part_kind != "text":
-                continue
-            text = part.get("text")
-            if text is None and root is not None:
-                text = root.get("text", "")
-            try:
-                data = json.loads(text)
-                if isinstance(data, dict) and "status" in data:
-                    return self._dict_to_response(data)
-            except (json.JSONDecodeError, TypeError):
-                continue
-        return None
+    def _extract_from_status(self, a2a_result: Dict) -> ConversationResponse:
+        """Extract ConversationResponse from one exact A2A v1 Part.text."""
+        status = a2a_result.get("status")
+        if not isinstance(status, dict):
+            raise ValueError("Malformed A2A v1 response: task.status must be an object")
+        message = status.get("message")
+        if not isinstance(message, dict):
+            raise ValueError("Malformed A2A v1 response: task.status.message must be an object")
+        parts = message.get("parts")
+        if not isinstance(parts, list) or len(parts) != 1:
+            raise ValueError(
+                "Malformed A2A v1 response: task.status.message.parts must contain one part"
+            )
+        part = parts[0]
+        if not isinstance(part, dict):
+            raise ValueError("Malformed A2A v1 response: status part must be an object")
+        unexpected = set(part) - {"text", "metadata", "filename", "mediaType"}
+        if unexpected:
+            raise ValueError(
+                f"Malformed A2A v1 response: unsupported status part fields {sorted(unexpected)}"
+            )
+        text = part.get("text")
+        if not isinstance(text, str):
+            raise ValueError("Malformed A2A v1 response: status Part.text must be a string")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "Malformed client-agent response: status Part.text must contain JSON"
+            ) from exc
+        if not isinstance(data, dict) or "status" not in data:
+            raise ValueError(
+                "Malformed client-agent response: final payload must be an object with status"
+            )
+        return self._dict_to_response(data)
 
     def _dict_to_response(self, data: Dict) -> ConversationResponse:
         """Convert a dict to ConversationResponse."""

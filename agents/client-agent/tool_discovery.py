@@ -30,6 +30,32 @@ StatusCallback = Callable[[str], Awaitable[None]]
 # Invoked once when a downstream agent emits a status tagged metadata.background
 # (declare_long_running). Receives the event metadata dict.
 BackgroundCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+_A2A_V1_TASK_STATES = {
+    "TASK_STATE_UNSPECIFIED",
+    "TASK_STATE_SUBMITTED",
+    "TASK_STATE_WORKING",
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_INPUT_REQUIRED",
+    "TASK_STATE_AUTH_REQUIRED",
+}
+_MISSING_INPUT_FIELDS = {
+    "name",
+    "description",
+    "user_prompt",
+    "type",
+    "options",
+    "resolvable_from_context",
+    "sensitive",
+    "required",
+}
+_MISSING_INPUT_TYPES = {"string", "number", "integer", "boolean", "enum"}
+
+
+class A2AContractError(ValueError):
+    """Raised when an agent response violates the required A2A v1 contract."""
 
 
 def _litellm_headers() -> Dict[str, str]:
@@ -254,37 +280,108 @@ def _normalize_a2a_artifacts(
     return normalized
 
 
-def _extract_status_payload(a2a_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Extract a structured payload from status.message text or data parts."""
-    status = a2a_result.get("status", {})
-    status_message = status.get("message", {})
-    parts = status_message.get("parts", []) if isinstance(status_message, dict) else []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        root = part.get("root") if isinstance(part.get("root"), dict) else None
-        payload_part = root or part
-        part_kind = str(part.get("kind") or payload_part.get("kind") or "").strip().lower()
-        if not part_kind and "data" in payload_part:
-            part_kind = "data"
-        elif not part_kind and "text" in payload_part:
-            part_kind = "text"
-        if part_kind == "data":
-            data_payload = payload_part.get("data")
-            if isinstance(data_payload, dict):
-                return data_payload
-            continue
-        if part_kind != "text":
-            continue
-        text_content = payload_part.get("text")
-        try:
-            parsed = json.loads(text_content)
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.debug(f"Failed to parse final status message as JSON: {e}")
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
+def _extract_status_payload(a2a_result: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    """Extract one structured payload from an exact A2A v1 status message."""
+    status = a2a_result.get("status")
+    if not isinstance(status, dict):
+        raise A2AContractError("Malformed A2A v1 response: task.status must be an object")
+    status_message = status.get("message")
+    if not isinstance(status_message, dict):
+        raise A2AContractError("Malformed A2A v1 response: task.status.message must be an object")
+    parts = status_message.get("parts")
+    if not isinstance(parts, list) or len(parts) != 1:
+        raise A2AContractError(
+            "Malformed A2A v1 response: task.status.message.parts must contain one part"
+        )
+    part = parts[0]
+    if not isinstance(part, dict):
+        raise A2AContractError("Malformed A2A v1 response: status part must be an object")
+    unexpected = set(part) - {"text", "data", "metadata", "filename", "mediaType"}
+    if unexpected:
+        raise A2AContractError(
+            f"Malformed A2A v1 response: unsupported status part fields {sorted(unexpected)}"
+        )
+    content_fields = [field for field in ("text", "data") if field in part]
+    if len(content_fields) != 1:
+        raise A2AContractError(
+            "Malformed A2A v1 response: status part must contain exactly one text or data field"
+        )
+    content_field = content_fields[0]
+    if content_field == "data":
+        payload = part["data"]
+        if not isinstance(payload, dict):
+            raise A2AContractError("Malformed A2A v1 response: Part.data must be an object")
+        return content_field, payload
+    text_content = part["text"]
+    if not isinstance(text_content, str):
+        raise A2AContractError("Malformed A2A v1 response: Part.text must be a string")
+    try:
+        payload = json.loads(text_content)
+    except json.JSONDecodeError as exc:
+        raise A2AContractError(
+            "Malformed A2A v1 response: final Part.text must contain a JSON object"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise A2AContractError(
+            "Malformed A2A v1 response: final Part.text must contain a JSON object"
+        )
+    return content_field, payload
+
+
+def _validate_input_required_payload(payload: Dict[str, Any]) -> None:
+    if set(payload) != {"missing_inputs", "hint"}:
+        raise A2AContractError(
+            "Malformed A2A v1 INPUT_REQUIRED response: expected missing_inputs and hint"
+        )
+    hint = payload["hint"]
+    if not isinstance(hint, str) or not hint.strip():
+        raise A2AContractError(
+            "Malformed A2A v1 INPUT_REQUIRED response: hint must be a non-empty string"
+        )
+    missing_inputs = payload["missing_inputs"]
+    if not isinstance(missing_inputs, list) or not missing_inputs:
+        raise A2AContractError(
+            "Malformed A2A v1 INPUT_REQUIRED response: missing_inputs must be a non-empty list"
+        )
+    seen_names: set[str] = set()
+    for index, item in enumerate(missing_inputs):
+        if not isinstance(item, dict) or set(item) != _MISSING_INPUT_FIELDS:
+            raise A2AContractError(
+                "Malformed A2A v1 INPUT_REQUIRED response: "
+                f"missing_inputs[{index}] must contain the canonical descriptor fields"
+            )
+        for field in ("name", "description", "user_prompt"):
+            if not isinstance(item[field], str) or not item[field].strip():
+                raise A2AContractError(
+                    "Malformed A2A v1 INPUT_REQUIRED response: "
+                    f"missing_inputs[{index}].{field} must be a non-empty string"
+                )
+        name = item["name"]
+        if name in seen_names:
+            raise A2AContractError(
+                f"Malformed A2A v1 INPUT_REQUIRED response: duplicate field {name!r}"
+            )
+        seen_names.add(name)
+        if item["type"] not in _MISSING_INPUT_TYPES:
+            raise A2AContractError(
+                "Malformed A2A v1 INPUT_REQUIRED response: "
+                f"missing_inputs[{index}].type is unsupported"
+            )
+        options = item["options"]
+        if options is not None and (
+            not isinstance(options, list)
+            or not all(isinstance(option, str) for option in options)
+        ):
+            raise A2AContractError(
+                "Malformed A2A v1 INPUT_REQUIRED response: "
+                f"missing_inputs[{index}].options must be null or a string list"
+            )
+        for field in ("resolvable_from_context", "sensitive", "required"):
+            if not isinstance(item[field], bool):
+                raise A2AContractError(
+                    "Malformed A2A v1 INPUT_REQUIRED response: "
+                    f"missing_inputs[{index}].{field} must be boolean"
+                )
 
 
 async def call_a2a_agent(
@@ -304,9 +401,9 @@ async def call_a2a_agent(
     and switches to the A2A SSE stream endpoint when the downstream agent card
     advertises streaming support.
 
-    The response extraction expects the canonical final response in
-    result.status.message.parts[*].text and separately normalizes native
-    A2A artifacts from result.artifacts.
+    The response extraction requires one direct A2A v1 Part.data for
+    INPUT_REQUIRED or one direct Part.text for final JSON results. Native A2A
+    artifacts from result.artifacts are mapped into catalog entries separately.
 
     Args:
         agent_url: Base URL of the agent
@@ -427,28 +524,28 @@ async def call_a2a_agent(
         )
 
         status = a2a_result.get("status", {})
-        state = str(status.get("state") or "").strip().lower()
-        parsed = _extract_status_payload(a2a_result)
-        if state == "input-required":
-            payload = parsed if isinstance(parsed, dict) else {}
+        state = status.get("state") if isinstance(status, dict) else None
+        if state not in _A2A_V1_TASK_STATES:
+            raise A2AContractError(
+                "Malformed A2A v1 response: task.status.state must be an exact "
+                "TASK_STATE_* ProtoJSON value"
+            )
+        content_field, parsed = _extract_status_payload(a2a_result)
+        if state == "TASK_STATE_INPUT_REQUIRED":
+            if content_field != "data":
+                raise A2AContractError(
+                    "Malformed A2A v1 INPUT_REQUIRED response: status message must use Part.data"
+                )
+            _validate_input_required_payload(parsed)
             return {
                 "status": "input_required",
-                "input_required": payload,
+                "input_required": parsed,
                 "_a2a_context_id": a2a_result.get("contextId"),
                 "_a2a_task_id": a2a_result.get("id"),
             }
-        if isinstance(parsed, dict):
-            if normalized_artifacts and "artifacts" not in parsed:
-                parsed = {**parsed, "artifacts": normalized_artifacts}
-            return parsed
-
-        error_payload: Dict[str, Any] = {
-            "status": "error",
-            "message": "Agent response missing canonical final status payload.",
-        }
-        if normalized_artifacts:
-            error_payload["artifacts"] = normalized_artifacts
-        return error_payload
+        if normalized_artifacts and "artifacts" not in parsed:
+            parsed = {**parsed, "artifacts": normalized_artifacts}
+        return parsed
     except httpx.TimeoutException:
         raise Exception(f"Agent request timed out after {timeout_seconds}s")
     except httpx.HTTPStatusError:

@@ -111,6 +111,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
         }
 
     try:
+        context_resolution_attempted_skills: set[str] = set()
         # Execute skills based on workflow type
         if workflow_type == "parallel" and len(selected_skills) > 1:
             # Parallel: invoke all skills concurrently. return_exceptions=True so
@@ -157,7 +158,33 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         conversation_id=conversation_id,
                     )
                 item = await invoke_skill(skill_id, invoke_params, conversation_id)
+                if item.get("input_required"):
+                    payload = item.get("input_required", {}) or {}
+                    missing_inputs = (
+                        payload.get("missing_inputs", [])
+                        if isinstance(payload, dict)
+                        else []
+                    )
+                    auto_resolved, _ = resolve_missing_inputs_from_state(
+                        state,
+                        missing_inputs,
+                    )
+                    if auto_resolved:
+                        item = await invoke_skill(
+                            skill_id,
+                            {
+                                **invoke_params,
+                                "provided_inputs": auto_resolved,
+                                "_a2a_context_id": item.get("_a2a_context_id"),
+                                "_a2a_task_id": item.get("_a2a_task_id"),
+                            },
+                            conversation_id,
+                            emit_status=False,
+                        )
+                        context_resolution_attempted_skills.add(skill_id)
                 invocation_results.append(item)
+                if item.get("input_required"):
+                    break
                 if "result" in item:
                     previous_results[skill_id] = item["result"]
                     result_payload = item["result"]
@@ -222,6 +249,8 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     state,
                     missing_inputs,
                 )
+                if skill_id in context_resolution_attempted_skills:
+                    auto_resolved = {}
                 if auto_resolved:
                     resumed = await invoke_skill(
                         skill_id,

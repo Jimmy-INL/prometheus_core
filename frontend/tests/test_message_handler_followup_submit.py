@@ -17,6 +17,7 @@ from utils.a2a_client import ConversationResponse
 
 def test_handle_needs_info_submits_followup_answers(monkeypatch):
     sent_messages = []
+    custom_elements = []
 
     class DummyMessage:
         def __init__(self, content="", elements=None):
@@ -32,6 +33,7 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
             self.name = name
             self.display = display
             self.props = props
+            custom_elements.append(self)
 
     class DummyAskElementMessage:
         def __init__(self, content, element, timeout=0, raise_on_timeout=False):
@@ -41,7 +43,11 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
             self.raise_on_timeout = raise_on_timeout
 
         async def send(self):
-            return {"submitted": True, "temperature_c": "315"}
+            return {
+                "submitted": True,
+                "hole_diameter": "0.1",
+                "rod_diameter": "0.08",
+            }
 
     class DummyUserSession:
         def __init__(self):
@@ -87,14 +93,20 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
     response = ConversationResponse(
         conversation_id="conv-1",
         status="needs_info",
-        message="Need temperature",
+        message="Butterfly valve dimensions required",
         followup_questions=[
             {
-                "field": "temperature_c",
-                "question": "What operating temperature should I use?",
+                "field": "hole_diameter",
+                "question": "Hole diameter (m)",
                 "type": "number",
                 "options": None,
-            }
+            },
+            {
+                "field": "rod_diameter",
+                "question": "Rod diameter (m)",
+                "type": "number",
+                "options": None,
+            },
         ],
     )
 
@@ -102,15 +114,23 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
         handler._handle_needs_info(
             client,
             response,
-            "Perform a thermal analysis of ss316",
+            "Create a butterfly valve",
             "conv-1",
         )
     )
 
+    assert custom_elements[0].props["title"] == "Butterfly valve dimensions required"
+    assert [field["label"] for field in custom_elements[0].props["fields"]] == [
+        "Hole diameter (m)",
+        "Rod diameter (m)",
+    ]
     client.send.assert_awaited_once_with(
-        query="Perform a thermal analysis of ss316",
+        query="Create a butterfly valve",
         conversation_id="conv-1",
-        followup_answers={"temperature_c": "315"},
+        followup_answers={
+            "hole_diameter": "0.1",
+            "rod_diameter": "0.08",
+        },
         artifacts=[],
         on_status=client.send.await_args.kwargs["on_status"],
     )
@@ -118,7 +138,7 @@ def test_handle_needs_info_submits_followup_answers(monkeypatch):
     handle_response.assert_awaited_once_with(
         client,
         next_response,
-        "Perform a thermal analysis of ss316",
+        "Create a butterfly valve",
         "conv-1",
         _depth=1,
     )

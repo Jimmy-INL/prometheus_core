@@ -938,27 +938,43 @@ def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
         "conversation_history": [],
         "pending_subagent_requests": [
             {
-                "skill_id": "analyze_thermal",
+                "skill_id": "author_equipment_geometry",
                 "missing_inputs": [
                     {
-                        "name": "temperature_c",
-                        "description": "Operating temperature in Celsius at which the material should be evaluated.",
-                        "user_prompt": "What operating temperature should I use for the thermal analysis (in Celsius)?",
+                        "name": "hole_diameter",
+                        "description": "Diameter of each through-hole, in metres.",
+                        "user_prompt": "Hole diameter (m)",
                         "type": "number",
-                        "resolvable_from_context": True,
-                    }
+                        "options": None,
+                        "resolvable_from_context": False,
+                        "sensitive": False,
+                        "required": True,
+                    },
+                    {
+                        "name": "rod_diameter",
+                        "description": "Outer diameter of the actuator shaft, in metres.",
+                        "user_prompt": "Rod diameter (m)",
+                        "type": "number",
+                        "options": None,
+                        "resolvable_from_context": False,
+                        "sensitive": False,
+                        "required": True,
+                    },
                 ],
-                "hint": "Thermal analysis requires an operating temperature before it can proceed.",
+                "hint": "Butterfly valve dimensions required",
             },
         ],
     }
 
     result = asyncio.run(agent_module.ask_followup_dynamic(state))
 
-    question = result["conversation_history"][-1]["questions"][0]
-    assert question["field"] == "temperature_c"
-    assert question["type"] == "number"
-    assert result["missing_info"] == ["temperature_c"]
+    questions = result["conversation_history"][-1]["questions"]
+    assert [(question["field"], question["question"]) for question in questions] == [
+        ("hole_diameter", "Hole diameter (m)"),
+        ("rod_diameter", "Rod diameter (m)"),
+    ]
+    assert [question["type"] for question in questions] == ["number", "number"]
+    assert result["missing_info"] == ["hole_diameter", "rod_diameter"]
 
 
 def test_invoke_agent_generic_parallel_preserves_partial_results_on_exception(monkeypatch) -> None:
@@ -1202,6 +1218,148 @@ def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) 
     # And upstream results were forwarded as before.
     assert "upstream_results" in captured_params["convert_svg_to_png"]
     assert "error" not in result["tool_results"]["convert_svg_to_png"]
+
+
+def test_sequential_execution_stops_when_step_requires_input(monkeypatch) -> None:
+    invoked: list[str] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append(skill_id)
+        if skill_id == "author_equipment_geometry":
+            return {
+                "skill_id": skill_id,
+                "input_required": {
+                    "missing_inputs": [
+                        {
+                            "name": "rod_diameter",
+                            "description": "Outer diameter of the actuator shaft, in metres.",
+                            "user_prompt": "Rod diameter (m)",
+                            "type": "number",
+                            "options": None,
+                            "resolvable_from_context": False,
+                            "sensitive": False,
+                            "required": True,
+                        }
+                    ],
+                    "hint": "Butterfly valve dimensions required",
+                },
+                "_a2a_context_id": "conv-1",
+                "_a2a_task_id": "task-1",
+            }
+        raise AssertionError("mesh_geometry must wait for the requested input.")
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert invoked == ["author_equipment_geometry"]
+    assert result["missing_info"] == ["rod_diameter"]
+    assert result["pending_subagent_requests"] == [
+        {
+            "skill_id": "author_equipment_geometry",
+            "a2a_context_id": "conv-1",
+            "a2a_task_id": "task-1",
+            "missing_inputs": [
+                {
+                    "name": "rod_diameter",
+                    "description": "Outer diameter of the actuator shaft, in metres.",
+                    "user_prompt": "Rod diameter (m)",
+                    "type": "number",
+                    "options": None,
+                    "resolvable_from_context": False,
+                    "sensitive": False,
+                    "required": True,
+                }
+            ],
+            "hint": "Butterfly valve dimensions required",
+        }
+    ]
+
+
+def test_sequential_execution_continues_after_context_resolves_input(monkeypatch) -> None:
+    invoked: list[tuple[str, dict]] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append((skill_id, params))
+        if skill_id == "author_equipment_geometry" and "provided_inputs" not in params:
+            return {
+                "skill_id": skill_id,
+                "input_required": {
+                    "missing_inputs": [
+                        {
+                            "name": "rod_diameter",
+                            "description": "Outer diameter of the actuator shaft, in metres.",
+                            "user_prompt": "Rod diameter (m)",
+                            "type": "number",
+                            "options": None,
+                            "resolvable_from_context": True,
+                            "sensitive": False,
+                            "required": True,
+                        },
+                    ],
+                    "hint": "Butterfly valve dimensions required",
+                },
+                "_a2a_context_id": "conv-1",
+                "_a2a_task_id": "task-1",
+            }
+        return {"skill_id": skill_id, "result": {"status": "completed"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+        },
+        "context": {"rod_diameter": 0.05},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert [skill_id for skill_id, _ in invoked] == [
+        "author_equipment_geometry",
+        "author_equipment_geometry",
+        "mesh_geometry",
+    ]
+    assert invoked[1][1]["provided_inputs"] == {"rod_diameter": 0.05}
+    assert result.get("missing_info", []) == []
+    assert result["tool_results"]["mesh_geometry"] == {"status": "completed"}
 
 
 def test_sequential_execution_overrides_stale_planning_time_artifact_binding(monkeypatch) -> None:

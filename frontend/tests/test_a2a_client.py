@@ -56,7 +56,6 @@ def test_parse_response_extracts_conversation_response_from_data_artifact() -> N
                 "message": {
                     "parts": [
                         {
-                            "kind": "text",
                             "text": json.dumps(payload),
                         }
                     ]
@@ -65,7 +64,7 @@ def test_parse_response_extracts_conversation_response_from_data_artifact() -> N
         }
     }
 
-    response = client._parse_response(result, "fallback-conv")
+    response = client._parse_response(result)
 
     assert response.status == "completed"
     assert response.message == "SVG artifact created successfully."
@@ -73,7 +72,7 @@ def test_parse_response_extracts_conversation_response_from_data_artifact() -> N
     assert response.new_artifacts[0]["name"] == "prometheus.svg"
 
 
-def test_parse_response_extracts_from_rooted_text_part() -> None:
+def test_parse_response_rejects_pre_v1_rooted_text_part() -> None:
     client = A2AClient(agent_url="http://example.test", agent_secret="secret")
     payload = {
         "conversation_id": "conv-1",
@@ -105,11 +104,12 @@ def test_parse_response_extracts_from_rooted_text_part() -> None:
         }
     }
 
-    response = client._parse_response(result, "fallback-conv")
-
-    assert response.status == "needs_info"
-    assert response.followup_questions is not None
-    assert response.followup_questions[0]["field"] == "context.temperature_c"
+    try:
+        client._parse_response(result)
+    except ValueError as exc:
+        assert "unsupported status part fields ['root']" in str(exc)
+    else:
+        raise AssertionError("pre-v1 rooted part was accepted")
 
 
 def test_send_streams_sse_statuses_and_final_response(monkeypatch) -> None:
