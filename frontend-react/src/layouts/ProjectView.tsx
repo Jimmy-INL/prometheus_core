@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LayoutDashboard, MessageSquare, FolderOpen, Bot } from "lucide-react";
 import { useChatInteract } from "@chainlit/react-client";
 import { Chat } from "../components/Chat";
@@ -24,6 +24,12 @@ export function ProjectView({ onLogout }: Props) {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const { clear, stopTask } = useChatInteract();
+
+  // Owned here (not in Chat) so that when the artifact-viewer panel is
+  // added alongside Chat, each panel gets its own scroll ref and scrolls
+  // independently — the scrollbar sits at this panel's edge, not hugging
+  // the narrower centered message column inside Chat.
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   const handleNewChat = () => {
     stopTask();
@@ -70,7 +76,7 @@ export function ProjectView({ onLogout }: Props) {
 
           {/* Tab content */}
           <div className={`flex flex-col flex-1 overflow-hidden ${activeTab === "chat" ? "" : "hidden"}`}>
-            <Chat />
+            <Chat scrollContainerRef={chatScrollRef} />
           </div>
           {activeTab === "dashboard" && (
             <div className="flex flex-1 items-center justify-center text-base-content/40 text-sm">
