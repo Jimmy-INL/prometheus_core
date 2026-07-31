@@ -168,3 +168,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Never place Markdown backticks inside shell command arguments; use shell-safe plain text or a non-shell file-editing interface.
 - Until identity-backed credential storage exists, each LLM-using agent selects its own LLM config and receives that config's provider keys; semantic model flavors remain hardcoded in agent code.
 - Run `gh` commands for `github.inl.gov` outside the network sandbox.
+- Never search or print `.env` files when inspecting configuration; query variable names without values or use example/config files that contain no secrets.
+- Route butterfly-valve revisions through `author_equipment_geometry` as parameterized re-authoring from conversation context; do not require existing-CAD ingestion or a separate revision skill.
