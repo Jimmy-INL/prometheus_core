@@ -65,6 +65,25 @@ class _DummyMessage:
         return self
 
 
+class _DummyStep:
+    sent: list = []
+
+    def __init__(self, name="", type="tool", **_kwargs):
+        self.name = name
+        self.type = type
+        self.output = ""
+        self.is_error = None
+        self.update_count = 0
+
+    async def send(self):
+        _DummyStep.sent.append(self)
+        return self
+
+    async def update(self):
+        self.update_count += 1
+        return self
+
+
 class _FakeUserSession:
     def __init__(self):
         self._d: dict = {}
@@ -78,7 +97,9 @@ class _FakeUserSession:
 
 def _install_doubles(monkeypatch):
     _DummyMessage.sent = []
+    _DummyStep.sent = []
     monkeypatch.setattr(handler.cl, "Message", _DummyMessage)
+    monkeypatch.setattr(handler.cl, "Step", _DummyStep)
     monkeypatch.setattr(handler.cl, "user_session", _FakeUserSession())
 
 
@@ -89,9 +110,9 @@ def test_handle_backgrounded_acks_and_registers_id(monkeypatch):
     _install_doubles(monkeypatch)
 
     async def not_terminal(*a, **k):
-        return "working"
+        return {"state": "working", "last_status_message": "Preparing mesh"}
 
-    monkeypatch.setattr(task_events, "node_state", not_terminal)
+    monkeypatch.setattr(task_events, "node_snapshot", not_terminal)
 
     resp = ConversationResponse(
         conversation_id="c1",
@@ -103,6 +124,9 @@ def test_handle_backgrounded_acks_and_registers_id(monkeypatch):
 
     assert _DummyMessage.sent and "background" in _DummyMessage.sent[0].content
     assert handler._awaited_task_ids() == {"root-1"}  # registered for the notifier
+    assert len(_DummyStep.sent) == 1
+    assert _DummyStep.sent[0].name == "Preparing mesh"
+    assert "Preparing mesh" in _DummyStep.sent[0].output
 
 
 def test_handle_backgrounded_without_task_id_registers_nothing(monkeypatch):
@@ -118,7 +142,7 @@ def test_handle_backgrounded_fast_finish_announces_immediately(monkeypatch):
     _install_doubles(monkeypatch)
 
     async def already_done(*a, **k):
-        return "completed"
+        return {"state": "completed", "last_status_message": "Done"}
 
     async def fake_fetch(*a, **k):
         return {"conversation_id": "c1", "status": "completed", "report": "fast"}
@@ -128,7 +152,7 @@ def test_handle_backgrounded_fast_finish_announces_immediately(monkeypatch):
     async def fake_final(response):
         rendered["report"] = response.report
 
-    monkeypatch.setattr(task_events, "node_state", already_done)
+    monkeypatch.setattr(task_events, "node_snapshot", already_done)
     monkeypatch.setattr(task_events, "fetch_result", fake_fetch)
     monkeypatch.setattr(handler, "_handle_final_response", fake_final)
 
@@ -198,9 +222,29 @@ def test_notifier_announces_awaited_terminal_event(monkeypatch):
     handler.cl.user_session.set(handler.BACKGROUNDED_IDS_KEY, {"root-1"})
 
     async def fake_subscribe(redis_url, conv):
-        # an internal sub-node (ignored), then the awaited root completing
+        yield {
+            "type": "node-updated",
+            "task_id": "other-child",
+            "root_task_id": "other-root",
+            "state": "working",
+            "message": "unrelated",
+        }
+        yield {
+            "type": "node-updated",
+            "task_id": "mesh-child",
+            "root_task_id": "root-1",
+            "state": "working",
+            "message": "Running execute_code… mesh iteration 2",
+        }
+        yield {
+            "type": "node-updated",
+            "task_id": "root-1",
+            "root_task_id": "root-1",
+            "state": "working",
+            "message": "waiting on mesh_geometry — Running execute_code… mesh iteration 2",
+        }
+        # A terminal child does not complete the awaited root.
         yield {"type": "node-completed", "task_id": "child-9", "state": "completed"}
-        yield {"type": "node-updated", "task_id": "root-1", "state": "working"}
         yield {"type": "node-completed", "task_id": "root-1", "state": "completed"}
 
     async def fake_fetch(*a, **k):
@@ -219,6 +263,31 @@ def test_notifier_announces_awaited_terminal_event(monkeypatch):
 
     assert rendered.get("report") == "done"
     assert handler._awaited_task_ids() == set()  # root-1 consumed; child-9 never awaited
+    assert len(_DummyStep.sent) == 1
+    assert "waiting on mesh_geometry — Running execute_code… mesh iteration 2" in _DummyStep.sent[0].output
+    assert "Background task complete." in _DummyStep.sent[0].output
+
+
+def test_background_progress_history_is_bounded_and_deduplicated(monkeypatch):
+    _install_doubles(monkeypatch)
+
+    async def scenario():
+        await handler._update_background_progress("root-1", "iteration 0")
+        await handler._update_background_progress("root-1", "iteration 0")
+        entry = handler._background_progress_entries()["root-1"]
+        assert entry["history"] == ["iteration 0"]
+        assert entry["step"].update_count == 1
+        for index in range(1, handler.BACKGROUND_STATUS_HISTORY_LIMIT + 5):
+            await handler._update_background_progress("root-1", f"iteration {index}")
+
+    asyncio.run(scenario())
+
+    entries = handler._background_progress_entries()
+    history = entries["root-1"]["history"]
+    assert len(history) == handler.BACKGROUND_STATUS_HISTORY_LIMIT
+    assert history.count("iteration 0") == 0
+    assert history[-1] == f"iteration {handler.BACKGROUND_STATUS_HISTORY_LIMIT + 4}"
+    assert _DummyStep.sent[0].update_count == handler.BACKGROUND_STATUS_HISTORY_LIMIT + 5
 
 
 def test_notifier_noop_when_no_events(monkeypatch):

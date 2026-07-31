@@ -35,8 +35,12 @@ async def invoke_skill(
     emit_status: bool = True,
 ) -> Dict[str, Any]:
     """Invoke a single discovered skill, tracking it as a Task Graph node."""
-    async with task_tracking.track_skill(conversation_id, skill_id, title=skill_id) as tracker:
-        result = await _invoke_skill_impl(skill_id, params, conversation_id, emit_status)
+    async with task_tracking.track_skill(
+        conversation_id, skill_id, title=skill_id
+    ) as tracker:
+        result = await _invoke_skill_impl(
+            skill_id, params, conversation_id, tracker, emit_status
+        )
         task_tracking.apply_result_outcome(tracker, result)
         return result
 
@@ -45,6 +49,7 @@ async def _invoke_skill_impl(
     skill_id: str,
     params: Dict[str, Any],
     conversation_id: str,
+    tracker: task_tracking.SkillTracker,
     emit_status: bool = True,
 ) -> Dict[str, Any]:
     """Invoke a single discovered skill with validation and normalized output."""
@@ -53,7 +58,9 @@ async def _invoke_skill_impl(
     tool = await find_tool_for_skill(skill_id, refresh_on_miss=True)
     if not tool:
         if emit_status:
-            runtime.store_status_update(conversation_id, f"Capability '{skill_id}' is currently unavailable.")
+            runtime.store_status_update(
+                conversation_id, f"Capability '{skill_id}' is currently unavailable."
+            )
         return {
             "skill_id": skill_id,
             "error": f"Capability '{skill_id}' is not currently available.",
@@ -62,17 +69,23 @@ async def _invoke_skill_impl(
     cache = get_capability_cache()
     capability = await cache.get_capability_by_skill_id(skill_id)
 
-    required_params = extract_required_param_paths(capability.input_schema) if capability else []
+    required_params = (
+        extract_required_param_paths(capability.input_schema) if capability else []
+    )
     material_ids = params.get("material_ids")
 
     async def invoke_once(single_params: Dict[str, Any]) -> Dict[str, Any]:
         input_schema = capability.input_schema if capability else None
-        invoke_params = normalize_params_for_input_schema(dict(single_params), input_schema=input_schema)
+        invoke_params = normalize_params_for_input_schema(
+            dict(single_params), input_schema=input_schema
+        )
         invoke_params["conversation_id"] = conversation_id
         if capability and getattr(capability, "supports_streaming", False):
+
             async def _status_callback(message: str) -> None:
                 text = str(message or "").strip()
                 if text:
+                    tracker.progress(text)
                     runtime.store_status_update(conversation_id, f"[{skill_id}] {text}")
 
             async def _background_callback(metadata: Dict[str, Any]) -> None:
@@ -80,11 +93,17 @@ async def _invoke_skill_impl(
                 # detach this turn. The skill node is resolved from the current
                 # task-tracking context.
                 task_tracking.request_background()
-                runtime.store_status_update(conversation_id, f"[{skill_id}] running in the background.")
+                runtime.store_status_update(
+                    conversation_id, f"[{skill_id}] running in the background."
+                )
 
             invoke_params["_status_callback"] = _status_callback
             invoke_params["_background_callback"] = _background_callback
-        missing = [param for param in required_params if not has_param_path(invoke_params, param)]
+        missing = [
+            param
+            for param in required_params
+            if not has_param_path(invoke_params, param)
+        ]
         if missing:
             if emit_status:
                 runtime.store_status_update(
@@ -104,14 +123,21 @@ async def _invoke_skill_impl(
                     result_data = {"raw_response": raw_result}
             else:
                 result_data = raw_result
-            if isinstance(result_data, dict) and result_data.get("status") == "input_required":
+            if (
+                isinstance(result_data, dict)
+                and result_data.get("status") == "input_required"
+            ):
                 return {
                     "input_required": result_data.get("input_required", {}),
                     "_a2a_context_id": result_data.get("_a2a_context_id"),
                     "_a2a_task_id": result_data.get("_a2a_task_id"),
                 }
             if isinstance(result_data, dict) and result_data.get("error"):
-                missing = [param for param in required_params if not has_param_path(invoke_params, param)]
+                missing = [
+                    param
+                    for param in required_params
+                    if not has_param_path(invoke_params, param)
+                ]
                 payload = {"error": str(result_data.get("error"))}
                 if missing:
                     payload["missing_required_params"] = missing
@@ -121,11 +147,17 @@ async def _invoke_skill_impl(
             return {"result": result_data}
         except Exception as e:
             if emit_status:
-                runtime.store_status_update(conversation_id, f"'{skill_id}' failed: {e}")
+                runtime.store_status_update(
+                    conversation_id, f"'{skill_id}' failed: {e}"
+                )
             return {"error": str(e)}
 
     # Batch path for comparison-style queries with multiple material IDs
-    if "material_id" in required_params and isinstance(material_ids, list) and len(material_ids) > 1:
+    if (
+        "material_id" in required_params
+        and isinstance(material_ids, list)
+        and len(material_ids) > 1
+    ):
         by_material: Dict[str, Any] = {}
         errors: Dict[str, Any] = {}
         for material_id in material_ids:

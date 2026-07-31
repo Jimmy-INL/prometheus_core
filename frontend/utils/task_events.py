@@ -70,24 +70,34 @@ async def fetch_result(redis_url: str, conversation_id: str, task_id: str) -> Op
             pass
 
 
-async def node_state(redis_url: str, conversation_id: str, task_id: str) -> Optional[str]:
-    """Return the current persisted state of a Task Graph node, or ``None``.
+async def node_snapshot(
+    redis_url: str,
+    conversation_id: str,
+    task_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Return the current persisted Task Graph node, or ``None``.
 
     Used as a subscribe-race guard: a task that reached a terminal state between
     detach and subscribe won't emit another event, so callers check the node
-    directly once on startup.
+    directly once on startup. The latest status message also seeds the live
+    background-progress display.
     """
     if aioredis is None:
         return None
     client = aioredis.from_url(redis_url, decode_responses=True)
     try:
-        node = await _get_json(client, _node_key(conversation_id, task_id))
-        return str(node.get("state")) if node else None
+        return await _get_json(client, _node_key(conversation_id, task_id))
     finally:
         try:
             await client.aclose()
         except Exception:
             pass
+
+
+async def node_state(redis_url: str, conversation_id: str, task_id: str) -> Optional[str]:
+    """Return only the current persisted state of a Task Graph node."""
+    node = await node_snapshot(redis_url, conversation_id, task_id)
+    return str(node.get("state")) if node else None
 
 
 async def subscribe(redis_url: str, conversation_id: str) -> AsyncIterator[Dict[str, Any]]:

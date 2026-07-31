@@ -170,3 +170,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Run `gh` commands for `github.inl.gov` outside the network sandbox.
 - Never search or print `.env` files when inspecting configuration; query variable names without values or use example/config files that contain no secrets.
 - Route butterfly-valve revisions through `author_equipment_geometry` as parameterized re-authoring from conversation context; do not require existing-CAD ingestion or a separate revision skill.
+- Route streaming specialist progress through `SkillTracker` into Task Graph root events; render only root events in one bounded Chainlit Step to avoid child/root duplicates.

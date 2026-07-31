@@ -137,8 +137,12 @@ def test_parent_blocked_while_child_runs(fake_redis: _FakeRedis) -> None:
 
 def test_completion_cascades_two_levels(fake_redis: _FakeRedis) -> None:
     task_graph.create_node(task_id="root", conversation_id=CONV)
-    task_graph.create_node(task_id="synth", conversation_id=CONV, parent_task_id="root", agent="synthesis")
-    task_graph.create_node(task_id="therm", conversation_id=CONV, parent_task_id="synth", agent="thermal")
+    task_graph.create_node(
+        task_id="synth", conversation_id=CONV, parent_task_id="root", agent="synthesis"
+    )
+    task_graph.create_node(
+        task_id="therm", conversation_id=CONV, parent_task_id="synth", agent="thermal"
+    )
 
     # Both intermediate and root finished their own work; only the deep leaf runs.
     task_graph.update_own_state(CONV, "root", own_state="completed")
@@ -177,17 +181,69 @@ def test_deepest_blocking_message_surfaces_to_root(fake_redis: _FakeRedis) -> No
         title="Thermal sim",
     )
     task_graph.update_own_state(CONV, "root", own_state="completed")
-    task_graph.update_own_state(CONV, "therm", own_state="working", message="step 142/500")
+    task_graph.update_own_state(
+        CONV, "therm", own_state="working", message="step 142/500"
+    )
 
     root = task_graph.get_node(CONV, "root")
     assert "waiting on Thermal sim" in root.last_status_message
     assert "step 142/500" in root.last_status_message
 
 
+def test_message_only_progress_publishes_and_percolates(fake_redis: _FakeRedis) -> None:
+    task_graph.create_node(task_id="root", conversation_id=CONV, title="ask")
+    task_graph.create_node(
+        task_id="mesh",
+        conversation_id=CONV,
+        parent_task_id="root",
+        title="Cubit mesh",
+    )
+    task_graph.update_own_state(CONV, "root", own_state="working")
+    task_graph.update_own_state(
+        CONV,
+        "mesh",
+        own_state="working",
+        message="mesh iteration 1",
+        progress=0.1,
+    )
+    fake_redis.published.clear()
+
+    task_graph.update_own_state(
+        CONV,
+        "mesh",
+        own_state="working",
+        message="mesh iteration 2",
+        progress=0.2,
+    )
+
+    updates = _events_of_type(fake_redis, "node-updated")
+    mesh_update = next(event for event in updates if event["task_id"] == "mesh")
+    root_update = next(event for event in updates if event["task_id"] == "root")
+    assert mesh_update["root_task_id"] == "root"
+    assert mesh_update["message"] == "mesh iteration 2"
+    assert mesh_update["progress"] == 0.2
+    assert "mesh iteration 2" in root_update["message"]
+    assert "mesh iteration 2" in task_graph.get_node(CONV, "root").last_status_message
+
+    fake_redis.published.clear()
+    task_graph.update_own_state(
+        CONV,
+        "mesh",
+        own_state="working",
+        message="mesh iteration 2",
+        progress=0.2,
+    )
+    assert fake_redis.published == []
+
+
 def test_build_tree_nests_children(fake_redis: _FakeRedis) -> None:
     task_graph.create_node(task_id="root", conversation_id=CONV, title="ask")
-    task_graph.create_node(task_id="a", conversation_id=CONV, parent_task_id="root", agent="corrosion")
-    task_graph.create_node(task_id="b", conversation_id=CONV, parent_task_id="root", agent="thermal")
+    task_graph.create_node(
+        task_id="a", conversation_id=CONV, parent_task_id="root", agent="corrosion"
+    )
+    task_graph.create_node(
+        task_id="b", conversation_id=CONV, parent_task_id="root", agent="thermal"
+    )
 
     tree = task_graph.build_tree(CONV)
     assert len(tree) == 1

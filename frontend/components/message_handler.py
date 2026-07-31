@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 import plugins as _plugins  # noqa: E402
 from utils.a2a_client import A2AClient, ConversationResponse, response_from_payload  # noqa: E402
+
 _normalize_mime_type = _plugins.normalize_mime_type
 GENERIC_UPLOAD_MIMETYPES = _plugins.GENERIC_UPLOAD_MIMETYPES
 from utils.settings import settings  # noqa: E402
@@ -38,6 +39,7 @@ CAD_FILE_MIMETYPES = {
     "application/step+xml",
     "application/step+zip",
 }
+
 
 def _upload_download_element(name: str, file_path: Path, mime_type: str = "") -> Any:
     """Create a downloadable Chainlit file element for an uploaded file."""
@@ -122,12 +124,20 @@ def _format_status_history(history: List[str]) -> str:
     return "\n".join(f"{idx}. {item}" for idx, item in enumerate(history, start=1))
 
 
-async def _update_status_step(step: cl.Step, history: List[str], message: str) -> None:
+async def _update_status_step(
+    step: cl.Step,
+    history: List[str],
+    message: str,
+    *,
+    history_limit: Optional[int] = None,
+) -> None:
     text = str(message or "").strip()
     if not text:
         return
     if not history or history[-1] != text:
         history.append(text)
+        if history_limit and len(history) > history_limit:
+            del history[:-history_limit]
     step.name = text
     step.output = _format_status_history(history)
     await step.update()
@@ -189,17 +199,13 @@ async def message_handler(message: cl.Message):
                             elements.append(_upload_download_element(element.name, file_path, upload_mime))
                         await cl.Message(content=result.description, elements=elements).send()
                 except Exception as e:
-                    await cl.Message(
-                        content=f"Failed to process **{element.name}**: {e}"
-                    ).send()
+                    await cl.Message(content=f"Failed to process **{element.name}**: {e}").send()
             elif upload_mime == "application/pdf":
                 # PDF: render inline as a Chainlit native element
                 try:
                     pdf_el = cl.Pdf(name=element.name, display="inline", path=element.path)
                     download_el = _upload_download_element(element.name, file_path, upload_mime)
-                    await cl.Message(
-                        content=f"**PDF loaded:** {element.name}", elements=[pdf_el, download_el]
-                    ).send()
+                    await cl.Message(content=f"**PDF loaded:** {element.name}", elements=[pdf_el, download_el]).send()
                 except Exception as e:
                     await cl.Message(content=f"Failed to display PDF: {e}").send()
 
@@ -272,9 +278,7 @@ async def _handle_response(
     elif response.status == "executing":
         await cl.Message(content=response.message or "Agent is executing the plan…").send()
     elif response.status == "error":
-        await cl.Message(
-            content=f"**Error:** {response.message or 'An error occurred during processing.'}"
-        ).send()
+        await cl.Message(content=f"**Error:** {response.message or 'An error occurred during processing.'}").send()
     elif response.status == "backgrounded":
         await _handle_backgrounded(response, conversation_id)
     else:
@@ -287,11 +291,71 @@ async def _handle_response(
 # announces completion for ids in this set, so internal sub-node transitions on
 # the shared events channel don't generate spurious messages.
 BACKGROUNDED_IDS_KEY = "backgrounded_task_ids"
+BACKGROUND_PROGRESS_KEY = "background_progress_steps"
+BACKGROUND_STATUS_HISTORY_LIMIT = 50
 
 
 def _awaited_task_ids() -> set:
     ids = cl.user_session.get(BACKGROUNDED_IDS_KEY)
     return ids if isinstance(ids, set) else set()
+
+
+def _background_progress_entries() -> Dict[str, Dict[str, Any]]:
+    entries = cl.user_session.get(BACKGROUND_PROGRESS_KEY)
+    if isinstance(entries, dict):
+        return entries
+    entries = {}
+    cl.user_session.set(BACKGROUND_PROGRESS_KEY, entries)
+    return entries
+
+
+async def _ensure_background_progress(task_id: str) -> Dict[str, Any]:
+    entries = _background_progress_entries()
+    entry = entries.get(task_id)
+    if isinstance(entry, dict):
+        return entry
+
+    step = cl.Step(name="Background task running…", type="tool")
+    await step.send()
+    entry = {"step": step, "history": []}
+    entries[task_id] = entry
+    cl.user_session.set(BACKGROUND_PROGRESS_KEY, entries)
+    return entry
+
+
+async def _update_background_progress(task_id: str, message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    entry = await _ensure_background_progress(task_id)
+    history = entry["history"]
+    if history and history[-1] == text:
+        return
+    await _update_status_step(
+        entry["step"],
+        history,
+        text,
+        history_limit=BACKGROUND_STATUS_HISTORY_LIMIT,
+    )
+
+
+async def _finish_background_progress(task_id: str, state: str) -> None:
+    entries = _background_progress_entries()
+    entry = entries.pop(task_id, None)
+    if not isinstance(entry, dict):
+        return
+
+    completed = state == "completed"
+    step = entry["step"]
+    step.is_error = not completed
+    message = "Background task complete." if completed else f"Background task ended ({state})."
+    await _update_status_step(
+        step,
+        entry["history"],
+        message,
+        history_limit=BACKGROUND_STATUS_HISTORY_LIMIT,
+    )
+    cl.user_session.set(BACKGROUND_PROGRESS_KEY, entries)
 
 
 async def _handle_backgrounded(response: ConversationResponse, conversation_id: str) -> None:
@@ -323,11 +387,17 @@ async def _handle_backgrounded(response: ConversationResponse, conversation_id: 
     from utils import task_events
 
     try:
-        state = await task_events.node_state(settings.redis_url, conversation_id, task_id)
+        node = await task_events.node_snapshot(settings.redis_url, conversation_id, task_id)
     except Exception:
-        state = None
+        node = None
+    state = str(node.get("state") or "") if node else ""
     if task_events.is_terminal(state):
-        await _maybe_announce_completion(conversation_id, task_id, str(state))
+        await _maybe_announce_completion(conversation_id, task_id, state)
+        return
+    await _update_background_progress(
+        task_id,
+        str(node.get("last_status_message") or "") if node else "Background task running…",
+    )
 
 
 async def _maybe_announce_completion(conversation_id: str, task_id: str, state: str) -> None:
@@ -343,6 +413,7 @@ async def _maybe_announce_completion(conversation_id: str, task_id: str, state: 
     ids = _awaited_task_ids()
     if task_id not in ids:
         return  # already announced (or never ours)
+    await _finish_background_progress(task_id, state)
     ids.discard(task_id)
     cl.user_session.set(BACKGROUNDED_IDS_KEY, ids)
 
@@ -379,15 +450,22 @@ async def run_task_notifier(session: Any, conversation_id: str) -> None:
     try:
         async for event in task_events.subscribe(settings.redis_url, conversation_id):
             task_id = str(event.get("task_id") or "")
+            root_task_id = str(event.get("root_task_id") or task_id)
             state = str(event.get("state") or "")
-            if not task_id or not task_events.is_terminal(state):
-                continue
-            if task_id not in _awaited_task_ids():
+            # Child updates percolate to the root immediately. Render only the
+            # root event so one specialist status does not appear twice.
+            if not task_id or task_id != root_task_id or root_task_id not in _awaited_task_ids():
                 continue
             try:
-                await _maybe_announce_completion(conversation_id, task_id, state)
+                if task_events.is_terminal(state):
+                    await _maybe_announce_completion(conversation_id, root_task_id, state)
+                else:
+                    await _update_background_progress(
+                        root_task_id,
+                        str(event.get("message") or ""),
+                    )
             except Exception as exc:
-                logger.warning("Failed to announce background task %s: %s", task_id, exc)
+                logger.warning("Failed to update background task %s: %s", root_task_id, exc)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -431,8 +509,7 @@ async def _handle_needs_info(
         }
         if isinstance(q.get("options"), list):
             field["options"] = [
-                opt if isinstance(opt, dict) else {"label": str(opt), "value": str(opt)}
-                for opt in q["options"]
+                opt if isinstance(opt, dict) else {"label": str(opt), "value": str(opt)} for opt in q["options"]
             ]
         if "default" in q:
             field["default"] = q["default"]
@@ -464,11 +541,7 @@ async def _handle_needs_info(
         await cl.Message(content="Follow-up form cancelled.").send()
         return
 
-    followup_answers = {
-        key: value
-        for key, value in submission.items()
-        if key != "submitted"
-    }
+    followup_answers = {key: value for key, value in submission.items() if key != "submitted"}
     followup_history: List[str] = []
     followup_step = cl.Step(name="Submitting follow-up answers...", type="tool")
 
@@ -591,11 +664,15 @@ def _update_step_statuses(statuses: dict, steps: list, status_msg: str):
 async def _handle_final_response(response: ConversationResponse):
     metadata = response.message_metadata or {}
     is_slash_command = bool(metadata.get("slash_command"))
-    artifacts_to_render = [] if is_slash_command else [
-        artifact
-        for artifact in (response.new_artifacts or [])
-        if (artifact.get("metadata") or {}).get("source") != "user-upload"
-    ]
+    artifacts_to_render = (
+        []
+        if is_slash_command
+        else [
+            artifact
+            for artifact in (response.new_artifacts or [])
+            if (artifact.get("metadata") or {}).get("source") != "user-upload"
+        ]
+    )
     text = _coerce_final_text(response, len(artifacts_to_render))
     elements = []
 
@@ -604,9 +681,7 @@ async def _handle_final_response(response: ConversationResponse):
 
     with tempfile.TemporaryDirectory() as render_tmp:
         if artifacts_to_render:
-            artifact_elements, artifact_text = await render_artifacts(
-                artifacts_to_render, Path(render_tmp)
-            )
+            artifact_elements, artifact_text = await render_artifacts(artifacts_to_render, Path(render_tmp))
             elements.extend(artifact_elements)
             if artifact_text:
                 text = f"{text}\n\n---\n{artifact_text}".strip() if text else artifact_text
@@ -704,16 +779,18 @@ async def render_artifacts(
             if not data_content and uri and uri.startswith("http"):
                 data_content = await _fetch_json_body(uri)
             if data_content is not None:
-                elements.append(cl.CustomElement(
-                    name="CollapsibleJson",
-                    display="inline",
-                    props={
-                        "data": data_content,
-                        "name": name,
-                        "description": description,
-                        "json_type": json_type or "",
-                    },
-                ))
+                elements.append(
+                    cl.CustomElement(
+                        name="CollapsibleJson",
+                        display="inline",
+                        props={
+                            "data": data_content,
+                            "name": name,
+                            "description": description,
+                            "json_type": json_type or "",
+                        },
+                    )
+                )
                 download_el = await _render_download_artifact(artifact, uri, name, tmp_dir, mime_type)
                 if download_el:
                     elements.append(download_el)
@@ -777,14 +854,19 @@ def _classify_artifact(mime_type: str) -> str:
         return "data"
     if mime_type in ("text/markdown", "text/plain"):
         return "report"
-    if mime_type in (
-        "application/octet-stream",
-        "application/zip",
-        "application/gzip",
-    ) or mime_type in CAD_FILE_MIMETYPES:
+    if (
+        mime_type
+        in (
+            "application/octet-stream",
+            "application/zip",
+            "application/gzip",
+        )
+        or mime_type in CAD_FILE_MIMETYPES
+    ):
         return "file"
 
     return "unknown"
+
 
 async def _fetch_json_body(uri: str) -> Optional[Any]:
     """Download a JSON artifact from a remote URI and return its parsed content."""
@@ -798,6 +880,7 @@ async def _fetch_json_body(uri: str) -> Optional[Any]:
     except Exception as e:
         logger.warning("Unexpected error fetching JSON from %r: %s", uri, e)
     return None
+
 
 async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[Any]:
     try:

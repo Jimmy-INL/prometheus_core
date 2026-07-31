@@ -140,7 +140,8 @@ Every node create/transition publishes a compact event:
 { "type": "node-created" | "node-updated" | "node-completed" | "node-failed",
   "task_id": "t_…", "parent_task_id": "t_…" | null,
   "state": "working", "title": "…", "message": "…",
-  "root_task_id": "t_root…", "result_ref": "artifact:…" | null,
+  "root_task_id": "t_root…", "progress": 0.28,
+  "result_ref": "artifact:…" | null,
   "ts": "2026-06-06T18:04:12Z" }
 ```
 
@@ -293,13 +294,22 @@ Chainlit session:
 - In `@cl.on_chat_start`, start a per-session subscriber coroutine on
   `tasks:events:{conversation_id}` (Redis pub/sub). Starting it inside the chat-start
   handler lets it inherit the Chainlit session context (contextvars propagate to
-  `asyncio.create_task`). **This context propagation is the #1 thing to validate with a
-  spike before building on it** (see Risks).
-- `state-change` → update a live `cl.TaskList` (Chainlit's native RUNNING/DONE/FAILED
-  panel).
+  `asyncio.create_task`); `run_task_notifier` also binds the captured websocket session
+  explicitly before out-of-band updates.
+- `node-updated` for an awaited root → update one live `cl.Step` for that background
+  task. Streaming specialist status first updates its `SkillTracker`; Task Graph
+  reconciliation publishes the changed message on the root. Rendering root events
+  only avoids duplicate child/root lines. Consecutive duplicates are suppressed and
+  the visible history is capped at 50 entries.
 - `node-completed` / `node-failed` for a root or backgrounded node → post a
   `cl.Message` and render the result via the existing `render_artifacts()` (fetched from
   the artifact registry by `result_ref`).
+
+Registration also reads the current Task Graph node before waiting for pub/sub. This
+seeds the Step with the latest status and closes the race where a task updates or
+finishes between the `backgrounded` response and subscriber registration. Live progress
+is deliberately session-local in Phase 1; no status replay is promised after a frontend
+or client-agent restart.
 
 ---
 
@@ -358,7 +368,7 @@ added to the strict v1 card served by the agent itself.
 | Phase | Deliverable | LiteLLM change? |
 |------|-------------|------|
 | **0 — Foundations** | `RedisTaskStore` (base image); align `TaskState`; Task Graph registry + `reconcile` + pub/sub in client-agent. | No |
-| **1 — Single background task, end-to-end** | Soft-promotion + `declare_long_running`; orchestrator stream-watcher + `backgrounded` response; frontend subscriber + `cl.TaskList`; `/tasks`, `/tasks <id>`; completion notification. | No |
+| **1 — Single background task, end-to-end** | Soft-promotion + `declare_long_running`; orchestrator stream-watcher + `backgrounded` response; frontend subscriber + live `cl.Step`; `/tasks`, `/tasks <id>`; completion notification. | No |
 | **2a — Centralized continuation** | Long-running *workflow steps*: persist plan, detach, resume-on-completion; `/cancel`. | No |
 | **2b — Distributed continuation + durability** | Agent-to-agent non-blocking dispatch; continuation via `ContextStateStore`; durable watcher queue (restart-survivable); full multi-level percolation. | No; requires the pinned v1-capable gateway |
 | **3 — Polish** | Native A2A push notifications + `GetTask`/`SubscribeToTask`/`CancelTask` through LiteLLM; cancellation propagation; retries; TTL/GC. | No; v1.92.0 forwards these methods |
@@ -391,7 +401,7 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
    each dispatch, creating a child node and finalizing it from the result. Parent linkage
    via context vars so future nested dispatch links to its caller. Wired into
    `skills.invoke_skill` (body split into `_invoke_skill_impl`) and `service._execute`
-   (`begin_turn`/`finish_turn` around `chat()`). `tests/test_task_tracking.py` **6 passing.**
+   (`begin_turn`/`finish_turn` around `chat()`). `tests/test_task_tracking.py` **7 passing.**
 5b. ✅ `/tasks` command (`orchestrator/debug_commands.py`) — list (tree view) + `/tasks <id>`
    inspect (with short-id prefix match). Handled server-side alongside `/agents`/`/artifacts`;
    returns an `answer` with a plain-text tree **and** the structured tree in
@@ -414,13 +424,14 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
 8. ✅ `frontend/utils/a2a_client.py`: handle the `backgrounded` response →
    `ConversationResponse(status="backgrounded", …)`. Added `response_from_payload()` (shared by the
    streaming parser and the background notifier). Tested.
-9. 🟡 frontend per-session out-of-band delivery — **partially done.** `frontend/utils/task_events.py`
-   (`redis.asyncio` pub/sub: `wait_for_task`/`fetch_result`) + `message_handler._handle_backgrounded` /
-   `_watch_background_task` ack the detach and post the completion result via `_handle_final_response`.
-   `tests/test_background_tasks.py` **8 passing**; full frontend suite 80 green. **Still missing:** the live
-   `cl.TaskList` progress panel (interim `node-updated` events). *(Needs the Chainlit out-of-band context
-   spike — see Risks; the completion-message path is already proven via `asyncio.create_task` inheriting the
-   session context.)*
+9. ✅ frontend per-session out-of-band delivery. `frontend/utils/task_events.py`
+   provides pub/sub waiting plus a current-node snapshot for registration races.
+   `message_handler` acknowledges detach, maintains one bounded `cl.Step` from root
+   `node-updated` events, marks that Step complete/failed, and posts the final result via
+   `_handle_final_response`. Streaming specialist callbacks update `SkillTracker`, so
+   message-only changes publish and percolate through the Task Graph. Frontend
+   `tests/test_background_tasks.py` **12 passing**; full frontend suite **101 passing**;
+   full client-agent suite **142 passing**.
 10. ⬜ End-to-end test with a deliberately slow debug agent.
 
 ---
@@ -429,9 +440,9 @@ and prevents event storms. Depth is capped at 64 and visited-tracked against cyc
 
 1. **LiteLLM passthrough is the long-pole** for Phase 2b/3 (see assessment). Decide
    early: extend LiteLLM vs. stay on the stream-watcher model.
-2. **Chainlit out-of-band messaging** — pushing a `cl.Message` from a background
-   subscriber relies on session-context propagation. Needs a focused spike before
-   Phase 1 UX is built on it.
+2. **Chainlit out-of-band messaging** — session-context propagation is validated by
+   the completion and live-Step paths, but progress remains session-local and is not
+   replayed after a frontend restart.
 3. **Watcher durability** — in-process watchers die on client-agent restart (Phase 1
    gap, fixed in 2b). Phase 1 is explicit that a backgrounded task survives a *user*
    disconnect, not a *client-agent* restart.
