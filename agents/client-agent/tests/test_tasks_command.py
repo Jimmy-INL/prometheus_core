@@ -70,6 +70,9 @@ def test_tasks_list_renders_tree(populated: _FakeRedis) -> None:
     assert "corrosion_rate" in msg
     assert "Thermal sim" in msg
     assert "step 142/500" in msg  # working node surfaces its status
+    assert "```text\n" in msg
+    assert "\n  └─ " in msg
+    assert "\n```\n\nUse `/tasks <id>`" in msg
     # structured tree is attached for richer rendering
     assert isinstance(response.message_metadata["tasks"], list)
     assert response.message_metadata["tasks"][0]["task_id"] == "root"
@@ -81,6 +84,9 @@ def test_tasks_detail_by_id(populated: _FakeRedis) -> None:
     assert "Task therm" in response.message
     assert "thermal" in response.message
     assert "step 142/500" in response.message
+    assert response.message.startswith("Task therm\n\n```text\n")
+    assert "\n  state:   working\n" in response.message
+    assert response.message.endswith("\n```")
     assert response.message_metadata["task_id"] == "therm"
 
 

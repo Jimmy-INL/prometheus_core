@@ -167,3 +167,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - A2A consumers must accept only exact v1 ProtoJSON enum, part, and payload shapes; reject malformed responses instead of normalizing legacy variants or inferring fields from prose.
 - Never place Markdown backticks inside shell command arguments; use shell-safe plain text or a non-shell file-editing interface.
 - Until identity-backed credential storage exists, each LLM-using agent selects its own LLM config and receives that config's provider keys; semantic model flavors remain hardcoded in agent code.
+- Run `gh` commands for `github.inl.gov` outside the network sandbox.

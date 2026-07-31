@@ -275,9 +275,10 @@ def _format_tasks_list(trees: List[Dict[str, Any]]) -> str:
     header = f"Tasks ({len(trees)} total, {active} active)"
     if not trees:
         return header + "\n\nNo tasks have run in this conversation yet."
-    lines = [header, ""]
+    lines = [header, "", "```text"]
     for tree in trees:
         lines.extend(_render_tree_lines(tree))
+    lines.append("```")
     lines.append("")
     lines.append("Use `/tasks <id>` to inspect a task.")
     return "\n".join(lines)
@@ -295,7 +296,7 @@ def _format_task_detail(conversation_id: str, task_id: str) -> str:
         return f"No task found matching '{task_id}' in this conversation."
 
     data = node.to_dict()
-    lines = [f"Task {node.task_id}", ""]
+    lines = [f"Task {node.task_id}", "", "```text"]
     lines.append(f"  state:   {node.state}")
     if node.agent:
         lines.append(f"  agent:   {node.agent}")
@@ -325,6 +326,7 @@ def _format_task_detail(conversation_id: str, task_id: str) -> str:
         lines.append("  subtree:")
         for child in rendered["children"]:
             lines.extend("  " + ln for ln in _render_tree_lines(child, 1))
+    lines.append("```")
     return "\n".join(lines)
 
 
