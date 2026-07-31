@@ -227,10 +227,19 @@ function formatBytes(n: number): string {
 // Main Chat component
 // ---------------------------------------------------------------------------
 
-export function Chat() {
+interface ChatProps {
+  // Owned by the parent (ProjectView) so that, once a second panel (artifact
+  // viewer) is added alongside Chat, each panel scrolls independently and
+  // the scrollbar sits at the panel boundary rather than hugging the
+  // narrower max-w-4xl message column. Chat still owns all the scroll
+  // *behavior* (autoscroll, spacer sizing, near-bottom detection) — only
+  // the DOM node + its overflow styling live one level up.
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+}
+
+export function Chat({ scrollContainerRef }: ChatProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
   const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
   const loadingDotsRef = useRef<HTMLDivElement>(null);
@@ -305,19 +314,20 @@ export function Chat() {
   // can't push a message on the user's behalf. The user must still hit
   // send or Enter. Runs once on mount, then scrubs the param from the URL
   // so a refresh doesn't re-fill the box or leave it in browser history.
+  //
+  // Accepts a few forms, in order of readability:
+  //   ?prompt="Show me the thermal analysis"   (quotes, spaces — most readable, stripped below)
+  //   ?prompt=Show me the thermal analysis     (raw spaces, no quotes — browsers auto-encode this,
+  //                                              but scripts/tools that build URLs manually may not)
+  //   ?prompt=Show+me+the+thermal+analysis     (+ for spaces, no quotes — always safe, still readable)
+  //   ?prompt=Show%20me%20the%20thermal...     (fully encoded — least readable, always safe)
+  // Wrapping quotes are optional and purely cosmetic. A prompt that must
+  // literally start/end with a quote should escape it as %22 instead of
+  // using a bare ".
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let prefill = params.get("prompt");
     if (prefill) {
-      // Accepts a few forms, in order of readability:
-      //   ?prompt="Show me the thermal analysis"   (quotes, spaces — most readable, stripped below)
-      //   ?prompt=Show me the thermal analysis     (raw spaces, no quotes — browsers auto-encode this,
-      //                                              but scripts/tools that build URLs manually may not)
-      //   ?prompt=Show+me+the+thermal+analysis     (+ for spaces, no quotes — always safe, still readable)
-      //   ?prompt=Show%20me%20the%20thermal...     (fully encoded — least readable, always safe)
-      // Wrapping quotes are optional and purely cosmetic. A prompt that must
-      // literally start/end with a quote should escape it as %22 instead of
-      // using a bare ".
       if (prefill.startsWith('"') && prefill.endsWith('"') && prefill.length >= 2) {
         prefill = prefill.slice(1, -1);
       }
@@ -353,7 +363,7 @@ export function Chat() {
   }, [input]);
 
   const updateSpacer = useCallback(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     const userMsg = lastUserMessageRef.current;
     const spacer = spacerRef.current;
     if (!spacer) return;
@@ -373,7 +383,7 @@ export function Chat() {
     const tailBottom = tail.offsetTop + tail.offsetHeight;
     const needed = Math.max(0, el.clientHeight - (tailBottom - userMsg.offsetTop) - 16);
     spacer.style.minHeight = `${needed}px`;
-  }, [awaitingResponse, lastMessage?.type]);
+  }, [awaitingResponse, lastMessage?.type, scrollContainerRef]);
 
   useLayoutEffect(() => {
     updateSpacer();
@@ -390,17 +400,17 @@ export function Chat() {
       autoScrollRef.current = true;
       requestAnimationFrame(() => {
         const target = lastUserMessageRef.current;
-        const el = scrollRef.current;
+        const el = scrollContainerRef.current;
         if (!target || !el) return;
         programmaticScrollUntilRef.current = Date.now() + 800;
         el.scrollTo({ top: target.offsetTop - el.offsetTop - 16, behavior: "smooth" });
       });
     }
     prevUserCountRef.current = userCount;
-  }, [flat]);
+  }, [flat, scrollContainerRef]);
 
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     if (!el || !autoScrollRef.current) return;
     const target =
       awaitingResponse && lastMessage?.type === "user_message"
@@ -413,7 +423,7 @@ export function Chat() {
       programmaticScrollUntilRef.current = Date.now() + 400;
       el.scrollTop = desired;
     }
-  }, [lastMessage?.output, lastMessage?.type, lastMessage?.id, awaitingResponse, flat.length]);
+  }, [lastMessage?.output, lastMessage?.type, lastMessage?.id, awaitingResponse, flat.length, scrollContainerRef]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (Date.now() < programmaticScrollUntilRef.current) return;
@@ -460,213 +470,217 @@ export function Chat() {
     !lastMessage.waitForAnswer;
 
   return (
-    <div className="flex flex-col flex-1 w-full max-w-4xl mx-auto overflow-hidden">
+    <div className="flex flex-col flex-1 w-full overflow-hidden">
       {/* For testing Viewers, uncomment the line below and its import and edit Test Harness */} 
       {/* <ViewerTestHarness /> */} 
       {flat.length === 0 ? (
         <WelcomeScreen onSelect={(text) => handleSend(text)} />
       ) : (
         <div
-          ref={scrollRef}
+          ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-5 space-y-5"
+          className="flex-1 overflow-y-auto"
         >
-          {flat.map((item: FlatItem, i: number) => {
-            const { step: m } = item;
+          <div className="max-w-4xl mx-auto p-5 space-y-5">
+            {flat.map((item: FlatItem, i: number) => {
+              const { step: m } = item;
 
-            const joinedActions = item.actions.length
-              ? item.actions
-              : globalActions.filter((a) => a.forId === m.id);
-            const effective: FlatItem =
-              joinedActions.length && item.kind !== "ask_action"
-                ? { ...item, actions: joinedActions, kind: "ask_action" }
-                : joinedActions.length !== item.actions.length
-                ? { ...item, actions: joinedActions }
-                : item;
+              const joinedActions = item.actions.length
+                ? item.actions
+                : globalActions.filter((a) => a.forId === m.id);
+              const effective: FlatItem =
+                joinedActions.length && item.kind !== "ask_action"
+                  ? { ...item, actions: joinedActions, kind: "ask_action" }
+                  : joinedActions.length !== item.actions.length
+                  ? { ...item, actions: joinedActions }
+                  : item;
 
-            if (isToolStep(effective) || isAskPlain(effective)) {
-              return (
-                <div key={m.id} className="space-y-2">
-                  <ToolStep item={effective} />
-                </div>
-              );
-            }
-
-            if (isAskForm(effective)) {
-              const askElements = [
-                ...((m.elements as AnyElement[] | undefined) ?? []),
-                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-              ];
-              return (
-                <div key={m.id} className="flex gap-2 justify-start">
-                  <AssistantAvatar />
-                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                    {m.output && (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {m.output}
-                      </ReactMarkdown>
-                    )}
-                    <ElementList elements={askElements} onSend={handleSend} />
+              if (isToolStep(effective) || isAskPlain(effective)) {
+                return (
+                  <div key={m.id} className="space-y-2">
+                    <ToolStep item={effective} />
                   </div>
-                </div>
-              );
-            }
+                );
+              }
 
-            if (isAskAction(effective)) {
-              const askElements = [
-                ...((m.elements as AnyElement[] | undefined) ?? []),
-                ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-              ];
-              return (
-                <div key={m.id} className="flex gap-2 justify-start">
-                  <AssistantAvatar />
-                  <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                    {m.output && (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {m.output}
-                      </ReactMarkdown>
-                    )}
-                    <ElementList elements={askElements} onSend={handleSend} />
-                    <ActionButtons item={effective} onAction={handleAction} />
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={m.id}
-                ref={
-                  i === lastUserIdx
-                    ? lastUserMessageRef
-                    : i === lastAssistantIdx
-                    ? lastAssistantMessageRef
-                    : undefined
-                }
-                className={`flex gap-2 ${
-                  isUserMessage(item) ? "justify-end" : "justify-start"
-                }`}
-              >
-                {isUserMessage(item) ? (
-                  m.output ? (
-                    <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                      {m.output}
-                    </span>
-                  ) : null
-                ) : (
-                  <>
+              if (isAskForm(effective)) {
+                const askElements = [
+                  ...((m.elements as AnyElement[] | undefined) ?? []),
+                  ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                ];
+                return (
+                  <div key={m.id} className="flex gap-2 justify-start">
                     <AssistantAvatar />
-                    <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {m.output}
-                      </ReactMarkdown>
-                      <ElementList
-                        elements={[
-                          ...((m.elements as AnyElement[] | undefined) ?? []),
-                          ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-                        ]}
-                        onSend={handleSend}
-                      />
+                    <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                      {m.output && (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {m.output}
+                        </ReactMarkdown>
+                      )}
+                      <ElementList elements={askElements} onSend={handleSend} />
                     </div>
-                  </>
-                )}
+                  </div>
+                );
+              }
+
+              if (isAskAction(effective)) {
+                const askElements = [
+                  ...((m.elements as AnyElement[] | undefined) ?? []),
+                  ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                ];
+                return (
+                  <div key={m.id} className="flex gap-2 justify-start">
+                    <AssistantAvatar />
+                    <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                      {m.output && (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {m.output}
+                        </ReactMarkdown>
+                      )}
+                      <ElementList elements={askElements} onSend={handleSend} />
+                      <ActionButtons item={effective} onAction={handleAction} />
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={m.id}
+                  ref={
+                    i === lastUserIdx
+                      ? lastUserMessageRef
+                      : i === lastAssistantIdx
+                      ? lastAssistantMessageRef
+                      : undefined
+                  }
+                  className={`flex gap-2 ${
+                    isUserMessage(item) ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {isUserMessage(item) ? (
+                    m.output ? (
+                      <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                        {m.output}
+                      </span>
+                    ) : null
+                  ) : (
+                    <>
+                      <AssistantAvatar />
+                      <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {m.output}
+                        </ReactMarkdown>
+                        <ElementList
+                          elements={[
+                            ...((m.elements as AnyElement[] | undefined) ?? []),
+                            ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                          ]}
+                          onSend={handleSend}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {showLoadingDots && (
+              <div
+                ref={loadingDotsRef}
+                className="flex gap-2 justify-start"
+                aria-live="polite"
+                aria-label="Assistant is thinking"
+              >
+                <AssistantAvatar />
+                <span className="loading loading-dots loading-md text-base-content self-center" />
               </div>
-            );
-          })}
+            )}
 
-          {showLoadingDots && (
-            <div
-              ref={loadingDotsRef}
-              className="flex gap-2 justify-start"
-              aria-live="polite"
-              aria-label="Assistant is thinking"
-            >
-              <AssistantAvatar />
-              <span className="loading loading-dots loading-md text-base-content self-center" />
-            </div>
-          )}
-
-          <div ref={spacerRef} aria-hidden />
+            <div ref={spacerRef} aria-hidden />
+          </div>
         </div>
       )}
 
       <div className="px-4 pt-3 pb-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="*/*"
-          className="hidden"
-          onChange={handleFilesSelected}
-        />
-        <div className="rounded-3xl border border-base-300 bg-base-200 shadow-sm focus-within:border-primary/60 focus-within:shadow-md transition-all">
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-3 pt-3">
-              {attachments.map((a) => (
-                <div
-                  key={a.localId}
-                  className={`flex items-center gap-2 rounded-full pl-2 pr-1 py-1 text-xs ${
-                    a.error
-                      ? "bg-error/10 text-error"
-                      : "bg-base-300 text-base-content"
-                  }`}
-                  title={a.error ?? `${a.file.name} (${formatBytes(a.file.size)})`}
-                >
-                  {a.uploading ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <FileText size={12} />
-                  )}
-                  <span className="max-w-45 truncate">{a.file.name}</span>
-                  <span className="text-base-content/50">{formatBytes(a.file.size)}</span>
-                  <button
-                    onClick={() => removeAttachment(a.localId)}
-                    className="rounded-full p-0.5 hover:bg-base-100"
-                    aria-label={`Remove ${a.file.name}`}
+        <div className="max-w-4xl mx-auto">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="*/*"
+            className="hidden"
+            onChange={handleFilesSelected}
+          />
+          <div className="rounded-3xl border border-base-300 bg-base-200 shadow-sm focus-within:border-primary/60 focus-within:shadow-md transition-all">
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3 pt-3">
+                {attachments.map((a) => (
+                  <div
+                    key={a.localId}
+                    className={`flex items-center gap-2 rounded-full pl-2 pr-1 py-1 text-xs ${
+                      a.error
+                        ? "bg-error/10 text-error"
+                        : "bg-base-300 text-base-content"
+                    }`}
+                    title={a.error ?? `${a.file.name} (${formatBytes(a.file.size)})`}
                   >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
+                    {a.uploading ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <FileText size={12} />
+                    )}
+                    <span className="max-w-45 truncate">{a.file.name}</span>
+                    <span className="text-base-content/50">{formatBytes(a.file.size)}</span>
+                    <button
+                      onClick={() => removeAttachment(a.localId)}
+                      className="rounded-full p-0.5 hover:bg-base-100"
+                      aria-label={`Remove ${a.file.name}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="relative flex items-end">
+              <button
+                className="btn btn-ghost btn-circle btn-sm absolute bottom-2.5 left-2.5"
+                onClick={handlePickFiles}
+                disabled={awaitingResponse}
+                aria-label="Attach files"
+              >
+                <Paperclip size={16} />
+              </button>
+              <textarea
+                ref={textareaRef}
+                className="flex-1 bg-transparent resize-none outline-none pl-14 pr-14 py-4 text-base leading-6 placeholder:text-base-content/50 max-h-50"
+                rows={1}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message..."
+                autoFocus
+              />
+              <button
+                className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
+                onClick={() => (awaitingResponse ? handleStop() : handleSend())}
+                disabled={
+                  !awaitingResponse &&
+                  !input.trim() &&
+                  attachments.filter((a) => a.id && !a.error).length === 0
+                }
+                aria-label={awaitingResponse ? "Stop response" : "Send message"}
+              >
+                {awaitingResponse ? (
+                  <Square size={14} fill="currentColor" />
+                ) : uploadingCount > 0 ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <ArrowUp size={18} />
+                )}
+              </button>
             </div>
-          )}
-          <div className="relative flex items-end">
-            <button
-              className="btn btn-ghost btn-circle btn-sm absolute bottom-2.5 left-2.5"
-              onClick={handlePickFiles}
-              disabled={awaitingResponse}
-              aria-label="Attach files"
-            >
-              <Paperclip size={16} />
-            </button>
-            <textarea
-              ref={textareaRef}
-              className="flex-1 bg-transparent resize-none outline-none pl-14 pr-14 py-4 text-base leading-6 placeholder:text-base-content/50 max-h-50"
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message..."
-              autoFocus
-            />
-            <button
-              className="btn btn-primary btn-circle btn-sm absolute bottom-2.5 right-2.5 disabled:opacity-40"
-              onClick={() => (awaitingResponse ? handleStop() : handleSend())}
-              disabled={
-                !awaitingResponse &&
-                !input.trim() &&
-                attachments.filter((a) => a.id && !a.error).length === 0
-              }
-              aria-label={awaitingResponse ? "Stop response" : "Send message"}
-            >
-              {awaitingResponse ? (
-                <Square size={14} fill="currentColor" />
-              ) : uploadingCount > 0 ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <ArrowUp size={18} />
-              )}
-            </button>
           </div>
         </div>
       </div>
