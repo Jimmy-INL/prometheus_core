@@ -300,6 +300,20 @@ export function Chat() {
     );
   }, [askUser]);
 
+  // Prefill the composer from a ?prompt= query param (deep-link support).
+  // Populates the input only — never auto-sends — so a shared/crafted link
+  // can't push a message on the user's behalf. The user must still hit
+  // send or Enter. Runs once on mount, then scrubs the param from the URL
+  // so a refresh doesn't re-fill the box or leave it in browser history.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prefill = params.get("prompt");
+    if (prefill) {
+      setInput(prefill);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
   const flat = flattenMessages(messages);
 
   let lastUserIdx = -1;
