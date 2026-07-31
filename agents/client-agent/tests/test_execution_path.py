@@ -117,6 +117,41 @@ if "prometheus_api.agent" not in sys.modules:
 
 import agent as agent_module  # noqa: E402
 import file_upload_handler  # noqa: E402
+import planner  # noqa: E402
+
+
+def test_prior_capability_params_include_followup_values_after_success() -> None:
+    params = agent_module._chat_flow._successful_prior_capability_params(
+        {
+            "routing_decision": {
+                "primary_skill": "author_equipment_geometry",
+                "capability_params": {
+                    "author_equipment_geometry": {
+                        "input_data": {
+                            "equipment_type": "butterfly_valve",
+                            "pipe_diameter": 0.9,
+                            "num_holes": 6,
+                            "hole_diameter": 0.05,
+                        }
+                    }
+                },
+                "extracted_params": {
+                    "input_data": {
+                        "equipment_type": "butterfly_valve",
+                        "pipe_diameter": 0.9,
+                        "num_holes": 6,
+                        "hole_diameter": 0.05,
+                        "rod_diameter": 0.08,
+                    }
+                },
+            },
+            "tool_results": {
+                "author_equipment_geometry": {"answer": "Created valve geometry"}
+            },
+        }
+    )
+
+    assert params["author_equipment_geometry"]["input_data"]["rod_diameter"] == 0.08
 
 
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
@@ -558,6 +593,40 @@ def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
             "size_bytes": 12,
         }
     ]
+
+
+def test_chat_does_not_expose_internal_planning_tool_names(monkeypatch) -> None:
+    status_updates = []
+
+    async def malformed_plan(*args, **kwargs):
+        raise planner.PlanningContractError(
+            "Parameter extraction did not call required tool(s): extract_2_convert_svg_to_png"
+        )
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", malformed_plan)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
+    monkeypatch.setattr(
+        agent_module,
+        "store_status_update",
+        lambda conversation_id, message, **kwargs: status_updates.append(message),
+    )
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="Create a CAD valve and mesh it.",
+                conversation_id="conv-contract-error",
+            )
+        )
+    )
+
+    assert response.status == "error"
+    assert response.message == (
+        "I couldn't build a valid execution plan for this request. Please try again."
+    )
+    assert "extract_2_convert_svg_to_png" not in response.message
+    assert any("extract_2_convert_svg_to_png" in update for update in status_updates)
 
 
 def test_agents_slash_command_lists_registered_agents_without_planner(monkeypatch) -> None:

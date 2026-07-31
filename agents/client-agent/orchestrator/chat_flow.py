@@ -8,6 +8,7 @@ from prometheus_api.agent import PrometheusAgent
 
 from artifact_handling import merge_artifacts_into_context, summarize_artifacts_for_context
 from conversation_store import get_conversation, store_conversation
+from planner import PlanningContractError
 from workflow_library import find_workflow_by_command, get_workflow_registry
 
 from . import runtime
@@ -27,6 +28,7 @@ from .execution import (
     resume_pending_subagent_requests,
 )
 from .models import AgentState, ConversationRequest, ConversationResponse
+from .parameter_extraction import ParameterExtractionError
 from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
 
 
@@ -85,6 +87,49 @@ def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationRe
     """Store error status and return an error response."""
     runtime.store_status_update(conv_id, log_msg, final=True)
     return ConversationResponse(conversation_id=conv_id, status="error", message=user_msg)
+
+
+def _successful_prior_capability_params(
+    existing_state: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Return prior inputs only for capabilities that completed successfully."""
+    if not isinstance(existing_state, dict):
+        return {}
+    routing = existing_state.get("routing_decision")
+    tool_results = existing_state.get("tool_results")
+    if not isinstance(routing, dict) or not isinstance(tool_results, dict):
+        return {}
+
+    successful_skills = {
+        str(skill_id)
+        for skill_id, result in tool_results.items()
+        if skill_id != "workflow_execution"
+        and result is not None
+        and not (isinstance(result, dict) and result.get("error"))
+    }
+    stored = routing.get("capability_params")
+    if isinstance(stored, dict):
+        result = {
+            skill_id: dict(params)
+            for skill_id, params in stored.items()
+            if skill_id in successful_skills and isinstance(params, dict)
+        }
+        primary_skill = routing.get("primary_skill")
+        extracted_params = routing.get("extracted_params")
+        primary_params = result.get(str(primary_skill))
+        if isinstance(primary_params, dict) and isinstance(extracted_params, dict):
+            result[str(primary_skill)] = {
+                name: extracted_params[name]
+                for name in primary_params
+                if name in extracted_params
+            }
+        return result
+
+    primary_skill = routing.get("primary_skill")
+    extracted_params = routing.get("extracted_params")
+    if primary_skill in successful_skills and isinstance(extracted_params, dict):
+        return {str(primary_skill): dict(extracted_params)}
+    return {}
 
 
 async def chat(request: ConversationRequest) -> ConversationResponse:
@@ -386,6 +431,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             "content": request.query or f"Start workflow {request.workflow_id}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
+        "prior_capability_params": _successful_prior_capability_params(existing_state),
         "routing_decision": None,
         "plan": None,
         "missing_info": [],
@@ -480,5 +526,11 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     final_state[key] = value
             return _needs_info_response(conv_id, final_state)
         return _completed_response(conv_id, final_state)
+    except (PlanningContractError, ParameterExtractionError) as exc:
+        return _error_response(
+            conv_id,
+            f"Planning contract failure: {exc}",
+            "I couldn't build a valid execution plan for this request. Please try again.",
+        )
     except Exception as exc:
         return _error_response(conv_id, f"Request failed: {exc}", f"Error processing request: {exc}")

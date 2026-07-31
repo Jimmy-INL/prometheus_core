@@ -8,15 +8,16 @@ what to do next — no subagents are invoked here.
 
 HOW IT WORKS
 ------------
-1. A `_PlanDraft` accumulates the plan state as the LLM calls tools.
-2. The LLM is given:
+1. A schema-bound LLM call decomposes the request without seeing capabilities.
+2. A `_PlanDraft` freezes those operations and accumulates routing state.
+3. The routing LLM is given:
    - The user query and conversation history
    - Available capabilities (skills + their input schemas)
    - Optional workflow templates (pre-built execution blueprints)
-3. The LLM calls planning tools until it calls `finalize_plan` or
-   `fallback_to_chat`, at which point the loop exits.
-4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
-5. Parameter extraction runs separately after the planner selects capabilities.
+4. The LLM calls planning tools until it calls `finalize_plan`, at which point
+   the loop exits.
+5. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+6. Parameter extraction runs separately after the planner selects capabilities.
 
 PLANNING TOOLS (called by the LLM, not external code)
 ------------------------------------------------------
@@ -27,15 +28,17 @@ PLANNING TOOLS (called by the LLM, not external code)
 - `get_requirement_status`   — check which required params are still missing
 - `set_plan_steps`           — set human-readable steps shown in the approval UI
 - `set_user_message`         — set the planning summary shown to the user
+- `set_operation_coverage`   — map every requested operation or mark it unsupported
 - `finalize_plan`            — commit the plan (preserves missing user inputs for collection)
-- `fallback_to_chat`         — respond directly without invoking any skill
 
 OUTCOMES (`PlanningResult.outcome`)
 ------------------------------------
 - `"agent_plan"`  — one or more skills selected; `agent.py` will collect missing
                     params then call `execute_current_plan`
-- `"fallback"`    — planner could not or should not invoke a skill; `agent.py`
-                    returns the message directly to the user
+- `"fallback"`    — capability-neutral decomposition produced a conversational
+                    response or clarification; `agent.py` returns it directly
+- `"unsupported"` — one or more requested operations have no registered
+                    capability; no partial plan is executed
 
 WORKFLOW TEMPLATES vs DYNAMIC SKILL SELECTION
 ---------------------------------------------
@@ -56,7 +59,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from artifact_handling import collect_chain_required_paths
 from capability_cache import AgentCapability
@@ -79,6 +82,67 @@ def _load_prompt(name: str) -> str:
 
 
 SYSTEM_PROMPT = _load_prompt("planner_system.txt")
+
+
+class PlanningContractError(RuntimeError):
+    """Raised when an LLM planning response violates its declared schema."""
+
+
+class DecomposedOperationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1)
+    depends_on: List[int] = Field(
+        default_factory=list,
+        description="One-based indices of earlier operations this operation depends on",
+    )
+
+
+class DecomposeRequestInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_kind: Literal["task", "conversation", "needs_clarification"]
+    operations: List[DecomposedOperationInput] = Field(default_factory=list)
+    message: str = ""
+
+
+class RequestedOperation(BaseModel):
+    """Immutable operation from capability-neutral request decomposition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation_id: str
+    description: str
+    depends_on: List[str] = Field(default_factory=list)
+
+
+class RequestDecomposition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_kind: Literal["task", "conversation", "needs_clarification"]
+    operations: List[RequestedOperation] = Field(default_factory=list)
+    message: str = ""
+
+
+class CoveredOperationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str
+    skill_id: str
+
+
+class UnsupportedOperationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str
+    reason: str = Field(min_length=1)
+
+
+class SetOperationCoverageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    covered: List[CoveredOperationInput] = Field(default_factory=list)
+    unsupported: List[UnsupportedOperationInput] = Field(default_factory=list)
 
 
 class SelectCapabilitiesInput(BaseModel):
@@ -134,16 +198,10 @@ class SetUserMessageInput(BaseModel):
     )
 
 
-class FallbackResponseInput(BaseModel):
-    message: str = Field(
-        description="Direct assistant response when no capability should be invoked",
-    )
-
-
 class PlanningResult(BaseModel):
     """Structured planner output consumed by `agent.py` chat flow."""
 
-    outcome: Literal["agent_plan", "fallback"] = "agent_plan"
+    outcome: Literal["agent_plan", "fallback", "unsupported"] = "agent_plan"
     message: str = ""
     workflow_id: Optional[str] = None
     workflow_version: Optional[str] = None
@@ -157,13 +215,16 @@ class PlanningResult(BaseModel):
     extracted_params: Dict[str, Any] = Field(default_factory=dict)
     steps: List[str] = Field(default_factory=list)
     estimated_duration_seconds: int = 120
+    operations: List[RequestedOperation] = Field(default_factory=list)
+    operation_coverage: Dict[str, str] = Field(default_factory=dict)
+    unsupported_operations: List[UnsupportedOperationInput] = Field(default_factory=list)
 
 
 @dataclass
 class _PlanDraft:
     """Mutable draft updated via planning tools during a single planning session."""
 
-    outcome: Literal["agent_plan", "fallback"] = "agent_plan"
+    outcome: Literal["agent_plan", "fallback", "unsupported"] = "agent_plan"
     message: str = ""
     workflow_id: Optional[str] = None
     workflow_version: Optional[str] = None
@@ -177,6 +238,9 @@ class _PlanDraft:
     extracted_params: Dict[str, Any] = field(default_factory=dict)
     steps: List[str] = field(default_factory=list)
     estimated_duration_seconds: int = 120
+    operations: List[RequestedOperation] = field(default_factory=list)
+    covered_operations: Dict[str, str] = field(default_factory=dict)
+    unsupported_operations: Dict[str, str] = field(default_factory=dict)
     finalized: bool = False
 
     def to_result(self) -> PlanningResult:
@@ -195,6 +259,12 @@ class _PlanDraft:
             extracted_params=dict(self.extracted_params),
             steps=list(self.steps),
             estimated_duration_seconds=self.estimated_duration_seconds,
+            operations=list(self.operations),
+            operation_coverage=dict(self.covered_operations),
+            unsupported_operations=[
+                UnsupportedOperationInput(operation_id=operation_id, reason=reason)
+                for operation_id, reason in self.unsupported_operations.items()
+            ],
         )
 
 
@@ -214,6 +284,126 @@ class WorkflowPlanningCandidate:
     summary: Optional[str] = None
     extracted_params: Dict[str, Any] = field(default_factory=dict)
     tool_name: Optional[str] = None
+
+
+async def decompose_request(
+    *,
+    query: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+    context: Optional[Dict[str, Any]] = None,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> RequestDecomposition:
+    """Decompose a request before exposing any registered capabilities."""
+    if status_callback:
+        status_callback("Planner LLM decomposing the request into operations.")
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Classify and decompose the user's request without considering what tools or "
+                "capabilities may be available. Call decompose_request exactly once and return "
+                "no prose. For a task, list every requested outcome as an ordered operation. "
+                "Use one-based indices in depends_on and reference only earlier operations. "
+                "Treat requests to change previously created parameterized geometry as a new "
+                "geometry-authoring outcome followed by any requested downstream outcomes; do "
+                "not assume an in-place CAD editing operation. For conversation, return the "
+                "direct response in message. For genuinely ambiguous intent, return one focused "
+                "question in message."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Current user query:\n{query}\n\n"
+                f"Conversation history:\n{json.dumps(history or [], default=str)}\n\n"
+                f"Conversation context:\n{json.dumps(context or {}, default=str)}"
+            ),
+        },
+    ]
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "decompose_request",
+            "description": "Return the exact capability-neutral request decomposition.",
+            "parameters": DecomposeRequestInput.model_json_schema(),
+        },
+    }
+
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(
+            messages,
+            temperature=0,
+            max_tokens=2048,
+            tools=[tool_schema],
+        )
+
+    _, calls = _planning_tool_calls(response.raw)
+    if len(calls) != 1 or calls[0].get("name") != "decompose_request":
+        raise PlanningContractError(
+            "Request decomposition must call decompose_request exactly once."
+        )
+    try:
+        parsed = DecomposeRequestInput.model_validate(calls[0].get("args"))
+    except ValidationError as exc:
+        raise PlanningContractError(
+            f"Request decomposition violates its schema: {exc}"
+        ) from exc
+
+    message = parsed.message.strip()
+    if parsed.request_kind == "task":
+        if not parsed.operations:
+            raise PlanningContractError(
+                "Task decomposition must contain at least one operation."
+            )
+        if message:
+            raise PlanningContractError(
+                "Task decomposition must not include a conversational message."
+            )
+    else:
+        if parsed.operations:
+            raise PlanningContractError(
+                "Non-task decomposition must not contain operations."
+            )
+        if not message:
+            raise PlanningContractError(
+                "Non-task decomposition must include a response or clarification message."
+            )
+
+    operations: List[RequestedOperation] = []
+    for index, operation in enumerate(parsed.operations, 1):
+        description = operation.description.strip()
+        if not description:
+            raise PlanningContractError(
+                f"Decomposed operation {index} has an empty description."
+            )
+        if len(set(operation.depends_on)) != len(operation.depends_on):
+            raise PlanningContractError(
+                f"Decomposed operation {index} has duplicate dependencies."
+            )
+        invalid_dependencies = [
+            dependency
+            for dependency in operation.depends_on
+            if dependency < 1 or dependency >= index
+        ]
+        if invalid_dependencies:
+            raise PlanningContractError(
+                f"Decomposed operation {index} references non-earlier dependencies: "
+                + ", ".join(str(item) for item in invalid_dependencies)
+            )
+        operations.append(
+            RequestedOperation(
+                operation_id=f"op_{index}",
+                description=description,
+                depends_on=[f"op_{dependency}" for dependency in operation.depends_on],
+            )
+        )
+
+    return RequestDecomposition(
+        request_kind=parsed.request_kind,
+        operations=operations,
+        message=message,
+    )
 
 
 def _set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
@@ -271,6 +461,7 @@ def _build_prompt(
     history: List[Dict[str, Any]],
     context: Optional[Dict[str, Any]],
     capabilities: List[AgentCapability],
+    operations: List[RequestedOperation],
     workflow_candidates: Optional[List[WorkflowPlanningCandidate]] = None,
 ) -> str:
     """Build planner prompt with full conversation + context + capability metadata."""
@@ -323,6 +514,10 @@ def _build_prompt(
     history_block = "\n".join(history_lines) if history_lines else "(none)"
     capability_block = _build_capability_context(capabilities)
     context_block = json.dumps(context or {}, indent=2, default=str)
+    operations_block = json.dumps(
+        [operation.model_dump() for operation in operations],
+        indent=2,
+    )
     workflow_block = ""
     if workflow_candidates:
         rows = []
@@ -343,6 +538,7 @@ def _build_prompt(
         f"User query:\n{query}\n\n"
         f"Full conversation history:\n{history_block}\n\n"
         f"Current conversation context:\n{context_block}\n\n"
+        f"Required operations (immutable):\n{operations_block}\n\n"
         f"{workflow_block}"
         f"{artifacts_block}\n\n"
         f"Available capabilities:\n{capability_block}\n"
@@ -567,6 +763,61 @@ def _build_planning_tools(
             "missing_paths": status.get("missing_paths", []),
         }
 
+    def set_operation_coverage(
+        covered: Optional[List[CoveredOperationInput]] = None,
+        unsupported: Optional[List[UnsupportedOperationInput]] = None,
+    ) -> Dict[str, Any]:
+        operation_ids = {operation.operation_id for operation in draft.operations}
+        covered_map: Dict[str, str] = {}
+        unsupported_map: Dict[str, str] = {}
+
+        for entry in covered or []:
+            operation_id = str(
+                entry.operation_id if isinstance(entry, CoveredOperationInput) else entry.get("operation_id", "")
+            )
+            skill_id = str(
+                entry.skill_id if isinstance(entry, CoveredOperationInput) else entry.get("skill_id", "")
+            )
+            if operation_id not in operation_ids:
+                return {"ok": False, "error": f"Unknown operation_id '{operation_id}'"}
+            if operation_id in covered_map:
+                return {"ok": False, "error": f"Duplicate coverage for '{operation_id}'"}
+            if skill_id not in capabilities_by_skill:
+                return {"ok": False, "error": f"Unknown skill_id '{skill_id}'"}
+            covered_map[operation_id] = skill_id
+
+        for entry in unsupported or []:
+            operation_id = str(
+                entry.operation_id
+                if isinstance(entry, UnsupportedOperationInput)
+                else entry.get("operation_id", "")
+            )
+            reason = str(
+                entry.reason if isinstance(entry, UnsupportedOperationInput) else entry.get("reason", "")
+            ).strip()
+            if operation_id not in operation_ids:
+                return {"ok": False, "error": f"Unknown operation_id '{operation_id}'"}
+            if operation_id in covered_map or operation_id in unsupported_map:
+                return {"ok": False, "error": f"Duplicate coverage for '{operation_id}'"}
+            if not reason:
+                return {"ok": False, "error": f"Unsupported operation '{operation_id}' needs a reason"}
+            unsupported_map[operation_id] = reason
+
+        draft.covered_operations = covered_map
+        draft.unsupported_operations = unsupported_map
+        uncovered = [
+            operation.operation_id
+            for operation in draft.operations
+            if operation.operation_id not in covered_map
+            and operation.operation_id not in unsupported_map
+        ]
+        return {
+            "ok": True,
+            "covered_operation_ids": list(covered_map),
+            "unsupported_operation_ids": list(unsupported_map),
+            "uncovered_operation_ids": uncovered,
+        }
+
     def set_plan_steps(
         steps: List[str],
         estimated_duration_seconds: int = 120,
@@ -585,11 +836,82 @@ def _build_planning_tools(
         return {"ok": True, "message": draft.message}
 
     def finalize_plan() -> Dict[str, Any]:
+        operation_ids = [operation.operation_id for operation in draft.operations]
+        uncovered = [
+            operation_id
+            for operation_id in operation_ids
+            if operation_id not in draft.covered_operations
+            and operation_id not in draft.unsupported_operations
+        ]
+        if uncovered:
+            return {
+                "ok": False,
+                "error": "Every requested operation must be covered or marked unsupported.",
+                "uncovered_operation_ids": uncovered,
+            }
+
+        if draft.unsupported_operations:
+            draft.outcome = "unsupported"
+            draft.primary_skill = None
+            draft.supporting_skills = []
+            draft.workflow_id = None
+            draft.workflow_version = None
+            draft.extracted_params = {}
+            draft.steps = []
+            draft.finalized = True
+            return {
+                "ok": True,
+                "finalized": True,
+                "unsupported_operation_ids": list(draft.unsupported_operations),
+            }
+
         if not draft.primary_skill and not draft.workflow_id:
             return {
                 "ok": False,
                 "error": "No plan selection found. Call select_capabilities or select_workflow_template first.",
             }
+        selected = selected_skill_ids()
+        unselected_coverage = {
+            operation_id: skill_id
+            for operation_id, skill_id in draft.covered_operations.items()
+            if skill_id not in selected
+        }
+        if unselected_coverage:
+            return {
+                "ok": False,
+                "error": "Operation coverage references capabilities outside the selected plan.",
+                "unselected_coverage": unselected_coverage,
+            }
+
+        selected_workflow = get_selected_workflow_candidate()
+        sequential = draft.workflow_type == "sequential" or bool(
+            selected_workflow and selected_workflow.execution_mode == "sequential"
+        )
+        skill_positions = {skill_id: index for index, skill_id in enumerate(selected)}
+        operations_by_id = {operation.operation_id: operation for operation in draft.operations}
+        for operation in draft.operations:
+            skill_id = draft.covered_operations.get(operation.operation_id)
+            for dependency_id in operation.depends_on:
+                dependency_skill = draft.covered_operations.get(dependency_id)
+                if not dependency_skill or not skill_id or dependency_skill == skill_id:
+                    continue
+                if not sequential:
+                    return {
+                        "ok": False,
+                        "error": (
+                            "Dependencies covered by different capabilities require a "
+                            "sequential workflow."
+                        ),
+                    }
+                if skill_positions[dependency_skill] >= skill_positions[skill_id]:
+                    dependency = operations_by_id[dependency_id]
+                    return {
+                        "ok": False,
+                        "error": (
+                            "Selected capability order violates operation dependency order: "
+                            f"'{dependency.description}' must run before '{operation.description}'."
+                        ),
+                    }
         status = get_requirement_status()
         missing = status.get("missing_paths", [])
         unresolved_runtime = status.get("unresolved_runtime_paths", [])
@@ -609,19 +931,6 @@ def _build_planning_tools(
             "finalized": True,
             "missing_paths": missing,
         }
-
-    def fallback_to_chat(message: str) -> Dict[str, Any]:
-        text = str(message or "").strip()
-        if not text:
-            return {"ok": False, "error": "Fallback message must not be empty."}
-        draft.outcome = "fallback"
-        draft.message = text
-        draft.primary_skill = None
-        draft.supporting_skills = []
-        draft.extracted_params = {}
-        draft.steps = []
-        draft.finalized = True
-        return {"ok": True, "finalized": True}
 
     workflow_tools: List[StructuredTool] = []
     seen_tool_names: set[str] = set()
@@ -682,6 +991,15 @@ def _build_planning_tools(
             description="Return required parameter paths, missing paths, and schema descriptions for currently selected capabilities.",
         ),
         StructuredTool.from_function(
+            func=set_operation_coverage,
+            name="set_operation_coverage",
+            description=(
+                "Map every immutable requested operation to a registered capability, or mark "
+                "the operation unsupported with a concrete reason."
+            ),
+            args_schema=SetOperationCoverageInput,
+        ),
+        StructuredTool.from_function(
             func=set_plan_steps,
             name="set_plan_steps",
             description="Set user-visible plan steps and estimated duration.",
@@ -700,12 +1018,6 @@ def _build_planning_tools(
                 "Finalize the planning decision after selecting capabilities. Parameter extraction "
                 "and missing-input collection run after routing."
             ),
-        ),
-        StructuredTool.from_function(
-            func=fallback_to_chat,
-            name="fallback_to_chat",
-            description="Finalize a direct conversational response when no capability invocation is needed.",
-            args_schema=FallbackResponseInput,
         ),
     ]
     return workflow_tools + planning_tools
@@ -799,6 +1111,7 @@ async def compile_plan_with_tools(
     capabilities: List[AgentCapability],
     history: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
+    operations: Optional[List[RequestedOperation]] = None,
     workflow_candidates: Optional[List[WorkflowPlanningCandidate]] = None,
     forced_workflow_id: Optional[str] = None,
     forced_workflow_version: Optional[str] = None,
@@ -813,13 +1126,38 @@ async def compile_plan_with_tools(
     - `chat(...)` in `agent.py` for new user turns and plan refinements.
     """
     history = history or []
+    if operations is None:
+        decomposition = await decompose_request(
+            query=query,
+            history=history,
+            context=context,
+            status_callback=status_callback,
+        )
+        if decomposition.request_kind != "task":
+            return PlanningResult(
+                outcome="fallback",
+                message=decomposition.message,
+            )
+        operations = list(decomposition.operations)
+    elif not operations:
+        raise PlanningContractError(
+            "Task planning requires at least one decomposed operation."
+        )
+
     capabilities_by_skill = {cap.skill_id: cap for cap in capabilities}
-    draft = _PlanDraft()
+    draft = _PlanDraft(operations=list(operations))
 
     if not capabilities_by_skill:
         return PlanningResult(
-            outcome="fallback",
-            message="No capabilities are available right now. Please try again shortly.",
+            outcome="unsupported",
+            operations=list(operations),
+            unsupported_operations=[
+                UnsupportedOperationInput(
+                    operation_id=operation.operation_id,
+                    reason="No registered capability is available for this operation.",
+                )
+                for operation in operations
+            ],
         )
 
     candidate_list = list(workflow_candidates or [])
@@ -857,6 +1195,7 @@ async def compile_plan_with_tools(
         history=history,
         context=context,
         capabilities=capabilities,
+        operations=list(operations),
         workflow_candidates=candidate_list,
     )
 
@@ -886,8 +1225,8 @@ async def compile_plan_with_tools(
                     {
                         "role": "user",
                         "content": (
-                            "Planning is not complete. You must call finalize_plan for an agent "
-                            "plan or fallback_to_chat for a direct answer."
+                            "Planning is not complete. You must set exhaustive operation coverage "
+                            "and call finalize_plan."
                         ),
                     }
                 )
@@ -916,10 +1255,9 @@ async def compile_plan_with_tools(
             if draft.finalized:
                 break
 
-    if not draft.finalized and not draft.primary_skill and not draft.workflow_id:
-        return PlanningResult(
-            outcome="fallback",
-            message="I could not determine a reliable capability plan for that request.",
+    if not draft.finalized:
+        raise PlanningContractError(
+            f"Planner did not finalize a valid decision within {max(1, max_turns)} turns."
         )
 
     if draft.outcome == "agent_plan" and draft.primary_skill:

@@ -37,6 +37,50 @@ def _load_prompt(name: str) -> str:
 PLAN_REFINEMENT_PROMPT_TEMPLATE = _load_prompt("plan_refinement.txt")
 
 
+def _capability_params(
+    selected_skills: List[str],
+    capabilities_by_skill: Dict[str, Any],
+    extracted_params: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Keep the exact prior inputs for each successful capability turn."""
+    result: Dict[str, Dict[str, Any]] = {}
+    for skill_id in selected_skills:
+        capability = capabilities_by_skill.get(skill_id)
+        schema = capability.input_schema if capability else {}
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        values = {
+            name: extracted_params[name]
+            for name in properties
+            if name in extracted_params
+        }
+        if values:
+            result[skill_id] = values
+    return result
+
+
+def _unsupported_message(planning_result: PlanningResult) -> str:
+    descriptions_by_id = {
+        operation.operation_id: operation.description
+        for operation in planning_result.operations
+    }
+    descriptions = [
+        descriptions_by_id.get(item.operation_id, item.operation_id)
+        for item in planning_result.unsupported_operations
+    ]
+    if not descriptions:
+        return "I can't complete this request because it contains an unsupported operation."
+    if len(descriptions) == 1:
+        return (
+            "I can't complete this request because no registered capability supports: "
+            f"{descriptions[0]}."
+        )
+    return (
+        "I can't complete this request because no registered capabilities support these operations: "
+        + "; ".join(descriptions)
+        + "."
+    )
+
+
 def _unique_workflow_skills(workflow) -> List[str]:
     skills: List[str] = []
     for step in workflow.definition.steps:
@@ -79,6 +123,10 @@ async def compile_query_plan(
     query = state.get("user_query", "") or ""
     conversation_history = state.get("conversation_history", [])
     context = state.get("context", {}) or {}
+    planning_context = dict(context)
+    prior_capability_params = state.get("prior_capability_params")
+    if isinstance(prior_capability_params, dict) and prior_capability_params:
+        planning_context["prior_capability_params"] = prior_capability_params
     conversation_id = state.get("conversation_id")
     runtime.store_status_update(
         conversation_id,
@@ -139,7 +187,7 @@ async def compile_query_plan(
                 if skill_id in capabilities_by_skill
             ],
             history=conversation_history,
-            context=context,
+            context=planning_context,
             existing_params=seed_params,
         )
         extracted_params = await resolve_params_via_capability_metadata(
@@ -193,6 +241,11 @@ async def compile_query_plan(
             "requires_approval": requires_approval,
             "required_params": required_params,
             "missing_required_params": missing_required_params,
+            "capability_params": _capability_params(
+                selected_skills,
+                capabilities_by_skill,
+                extracted_params,
+            ),
         }
         plan_steps = [
             f"Step {idx}: Invoke '{step.skill_id}' ({step.id})"
@@ -233,13 +286,25 @@ async def compile_query_plan(
         query=query,
         capabilities=capabilities,
         history=conversation_history,
-        context=context,
+        context=planning_context,
         workflow_candidates=workflow_candidates,
         forced_workflow_id=explicit_workflow_id,
         forced_workflow_version=explicit_workflow_version,
         forced_selection_source=selection_source,
         status_callback=lambda msg: runtime.store_status_update(conversation_id, msg),
     )
+
+    if planning_result.outcome == "unsupported":
+        message = _unsupported_message(planning_result)
+        runtime.store_status_update(
+            conversation_id,
+            "Request contains unsupported operations; no capabilities were invoked.",
+            final=True,
+        )
+        return {
+            "is_fallback": True,
+            "fallback_message": message,
+        }
 
     if planning_result.outcome == "fallback" or (
         not planning_result.primary_skill and not planning_result.workflow_id
@@ -326,7 +391,7 @@ async def compile_query_plan(
             if capability is not None
         ],
         history=conversation_history,
-        context=context,
+        context=planning_context,
         existing_params=extracted_seed,
     )
     extracted_params = await resolve_params_via_capability_metadata(
@@ -415,6 +480,16 @@ async def compile_query_plan(
         "requires_approval": requires_approval,
         "required_params": required_params,
         "missing_required_params": missing_required_params,
+        "capability_params": _capability_params(
+            selected_skills,
+            capabilities_by_skill,
+            extracted_params,
+        ),
+        "operations": [
+            operation.model_dump()
+            for operation in planning_result.operations
+        ],
+        "operation_coverage": dict(planning_result.operation_coverage),
     }
     if planning_result.workflow_type == "workflow_template" and planning_result.workflow_id:
         runtime.store_status_update(
@@ -459,6 +534,10 @@ async def compile_query_plan(
             "missing_info": missing_required_params,
             "estimated_duration_seconds": estimated_duration,
             "param_metadata": param_metadata,
+            "operations": [
+                operation.model_dump()
+                for operation in planning_result.operations
+            ],
         },
         "missing_info": missing_required_params,
         "planner_message": planning_result.message,

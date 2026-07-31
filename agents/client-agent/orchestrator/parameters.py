@@ -120,6 +120,10 @@ def order_skills_for_workflow(routing_decision: Optional[Dict[str, Any]]) -> Lis
         return skills
     if not routing_decision or routing_decision.get("workflow_type") != "sequential":
         return skills
+    if routing_decision.get("operations") and routing_decision.get("operation_coverage"):
+        # The operation-coverage contract validates dependency order before
+        # finalization. Preserve that selected order at execution time.
+        return skills
 
     cache = get_capability_cache()
     scored: List[Any] = []

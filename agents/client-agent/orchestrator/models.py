@@ -19,6 +19,7 @@ class AgentState(TypedDict):
     conversation_id: Optional[str]
     user_query: Optional[str]
     conversation_history: List[Dict]
+    prior_capability_params: Dict[str, Dict[str, Any]]
 
     # Dynamic routing decision
     routing_decision: Optional[Dict[str, Any]]  # Full RoutingDecision.to_dict()

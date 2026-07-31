@@ -199,6 +199,34 @@ def test_bind_explicit_mime_hint_disqualifies_mismatches() -> None:
     assert resolved["artifact_id"] == "svg-1"
 
 
+def test_bind_new_step_from_geometry_author_over_stale_conversation_cad() -> None:
+    from artifact_handling import bind_produced_artifacts
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "cad_artifact_id": {
+                "type": "string",
+                "x_artifact_ref": "single",
+                "x_artifact_mime": ["application/step"],
+            }
+        },
+        "required": ["cad_artifact_id"],
+    }
+    produced = [
+        _produced(0, True, "new-stl", "valve.stl", "Re-authored valve", "application/stl"),
+        _produced(0, False, "new-step", "valve.step", "Re-authored valve", "application/step"),
+    ]
+
+    resolved = bind_produced_artifacts(
+        {"cad_artifact_id": "old-step"},
+        schema,
+        produced,
+    )
+
+    assert resolved["cad_artifact_id"] == "new-step"
+
+
 def test_bind_overrides_stale_value_but_keeps_chain_produced_value() -> None:
     from artifact_handling import bind_produced_artifacts
 

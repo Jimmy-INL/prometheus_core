@@ -23,38 +23,80 @@ class _FakePlannerLLM:
 
     async def medium(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
+        if len(self.calls) == 1:
+            tool_calls = [
+                {
+                    "id": "decompose-1",
+                    "type": "function",
+                    "function": {
+                        "name": "decompose_request",
+                        "arguments": json.dumps(
+                            {
+                                "request_kind": "task",
+                                "operations": [
+                                    {
+                                        "description": "Analyze the material's thermal behavior",
+                                        "depends_on": [],
+                                    }
+                                ],
+                                "message": "",
+                            }
+                        ),
+                    },
+                }
+            ]
+        else:
+            tool_calls = [
+                {
+                    "id": "select-1",
+                    "type": "function",
+                    "function": {
+                        "name": "select_capabilities",
+                        "arguments": json.dumps(
+                            {
+                                "primary_skill": "analyze_thermal",
+                                "supporting_skills": [],
+                                "workflow_type": "single",
+                                "reasoning": "Thermal request",
+                                "confidence": 0.9,
+                            }
+                        ),
+                    },
+                },
+                {
+                    "id": "coverage-1",
+                    "type": "function",
+                    "function": {
+                        "name": "set_operation_coverage",
+                        "arguments": json.dumps(
+                            {
+                                "covered": [
+                                    {
+                                        "operation_id": "op_1",
+                                        "skill_id": "analyze_thermal",
+                                    }
+                                ],
+                                "unsupported": [],
+                            }
+                        ),
+                    },
+                },
+                {
+                    "id": "finalize-1",
+                    "type": "function",
+                    "function": {
+                        "name": "finalize_plan",
+                        "arguments": "{}",
+                    },
+                },
+            ]
         return SimpleNamespace(
             raw={
                 "choices": [
                     {
                         "message": {
                             "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "select-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "select_capabilities",
-                                        "arguments": json.dumps(
-                                            {
-                                                "primary_skill": "analyze_thermal",
-                                                "supporting_skills": [],
-                                                "workflow_type": "single",
-                                                "reasoning": "Thermal request",
-                                                "confidence": 0.9,
-                                            }
-                                        ),
-                                    },
-                                },
-                                {
-                                    "id": "finalize-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "finalize_plan",
-                                        "arguments": "{}",
-                                    },
-                                },
-                            ],
+                            "tool_calls": tool_calls,
                         }
                     }
                 ]
@@ -83,12 +125,22 @@ def test_planner_uses_llm_client_raw_tool_calls(monkeypatch):
 
     assert result.outcome == "agent_plan"
     assert result.primary_skill == "analyze_thermal"
-    messages, kwargs = fake_llm.calls[0]
+    decomposition_messages, decomposition_kwargs = fake_llm.calls[0]
+    assert "Available capabilities" not in decomposition_messages[1]["content"]
+    assert [tool["function"]["name"] for tool in decomposition_kwargs["tools"]] == [
+        "decompose_request"
+    ]
+    messages, kwargs = fake_llm.calls[1]
     assert [message["role"] for message in messages[:2]] == ["system", "user"]
     assert "Analyze the thermal behavior of SS316" in messages[1]["content"]
+    assert "Required operations (immutable)" in messages[1]["content"]
     assert {tool["function"]["name"] for tool in kwargs["tools"]} >= {
         "select_capabilities",
+        "set_operation_coverage",
         "finalize_plan",
+    }
+    assert "fallback_to_chat" not in {
+        tool["function"]["name"] for tool in kwargs["tools"]
     }
 
 
