@@ -307,8 +307,20 @@ export function Chat() {
   // so a refresh doesn't re-fill the box or leave it in browser history.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const prefill = params.get("prompt");
+    let prefill = params.get("prompt");
     if (prefill) {
+      // Accepts a few forms, in order of readability:
+      //   ?prompt="Show me the thermal analysis"   (quotes, spaces — most readable, stripped below)
+      //   ?prompt=Show me the thermal analysis     (raw spaces, no quotes — browsers auto-encode this,
+      //                                              but scripts/tools that build URLs manually may not)
+      //   ?prompt=Show+me+the+thermal+analysis     (+ for spaces, no quotes — always safe, still readable)
+      //   ?prompt=Show%20me%20the%20thermal...     (fully encoded — least readable, always safe)
+      // Wrapping quotes are optional and purely cosmetic. A prompt that must
+      // literally start/end with a quote should escape it as %22 instead of
+      // using a bare ".
+      if (prefill.startsWith('"') && prefill.endsWith('"') && prefill.length >= 2) {
+        prefill = prefill.slice(1, -1);
+      }
       setInput(prefill);
       window.history.replaceState(null, "", window.location.pathname);
     }
