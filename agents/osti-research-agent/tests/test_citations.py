@@ -1,6 +1,8 @@
+import asyncio
 import importlib.util
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 
 def _load_osti_module():
@@ -63,3 +65,32 @@ def test_memory_answer_sufficient_heuristic_accepts_substantive_answer():
         "280C and 320C in high-purity water, with degradation accelerating above 350C."
     )
     assert mod.is_memory_answer_sufficient(text) is True
+
+
+def test_status_updates_use_a2a_v1_task_states():
+    mod = _load_osti_module()
+    agent = object.__new__(mod.OSTIResearchAgent)
+    sent_statuses = []
+
+    agent._store_status_in_redis = lambda *args, **kwargs: None
+
+    async def capture_status_update(**kwargs):
+        sent_statuses.append(kwargs)
+
+    agent.send_status_update = capture_status_update
+    context = SimpleNamespace(context_id="context-1")
+    event_queue = object()
+
+    asyncio.run(agent._send_status(context, event_queue, "Searching OSTI"))
+    asyncio.run(
+        agent._send_final_result(
+            context,
+            event_queue,
+            {"status": "completed", "answer": "Research result"},
+        )
+    )
+
+    assert sent_statuses[0]["state"] == mod.TaskState.TASK_STATE_WORKING
+    assert sent_statuses[0]["final"] is False
+    assert sent_statuses[1]["state"] == mod.TaskState.TASK_STATE_COMPLETED
+    assert sent_statuses[1]["final"] is True

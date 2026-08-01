@@ -970,7 +970,11 @@ except Exception as e:
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.completed if final else TaskState.working,
+            state=(
+                TaskState.TASK_STATE_COMPLETED
+                if final
+                else TaskState.TASK_STATE_WORKING
+            ),
             final=final,
             message=status_message,
         )
@@ -1324,7 +1328,7 @@ except Exception as e:
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.completed,
+            state=TaskState.TASK_STATE_COMPLETED,
             final=True,
             message=result_text,
         )
