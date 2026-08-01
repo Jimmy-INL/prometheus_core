@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,7 +12,14 @@ from tool_discovery import discover_agents
 from . import runtime
 from .models import ConversationRequest, ConversationResponse
 
-SUPPORTED_SLASH_COMMANDS = ["agents", "artifacts", "tasks"]
+SUPPORTED_SLASH_COMMANDS = ["agents", "artifacts", "forget", "tasks"]
+
+_OSTI_KNOWLEDGE_KEY_PATTERNS = (
+    ("facts", "osti:factoid:*"),
+    ("indexes", "osti:paper:*:facts"),
+    ("indexes", "osti:topic:*:factoids"),
+)
+_REDIS_DELETE_BATCH_SIZE = 500
 
 _STATE_ICONS = {
     "submitted": "•",
@@ -43,6 +51,23 @@ def _is_slash_command_query(query: Optional[str]) -> bool:
 def _is_supported_slash_command_query(query: Optional[str]) -> bool:
     parsed = _parse_slash_command(query)
     return parsed is not None and parsed[0] in SUPPORTED_SLASH_COMMANDS
+
+
+def _delete_osti_knowledge() -> Dict[str, int]:
+    redis_client = runtime._get_status_redis_client()
+    deleted = {"facts": 0, "indexes": 0}
+
+    for category, pattern in _OSTI_KNOWLEDGE_KEY_PATTERNS:
+        batch = []
+        for key in redis_client.scan_iter(match=pattern, count=_REDIS_DELETE_BATCH_SIZE):
+            batch.append(key)
+            if len(batch) == _REDIS_DELETE_BATCH_SIZE:
+                deleted[category] += redis_client.delete(*batch)
+                batch.clear()
+        if batch:
+            deleted[category] += redis_client.delete(*batch)
+
+    return deleted
 
 
 def _format_debug_skill(skill: Dict[str, Any]) -> str:
@@ -388,6 +413,27 @@ async def _maybe_handle_slash_command(
             message_metadata={
                 "slash_command": "artifacts",
                 "artifacts": artifacts,
+            },
+        )
+
+    if command == "forget":
+        deleted = await asyncio.to_thread(_delete_osti_knowledge)
+        facts_deleted = deleted["facts"]
+        fact_label = "fact" if facts_deleted == 1 else "facts"
+        message = (
+            f"Forgot {facts_deleted} stored OSTI knowledge {fact_label}. "
+            "Cached papers and answers, task state, and conversation data were not changed."
+        )
+        runtime.store_status_update(conv_id, "Handled /forget slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "forget",
+                "facts_deleted": facts_deleted,
+                "index_keys_deleted": deleted["indexes"],
             },
         )
 
