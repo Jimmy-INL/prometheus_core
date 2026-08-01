@@ -175,3 +175,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Route streaming specialist progress through `SkillTracker` into Task Graph root events; render only root events in one bounded Chainlit Step to avoid child/root duplicates.
 - Derive cross-turn prior capability parameters from actual successful invocation `tool_inputs`; use planning-time `capability_params` only for legacy states without recorded inputs.
 - Freeze ordered operations before assigning dependencies; generate dependency schemas from those operation IDs so self- and forward-dependencies are structurally unavailable.
+- Treat remeshing and mesh-control changes as mesh-only work against existing CAD; select authoring only when the user requests CAD geometry, topology, or dimension changes.
+- When editing a repeated condition, include function-specific patch context and inspect the matched hunk before testing.

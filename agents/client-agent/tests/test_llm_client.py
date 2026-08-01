@@ -133,6 +133,8 @@ def test_planner_uses_llm_client_raw_tool_calls(monkeypatch):
     assert [message["role"] for message in messages[:2]] == ["system", "user"]
     assert "Analyze the thermal behavior of SS316" in messages[1]["content"]
     assert "Required operations (immutable)" in messages[1]["content"]
+    assert "Every dynamically selected capability must cover" in messages[0]["content"]
+    assert "Remeshing an existing CAD artifact" in messages[0]["content"]
     assert {tool["function"]["name"] for tool in kwargs["tools"]} >= {
         "select_capabilities",
         "set_operation_coverage",

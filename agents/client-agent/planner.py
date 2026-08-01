@@ -310,7 +310,11 @@ async def decompose_request(
                 "operations are frozen. "
                 "Treat requests to change previously created parameterized geometry as a new "
                 "geometry-authoring outcome followed by any requested downstream outcomes; do "
-                "not assume an in-place CAD editing operation. For conversation, return the "
+                "not assume an in-place CAD editing operation. Remeshing reuses the most recent "
+                "existing CAD. A request that changes only mesh controls such as element size, "
+                "element count, element type, or mesh quality is one meshing outcome; do not add "
+                "a geometry-authoring outcome unless the user also requests a CAD geometry, "
+                "topology, or dimension change. For conversation, return the "
                 "direct response in message. For genuinely ambiguous intent, return one focused "
                 "question in message."
             ),
@@ -993,6 +997,20 @@ def _build_planning_tools(
                 "error": "Operation coverage references capabilities outside the selected plan.",
                 "unselected_coverage": unselected_coverage,
             }
+        if draft.operations and not draft.workflow_id:
+            covered_skill_ids = set(draft.covered_operations.values())
+            unused_selected = [
+                skill_id for skill_id in selected if skill_id not in covered_skill_ids
+            ]
+            if unused_selected:
+                return {
+                    "ok": False,
+                    "error": (
+                        "Every selected dynamic capability must cover at least one "
+                        "requested operation."
+                    ),
+                    "unused_selected_skill_ids": unused_selected,
+                }
 
         selected_workflow = get_selected_workflow_candidate()
         sequential = draft.workflow_type == "sequential" or bool(

@@ -90,6 +90,34 @@ def test_reauthor_then_mesh_plan_finalizes_in_dependency_order() -> None:
     assert draft.finalized is True
 
 
+def test_remesh_plan_rejects_unneeded_authoring_capability() -> None:
+    draft = planner._PlanDraft(
+        operations=[
+            _operation(
+                "op_1",
+                "Remesh the existing valve CAD with half the element size",
+            )
+        ]
+    )
+    tools = _tools_by_name(draft)
+
+    tools["select_capabilities"](
+        primary_skill="author_equipment_geometry",
+        supporting_skills=["mesh_geometry"],
+        workflow_type="sequential",
+    )
+    tools["set_operation_coverage"](
+        covered=[{"operation_id": "op_1", "skill_id": "mesh_geometry"}],
+        unsupported=[],
+    )
+
+    result = tools["finalize_plan"]()
+
+    assert result["ok"] is False
+    assert result["unused_selected_skill_ids"] == ["author_equipment_geometry"]
+    assert draft.finalized is False
+
+
 def test_cross_skill_dependency_requires_sequential_selection_order() -> None:
     draft = planner._PlanDraft(
         operations=[
@@ -327,6 +355,9 @@ def test_single_operation_decomposition_does_not_ask_for_dependencies(monkeypatc
         _operation("op_1", "Remesh the attached CAD", [])
     ]
     assert len(fake_llm.calls) == 1
+    system_prompt = fake_llm.calls[0][0][0]["content"]
+    assert "Remeshing reuses the most recent existing CAD" in system_prompt
+    assert "mesh controls such as element size" in system_prompt
     decomposition_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
     assert "depends_on" not in json.dumps(decomposition_schema)
 
