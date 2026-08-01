@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -107,29 +108,63 @@ def _successful_prior_capability_params(
         and result is not None
         and not (isinstance(result, dict) and result.get("error"))
     }
+    result: Dict[str, Dict[str, Any]] = {}
+    history = existing_state.get("conversation_history")
+    if isinstance(history, list):
+        for entry in reversed(history):
+            if not isinstance(entry, dict):
+                continue
+            tool_inputs = entry.get("tool_inputs")
+            invocation_results = entry.get("tool_results")
+            if not isinstance(tool_inputs, dict) or not isinstance(invocation_results, dict):
+                continue
+            for skill_id, params in tool_inputs.items():
+                skill_id = str(skill_id)
+                invocation_result = invocation_results.get(skill_id)
+                if (
+                    skill_id in result
+                    or skill_id not in successful_skills
+                    or skill_id == "workflow_execution"
+                    or not isinstance(params, dict)
+                    or invocation_result is None
+                    or (
+                        isinstance(invocation_result, dict)
+                        and invocation_result.get("error")
+                    )
+                ):
+                    continue
+                result[skill_id] = copy.deepcopy(params)
+
     stored = routing.get("capability_params")
     if isinstance(stored, dict):
-        result = {
-            skill_id: dict(params)
+        fallback = {
+            str(skill_id): copy.deepcopy(params)
             for skill_id, params in stored.items()
-            if skill_id in successful_skills and isinstance(params, dict)
+            if str(skill_id) in successful_skills
+            and str(skill_id) not in result
+            and isinstance(params, dict)
         }
         primary_skill = routing.get("primary_skill")
         extracted_params = routing.get("extracted_params")
-        primary_params = result.get(str(primary_skill))
+        primary_params = fallback.get(str(primary_skill))
         if isinstance(primary_params, dict) and isinstance(extracted_params, dict):
-            result[str(primary_skill)] = {
+            fallback[str(primary_skill)] = {
                 name: extracted_params[name]
                 for name in primary_params
                 if name in extracted_params
             }
+        result.update(fallback)
         return result
 
     primary_skill = routing.get("primary_skill")
     extracted_params = routing.get("extracted_params")
-    if primary_skill in successful_skills and isinstance(extracted_params, dict):
-        return {str(primary_skill): dict(extracted_params)}
-    return {}
+    if (
+        primary_skill in successful_skills
+        and str(primary_skill) not in result
+        and isinstance(extracted_params, dict)
+    ):
+        result[str(primary_skill)] = copy.deepcopy(extracted_params)
+    return result
 
 
 async def chat(request: ConversationRequest) -> ConversationResponse:

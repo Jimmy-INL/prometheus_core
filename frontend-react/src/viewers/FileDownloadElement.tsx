@@ -1,8 +1,9 @@
 import { FileDown } from "lucide-react";
 import type { AnyElement, ViewerProps } from "../lib/chainlit/elements";
+import { artifactFilePresentation } from "../lib/chainlit/artifactPresentation";
 
 /**
- * Shared filename + download-button card. Two callers, one markup:
+ * Shared artifact-label + download-button card. Two callers, one markup:
  *  - FileDownloadElement: registered in VIEWER_REGISTRY for plain "file" kind
  *  - NoViewerFallback: used by ElementRenderer when no viewer is registered
  *    for the element's kind at all (a custom element type not yet built)
@@ -10,7 +11,7 @@ import type { AnyElement, ViewerProps } from "../lib/chainlit/elements";
  * with an optional subtitle rather than two near-duplicate files.
  */
 function FileCard({ element, subtitle }: { element: AnyElement; subtitle?: string }) {
-  const name = element.name ?? "Attachment";
+  const { label, filename } = artifactFilePresentation(element);
   const url = element.url;
 
   if (!url) return null;
@@ -18,14 +19,14 @@ function FileCard({ element, subtitle }: { element: AnyElement; subtitle?: strin
   return (
     <div className="flex items-center gap-3 bg-base-200 border border-base-300 rounded-lg px-3 py-2.5 my-2 max-w-sm">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-base-content truncate">{name}</p>
+        <p className="text-sm font-medium text-base-content line-clamp-2 break-words">{label}</p>
         {subtitle && <p className="text-xs text-base-content/40 mt-0.5">{subtitle}</p>}
       </div>
       <a
         href={url}
-        download={name}
+        download={filename}
         className="btn btn-ghost btn-xs shrink-0"
-        aria-label={`Download ${name}`}
+        aria-label={`Download ${label}`}
       >
         <FileDown size={13} />
         Download

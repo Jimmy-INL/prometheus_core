@@ -154,6 +154,42 @@ def test_prior_capability_params_include_followup_values_after_success() -> None
     assert params["author_equipment_geometry"]["input_data"]["rod_diameter"] == 0.08
 
 
+def test_prior_capability_params_use_actual_successful_invocation_inputs() -> None:
+    params = agent_module._chat_flow._successful_prior_capability_params(
+        {
+            "routing_decision": {
+                "primary_skill": "author_equipment_geometry",
+                "supporting_skills": ["mesh_geometry"],
+                "capability_params": {
+                    "author_equipment_geometry": {"message": "Create the valve."},
+                    "mesh_geometry": {"cad_artifact_id": "old-step"},
+                },
+            },
+            "tool_results": {
+                "author_equipment_geometry": {"answer": "Created valve geometry"},
+                "mesh_geometry": {"answer": "Meshed valve geometry"},
+            },
+            "conversation_history": [
+                {
+                    "role": "assistant",
+                    "tool_inputs": {
+                        "author_equipment_geometry": {"message": "Create the valve."},
+                        "mesh_geometry": {"cad_artifact_id": "new-step"},
+                    },
+                    "tool_results": {
+                        "author_equipment_geometry": {
+                            "answer": "Created valve geometry"
+                        },
+                        "mesh_geometry": {"answer": "Meshed valve geometry"},
+                    },
+                }
+            ],
+        }
+    )
+
+    assert params["mesh_geometry"]["cad_artifact_id"] == "new-step"
+
+
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
     monkeypatch.delenv("PROMETHEUS_MAX_UPLOAD_BYTES", raising=False)
     assert file_upload_handler.configured_max_upload_bytes() == file_upload_handler.DEFAULT_MAX_UPLOAD_BYTES

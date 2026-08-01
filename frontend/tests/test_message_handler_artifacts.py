@@ -109,6 +109,7 @@ def test_render_artifacts_treats_step_as_downloadable_file(monkeypatch, tmp_path
     assert len(elements) == 1
     assert created[0].name == "bracket.stp"
     assert created[0].mime == "model/step"
+    assert created[0].props == {"description": "STEP CAD model."}
     assert "no viewer available" not in text
 
 
@@ -151,6 +152,50 @@ def test_render_artifacts_adds_download_for_plugin_viewer(monkeypatch, tmp_path:
     assert elements[1] is created[0]
     assert created[0].name == "mesh.e"
     assert created[0].path == str(mesh_file)
+
+
+def test_render_artifacts_describes_download_when_no_viewer_exists(
+    monkeypatch, tmp_path: Path
+) -> None:
+    created = []
+
+    class DummyFile:
+        def __init__(self, *, name: str, path: str, display: str, mime: str = ""):
+            self.name = name
+            self.path = path
+            self.display = display
+            self.mime = mime
+            created.append(self)
+
+    async def _no_plugin(artifact):
+        return None
+
+    monkeypatch.setattr(handler.cl, "File", DummyFile, raising=False)
+    monkeypatch.setattr(handler._plugins, "render_artifact", _no_plugin)
+
+    mesh_file = tmp_path / "5a7d23b5a19e4a86-equipment_0cea880e.e"
+    mesh_file.write_bytes(b"exodus")
+
+    elements, text = asyncio.run(
+        handler.render_artifacts(
+            [
+                {
+                    "name": mesh_file.name,
+                    "mime_type": "application/x-exodus",
+                    "uri": f"file://{mesh_file}",
+                    "description": "Finite-element mesh of the butterfly valve.",
+                }
+            ],
+            tmp_path,
+        )
+    )
+
+    assert elements == [created[0]]
+    assert created[0].name == mesh_file.name
+    assert created[0].props == {
+        "description": "Finite-element mesh of the butterfly valve."
+    }
+    assert "no viewer available" in text
 
 
 def test_render_artifacts_adds_download_for_inline_json(monkeypatch, tmp_path: Path) -> None:

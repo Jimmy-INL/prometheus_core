@@ -199,8 +199,8 @@ def test_no_registered_capabilities_marks_every_operation_unsupported() -> None:
 
 
 class _DecompositionLLM:
-    def __init__(self, tool_calls):
-        self.tool_calls = tool_calls
+    def __init__(self, tool_calls, subsequent_tool_calls=None):
+        self.tool_call_responses = [tool_calls, *(subsequent_tool_calls or [])]
         self.calls = []
 
     async def __aenter__(self):
@@ -211,13 +211,14 @@ class _DecompositionLLM:
 
     async def medium(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
+        response_index = min(len(self.calls) - 1, len(self.tool_call_responses) - 1)
         return SimpleNamespace(
             raw={
                 "choices": [
                     {
                         "message": {
                             "content": None,
-                            "tool_calls": self.tool_calls,
+                            "tool_calls": self.tool_call_responses[response_index],
                         }
                     }
                 ]
@@ -236,6 +237,17 @@ def _decomposition_call(arguments, call_id="decompose-1"):
     }
 
 
+def _dependency_call(arguments, call_id="dependencies-1"):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": "assign_dependencies",
+            "arguments": json.dumps(arguments),
+        },
+    }
+
+
 def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
     fake_llm = _DecompositionLLM(
         [
@@ -245,17 +257,27 @@ def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
                     "operations": [
                         {
                             "description": "Re-author the valve with twice the hole diameter",
-                            "depends_on": [],
                         },
                         {
                             "description": "Mesh the newly authored CAD with about 30000 tetrahedra",
-                            "depends_on": [1],
                         },
                     ],
                     "message": "",
                 }
             )
-        ]
+        ],
+        [
+            [
+                _dependency_call(
+                    {
+                        "dependencies": {
+                            "op_1": [],
+                            "op_2": ["op_1"],
+                        }
+                    }
+                )
+            ]
+        ],
     )
     monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
 
@@ -271,6 +293,84 @@ def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
     assert result.operations[1].depends_on == ["op_1"]
     prompt = fake_llm.calls[0][0][1]["content"]
     assert "Available capabilities" not in prompt
+    decomposition_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
+    assert "depends_on" not in json.dumps(decomposition_schema)
+    dependency_schema = fake_llm.calls[1][1]["tools"][0]["function"]["parameters"]
+    dependency_properties = dependency_schema["properties"]["dependencies"]["properties"]
+    assert dependency_properties["op_1"]["maxItems"] == 0
+    assert dependency_properties["op_2"]["items"]["enum"] == ["op_1"]
+
+
+def test_single_operation_decomposition_does_not_ask_for_dependencies(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _decomposition_call(
+                {
+                    "request_kind": "task",
+                    "operations": [{"description": "Remesh the attached CAD"}],
+                    "message": "",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    result = asyncio.run(
+        planner.decompose_request(
+            query="Remesh it with half the element size.",
+            history=[],
+            context={},
+        )
+    )
+
+    assert result.operations == [
+        _operation("op_1", "Remesh the attached CAD", [])
+    ]
+    assert len(fake_llm.calls) == 1
+    decomposition_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
+    assert "depends_on" not in json.dumps(decomposition_schema)
+
+
+def test_dependency_assignment_rejects_self_dependencies(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _decomposition_call(
+                {
+                    "request_kind": "task",
+                    "operations": [
+                        {"description": "Create CAD geometry"},
+                        {"description": "Mesh the created CAD"},
+                    ],
+                    "message": "",
+                }
+            )
+        ],
+        [
+            [
+                _dependency_call(
+                    {
+                        "dependencies": {
+                            "op_1": ["op_1"],
+                            "op_2": [],
+                        }
+                    }
+                )
+            ]
+        ],
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    with pytest.raises(
+        planner.PlanningContractError,
+        match="operation 1 references non-earlier dependencies: op_1",
+    ):
+        asyncio.run(
+            planner.decompose_request(
+                query="Create CAD and mesh it.",
+                history=[],
+                context={},
+            )
+        )
 
 
 def test_decomposition_rejects_more_than_one_tool_call(monkeypatch) -> None:

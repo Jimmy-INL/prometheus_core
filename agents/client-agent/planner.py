@@ -92,10 +92,6 @@ class DecomposedOperationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str = Field(min_length=1)
-    depends_on: List[int] = Field(
-        default_factory=list,
-        description="One-based indices of earlier operations this operation depends on",
-    )
 
 
 class DecomposeRequestInput(BaseModel):
@@ -104,6 +100,12 @@ class DecomposeRequestInput(BaseModel):
     request_kind: Literal["task", "conversation", "needs_clarification"]
     operations: List[DecomposedOperationInput] = Field(default_factory=list)
     message: str = ""
+
+
+class AssignDependenciesInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    dependencies: Dict[str, List[str]]
 
 
 class RequestedOperation(BaseModel):
@@ -304,7 +306,8 @@ async def decompose_request(
                 "Classify and decompose the user's request without considering what tools or "
                 "capabilities may be available. Call decompose_request exactly once and return "
                 "no prose. For a task, list every requested outcome as an ordered operation. "
-                "Use one-based indices in depends_on and reference only earlier operations. "
+                "Do not assign dependencies; those are requested separately after the ordered "
+                "operations are frozen. "
                 "Treat requests to change previously created parameterized geometry as a new "
                 "geometry-authoring outcome followed by any requested downstream outcomes; do "
                 "not assume an in-place CAD editing operation. For conversation, return the "
@@ -370,21 +373,129 @@ async def decompose_request(
                 "Non-task decomposition must include a response or clarification message."
             )
 
-    operations: List[RequestedOperation] = []
+    operation_descriptions: List[str] = []
     for index, operation in enumerate(parsed.operations, 1):
         description = operation.description.strip()
         if not description:
             raise PlanningContractError(
                 f"Decomposed operation {index} has an empty description."
             )
-        if len(set(operation.depends_on)) != len(operation.depends_on):
+        operation_descriptions.append(description)
+
+    dependency_map = {
+        f"op_{index}": []
+        for index in range(1, len(operation_descriptions) + 1)
+    }
+    if len(operation_descriptions) > 1:
+        if status_callback:
+            status_callback("Planner LLM assigning operation dependencies.")
+        operation_ids = list(dependency_map)
+        dependency_properties = {}
+        for index, operation_id in enumerate(operation_ids):
+            earlier_ids = operation_ids[:index]
+            dependency_properties[operation_id] = {
+                "type": "array",
+                "description": (
+                    f"Earlier operations that {operation_id} directly depends on."
+                ),
+                "items": (
+                    {"type": "string", "enum": earlier_ids}
+                    if earlier_ids
+                    else {"type": "string"}
+                ),
+                "uniqueItems": True,
+                "maxItems": len(earlier_ids),
+            }
+        dependency_tool = {
+            "type": "function",
+            "function": {
+                "name": "assign_dependencies",
+                "description": (
+                    "Assign dependencies among the frozen ordered operations."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "dependencies": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": dependency_properties,
+                            "required": operation_ids,
+                        }
+                    },
+                    "required": ["dependencies"],
+                },
+            },
+        }
+        frozen_operations = [
+            {"operation_id": operation_id, "description": description}
+            for operation_id, description in zip(
+                operation_ids, operation_descriptions
+            )
+        ]
+        dependency_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Assign dependencies among the frozen operations. Call "
+                    "assign_dependencies exactly once and return no prose. Every operation "
+                    "must be present. Dependencies may reference only operation IDs allowed "
+                    "by the tool schema. Prior conversation state and artifacts are context, "
+                    "not operations in this request."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Current user query:\n{query}\n\n"
+                    "Frozen ordered operations:\n"
+                    f"{json.dumps(frozen_operations)}"
+                ),
+            },
+        ]
+        async with runtime.create_llm() as llm:
+            dependency_response = await llm.medium(
+                dependency_messages,
+                temperature=0,
+                max_tokens=1024,
+                tools=[dependency_tool],
+            )
+        _, dependency_calls = _planning_tool_calls(dependency_response.raw)
+        if (
+            len(dependency_calls) != 1
+            or dependency_calls[0].get("name") != "assign_dependencies"
+        ):
+            raise PlanningContractError(
+                "Dependency assignment must call assign_dependencies exactly once."
+            )
+        try:
+            assigned = AssignDependenciesInput.model_validate(
+                dependency_calls[0].get("args")
+            )
+        except ValidationError as exc:
+            raise PlanningContractError(
+                f"Dependency assignment violates its schema: {exc}"
+            ) from exc
+        if set(assigned.dependencies) != set(operation_ids):
+            raise PlanningContractError(
+                "Dependency assignment must contain exactly the frozen operation IDs."
+            )
+        dependency_map = assigned.dependencies
+
+    operations: List[RequestedOperation] = []
+    for index, description in enumerate(operation_descriptions, 1):
+        operation_id = f"op_{index}"
+        dependencies = dependency_map[operation_id]
+        if len(set(dependencies)) != len(dependencies):
             raise PlanningContractError(
                 f"Decomposed operation {index} has duplicate dependencies."
             )
+        earlier_ids = {f"op_{earlier}" for earlier in range(1, index)}
         invalid_dependencies = [
             dependency
-            for dependency in operation.depends_on
-            if dependency < 1 or dependency >= index
+            for dependency in dependencies
+            if dependency not in earlier_ids
         ]
         if invalid_dependencies:
             raise PlanningContractError(
@@ -393,9 +504,9 @@ async def decompose_request(
             )
         operations.append(
             RequestedOperation(
-                operation_id=f"op_{index}",
+                operation_id=operation_id,
                 description=description,
-                depends_on=[f"op_{dependency}" for dependency in operation.depends_on],
+                depends_on=list(dependencies),
             )
         )
 

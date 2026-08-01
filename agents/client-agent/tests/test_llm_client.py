@@ -36,7 +36,6 @@ class _FakePlannerLLM:
                                 "operations": [
                                     {
                                         "description": "Analyze the material's thermal behavior",
-                                        "depends_on": [],
                                     }
                                 ],
                                 "message": "",

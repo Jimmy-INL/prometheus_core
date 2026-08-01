@@ -797,7 +797,7 @@ async def render_artifacts(
             else:
                 el = await _render_remote_file_artifact(uri, name, tmp_dir, mime_type)
                 if el:
-                    elements.append(el)
+                    elements.append(_with_artifact_description(el, description))
                     line = f"- **{name}**"
                     if description:
                         line += f": {description}"
@@ -820,7 +820,7 @@ async def render_artifacts(
         elif artifact_type == "file":
             el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
             if el:
-                elements.append(el)
+                elements.append(_with_artifact_description(el, description))
             else:
                 text_parts.append(f"- **{name}**: `{uri}`")
 
@@ -906,6 +906,16 @@ async def _render_pdf_artifact(uri: str, name: str, tmp_dir: Path) -> Optional[A
     return None
 
 
+def _with_artifact_description(element: Any, description: Any) -> Any:
+    """Add an artifact's display description without changing its filename."""
+    if isinstance(description, str) and description.strip():
+        element.props = {
+            **(getattr(element, "props", None) or {}),
+            "description": description.strip(),
+        }
+    return element
+
+
 async def _render_remote_file_artifact(uri: str, name: str, tmp_dir: Path, mime_type: str = "") -> Optional[Any]:
     if not uri.startswith("http"):
         return None
@@ -947,7 +957,9 @@ async def _render_download_artifact(
     if uri:
         file_el = await _render_file_artifact(uri, name, tmp_dir, mime_type)
         if file_el:
-            return file_el
+            return _with_artifact_description(
+                file_el, artifact.get("description", "")
+            )
 
     payload = _artifact_download_payload(artifact, mime_type)
     if payload is None:
@@ -957,7 +969,10 @@ async def _render_download_artifact(
     filename = _download_filename(name, extension)
     tmp = tmp_dir / f"{uuid.uuid4().hex}_{filename}"
     tmp.write_bytes(content)
-    return cl.File(name=filename, path=str(tmp), display="inline", mime=effective_mime)
+    return _with_artifact_description(
+        cl.File(name=filename, path=str(tmp), display="inline", mime=effective_mime),
+        artifact.get("description", ""),
+    )
 
 
 def _artifact_download_payload(
