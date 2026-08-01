@@ -90,6 +90,16 @@ def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationRe
     return ConversationResponse(conversation_id=conv_id, status="error", message=user_msg)
 
 
+def _structured_followup_entry(query: Optional[str], followup_answers: Dict[str, Any]) -> Dict[str, Any]:
+    """Represent form-submitted answers as ordinary conversation evidence."""
+    return {
+        "role": "user",
+        "content": query or "Provided requested inputs.",
+        "provided_inputs": copy.deepcopy(followup_answers),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _successful_prior_capability_params(
     existing_state: Optional[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
@@ -299,6 +309,10 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             followup_answers.update(extracted)
 
         if followup_answers:
+            if request.followup_answers and not state.get("pending_subagent_requests"):
+                evidence = _structured_followup_entry(request.query, followup_answers)
+                state["conversation_history"] = state.get("conversation_history", []) + [evidence]
+
             routing_decision = state.get("routing_decision", {}) or {}
             requires_approval = routing_decision.get("requires_approval", False)
 

@@ -590,6 +590,12 @@ def test_chat_returns_incomplete_plan_and_form_for_missing_required_params(monke
     ]
 
 
+def test_structured_followup_entry_preserves_answers() -> None:
+    entry = agent_module._chat_flow._structured_followup_entry(None, {"input_data.rod_diameter": 0.08})
+
+    assert entry["provided_inputs"] == {"input_data.rod_diameter": 0.08}
+
+
 def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
     seen = {}
 
@@ -1295,7 +1301,7 @@ def test_plan_approval_persists_state_before_execution(monkeypatch) -> None:
     assert response.status == "completed"
 
 
-def test_single_execution_uses_planning_time_capability_params(monkeypatch) -> None:
+def test_single_execution_uses_latest_extracted_params(monkeypatch) -> None:
     invoked: dict = {}
 
     async def no_capability(skill_id):
@@ -1333,10 +1339,10 @@ def test_single_execution_uses_planning_time_capability_params(monkeypatch) -> N
                     "primary_skill": "search_literature",
                     "supporting_skills": [],
                     "workflow_type": "single",
-                    "extracted_params": {"question": "stale question"},
+                    "extracted_params": {"question": "What changed in the latest report?"},
                     "capability_params": {
                         "search_literature": {
-                            "question": "What changed in the latest report?"
+                            "question": "stale planning snapshot"
                         }
                     },
                 },
@@ -1983,6 +1989,9 @@ def test_sequential_execution_uses_step_local_params_and_dependency_context(
         resolver_calls.append(kwargs)
         skill_id = kwargs["capabilities"][0].skill_id
         assert kwargs["query"] == "Mesh the newly authored valve."
+        assert kwargs["existing_params"] == {
+            "message": "Use the prior mesh settings.", "reference_artifact_id": "old-step"
+        }
         assert kwargs["history"][-1]["content"] == "Authored updated valve."
         assert kwargs["history"][-1]["tool_results"][
             "author_equipment_geometry"
@@ -2024,15 +2033,15 @@ def test_sequential_execution_uses_step_local_params_and_dependency_context(
             "supporting_skills": ["mesh_geometry"],
             "workflow_type": "sequential",
             "extracted_params": {
-                "message": "Shared compatibility message",
+                "message": "Re-author the valve with larger holes.",
                 "cad_artifact_id": "old-step",
             },
             "capability_params": {
                 "author_equipment_geometry": {
-                    "message": "Re-author the valve with larger holes."
+                    "message": "stale authoring snapshot"
                 },
                 "mesh_geometry": {
-                    "message": "Shared compatibility message",
+                    "message": "stale current planning params",
                     "cad_artifact_id": "old-step",
                 },
             },
@@ -2057,6 +2066,12 @@ def test_sequential_execution_uses_step_local_params_and_dependency_context(
             "artifacts": [
                 {"artifact_id": "old-step", "name": "old-valve.step"}
             ]
+        },
+        "prior_capability_params": {
+            "mesh_geometry": {
+                "message": "Use the prior mesh settings.",
+                "reference_artifact_id": "old-step",
+            }
         },
         "conversation_history": [],
     }

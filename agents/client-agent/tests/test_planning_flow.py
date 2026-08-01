@@ -541,6 +541,7 @@ def test_followup_reauthors_geometry_from_prior_parameters_before_meshing(
     assert routing["primary_skill"] == "author_equipment_geometry"
     assert routing["supporting_skills"] == ["mesh_geometry"]
     assert routing["workflow_type"] == "sequential"
+    assert "capability_params" not in routing
     assert routing["extracted_params"]["input_data"] == {
         "equipment_type": "butterfly_valve",
         "pipe_diameter": 0.9,

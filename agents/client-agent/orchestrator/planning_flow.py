@@ -480,17 +480,18 @@ async def compile_query_plan(
         "requires_approval": requires_approval,
         "required_params": required_params,
         "missing_required_params": missing_required_params,
-        "capability_params": _capability_params(
-            selected_skills,
-            capabilities_by_skill,
-            extracted_params,
-        ),
         "operations": [
             operation.model_dump()
             for operation in planning_result.operations
         ],
         "operation_coverage": dict(planning_result.operation_coverage),
     }
+    if selected_workflow is not None:
+        routing_decision["capability_params"] = _capability_params(
+            selected_skills,
+            capabilities_by_skill,
+            extracted_params,
+        )
     if planning_result.workflow_type == "workflow_template" and planning_result.workflow_id:
         runtime.store_status_update(
             conversation_id,

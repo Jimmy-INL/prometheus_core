@@ -128,19 +128,20 @@ def _operation_instruction(
     return "Complete these planned operations:\n- " + "\n- ".join(descriptions)
 
 
-def _planned_skill_params(
-    routing_decision: Dict[str, Any],
+def _invocation_seed(
+    state: AgentState,
     skill_id: str,
+    dependency_skills: List[str],
     fallback: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Return the schema-filtered parameters resolved during planning."""
-    capability_params = routing_decision.get("capability_params")
-    if isinstance(capability_params, dict):
-        planned = capability_params.get(skill_id)
-        if isinstance(planned, dict):
-            return copy.deepcopy(planned)
+    """Use current plan inputs for roots and prior actual inputs for transitions."""
+    if not dependency_skills:
+        return copy.deepcopy(fallback)
+    prior_params = state.get("prior_capability_params")
+    if not isinstance(prior_params, dict):
         return {}
-    return copy.deepcopy(fallback)
+    prior = prior_params.get(skill_id)
+    return copy.deepcopy(prior) if isinstance(prior, dict) else {}
 
 
 def _invocation_context(
@@ -257,6 +258,11 @@ async def _prepare_invocation_params(
 ) -> Dict[str, Any]:
     """Resolve only inputs that can change after an upstream step completes."""
     if not dependency_skills:
+        capability = await get_capability_cache().get_capability_by_skill_id(skill_id)
+        input_schema = getattr(capability, "input_schema", None)
+        if isinstance(input_schema, dict) and input_schema:
+            seed_params = _schema_seed(seed_params, input_schema, context)
+            _validate_artifact_references(seed_params, input_schema, context)
         return attach_artifact_context(seed_params, context)
     return await _resolve_invocation_params(
         skill_id=skill_id,
@@ -382,9 +388,10 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         ),
                         history=working_history,
                         context=working_context,
-                        seed_params=_planned_skill_params(
-                            routing_decision,
+                        seed_params=_invocation_seed(
+                            state,
                             skill_id,
+                            parallel_operations[skill_id][1],
                             seed_params,
                         ),
                         dependency_skills=parallel_operations[skill_id][1],
@@ -429,9 +436,10 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     ),
                     history=working_history,
                     context=current_context,
-                    seed_params=_planned_skill_params(
-                        routing_decision,
+                    seed_params=_invocation_seed(
+                        state,
                         skill_id,
+                        dependency_skills,
                         seed_params,
                     ),
                     dependency_skills=dependency_skills,
@@ -497,9 +505,10 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     ),
                     history=working_history,
                     context=current_context,
-                    seed_params=_planned_skill_params(
-                        routing_decision,
+                    seed_params=_invocation_seed(
+                        state,
                         skill_id,
+                        dependency_skills,
                         seed_params,
                     ),
                     dependency_skills=dependency_skills,
