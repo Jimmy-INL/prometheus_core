@@ -189,6 +189,101 @@ def test_compile_query_plan_populates_missing_info_for_incomplete_plan(monkeypat
     assert result["plan"]["skills"] == ["analyze_corrosion"]
 
 
+def test_compile_query_plan_extracts_from_resolved_followup_request(monkeypatch) -> None:
+    original_query = "what about chloride salts?"
+    standalone_request = (
+        "Perform a literature search on suitable wall materials for chloride "
+        "molten salt reactors."
+    )
+    capability = SimpleNamespace(
+        skill_id="search_literature",
+        skill_name="Search Literature",
+        description="Search scientific literature.",
+        input_schema={
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"],
+        },
+        requires_approval=False,
+        agent_url="http://osti-research-agent:8000",
+        expected_duration_seconds=10,
+        provides=[],
+    )
+
+    async def fake_get_capabilities():
+        return [capability]
+
+    async def fake_compile_plan_with_tools(**kwargs):
+        assert kwargs["query"] == original_query
+        return planner.PlanningResult(
+            outcome="agent_plan",
+            primary_skill="search_literature",
+            workflow_type="single",
+            confidence=0.98,
+            reasoning="Search literature for chloride molten salt reactor materials.",
+            resolved_query=standalone_request,
+            resolution_kind="repeat_prior_task_with_changes",
+            referenced_invocation_id="invocation_1",
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        assert kwargs["query"] == standalone_request
+        return {"question": standalone_request}
+
+    async def keep_extracted_params(**kwargs):
+        assert kwargs["query"] == standalone_request
+        return kwargs["extracted_params"]
+
+    monkeypatch.setattr(
+        planning_flow,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(planning_flow.runtime, "ENABLE_WORKFLOW_LIBRARY", False)
+    monkeypatch.setattr(
+        planning_flow,
+        "compile_plan_with_tools",
+        fake_compile_plan_with_tools,
+    )
+    monkeypatch.setattr(
+        planning_flow,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(
+        planning_flow,
+        "resolve_params_via_capability_metadata",
+        keep_extracted_params,
+    )
+    monkeypatch.setattr(
+        planning_flow.runtime,
+        "store_status_update",
+        lambda *args, **kwargs: None,
+    )
+
+    result = asyncio.run(
+        planning_flow.compile_query_plan(
+            {
+                "conversation_id": "conv-literature-followup",
+                "user_query": original_query,
+                "conversation_history": [],
+                "context": {},
+            }
+        )
+    )
+
+    assert result["is_fallback"] is False
+    assert result["routing_decision"]["primary_skill"] == "search_literature"
+    assert result["routing_decision"]["extracted_params"] == {
+        "question": standalone_request
+    }
+    assert result["routing_decision"]["turn_resolution"] == {
+        "kind": "repeat_prior_task_with_changes",
+        "standalone_request": standalone_request,
+        "referenced_invocation_id": "invocation_1",
+    }
+
+
 def test_compile_query_plan_extracts_nested_bim_params_before_missing_form(
     monkeypatch,
 ) -> None:

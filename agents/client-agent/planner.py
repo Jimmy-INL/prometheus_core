@@ -8,16 +8,18 @@ what to do next — no subagents are invoked here.
 
 HOW IT WORKS
 ------------
-1. A schema-bound LLM call decomposes the request without seeing capabilities.
-2. A `_PlanDraft` freezes those operations and accumulates routing state.
-3. The routing LLM is given:
+1. A schema-bound LLM call resolves the current turn into a standalone task or
+   an explicit non-executable response.
+2. A second schema-bound call decomposes standalone tasks without seeing capabilities.
+3. A `_PlanDraft` freezes those operations and accumulates routing state.
+4. The routing LLM is given:
    - The user query and conversation history
    - Available capabilities (skills + their input schemas)
    - Optional workflow templates (pre-built execution blueprints)
-4. The LLM calls planning tools until it calls `finalize_plan`, at which point
+5. The LLM calls planning tools until it calls `finalize_plan`, at which point
    the loop exits.
-5. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
-6. Parameter extraction runs separately after the planner selects capabilities.
+6. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+7. Parameter extraction runs separately after the planner selects capabilities.
 
 PLANNING TOOLS (called by the LLM, not external code)
 ------------------------------------------------------
@@ -94,12 +96,38 @@ class DecomposedOperationInput(BaseModel):
     description: str = Field(min_length=1)
 
 
-class DecomposeRequestInput(BaseModel):
+class TurnResolutionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    request_kind: Literal["task", "conversation", "needs_clarification"]
-    operations: List[DecomposedOperationInput] = Field(default_factory=list)
+    resolution_kind: Literal[
+        "new_task",
+        "repeat_prior_task_with_changes",
+        "discuss_prior_result",
+        "needs_clarification",
+    ]
+    standalone_request: str
+    referenced_invocation_id: Optional[str]
+    message: str
+
+
+class TurnResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    resolution_kind: Literal[
+        "new_task",
+        "repeat_prior_task_with_changes",
+        "discuss_prior_result",
+        "needs_clarification",
+    ]
+    standalone_request: str = ""
+    referenced_invocation_id: Optional[str] = None
     message: str = ""
+
+
+class DecomposeTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operations: List[DecomposedOperationInput] = Field(min_length=1)
 
 
 class AssignDependenciesInput(BaseModel):
@@ -118,12 +146,10 @@ class RequestedOperation(BaseModel):
     depends_on: List[str] = Field(default_factory=list)
 
 
-class RequestDecomposition(BaseModel):
+class TaskDecomposition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    request_kind: Literal["task", "conversation", "needs_clarification"]
-    operations: List[RequestedOperation] = Field(default_factory=list)
-    message: str = ""
+    operations: List[RequestedOperation]
 
 
 class CoveredOperationInput(BaseModel):
@@ -220,6 +246,16 @@ class PlanningResult(BaseModel):
     operations: List[RequestedOperation] = Field(default_factory=list)
     operation_coverage: Dict[str, str] = Field(default_factory=dict)
     unsupported_operations: List[UnsupportedOperationInput] = Field(default_factory=list)
+    resolved_query: str = ""
+    resolution_kind: Optional[
+        Literal[
+            "new_task",
+            "repeat_prior_task_with_changes",
+            "discuss_prior_result",
+            "needs_clarification",
+        ]
+    ] = None
+    referenced_invocation_id: Optional[str] = None
 
 
 @dataclass
@@ -243,6 +279,9 @@ class _PlanDraft:
     operations: List[RequestedOperation] = field(default_factory=list)
     covered_operations: Dict[str, str] = field(default_factory=dict)
     unsupported_operations: Dict[str, str] = field(default_factory=dict)
+    resolved_query: str = ""
+    resolution_kind: Optional[str] = None
+    referenced_invocation_id: Optional[str] = None
     finalized: bool = False
 
     def to_result(self) -> PlanningResult:
@@ -267,6 +306,9 @@ class _PlanDraft:
                 UnsupportedOperationInput(operation_id=operation_id, reason=reason)
                 for operation_id, reason in self.unsupported_operations.items()
             ],
+            resolved_query=self.resolved_query,
+            resolution_kind=self.resolution_kind,
+            referenced_invocation_id=self.referenced_invocation_id,
         )
 
 
@@ -288,52 +330,171 @@ class WorkflowPlanningCandidate:
     tool_name: Optional[str] = None
 
 
-async def decompose_request(
+def _result_summary(result: Any, assistant_content: str) -> str:
+    if isinstance(result, Mapping):
+        for key in ("error", "answer", "summary", "message", "status"):
+            value = result.get(key)
+            if value not in (None, ""):
+                return str(value)[:500]
+    elif result not in (None, ""):
+        return str(result)[:500]
+    return assistant_content[:500]
+
+
+def _result_outcome(result: Any) -> str:
+    if isinstance(result, Mapping):
+        if result.get("error"):
+            return "error"
+        if result.get("missing_inputs") or result.get("missing_required_params"):
+            return "input_required"
+    return "completed"
+
+
+def _recent_capability_invocations(
+    history: List[Dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    """Return bounded actual invocation records for turn-reference resolution."""
+    records: List[Dict[str, Any]] = []
+    user_request = ""
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if item.get("role") == "user" and content:
+            user_request = content
+        tool_inputs = item.get("tool_inputs")
+        if not isinstance(tool_inputs, Mapping):
+            continue
+        tool_results = item.get("tool_results")
+        if not isinstance(tool_results, Mapping):
+            tool_results = {}
+        for skill_id, params in tool_inputs.items():
+            if str(skill_id) == "workflow_execution" or not isinstance(params, Mapping):
+                continue
+            result = tool_results.get(skill_id)
+            records.append(
+                {
+                    "capability_id": str(skill_id),
+                    "user_request": user_request,
+                    "tool_inputs": dict(params),
+                    "outcome": _result_outcome(result),
+                    "result_summary": _result_summary(result, content),
+                }
+            )
+
+    records = records[-max(1, limit):]
+    for index, record in enumerate(records, 1):
+        record["invocation_id"] = f"invocation_{index}"
+    return records
+
+
+def _recent_conversation_excerpt(
+    history: List[Dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> List[Dict[str, str]]:
+    excerpt: List[Dict[str, str]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        excerpt.append(
+            {
+                "role": str(item.get("role") or "user"),
+                "content": content[:1000],
+            }
+        )
+    return excerpt[-max(1, limit):]
+
+
+def _resolver_artifact_context(context: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
+    artifacts: List[Dict[str, str]] = []
+    for item in ((context or {}).get("artifacts") or [])[-12:]:
+        if not isinstance(item, Mapping):
+            continue
+        artifact_id = str(item.get("artifact_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if not artifact_id and not name:
+            continue
+        artifacts.append(
+            {
+                "artifact_id": artifact_id,
+                "name": name,
+                "description": str(item.get("description") or "")[:300],
+                "mime_type": str(item.get("mime_type") or ""),
+            }
+        )
+    return artifacts
+
+
+async def resolve_turn(
     *,
     query: str,
     history: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
     status_callback: Optional[Callable[[str], None]] = None,
-) -> RequestDecomposition:
-    """Decompose a request before exposing any registered capabilities."""
+) -> TurnResolution:
+    """Resolve the current utterance into a standalone task or explicit response."""
     if status_callback:
-        status_callback("Planner LLM decomposing the request into operations.")
+        status_callback("Planner LLM resolving the current turn.")
+
+    history = history or []
+    invocations = _recent_capability_invocations(history)
+    invocation_ids = [item["invocation_id"] for item in invocations]
 
     messages = [
         {
             "role": "system",
             "content": (
-                "Classify and decompose the user's request without considering what tools or "
-                "capabilities may be available. Call decompose_request exactly once and return "
-                "no prose. For a task, list every requested outcome as an ordered operation. "
-                "Do not assign dependencies; those are requested separately after the ordered "
-                "operations are frozen. "
-                "Treat requests to change previously created parameterized geometry as a new "
-                "geometry-authoring outcome followed by any requested downstream outcomes; do "
-                "not assume an in-place CAD editing operation. Remeshing reuses the most recent "
-                "existing CAD. A request that changes only mesh controls such as element size, "
-                "element count, element type, or mesh quality is one meshing outcome; do not add "
-                "a geometry-authoring outcome unless the user also requests a CAD geometry, "
-                "topology, or dimension change. For conversation, return the "
-                "direct response in message. For genuinely ambiguous intent, return one focused "
-                "question in message."
+                "Resolve the current user utterance without considering available capabilities. "
+                "Call resolve_turn exactly once and return no prose. Use new_task for an "
+                "independent executable request. Use repeat_prior_task_with_changes when the "
+                "utterance substitutes, contrasts, narrows, broadens, or changes parameters of "
+                "a prior capability invocation; this remains executable even if that invocation "
+                "failed or returned no useful result. That branch must reference one supplied "
+                "invocation and produce a complete standalone request containing the prior action "
+                "plus the requested change. Use discuss_prior_result only when no new work is "
+                "requested and answer directly from the conversation. Use needs_clarification "
+                "only when a standalone task cannot be determined, and ask one focused question. "
+                "Do not select or name a capability. Executable branches populate only "
+                "standalone_request. Non-executable branches populate only message."
             ),
         },
         {
             "role": "user",
             "content": (
                 f"Current user query:\n{query}\n\n"
-                f"Conversation history:\n{json.dumps(history or [], default=str)}\n\n"
-                f"Conversation context:\n{json.dumps(context or {}, default=str)}"
+                "Recent conversation text:\n"
+                f"{json.dumps(_recent_conversation_excerpt(history), default=str)}\n\n"
+                "Recent actual capability invocations:\n"
+                f"{json.dumps(invocations, default=str)}\n\n"
+                "Available artifact references:\n"
+                f"{json.dumps(_resolver_artifact_context(context), default=str)}"
             ),
         },
     ]
+    resolution_schema = TurnResolutionInput.model_json_schema()
+    if invocation_ids:
+        resolution_schema["properties"]["referenced_invocation_id"] = {
+            "anyOf": [
+                {"type": "string", "enum": invocation_ids},
+                {"type": "null"},
+            ]
+        }
+    else:
+        resolution_schema["properties"]["referenced_invocation_id"] = {
+            "type": "null"
+        }
     tool_schema = {
         "type": "function",
         "function": {
-            "name": "decompose_request",
-            "description": "Return the exact capability-neutral request decomposition.",
-            "parameters": DecomposeRequestInput.model_json_schema(),
+            "name": "resolve_turn",
+            "description": "Resolve the current utterance into one exact turn outcome.",
+            "parameters": resolution_schema,
         },
     }
 
@@ -346,36 +507,127 @@ async def decompose_request(
         )
 
     _, calls = _planning_tool_calls(response.raw)
-    if len(calls) != 1 or calls[0].get("name") != "decompose_request":
+    if len(calls) != 1 or calls[0].get("name") != "resolve_turn":
         raise PlanningContractError(
-            "Request decomposition must call decompose_request exactly once."
+            "Turn resolution must call resolve_turn exactly once."
         )
     try:
-        parsed = DecomposeRequestInput.model_validate(calls[0].get("args"))
+        parsed = TurnResolutionInput.model_validate(calls[0].get("args"))
     except ValidationError as exc:
         raise PlanningContractError(
-            f"Request decomposition violates its schema: {exc}"
+            f"Turn resolution violates its schema: {exc}"
         ) from exc
 
+    standalone_request = parsed.standalone_request.strip()
     message = parsed.message.strip()
-    if parsed.request_kind == "task":
-        if not parsed.operations:
+    referenced_invocation_id = parsed.referenced_invocation_id
+    if referenced_invocation_id and referenced_invocation_id not in invocation_ids:
+        raise PlanningContractError(
+            "Turn resolution references unavailable prior invocation "
+            f"'{referenced_invocation_id}'."
+        )
+
+    if parsed.resolution_kind in {"new_task", "repeat_prior_task_with_changes"}:
+        if not standalone_request:
             raise PlanningContractError(
-                "Task decomposition must contain at least one operation."
+                "Executable turn resolution must include a standalone request."
             )
         if message:
             raise PlanningContractError(
-                "Task decomposition must not include a conversational message."
+                "Executable turn resolution must not include a response message."
+            )
+        if parsed.resolution_kind == "new_task" and referenced_invocation_id:
+            raise PlanningContractError(
+                "New-task resolution must not reference a prior invocation."
+            )
+        if (
+            parsed.resolution_kind == "repeat_prior_task_with_changes"
+            and not referenced_invocation_id
+        ):
+            raise PlanningContractError(
+                "Repeat-task resolution must reference a prior invocation."
             )
     else:
-        if parsed.operations:
+        if standalone_request:
             raise PlanningContractError(
-                "Non-task decomposition must not contain operations."
+                "Non-executable turn resolution must not include a standalone request."
             )
         if not message:
             raise PlanningContractError(
-                "Non-task decomposition must include a response or clarification message."
+                "Non-executable turn resolution must include a response message."
             )
+        if parsed.resolution_kind == "needs_clarification" and referenced_invocation_id:
+            raise PlanningContractError(
+                "Clarification resolution must not reference a prior invocation."
+            )
+
+    return TurnResolution(
+        resolution_kind=parsed.resolution_kind,
+        standalone_request=standalone_request,
+        referenced_invocation_id=referenced_invocation_id,
+        message=message,
+    )
+
+
+async def decompose_task(
+    *,
+    query: str,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> TaskDecomposition:
+    """Decompose a standalone task before exposing registered capabilities."""
+    if status_callback:
+        status_callback("Planner LLM decomposing the standalone task into operations.")
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Decompose the standalone executable task without considering what tools or "
+                "capabilities may be available. Call decompose_task exactly once and return no "
+                "prose. List every requested outcome as an ordered operation. Do not assign "
+                "dependencies; those are requested separately after the ordered operations are "
+                "frozen. Treat requests to change previously created parameterized geometry as "
+                "a new geometry-authoring outcome followed by any requested downstream outcomes; "
+                "do not assume an in-place CAD editing operation. Remeshing reuses the most recent "
+                "existing CAD. A request that changes only mesh controls such as element size, "
+                "element count, element type, or mesh quality is one meshing outcome; do not add "
+                "a geometry-authoring outcome unless the user also requests a CAD geometry, "
+                "topology, or dimension change."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Standalone user task:\n{query}",
+        },
+    ]
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "decompose_task",
+            "description": "Return the exact capability-neutral task decomposition.",
+            "parameters": DecomposeTaskInput.model_json_schema(),
+        },
+    }
+
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(
+            messages,
+            temperature=0,
+            max_tokens=2048,
+            tools=[tool_schema],
+        )
+
+    _, calls = _planning_tool_calls(response.raw)
+    if len(calls) != 1 or calls[0].get("name") != "decompose_task":
+        raise PlanningContractError(
+            "Task decomposition must call decompose_task exactly once."
+        )
+    try:
+        parsed = DecomposeTaskInput.model_validate(calls[0].get("args"))
+    except ValidationError as exc:
+        raise PlanningContractError(
+            f"Task decomposition violates its schema: {exc}"
+        ) from exc
 
     operation_descriptions: List[str] = []
     for index, operation in enumerate(parsed.operations, 1):
@@ -514,11 +766,7 @@ async def decompose_request(
             )
         )
 
-    return RequestDecomposition(
-        request_kind=parsed.request_kind,
-        operations=operations,
-        message=message,
-    )
+    return TaskDecomposition(operations=operations)
 
 
 def _set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
@@ -579,16 +827,13 @@ def _build_prompt(
     operations: List[RequestedOperation],
     workflow_candidates: Optional[List[WorkflowPlanningCandidate]] = None,
 ) -> str:
-    """Build planner prompt with full conversation + context + capability metadata."""
+    """Build the routing prompt from resolved intent and bounded conversational text."""
     history_lines: List[str] = []
-    for item in history:
+    for item in history[-12:]:
         role = str(item.get("role", "user"))
         text = str(item.get("content", "")).strip()
         if text:
-            history_lines.append(f"{role}: {text}")
-        tool_results = item.get("tool_results")
-        if isinstance(tool_results, dict) and tool_results:
-            history_lines.append(f"{role}_tool_results: {json.dumps(tool_results, default=str)}")
+            history_lines.append(f"{role}: {text[:1000]}")
 
     artifacts_block = ""
     artifacts = (context or {}).get("artifacts")
@@ -651,7 +896,7 @@ def _build_prompt(
 
     return (
         f"User query:\n{query}\n\n"
-        f"Full conversation history:\n{history_block}\n\n"
+        f"Recent conversation text:\n{history_block}\n\n"
         f"Current conversation context:\n{context_block}\n\n"
         f"Required operations (immutable):\n{operations_block}\n\n"
         f"{workflow_block}"
@@ -1255,18 +1500,33 @@ async def compile_plan_with_tools(
     - `chat(...)` in `agent.py` for new user turns and plan refinements.
     """
     history = history or []
+    resolved_query = query
+    resolution_kind: Optional[str] = "new_task"
+    referenced_invocation_id: Optional[str] = None
     if operations is None:
-        decomposition = await decompose_request(
+        resolution = await resolve_turn(
             query=query,
             history=history,
             context=context,
             status_callback=status_callback,
         )
-        if decomposition.request_kind != "task":
+        resolution_kind = resolution.resolution_kind
+        referenced_invocation_id = resolution.referenced_invocation_id
+        if resolution.resolution_kind not in {
+            "new_task",
+            "repeat_prior_task_with_changes",
+        }:
             return PlanningResult(
                 outcome="fallback",
-                message=decomposition.message,
+                message=resolution.message,
+                resolution_kind=resolution.resolution_kind,
+                referenced_invocation_id=resolution.referenced_invocation_id,
             )
+        resolved_query = resolution.standalone_request
+        decomposition = await decompose_task(
+            query=resolved_query,
+            status_callback=status_callback,
+        )
         operations = list(decomposition.operations)
     elif not operations:
         raise PlanningContractError(
@@ -1274,7 +1534,12 @@ async def compile_plan_with_tools(
         )
 
     capabilities_by_skill = {cap.skill_id: cap for cap in capabilities}
-    draft = _PlanDraft(operations=list(operations))
+    draft = _PlanDraft(
+        operations=list(operations),
+        resolved_query=resolved_query,
+        resolution_kind=resolution_kind,
+        referenced_invocation_id=referenced_invocation_id,
+    )
 
     if not capabilities_by_skill:
         return PlanningResult(
@@ -1287,6 +1552,9 @@ async def compile_plan_with_tools(
                 )
                 for operation in operations
             ],
+            resolved_query=resolved_query,
+            resolution_kind=resolution_kind,
+            referenced_invocation_id=referenced_invocation_id,
         )
 
     candidate_list = list(workflow_candidates or [])
@@ -1320,7 +1588,7 @@ async def compile_plan_with_tools(
 
     system_prompt = SYSTEM_PROMPT
     user_prompt = _build_prompt(
-        query=query,
+        query=resolved_query,
         history=history,
         context=context,
         capabilities=capabilities,

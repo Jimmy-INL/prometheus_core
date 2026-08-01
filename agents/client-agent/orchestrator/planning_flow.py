@@ -316,6 +316,7 @@ async def compile_query_plan(
             "fallback_message": message,
         }
 
+    resolved_query = planning_result.resolved_query or query
     selected_skills: List[str] = [planning_result.primary_skill]
     for skill_id in planning_result.supporting_skills:
         if skill_id and skill_id not in selected_skills:
@@ -384,7 +385,7 @@ async def compile_query_plan(
         "Extracting parameters with selected capability schemas.",
     )
     extracted_params = await extract_parameters_with_schemas(
-        query=query,
+        query=resolved_query,
         capabilities=[
             capability
             for capability in chain_capabilities
@@ -395,7 +396,7 @@ async def compile_query_plan(
         existing_params=extracted_seed,
     )
     extracted_params = await resolve_params_via_capability_metadata(
-        query=query,
+        query=resolved_query,
         extracted_params=extracted_params,
         selected_skills=selected_skills,
         context=context,
@@ -475,7 +476,7 @@ async def compile_query_plan(
         "needs_clarification": False,
         "clarification_question": None,
         "extracted_params": extracted_params,
-        "reasoning": planning_result.reasoning or planning_result.message or query,
+        "reasoning": planning_result.reasoning or planning_result.message or resolved_query,
         "agent_url": primary_capability.agent_url if primary_capability else None,
         "requires_approval": requires_approval,
         "required_params": required_params,
@@ -486,6 +487,12 @@ async def compile_query_plan(
         ],
         "operation_coverage": dict(planning_result.operation_coverage),
     }
+    if planning_result.resolution_kind:
+        routing_decision["turn_resolution"] = {
+            "kind": planning_result.resolution_kind,
+            "standalone_request": resolved_query,
+            "referenced_invocation_id": planning_result.referenced_invocation_id,
+        }
     if selected_workflow is not None:
         routing_decision["capability_params"] = _capability_params(
             selected_skills,
@@ -525,7 +532,7 @@ async def compile_query_plan(
         "context": merged_context,
         "question": extracted_params.get("question"),
         "plan": {
-            "intent": planning_result.reasoning or planning_result.message or query,
+            "intent": planning_result.reasoning or planning_result.message or resolved_query,
             "workflow_type": planning_result.workflow_type,
             "workflow_id": planning_result.workflow_id,
             "workflow_version": planning_result.workflow_version,

@@ -26,19 +26,37 @@ class _FakePlannerLLM:
         if len(self.calls) == 1:
             tool_calls = [
                 {
+                    "id": "resolve-1",
+                    "type": "function",
+                    "function": {
+                        "name": "resolve_turn",
+                        "arguments": json.dumps(
+                            {
+                                "resolution_kind": "new_task",
+                                "standalone_request": (
+                                    "Analyze the thermal behavior of SS316"
+                                ),
+                                "referenced_invocation_id": None,
+                                "message": "",
+                            }
+                        ),
+                    },
+                }
+            ]
+        elif len(self.calls) == 2:
+            tool_calls = [
+                {
                     "id": "decompose-1",
                     "type": "function",
                     "function": {
-                        "name": "decompose_request",
+                        "name": "decompose_task",
                         "arguments": json.dumps(
                             {
-                                "request_kind": "task",
                                 "operations": [
                                     {
                                         "description": "Analyze the material's thermal behavior",
                                     }
                                 ],
-                                "message": "",
                             }
                         ),
                     },
@@ -124,12 +142,17 @@ def test_planner_uses_llm_client_raw_tool_calls(monkeypatch):
 
     assert result.outcome == "agent_plan"
     assert result.primary_skill == "analyze_thermal"
-    decomposition_messages, decomposition_kwargs = fake_llm.calls[0]
+    resolution_messages, resolution_kwargs = fake_llm.calls[0]
+    assert "Available capabilities" not in resolution_messages[1]["content"]
+    assert [tool["function"]["name"] for tool in resolution_kwargs["tools"]] == [
+        "resolve_turn"
+    ]
+    decomposition_messages, decomposition_kwargs = fake_llm.calls[1]
     assert "Available capabilities" not in decomposition_messages[1]["content"]
     assert [tool["function"]["name"] for tool in decomposition_kwargs["tools"]] == [
-        "decompose_request"
+        "decompose_task"
     ]
-    messages, kwargs = fake_llm.calls[1]
+    messages, kwargs = fake_llm.calls[2]
     assert [message["role"] for message in messages[:2]] == ["system", "user"]
     assert "Analyze the thermal behavior of SS316" in messages[1]["content"]
     assert "Required operations (immutable)" in messages[1]["content"]

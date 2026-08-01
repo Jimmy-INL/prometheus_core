@@ -254,12 +254,23 @@ class _DecompositionLLM:
         )
 
 
+def _turn_resolution_call(arguments, call_id="resolve-1"):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": "resolve_turn",
+            "arguments": json.dumps(arguments),
+        },
+    }
+
+
 def _decomposition_call(arguments, call_id="decompose-1"):
     return {
         "id": call_id,
         "type": "function",
         "function": {
-            "name": "decompose_request",
+            "name": "decompose_task",
             "arguments": json.dumps(arguments),
         },
     }
@@ -276,12 +287,213 @@ def _dependency_call(arguments, call_id="dependencies-1"):
     }
 
 
+def _planning_call(name, arguments, call_id):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": json.dumps(arguments),
+        },
+    }
+
+
+def _literature_history(result=None):
+    if result is None:
+        result = {
+            "answer": "",
+            "papers": ["FULL PAPER PAYLOAD MUST NOT ENTER THE RESOLVER PROMPT"],
+        }
+    return [
+        {
+            "role": "user",
+            "content": (
+                "Perform a literature search on suitable wall materials for "
+                "fluoride molten salt reactors"
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "Found 15 papers, but could not extract answers from the available PDFs."
+            ),
+            "tool_inputs": {
+                "search_literature": {
+                    "question": (
+                        "Perform a literature search on suitable wall materials for "
+                        "fluoride molten salt reactors"
+                    )
+                }
+            },
+            "tool_results": {"search_literature": result},
+        },
+        {"role": "user", "content": "what about chloride salts?"},
+    ]
+
+
+def test_turn_resolution_expands_elliptical_followup_from_actual_invocation(
+    monkeypatch,
+) -> None:
+    standalone_request = (
+        "Perform a literature search on suitable wall materials for chloride "
+        "molten salt reactors."
+    )
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "repeat_prior_task_with_changes",
+                    "standalone_request": standalone_request,
+                    "referenced_invocation_id": "invocation_1",
+                    "message": "",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    result = asyncio.run(
+        planner.resolve_turn(
+            query="what about chloride salts?",
+            history=_literature_history(),
+            context={},
+        )
+    )
+
+    assert result.resolution_kind == "repeat_prior_task_with_changes"
+    assert result.standalone_request == standalone_request
+    assert result.referenced_invocation_id == "invocation_1"
+    prompt = fake_llm.calls[0][0][1]["content"]
+    assert "invocation_1" in prompt
+    assert "fluoride molten salt reactors" in prompt
+    assert "FULL PAPER PAYLOAD MUST NOT ENTER THE RESOLVER PROMPT" not in prompt
+    resolver_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
+    reference_schema = resolver_schema["properties"]["referenced_invocation_id"]
+    assert "invocation_1" in json.dumps(reference_schema)
+
+
+def test_turn_resolution_can_repeat_failed_prior_invocation(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "repeat_prior_task_with_changes",
+                    "standalone_request": (
+                        "Perform a literature search on suitable wall materials for "
+                        "chloride molten salt reactors."
+                    ),
+                    "referenced_invocation_id": "invocation_1",
+                    "message": "",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    result = asyncio.run(
+        planner.resolve_turn(
+            query="what about chloride salts?",
+            history=_literature_history({"error": "PDF extraction failed"}),
+            context={},
+        )
+    )
+
+    assert result.resolution_kind == "repeat_prior_task_with_changes"
+    prompt = fake_llm.calls[0][0][1]["content"]
+    assert '"outcome": "error"' in prompt
+    assert "PDF extraction failed" in prompt
+
+
+def test_turn_resolution_rejects_unknown_invocation_reference(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "repeat_prior_task_with_changes",
+                    "standalone_request": "Search the literature for chloride salts.",
+                    "referenced_invocation_id": "invocation_99",
+                    "message": "",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    with pytest.raises(
+        planner.PlanningContractError,
+        match="unavailable prior invocation 'invocation_99'",
+    ):
+        asyncio.run(
+            planner.resolve_turn(
+                query="what about chloride salts?",
+                history=_literature_history(),
+                context={},
+            )
+        )
+
+
+def test_turn_resolution_rejects_contradictory_new_task_payload(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "new_task",
+                    "standalone_request": "Search the literature for chloride salts.",
+                    "referenced_invocation_id": None,
+                    "message": "I will search now.",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    with pytest.raises(
+        planner.PlanningContractError,
+        match="Executable turn resolution must not include a response message",
+    ):
+        asyncio.run(
+            planner.resolve_turn(
+                query="Search the literature for chloride salts.",
+                history=[],
+                context={},
+            )
+        )
+
+
+def test_discussion_resolution_returns_fallback_without_decomposition(monkeypatch) -> None:
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "discuss_prior_result",
+                    "standalone_request": "",
+                    "referenced_invocation_id": "invocation_1",
+                    "message": "The prior search did not produce extractable answers.",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+
+    result = asyncio.run(
+        planner.compile_plan_with_tools(
+            query="What did the prior search conclude?",
+            capabilities=[],
+            history=_literature_history(),
+        )
+    )
+
+    assert result.outcome == "fallback"
+    assert result.resolution_kind == "discuss_prior_result"
+    assert result.message == "The prior search did not produce extractable answers."
+    assert len(fake_llm.calls) == 1
+
+
 def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
     fake_llm = _DecompositionLLM(
         [
             _decomposition_call(
                 {
-                    "request_kind": "task",
                     "operations": [
                         {
                             "description": "Re-author the valve with twice the hole diameter",
@@ -290,7 +502,6 @@ def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
                             "description": "Mesh the newly authored CAD with about 30000 tetrahedra",
                         },
                     ],
-                    "message": "",
                 }
             )
         ],
@@ -310,10 +521,8 @@ def test_decomposition_assigns_stable_ids_and_dependencies(monkeypatch) -> None:
     monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
 
     result = asyncio.run(
-        planner.decompose_request(
+        planner.decompose_task(
             query="Make the holes larger, then mesh the CAD.",
-            history=[],
-            context={},
         )
     )
 
@@ -334,9 +543,7 @@ def test_single_operation_decomposition_does_not_ask_for_dependencies(monkeypatc
         [
             _decomposition_call(
                 {
-                    "request_kind": "task",
                     "operations": [{"description": "Remesh the attached CAD"}],
-                    "message": "",
                 }
             )
         ]
@@ -344,10 +551,8 @@ def test_single_operation_decomposition_does_not_ask_for_dependencies(monkeypatc
     monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
 
     result = asyncio.run(
-        planner.decompose_request(
+        planner.decompose_task(
             query="Remesh it with half the element size.",
-            history=[],
-            context={},
         )
     )
 
@@ -367,12 +572,10 @@ def test_dependency_assignment_rejects_self_dependencies(monkeypatch) -> None:
         [
             _decomposition_call(
                 {
-                    "request_kind": "task",
                     "operations": [
                         {"description": "Create CAD geometry"},
                         {"description": "Mesh the created CAD"},
                     ],
-                    "message": "",
                 }
             )
         ],
@@ -396,19 +599,15 @@ def test_dependency_assignment_rejects_self_dependencies(monkeypatch) -> None:
         match="operation 1 references non-earlier dependencies: op_1",
     ):
         asyncio.run(
-            planner.decompose_request(
+            planner.decompose_task(
                 query="Create CAD and mesh it.",
-                history=[],
-                context={},
             )
         )
 
 
 def test_decomposition_rejects_more_than_one_tool_call(monkeypatch) -> None:
     arguments = {
-        "request_kind": "task",
         "operations": [{"description": "Mesh CAD", "depends_on": []}],
-        "message": "",
     }
     fake_llm = _DecompositionLLM(
         [_decomposition_call(arguments, "one"), _decomposition_call(arguments, "two")]
@@ -417,12 +616,96 @@ def test_decomposition_rejects_more_than_one_tool_call(monkeypatch) -> None:
 
     with pytest.raises(planner.PlanningContractError, match="exactly once"):
         asyncio.run(
-            planner.decompose_request(
+            planner.decompose_task(
                 query="Mesh the CAD.",
-                history=[],
-                context={},
             )
         )
+
+
+def test_compile_plan_routes_resolved_elliptical_followup(monkeypatch) -> None:
+    standalone_request = (
+        "Perform a literature search on suitable wall materials for chloride "
+        "molten salt reactors."
+    )
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "repeat_prior_task_with_changes",
+                    "standalone_request": standalone_request,
+                    "referenced_invocation_id": "invocation_1",
+                    "message": "",
+                }
+            )
+        ],
+        [
+            [
+                _decomposition_call(
+                    {
+                        "operations": [
+                            {
+                                "description": (
+                                    "Search the literature for suitable wall materials "
+                                    "for chloride molten salt reactors"
+                                )
+                            }
+                        ]
+                    }
+                )
+            ],
+            [
+                _planning_call(
+                    "select_capabilities",
+                    {
+                        "primary_skill": "search_literature",
+                        "supporting_skills": [],
+                        "workflow_type": "single",
+                        "reasoning": "A new literature search is required.",
+                        "confidence": 0.98,
+                    },
+                    "select-1",
+                ),
+                _planning_call(
+                    "set_operation_coverage",
+                    {
+                        "covered": [
+                            {
+                                "operation_id": "op_1",
+                                "skill_id": "search_literature",
+                            }
+                        ],
+                        "unsupported": [],
+                    },
+                    "coverage-1",
+                ),
+                _planning_call("finalize_plan", {}, "finalize-1"),
+            ],
+        ],
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+    capability = AgentCapability(
+        agent_id="osti-research-agent",
+        agent_name="OSTI Research Agent",
+        agent_url="http://osti-research-agent:8000",
+        skill_id="search_literature",
+        skill_name="Search Literature",
+        description="Search scientific literature.",
+    )
+
+    result = asyncio.run(
+        planner.compile_plan_with_tools(
+            query="what about chloride salts?",
+            capabilities=[capability],
+            history=_literature_history(),
+        )
+    )
+
+    assert result.outcome == "agent_plan"
+    assert result.primary_skill == "search_literature"
+    assert result.resolved_query == standalone_request
+    assert result.resolution_kind == "repeat_prior_task_with_changes"
+    routing_prompt = fake_llm.calls[2][0][1]["content"]
+    assert f"User query:\n{standalone_request}" in routing_prompt
 
 
 def test_unfinalized_planner_response_is_a_contract_error(monkeypatch) -> None:
