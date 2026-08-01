@@ -163,6 +163,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - When replacing an implementation path, delete the obsolete path and tests instead of leaving quarantined fallback code.
+- Before adding a second state store or execution path, step back and test whether the existing abstraction can become canonical; prefer deleting compensating synchronization over layering another fix.
+- Treat dependency provenance as artifact-selection guidance, not an authorization boundary; keep the full conversation catalog available and validate selected IDs against it.
 - Raw A2A v1 callers use PascalCase JSON-RPC methods, ProtoJSON enum/part/configuration shapes, and `A2A-Version: 1.0`; keep the LiteLLM gateway at version 1.92.0 or newer.
 - A2A consumers must accept only exact v1 ProtoJSON enum, part, and payload shapes; reject malformed responses instead of normalizing legacy variants or inferring fields from prose.
 - Never place Markdown backticks inside shell command arguments; use shell-safe plain text or a non-shell file-editing interface.

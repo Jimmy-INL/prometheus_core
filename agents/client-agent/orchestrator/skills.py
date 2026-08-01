@@ -35,13 +35,26 @@ async def invoke_skill(
     emit_status: bool = True,
 ) -> Dict[str, Any]:
     """Invoke a single discovered skill, tracking it as a Task Graph node."""
+    invoke_params = dict(params)
+    resume_node_id = invoke_params.pop("_task_graph_node_id", None)
+    resume_root_id = invoke_params.pop("_task_graph_root_id", None)
     async with task_tracking.track_skill(
-        conversation_id, skill_id, title=skill_id
+        conversation_id,
+        skill_id,
+        title=skill_id,
+        resume_node_id=resume_node_id,
+        resume_root_id=resume_root_id,
     ) as tracker:
         result = await _invoke_skill_impl(
-            skill_id, params, conversation_id, tracker, emit_status
+            skill_id, invoke_params, conversation_id, tracker, emit_status
         )
         task_tracking.apply_result_outcome(tracker, result)
+        if result.get("input_required") and tracker.active:
+            result = {
+                **result,
+                "_task_graph_node_id": tracker.node_id,
+                "_task_graph_root_id": task_tracking.current_root_id() or tracker.node_id,
+            }
         return result
 
 

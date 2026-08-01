@@ -142,13 +142,14 @@ def request_background(node_id: Optional[str] = None) -> None:
 def _own_state_for_status(status: str) -> Optional[str]:
     """Map an orchestrator response status to the root node's own state.
 
-    ``needs_info`` / ``plan_ready`` / ``backgrounded`` return ``None``: the turn
-    is paused or detached, not done — leave the root non-terminal.
+    A ``needs_info`` turn has finished its own orchestration work. Its
+    input-required child keeps the root's effective state non-terminal until
+    that exact child is resumed and completed.
     """
     state = (status or "").strip().lower()
     if state == "error":
         return "failed"
-    if state in ("completed", "answer"):
+    if state in ("completed", "answer", "needs_info"):
         return "completed"
     return None
 
@@ -302,29 +303,88 @@ async def track_skill(
     *,
     agent: Optional[str] = None,
     title: Optional[str] = None,
+    resume_node_id: Optional[str] = None,
+    resume_root_id: Optional[str] = None,
 ) -> AsyncIterator[SkillTracker]:
-    """Create and finalize a Task Graph child node around a skill dispatch."""
+    """Create or resume a Task Graph child node around a skill dispatch."""
     conv = str(conversation_id or "")
     if not conv:
         yield SkillTracker("", "")  # tracking disabled (no conversation scope)
         return
 
-    parent = _nested_parent.get() or _ensure_root()
-    node_id = _new_id()
-    try:
-        task_graph.create_node(
-            task_id=node_id,
-            conversation_id=conv,
-            parent_task_id=parent,
-            agent=agent,
-            skill=skill_id,
-            title=title or skill_id,
-        )
-        task_graph.update_own_state(conv, node_id, own_state="working")
-    except Exception as exc:
-        logger.warning("[TASKTRACK] Failed to create skill node: %s", exc)
-        yield SkillTracker(conv, "")
-        return
+    if bool(resume_node_id) != bool(resume_root_id):
+        raise ValueError("Task Graph resumption requires both node and root IDs")
+
+    if resume_node_id and resume_root_id:
+        node = task_graph.get_node(conv, resume_node_id)
+        if node is None:
+            raise ValueError(f"Task Graph resume node '{resume_node_id}' does not exist")
+        if node.skill != skill_id:
+            raise ValueError(
+                f"Task Graph resume node '{resume_node_id}' belongs to skill "
+                f"'{node.skill}', not '{skill_id}'"
+            )
+        if node.own_state != "input-required":
+            raise ValueError(
+                f"Task Graph resume node '{resume_node_id}' is '{node.own_state}', "
+                "not 'input-required'"
+            )
+
+        actual_root_id = node.task_id
+        seen: set[str] = set()
+        while node.parent_task_id:
+            if node.task_id in seen:
+                raise ValueError(f"Task Graph cycle detected at '{node.task_id}'")
+            seen.add(node.task_id)
+            parent = task_graph.get_node(conv, node.parent_task_id)
+            if parent is None:
+                raise ValueError(
+                    f"Task Graph resume node '{resume_node_id}' has missing parent "
+                    f"'{node.parent_task_id}'"
+                )
+            node = parent
+            actual_root_id = node.task_id
+        if actual_root_id != resume_root_id:
+            raise ValueError(
+                f"Task Graph resume node '{resume_node_id}' belongs to root "
+                f"'{actual_root_id}', not '{resume_root_id}'"
+            )
+
+        turn = _turn.get()
+        if turn is not None:
+            if turn.conversation_id != conv:
+                raise ValueError(
+                    f"Task Graph turn belongs to conversation '{turn.conversation_id}', "
+                    f"not '{conv}'"
+                )
+            if turn.created and turn.root_id != resume_root_id:
+                raise ValueError(
+                    f"Task Graph turn already uses root '{turn.root_id}', "
+                    f"not '{resume_root_id}'"
+                )
+            turn.root_id = resume_root_id
+            turn.created = True
+
+        node_id = resume_node_id
+        if task_graph.update_own_state(conv, node_id, own_state="working") is None:
+            raise ValueError(f"Task Graph resume node '{resume_node_id}' disappeared")
+    else:
+        parent = _nested_parent.get() or _ensure_root()
+        node_id = _new_id()
+        try:
+            task_graph.create_node(
+                task_id=node_id,
+                conversation_id=conv,
+                parent_task_id=parent,
+                agent=agent,
+                skill=skill_id,
+                title=title or skill_id,
+            )
+            task_graph.update_own_state(conv, node_id, own_state="working")
+        except Exception as exc:
+            logger.warning("[TASKTRACK] Failed to create skill node: %s", exc)
+            yield SkillTracker(conv, "")
+            return
 
     tracker = SkillTracker(conv, node_id)
     token = _nested_parent.set(node_id)

@@ -178,6 +178,16 @@ def _merge_exact(
             )
 
 
+def _merge_override(target: Dict[str, Any], incoming: Dict[str, Any]) -> None:
+    """Overlay one capability's freshly resolved values onto prior candidates."""
+    for key, value in incoming.items():
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            _merge_override(current, value)
+        else:
+            target[key] = copy.deepcopy(value)
+
+
 def _prompt(
     *,
     query: str,
@@ -185,13 +195,26 @@ def _prompt(
     context: Dict[str, Any],
     existing_params: Dict[str, Any],
     tool_names: List[str],
+    replace_existing: bool,
 ) -> List[Dict[str, str]]:
+    invocation_guidance = (
+        "The current instruction is authoritative for this invocation. Re-evaluate "
+        "existing parameters and include any values that must change. Current context "
+        "may include _operation_dependencies mapping dependency skills to the artifact "
+        "IDs they produced; those are provenance hints, while every artifact in the "
+        "current artifact catalog remains eligible. "
+        if replace_existing
+        else ""
+    )
     system = (
         "You extract parameters for capabilities that have already been selected. "
         "Do not select or change capabilities. Call every extraction tool exactly "
         "once, using only values supported by the user query, conversation history, "
         "current context, or existing parameters. Preserve each tool schema's exact "
         "field names and nesting. Omit values that are not available; do not guess. "
+        "For fields marked as artifact references, use only an artifact_id present "
+        "in the current context. "
+        f"{invocation_guidance}"
         "Convert units only when the schema description specifies the destination "
         "unit. Return no prose."
     )
@@ -215,8 +238,14 @@ async def extract_parameters_with_schemas(
     history: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
     existing_params: Optional[Dict[str, Any]] = None,
+    replace_existing: bool = False,
 ) -> Dict[str, Any]:
-    """Extract partial parameters using one exact tool schema per selected skill."""
+    """Extract partial parameters using one exact tool schema per selected skill.
+
+    When resolving an invocation, ``replace_existing`` makes freshly inferred
+    values authoritative over planning-time candidates. Conflicts between
+    capability tool calls are still rejected.
+    """
     schemas_by_tool: Dict[str, tuple[str, Dict[str, Any]]] = {}
     tools: List[Dict[str, Any]] = []
     for index, capability in enumerate(capabilities, 1):
@@ -253,6 +282,7 @@ async def extract_parameters_with_schemas(
         context=dict(context or {}),
         existing_params=merged,
         tool_names=tool_names,
+        replace_existing=replace_existing,
     )
     async with runtime.create_llm() as llm:
         response = await llm.medium(
@@ -264,6 +294,8 @@ async def extract_parameters_with_schemas(
 
     calls = _parse_tool_calls(response.raw)
     received: set[str] = set()
+    extracted: Dict[str, Any] = {}
+    merge_target = extracted if replace_existing else merged
     for call in calls:
         tool_name = call["name"]
         if tool_name not in schemas_by_tool:
@@ -282,7 +314,7 @@ async def extract_parameters_with_schemas(
             schema=schema,
             arguments=arguments,
         )
-        _merge_exact(merged, arguments, source=skill_id)
+        _merge_exact(merge_target, arguments, source=skill_id)
 
     missing_calls = [name for name in tool_names if name not in received]
     if missing_calls:
@@ -290,4 +322,6 @@ async def extract_parameters_with_schemas(
             "Parameter extraction did not call required tool(s): "
             + ", ".join(missing_calls)
         )
+    if replace_existing:
+        _merge_override(merged, extracted)
     return merged

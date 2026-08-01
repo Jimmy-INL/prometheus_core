@@ -259,3 +259,44 @@ def test_extract_parameters_rejects_missing_tool_call(monkeypatch):
                 context={},
             )
         )
+
+
+def test_invocation_resolution_replaces_planning_candidates(monkeypatch):
+    tool_name = parameter_extraction.extraction_tool_name(
+        1, "author_equipment_geometry"
+    )
+    fake_llm = _FakeLLM(
+        _tool_response(
+            tool_name,
+            {"input_data": {"hole_diameter": 0.10}},
+        )
+    )
+    monkeypatch.setattr(
+        parameter_extraction.runtime,
+        "create_llm",
+        lambda: fake_llm,
+    )
+
+    result = asyncio.run(
+        parameter_extraction.extract_parameters_with_schemas(
+            query="Double the hole diameter.",
+            capabilities=[_capability()],
+            history=[],
+            context={},
+            existing_params={
+                "input_data": {
+                    "equipment_type": "butterfly_valve",
+                    "hole_diameter": 0.05,
+                }
+            },
+            replace_existing=True,
+        )
+    )
+
+    assert result["input_data"] == {
+        "equipment_type": "butterfly_valve",
+        "hole_diameter": 0.10,
+    }
+    system_prompt = fake_llm.calls[0][0][0]["content"]
+    assert "current instruction is authoritative" in system_prompt
+    assert "_operation_dependencies" in system_prompt

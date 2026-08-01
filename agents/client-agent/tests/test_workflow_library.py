@@ -635,7 +635,11 @@ def test_executor_collects_all_parallel_input_required_steps() -> None:
         return {
             "input_required": {
                 "missing_inputs": [{"name": f"param_for_{skill_id}", "type": "string"}],
-            }
+            },
+            "_a2a_context_id": f"context-{skill_id}",
+            "_a2a_task_id": f"task-{skill_id}",
+            "_task_graph_root_id": "root-1",
+            "_task_graph_node_id": f"node-{skill_id}",
         }
 
     workflow = _compile(
@@ -665,6 +669,13 @@ def test_executor_collects_all_parallel_input_required_steps() -> None:
 
     assert len(result["input_required_steps"]) == 2
     assert {entry["step_id"] for entry in result["input_required_steps"]} == {"first", "second"}
+    assert {
+        (entry["_task_graph_root_id"], entry["_task_graph_node_id"])
+        for entry in result["input_required_steps"]
+    } == {
+        ("root-1", "node-skill_a"),
+        ("root-1", "node-skill_b"),
+    }
 
 
 def test_executor_stops_sequential_workflow_on_input_required() -> None:

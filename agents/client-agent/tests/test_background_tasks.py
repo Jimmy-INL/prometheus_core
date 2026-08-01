@@ -79,11 +79,11 @@ def test_finish_turn_for_completes_root(fake_redis: _FakeRedis) -> None:
     assert task_graph.get_node(CONV, "root").state == "completed"
 
 
-def test_finish_turn_for_leaves_paused_root_working(fake_redis: _FakeRedis) -> None:
+def test_finish_turn_for_completes_needs_info_root_own_work(fake_redis: _FakeRedis) -> None:
     task_graph.create_node(task_id="root", conversation_id=CONV, title="x")
     task_graph.update_own_state(CONV, "root", own_state="working")
     task_tracking.finish_turn_for(CONV, "root", "needs_info")
-    assert task_graph.get_node(CONV, "root").state == "working"
+    assert task_graph.get_node(CONV, "root").state == "completed"
 
 
 # --- proactive detach (declare_long_running) ---------------------------------
