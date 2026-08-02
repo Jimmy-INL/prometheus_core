@@ -177,3 +177,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Freeze ordered operations before assigning dependencies; generate dependency schemas from those operation IDs so self- and forward-dependencies are structurally unavailable.
 - Treat remeshing and mesh-control changes as mesh-only work against existing CAD; select authoring only when the user requests CAD geometry, topology, or dimension changes.
 - When editing a repeated condition, include function-specific patch context and inspect the matched hunk before testing.
+- OpenAI function-tool parameter schemas must remain a top-level object without oneOf, anyOf, allOf, enum, const, or not; encode branch variants as separate function tools.

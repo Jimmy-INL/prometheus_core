@@ -96,18 +96,30 @@ class DecomposedOperationInput(BaseModel):
     description: str = Field(min_length=1)
 
 
-class TurnResolutionInput(BaseModel):
+class NewTaskResolutionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    resolution_kind: Literal[
-        "new_task",
-        "repeat_prior_task_with_changes",
-        "discuss_prior_result",
-        "needs_clarification",
-    ]
-    standalone_request: str
-    referenced_invocation_id: Optional[str]
-    message: str
+    standalone_request: str = Field(min_length=1)
+
+
+class RepeatTaskResolutionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    standalone_request: str = Field(min_length=1)
+    referenced_invocation_id: str = Field(min_length=1)
+
+
+class PriorResultDiscussionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1)
+    referenced_invocation_id: Optional[str] = None
+
+
+class ClarificationResolutionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1)
 
 
 class TurnResolution(BaseModel):
@@ -451,15 +463,17 @@ async def resolve_turn(
             "role": "system",
             "content": (
                 "Resolve the current user utterance without considering available capabilities. "
-                "Call resolve_turn exactly once and return no prose. Use new_task for an "
-                "independent executable request. Use repeat_prior_task_with_changes when the "
+                "Call exactly one provided resolution function and return no prose. Use "
+                "resolve_new_task for an independent executable request. Use "
+                "resolve_repeat_prior_task_with_changes when the "
                 "utterance substitutes, contrasts, narrows, broadens, or changes parameters of "
                 "a prior capability invocation; this remains executable even if that invocation "
                 "failed or returned no useful result. That branch must reference one supplied "
                 "invocation and produce a complete standalone request containing the prior action "
-                "plus the requested change. Use discuss_prior_result only when no new work is "
-                "requested and answer directly from the conversation. Use needs_clarification "
-                "only when a standalone task cannot be determined, and ask one focused question. "
+                "plus the requested change. Use resolve_prior_result_discussion only when no "
+                "new work is requested and answer directly from the conversation. Use "
+                "resolve_needs_clarification only when a standalone task cannot be determined, "
+                "and ask one focused question. "
                 "Do not select or name a capability. Executable branches populate only "
                 "standalone_request. Non-executable branches populate only message."
             ),
@@ -477,122 +491,104 @@ async def resolve_turn(
             ),
         },
     ]
-    resolution_schema = TurnResolutionInput.model_json_schema()
+    resolution_specs = [
+        (
+            "resolve_new_task",
+            "Resolve an independent executable request.",
+            NewTaskResolutionInput,
+        ),
+        (
+            "resolve_prior_result_discussion",
+            "Answer a question about prior results without requesting new work.",
+            PriorResultDiscussionInput,
+        ),
+        (
+            "resolve_needs_clarification",
+            "Ask one focused question when no standalone task can be determined.",
+            ClarificationResolutionInput,
+        ),
+    ]
     if invocation_ids:
-        resolution_schema["properties"]["referenced_invocation_id"] = {
-            "anyOf": [
-                {"type": "string", "enum": invocation_ids},
-                {"type": "null"},
-            ]
-        }
-        resolution_schema["anyOf"] = [
-            {
-                "properties": {
-                    "resolution_kind": {
-                        "enum": [
-                            "new_task",
-                            "discuss_prior_result",
-                            "needs_clarification",
-                        ]
-                    }
+        resolution_specs.insert(
+            1,
+            (
+                "resolve_repeat_prior_task_with_changes",
+                "Repeat one supplied prior invocation with requested changes.",
+                RepeatTaskResolutionInput,
+            ),
+        )
+
+    resolution_tools: List[Dict[str, Any]] = []
+    resolution_models: Dict[str, Any] = {}
+    for name, description, model in resolution_specs:
+        schema = model.model_json_schema()
+        if name == "resolve_repeat_prior_task_with_changes":
+            schema["properties"]["referenced_invocation_id"] = {
+                "type": "string",
+                "enum": invocation_ids,
+            }
+        elif name == "resolve_prior_result_discussion":
+            schema["properties"]["referenced_invocation_id"] = (
+                {
+                    "anyOf": [
+                        {"type": "string", "enum": invocation_ids},
+                        {"type": "null"},
+                    ]
                 }
-            },
+                if invocation_ids
+                else {"type": "null"}
+            )
+        resolution_models[name] = model
+        resolution_tools.append(
             {
-                "properties": {
-                    "resolution_kind": {
-                        "enum": ["repeat_prior_task_with_changes"]
-                    },
-                    "referenced_invocation_id": {
-                        "type": "string",
-                        "enum": invocation_ids,
-                    },
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": schema,
                 },
-            },
-        ]
-    else:
-        resolution_schema["properties"]["referenced_invocation_id"] = {
-            "type": "null"
-        }
-        resolution_kinds = resolution_schema["properties"]["resolution_kind"]["enum"]
-        resolution_schema["properties"]["resolution_kind"]["enum"] = [
-            kind
-            for kind in resolution_kinds
-            if kind != "repeat_prior_task_with_changes"
-        ]
-    tool_schema = {
-        "type": "function",
-        "function": {
-            "name": "resolve_turn",
-            "description": "Resolve the current utterance into one exact turn outcome.",
-            "parameters": resolution_schema,
-        },
-    }
+            }
+        )
 
     async with runtime.create_llm() as llm:
         response = await llm.medium(
             messages,
             temperature=0,
             max_tokens=2048,
-            tools=[tool_schema],
+            tools=resolution_tools,
         )
 
     _, calls = _planning_tool_calls(response.raw)
-    if len(calls) != 1 or calls[0].get("name") != "resolve_turn":
+    if len(calls) != 1 or calls[0].get("name") not in resolution_models:
         raise PlanningContractError(
-            "Turn resolution must call resolve_turn exactly once."
+            "Turn resolution must call exactly one provided resolution function."
         )
+    tool_name = str(calls[0]["name"])
     try:
-        parsed = TurnResolutionInput.model_validate(calls[0].get("args"))
+        parsed = resolution_models[tool_name].model_validate(calls[0].get("args"))
     except ValidationError as exc:
         raise PlanningContractError(
             f"Turn resolution violates its schema: {exc}"
         ) from exc
 
-    standalone_request = parsed.standalone_request.strip()
-    message = parsed.message.strip()
-    referenced_invocation_id = parsed.referenced_invocation_id
+    standalone_request = str(getattr(parsed, "standalone_request", "")).strip()
+    message = str(getattr(parsed, "message", "")).strip()
+    referenced_invocation_id = getattr(parsed, "referenced_invocation_id", None)
     if referenced_invocation_id and referenced_invocation_id not in invocation_ids:
         raise PlanningContractError(
             "Turn resolution references unavailable prior invocation "
             f"'{referenced_invocation_id}'."
         )
 
-    if parsed.resolution_kind in {"new_task", "repeat_prior_task_with_changes"}:
-        if not standalone_request:
-            raise PlanningContractError(
-                "Executable turn resolution must include a standalone request."
-            )
-        if message:
-            raise PlanningContractError(
-                "Executable turn resolution must not include a response message."
-            )
-        if parsed.resolution_kind == "new_task" and referenced_invocation_id:
-            raise PlanningContractError(
-                "New-task resolution must not reference a prior invocation."
-            )
-        if (
-            parsed.resolution_kind == "repeat_prior_task_with_changes"
-            and not referenced_invocation_id
-        ):
-            raise PlanningContractError(
-                "Repeat-task resolution must reference a prior invocation."
-            )
-    else:
-        if standalone_request:
-            raise PlanningContractError(
-                "Non-executable turn resolution must not include a standalone request."
-            )
-        if not message:
-            raise PlanningContractError(
-                "Non-executable turn resolution must include a response message."
-            )
-        if parsed.resolution_kind == "needs_clarification" and referenced_invocation_id:
-            raise PlanningContractError(
-                "Clarification resolution must not reference a prior invocation."
-            )
+    resolution_kinds = {
+        "resolve_new_task": "new_task",
+        "resolve_repeat_prior_task_with_changes": "repeat_prior_task_with_changes",
+        "resolve_prior_result_discussion": "discuss_prior_result",
+        "resolve_needs_clarification": "needs_clarification",
+    }
 
     return TurnResolution(
-        resolution_kind=parsed.resolution_kind,
+        resolution_kind=resolution_kinds[tool_name],
         standalone_request=standalone_request,
         referenced_invocation_id=referenced_invocation_id,
         message=message,

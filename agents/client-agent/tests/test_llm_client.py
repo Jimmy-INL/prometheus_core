@@ -29,15 +29,12 @@ class _FakePlannerLLM:
                     "id": "resolve-1",
                     "type": "function",
                     "function": {
-                        "name": "resolve_turn",
+                        "name": "resolve_new_task",
                         "arguments": json.dumps(
                             {
-                                "resolution_kind": "new_task",
                                 "standalone_request": (
                                     "Analyze the thermal behavior of SS316"
                                 ),
-                                "referenced_invocation_id": None,
-                                "message": "",
                             }
                         ),
                     },
@@ -145,7 +142,9 @@ def test_planner_uses_llm_client_raw_tool_calls(monkeypatch):
     resolution_messages, resolution_kwargs = fake_llm.calls[0]
     assert "Available capabilities" not in resolution_messages[1]["content"]
     assert [tool["function"]["name"] for tool in resolution_kwargs["tools"]] == [
-        "resolve_turn"
+        "resolve_new_task",
+        "resolve_prior_result_discussion",
+        "resolve_needs_clarification",
     ]
     decomposition_messages, decomposition_kwargs = fake_llm.calls[1]
     assert "Available capabilities" not in decomposition_messages[1]["content"]

@@ -295,12 +295,28 @@ class _DecompositionLLM:
 
 
 def _turn_resolution_call(arguments, call_id="resolve-1"):
+    kind = arguments["resolution_kind"]
+    tool_names = {
+        "new_task": "resolve_new_task",
+        "repeat_prior_task_with_changes": "resolve_repeat_prior_task_with_changes",
+        "discuss_prior_result": "resolve_prior_result_discussion",
+        "needs_clarification": "resolve_needs_clarification",
+    }
+    tool_arguments = {}
+    if arguments.get("standalone_request"):
+        tool_arguments["standalone_request"] = arguments["standalone_request"]
+    if arguments.get("referenced_invocation_id"):
+        tool_arguments["referenced_invocation_id"] = arguments[
+            "referenced_invocation_id"
+        ]
+    if arguments.get("message"):
+        tool_arguments["message"] = arguments["message"]
     return {
         "id": call_id,
         "type": "function",
         "function": {
-            "name": "resolve_turn",
-            "arguments": json.dumps(arguments),
+            "name": tool_names[kind],
+            "arguments": json.dumps(tool_arguments),
         },
     }
 
@@ -407,25 +423,28 @@ def test_turn_resolution_expands_elliptical_followup_from_actual_invocation(
     assert "invocation_1" in prompt
     assert "fluoride molten salt reactors" in prompt
     assert "FULL PAPER PAYLOAD MUST NOT ENTER THE RESOLVER PROMPT" not in prompt
-    resolver_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
-    reference_schema = resolver_schema["properties"]["referenced_invocation_id"]
-    assert "invocation_1" in json.dumps(reference_schema)
-    repeat_rule = next(
-        rule
-        for rule in resolver_schema["anyOf"]
-        if rule["properties"]["resolution_kind"]["enum"]
-        == ["repeat_prior_task_with_changes"]
+    resolver_tool = next(
+        tool
+        for tool in fake_llm.calls[0][1]["tools"]
+        if tool["function"]["name"] == "resolve_repeat_prior_task_with_changes"
     )
-    assert repeat_rule["properties"]["referenced_invocation_id"] == {
+    for tool in fake_llm.calls[0][1]["tools"]:
+        parameters = tool["function"]["parameters"]
+        assert parameters["type"] == "object"
+        assert not (
+            {"oneOf", "anyOf", "allOf", "enum", "const", "not"}
+            & parameters.keys()
+        )
+    resolver_schema = resolver_tool["function"]["parameters"]
+    reference_schema = resolver_schema["properties"]["referenced_invocation_id"]
+    assert reference_schema == {
         "type": "string",
         "enum": ["invocation_1"],
     }
     validator = Draft202012Validator(resolver_schema)
     valid_repeat = {
-        "resolution_kind": "repeat_prior_task_with_changes",
         "standalone_request": standalone_request,
         "referenced_invocation_id": "invocation_1",
-        "message": "",
     }
     assert list(validator.iter_errors(valid_repeat)) == []
     assert list(validator.iter_errors({**valid_repeat, "referenced_invocation_id": None}))
@@ -475,21 +494,16 @@ def test_turn_resolution_excludes_repeat_without_recorded_invocations(monkeypatc
     )
 
     assert result.resolution_kind == "new_task"
-    resolver_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
-    assert "repeat_prior_task_with_changes" not in resolver_schema["properties"][
-        "resolution_kind"
-    ]["enum"]
-    validator = Draft202012Validator(resolver_schema)
-    assert list(
-        validator.iter_errors(
-            {
-                "resolution_kind": "repeat_prior_task_with_changes",
-                "standalone_request": standalone_request,
-                "referenced_invocation_id": None,
-                "message": "",
-            }
+    resolver_tools = fake_llm.calls[0][1]["tools"]
+    tool_names = [tool["function"]["name"] for tool in resolver_tools]
+    assert "resolve_repeat_prior_task_with_changes" not in tool_names
+    for tool in resolver_tools:
+        resolver_schema = tool["function"]["parameters"]
+        assert resolver_schema["type"] == "object"
+        assert not (
+            {"oneOf", "anyOf", "allOf", "enum", "const", "not"}
+            & resolver_schema.keys()
         )
-    )
 
 
 def test_turn_resolution_can_repeat_failed_prior_invocation(monkeypatch) -> None:
@@ -569,7 +583,7 @@ def test_turn_resolution_rejects_contradictory_new_task_payload(monkeypatch) -> 
 
     with pytest.raises(
         planner.PlanningContractError,
-        match="Executable turn resolution must not include a response message",
+        match="Turn resolution violates its schema",
     ):
         asyncio.run(
             planner.resolve_turn(
