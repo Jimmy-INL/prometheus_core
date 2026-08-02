@@ -171,6 +171,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Until identity-backed credential storage exists, each LLM-using agent selects its own LLM config and receives that config's provider keys; semantic model flavors remain hardcoded in agent code.
 - Run `gh` commands for `github.inl.gov` outside the network sandbox.
 - Never search or print `.env` files when inspecting configuration; query variable names without values or use example/config files that contain no secrets.
+- Never print resolved LLM configuration objects; fallback-model records contain expanded provider API keys.
 - Route butterfly-valve revisions through `author_equipment_geometry` as parameterized re-authoring from conversation context; do not require existing-CAD ingestion or a separate revision skill.
 - Route streaming specialist progress through `SkillTracker` into Task Graph root events; render only root events in one bounded Chainlit Step to avoid child/root duplicates.
 - Derive cross-turn prior capability parameters from actual successful invocation `tool_inputs`; use planning-time `capability_params` only for legacy states without recorded inputs.
@@ -181,3 +182,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When explaining a logging change, distinguish lazy logger argument formatting from changes to the values being logged.
 - Treat the Chainlit backend and Chainlit UI as separate surfaces; React may still require the backend after the Chainlit UI stops being exposed or extended.
 - Prefix every GitHub PR review reply written by a code agent with 🤖 so reviewers can identify agent-authored text.
+- Run full-system tests against an already-running platform using production APIs; use a Make-selected Compose override to publish the client-agent port only in system-test mode, without adding Docker profiles.
+- Full-system tests must exercise the ordinary LLM-driven user experience; do not substitute deterministic workflows or bypass planning and parameter extraction.

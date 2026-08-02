@@ -17,6 +17,7 @@ from artifact_handling import (
 )
 from capability_cache import get_capability_cache
 from param_schema import (
+    flatten_schema_properties,
     get_nested_value,
     has_param_path,
     normalize_params_for_input_schema,
@@ -299,6 +300,29 @@ def _transcript_entry(
         "tool_results": {skill_id: result},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _resumed_transcript_params(
+    base_params: Dict[str, Any],
+    provided_inputs: Dict[str, Any],
+    input_schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Record resumed inputs in the capability schema, not the A2A wrapper."""
+    recorded = {
+        key: copy.deepcopy(value)
+        for key, value in base_params.items()
+        if key != "artifacts" and not key.startswith("_")
+    }
+    schema_paths = flatten_schema_properties(input_schema)
+    for name, value in provided_inputs.items():
+        candidates = [
+            path
+            for path in schema_paths
+            if path == name or path.rsplit(".", 1)[-1] == name
+        ]
+        path = candidates[0] if len(candidates) == 1 else name
+        set_nested_value(recorded, path, copy.deepcopy(value))
+    return recorded
 
 
 def _tool_results_have_errors(tool_results: Dict[str, Any]) -> bool:
@@ -1289,11 +1313,17 @@ async def resume_pending_subagent_requests(
             **_task_graph_resume_params(pending),
         }
         resumed = await invoke_skill(skill_id, invoke_params, conversation_id)
-        resumed_tool_inputs[skill_id] = {
-            key: copy.deepcopy(value)
-            for key, value in invoke_params.items()
-            if key != "artifacts" and not key.startswith("_")
-        }
+        capability = await get_capability_cache().get_capability_by_skill_id(skill_id)
+        input_schema = (
+            capability.input_schema
+            if capability and isinstance(capability.input_schema, dict)
+            else {}
+        )
+        resumed_tool_inputs[skill_id] = _resumed_transcript_params(
+            base_params,
+            provided_inputs,
+            input_schema,
+        )
 
         if resumed.get("input_required"):
             ir_payload = resumed.get("input_required", {}) or {}
