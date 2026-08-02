@@ -776,6 +776,111 @@ def test_artifacts_slash_command_lists_conversation_artifacts_without_planner(mo
     assert [artifact["artifact_id"] for artifact in response.artifacts] == ["svg-1", "older-1"]
 
 
+def test_workflows_slash_command_lists_platform_and_agent_workflows(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    catalog = [
+        {
+            "id": "platform.safety_check",
+            "version": "1.0.0",
+            "display_name": "Platform Safety Check",
+            "summary": "Run the platform safety checks.",
+            "category": "Safety",
+            "requires_approval": True,
+            "estimated_duration_seconds": 60,
+            "owner": "platform-team",
+            "source": "local",
+        },
+        {
+            "id": "thermal.quick_check",
+            "version": "2.1.0",
+            "display_name": "Quick Thermal Check",
+            "summary": "Run the agent's thermal checks.",
+            "category": "Thermal",
+            "requires_approval": False,
+            "estimated_duration_seconds": 30,
+            "owner": "thermal-agent",
+            "source": "agent_card",
+        },
+    ]
+    registry = SimpleNamespace(get_catalog=lambda: catalog)
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(query="/workflows", conversation_id="conv-workflows")
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Registered workflows (2)" in response.message
+    assert "Platform-owned workflows (1)" in response.message
+    assert "Agent-owned workflows (1)" in response.message
+    assert "Platform Safety Check (`/platform_safety_check`)" in response.message
+    assert "Quick Thermal Check (`/thermal_quick_check`)" in response.message
+    assert "owner: thermal-agent" in response.message
+    assert response.message_metadata == {
+        "slash_command": "workflows",
+        "workflows": catalog,
+    }
+
+
+def test_help_slash_command_lists_builtin_and_workflow_commands(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    registry = SimpleNamespace(
+        get_catalog=lambda: [
+            {
+                "id": "thermal.quick_check",
+                "version": "2.1.0",
+                "display_name": "Quick Thermal Check",
+                "summary": "Run the agent's thermal checks.",
+                "category": "Thermal",
+                "requires_approval": False,
+                "estimated_duration_seconds": 30,
+                "owner": "thermal-agent",
+                "source": "agent_card",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(query="/help", conversation_id="conv-help")
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Available commands (7)" in response.message
+    for command in ("agents", "artifacts", "forget", "help", "tasks", "workflows"):
+        assert f"`/{command}`" in response.message
+    assert "Workflow commands (1)" in response.message
+    assert "`/thermal_quick_check`" in response.message
+    assert response.message_metadata == {
+        "slash_command": "help",
+        "supported_commands": ["agents", "artifacts", "forget", "help", "tasks", "workflows"],
+        "workflow_commands": [
+            {
+                "command": "thermal_quick_check",
+                "workflow_id": "thermal.quick_check",
+                "workflow_version": "2.1.0",
+                "display_name": "Quick Thermal Check",
+            }
+        ],
+    }
+
+
 def test_workflow_slash_command_forces_explicit_workflow(monkeypatch) -> None:
     workflow = SimpleNamespace(
         required_input_paths=[],

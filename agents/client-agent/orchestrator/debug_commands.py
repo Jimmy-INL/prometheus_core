@@ -8,11 +8,20 @@ import task_graph
 from artifact_handling import merge_artifact_catalogs, summarize_artifacts_for_context
 from capability_cache import get_capability_cache
 from tool_discovery import discover_agents
+from workflow_library import get_workflow_registry, workflow_slug
 
 from . import runtime
 from .models import ConversationRequest, ConversationResponse
 
-SUPPORTED_SLASH_COMMANDS = ["agents", "artifacts", "forget", "tasks"]
+SLASH_COMMAND_DESCRIPTIONS = {
+    "agents": "List registered agents and their advertised skills.",
+    "artifacts": "List artifacts registered for this conversation.",
+    "forget": "Forget stored OSTI knowledge facts.",
+    "help": "List all available commands.",
+    "tasks": "List tasks, or inspect one with /tasks <id>.",
+    "workflows": "List all currently registered workflows.",
+}
+SUPPORTED_SLASH_COMMANDS = list(SLASH_COMMAND_DESCRIPTIONS)
 
 _OSTI_KNOWLEDGE_KEY_PATTERNS = (
     ("facts", "osti:factoid:*"),
@@ -241,6 +250,73 @@ def _format_artifacts_debug_response(artifacts: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _workflow_command_entries(catalog: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    entries_by_id: Dict[str, Dict[str, str]] = {}
+    for workflow in catalog:
+        workflow_id = str(workflow.get("id") or "").strip()
+        if not workflow_id:
+            continue
+        entries_by_id[workflow_id] = {
+            "command": workflow_slug(workflow_id),
+            "workflow_id": workflow_id,
+            "workflow_version": str(workflow.get("version") or ""),
+            "display_name": str(workflow.get("display_name") or workflow_id),
+        }
+    return sorted(entries_by_id.values(), key=lambda entry: entry["command"])
+
+
+def _format_workflows_response(catalog: List[Dict[str, Any]]) -> str:
+    lines = [f"Registered workflows ({len(catalog)})"]
+    if not catalog:
+        lines.extend(["", "No workflows are currently registered."])
+        return "\n".join(lines)
+
+    groups = (
+        ("Platform-owned workflows", [item for item in catalog if item.get("source") != "agent_card"]),
+        ("Agent-owned workflows", [item for item in catalog if item.get("source") == "agent_card"]),
+    )
+    for heading, workflows in groups:
+        lines.extend(["", f"{heading} ({len(workflows)})"])
+        if not workflows:
+            lines.append("- None")
+            continue
+        for workflow in workflows:
+            workflow_id = str(workflow.get("id") or "unnamed-workflow")
+            display_name = str(workflow.get("display_name") or workflow_id)
+            lines.append(f"- {display_name} (`/{workflow_slug(workflow_id)}`)")
+            version = str(workflow.get("version") or "unknown")
+            details = f"  id: {workflow_id}@{version}"
+            owner = str(workflow.get("owner") or "").strip()
+            if owner:
+                details += f" — owner: {owner}"
+            lines.append(details)
+            summary = str(workflow.get("summary") or "").strip()
+            if summary:
+                lines.append(f"  {summary}")
+    return "\n".join(lines)
+
+
+def _format_help_response(workflow_commands: List[Dict[str, str]]) -> str:
+    total = len(SUPPORTED_SLASH_COMMANDS) + len(workflow_commands)
+    lines = [f"Available commands ({total})", "", f"Built-in commands ({len(SUPPORTED_SLASH_COMMANDS)})"]
+    lines.extend(
+        f"- `/{command}` — {SLASH_COMMAND_DESCRIPTIONS[command]}"
+        for command in SUPPORTED_SLASH_COMMANDS
+    )
+    lines.extend(["", f"Workflow commands ({len(workflow_commands)})"])
+    if not workflow_commands:
+        lines.append("- None currently registered")
+    else:
+        for entry in workflow_commands:
+            workflow_ref = entry["workflow_id"]
+            if entry["workflow_version"]:
+                workflow_ref += f"@{entry['workflow_version']}"
+            lines.append(
+                f"- `/{entry['command']}` — {entry['display_name']} ({workflow_ref})"
+            )
+    return "\n".join(lines)
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -384,6 +460,23 @@ async def _maybe_handle_slash_command(
         return None
 
     command, _args = parsed
+    if command == "help":
+        catalog = get_workflow_registry().get_catalog() if runtime.ENABLE_WORKFLOW_LIBRARY else []
+        workflow_commands = _workflow_command_entries(catalog)
+        message = _format_help_response(workflow_commands)
+        runtime.store_status_update(conv_id, "Handled /help slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "help",
+                "supported_commands": list(SUPPORTED_SLASH_COMMANDS),
+                "workflow_commands": workflow_commands,
+            },
+        )
+
     if command == "agents":
         entries, errors = await _collect_registered_agent_debug_entries()
         message = _format_agents_debug_response(entries, errors)
@@ -452,6 +545,21 @@ async def _maybe_handle_slash_command(
             message=message,
             response_text=message,
             message_metadata=metadata,
+        )
+
+    if command == "workflows":
+        catalog = get_workflow_registry().get_catalog() if runtime.ENABLE_WORKFLOW_LIBRARY else []
+        message = _format_workflows_response(catalog)
+        runtime.store_status_update(conv_id, "Handled /workflows slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "workflows",
+                "workflows": catalog,
+            },
         )
 
     supported = ", ".join(f"/{cmd}" for cmd in SUPPORTED_SLASH_COMMANDS)
