@@ -12,7 +12,7 @@ from param_schema import (
     is_user_input_schema,
 )
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
-from workflow_library import get_workflow_registry, workflow_tool_name
+from workflow_library import get_workflow_registry, workflow_slug, workflow_tool_name
 
 from . import runtime
 from .models import AgentState
@@ -112,6 +112,24 @@ def _workflow_candidate_from_template(
     )
 
 
+def _workflow_named_in_query(query: str, workflows: List[Any]) -> Optional[Any]:
+    normalized_query = f"_{workflow_slug(query)}_"
+    matches: List[Any] = []
+    for workflow in workflows:
+        definition = workflow.definition
+        labels = {
+            str(definition.id or "").strip(),
+            str(definition.name or "").strip(),
+            str(definition.ui.display_name or "").strip(),
+        }
+        if any(
+            label and f"_{workflow_slug(label)}_" in normalized_query
+            for label in labels
+        ):
+            matches.append(workflow)
+    return matches[0] if len(matches) == 1 else None
+
+
 async def compile_query_plan(
     state: AgentState,
     explicit_workflow_id: Optional[str] = None,
@@ -142,33 +160,41 @@ async def compile_query_plan(
     matched_workflow = None
     workflow_candidates: List[WorkflowPlanningCandidate] = []
     if workflow_registry is not None:
+        registered_workflows = workflow_registry.list_all()
         workflow_candidates = [
             _workflow_candidate_from_template(workflow)
-            for workflow in workflow_registry.list_all()
+            for workflow in registered_workflows
         ]
+        selected = None
         if explicit_workflow_id:
             selected = workflow_registry.get(explicit_workflow_id, version=explicit_workflow_version)
-            if selected:
-                matched_workflow = selected
-                selected_candidate = _workflow_candidate_from_template(
-                    selected,
-                    score=1.0,
-                    selection_source=selection_source or "catalog",
-                    extracted_params=seed_params,
-                )
-                workflow_candidates = [
-                    selected_candidate,
-                    *[
-                        candidate
-                        for candidate in workflow_candidates
-                        if not (
-                            candidate.workflow_id == selected_candidate.workflow_id
-                            and candidate.workflow_version == selected_candidate.workflow_version
-                        )
-                    ],
-                ]
+        else:
+            selected = _workflow_named_in_query(query, registered_workflows)
+            if selected is not None:
+                explicit_workflow_id = selected.definition.id
+                explicit_workflow_version = selected.definition.version
+                selection_source = "workflow_name"
+        if selected:
+            matched_workflow = selected
+            selected_candidate = _workflow_candidate_from_template(
+                selected,
+                score=1.0,
+                selection_source=selection_source or "catalog",
+                extracted_params=seed_params,
+            )
+            workflow_candidates = [
+                selected_candidate,
+                *[
+                    candidate
+                    for candidate in workflow_candidates
+                    if not (
+                        candidate.workflow_id == selected_candidate.workflow_id
+                        and candidate.workflow_version == selected_candidate.workflow_version
+                    )
+                ],
+            ]
 
-    # Catalog-selected workflows bypass matcher/router selection and resolve requirements directly.
+    # Explicit workflow selections bypass matcher/router selection and resolve requirements directly.
     if explicit_workflow_id and matched_workflow is not None:
         runtime.store_status_update(
             conversation_id,
@@ -236,7 +262,7 @@ async def compile_query_plan(
             "needs_clarification": False,
             "clarification_question": None,
             "extracted_params": extracted_params,
-            "reasoning": f"Catalog-selected workflow {matched_workflow.definition.id}",
+            "reasoning": f"Selected workflow {matched_workflow.definition.id}",
             "agent_url": None,
             "requires_approval": requires_approval,
             "required_params": required_params,

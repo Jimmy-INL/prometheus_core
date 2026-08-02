@@ -374,3 +374,97 @@ def test_compile_query_plan_does_not_auto_select_registered_workflow_on_fallback
     result = asyncio.run(planning_flow.compile_query_plan(state))
 
     assert result == {"is_fallback": True, "fallback_message": "ask a question"}
+
+
+def test_compile_query_plan_treats_exact_workflow_name_as_explicit_selection(monkeypatch):
+    import asyncio
+
+    from orchestrator import planning_flow
+
+    capability = SimpleNamespace(
+        skill_id="get_material_data",
+        skill_name="Get Material Data",
+        description="Retrieve material data.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "material_id": {"type": "string"},
+                "context": {
+                    "type": "object",
+                    "properties": {"temperature_c": {"type": "number"}},
+                },
+            },
+        },
+        requires_approval=False,
+        agent_url="http://data-agent:8000",
+        expected_duration_seconds=5,
+    )
+    workflow = SimpleNamespace(
+        required_input_paths=["material_id", "context.temperature_c"],
+        definition=SimpleNamespace(
+            id="comprehensive_material_analysis",
+            version="1.0.0",
+            name="Comprehensive Material Analysis",
+            description="Run the complete material analysis workflow.",
+            steps=[SimpleNamespace(id="retrieve", skill_id="get_material_data")],
+            execution=SimpleNamespace(mode="dag"),
+            metadata=SimpleNamespace(requires_approval=False, estimated_duration_seconds=30),
+            ui=SimpleNamespace(
+                display_name="Comprehensive Material Analysis",
+                summary="Complete material analysis.",
+                input_overrides={},
+            ),
+        ),
+    )
+
+    async def fake_get_capabilities():
+        return [capability]
+
+    async def fake_extract_parameters(**kwargs):
+        assert kwargs["query"] == "Do a comprehensive material analysis of SS347"
+        return {"material_id": "SS347"}
+
+    async def fake_resolve_params(**kwargs):
+        return kwargs["extracted_params"]
+
+    async def should_not_compile_with_llm(**kwargs):
+        raise AssertionError("Exact workflow-name selection must bypass the planner LLM.")
+
+    monkeypatch.setattr(
+        planning_flow,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(planning_flow.runtime, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(
+        planning_flow,
+        "get_workflow_registry",
+        lambda: SimpleNamespace(
+            list_all=lambda: [workflow],
+            get=lambda workflow_id, version=None: workflow
+            if workflow_id == "comprehensive_material_analysis"
+            else None,
+        ),
+    )
+    monkeypatch.setattr(planning_flow, "extract_parameters_with_schemas", fake_extract_parameters)
+    monkeypatch.setattr(planning_flow, "resolve_params_via_capability_metadata", fake_resolve_params)
+    monkeypatch.setattr(planning_flow, "compile_plan_with_tools", should_not_compile_with_llm)
+    monkeypatch.setattr(planning_flow.runtime, "store_status_update", lambda *args, **kwargs: None)
+
+    result = asyncio.run(
+        planning_flow.compile_query_plan(
+            {
+                "conversation_id": "conv-material",
+                "user_query": "Do a comprehensive material analysis of SS347",
+                "conversation_history": [],
+                "context": {},
+            }
+        )
+    )
+
+    routing = result["routing_decision"]
+    assert routing["workflow_id"] == "comprehensive_material_analysis"
+    assert routing["workflow_type"] == "workflow_template"
+    assert routing["selection_source"] == "workflow_name"
+    assert routing["extracted_params"]["material_id"] == "SS347"
+    assert result["missing_info"] == ["context.temperature_c"]

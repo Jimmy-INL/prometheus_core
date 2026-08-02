@@ -1258,34 +1258,34 @@ def _build_planning_tools(
                 }
 
         selected_workflow = get_selected_workflow_candidate()
-        sequential = draft.workflow_type == "sequential" or bool(
-            selected_workflow and selected_workflow.execution_mode == "sequential"
-        )
-        skill_positions = {skill_id: index for index, skill_id in enumerate(selected)}
-        operations_by_id = {operation.operation_id: operation for operation in draft.operations}
-        for operation in draft.operations:
-            skill_id = draft.covered_operations.get(operation.operation_id)
-            for dependency_id in operation.depends_on:
-                dependency_skill = draft.covered_operations.get(dependency_id)
-                if not dependency_skill or not skill_id or dependency_skill == skill_id:
-                    continue
-                if not sequential:
-                    return {
-                        "ok": False,
-                        "error": (
-                            "Dependencies covered by different capabilities require a "
-                            "sequential workflow."
-                        ),
-                    }
-                if skill_positions[dependency_skill] >= skill_positions[skill_id]:
-                    dependency = operations_by_id[dependency_id]
-                    return {
-                        "ok": False,
-                        "error": (
-                            "Selected capability order violates operation dependency order: "
-                            f"'{dependency.description}' must run before '{operation.description}'."
-                        ),
-                    }
+        if selected_workflow is None:
+            # Registered templates own dependency validation and ordering through their compiled step graph.
+            sequential = draft.workflow_type == "sequential"
+            skill_positions = {skill_id: index for index, skill_id in enumerate(selected)}
+            operations_by_id = {operation.operation_id: operation for operation in draft.operations}
+            for operation in draft.operations:
+                skill_id = draft.covered_operations.get(operation.operation_id)
+                for dependency_id in operation.depends_on:
+                    dependency_skill = draft.covered_operations.get(dependency_id)
+                    if not dependency_skill or not skill_id or dependency_skill == skill_id:
+                        continue
+                    if not sequential:
+                        return {
+                            "ok": False,
+                            "error": (
+                                "Dependencies covered by different capabilities require a "
+                                "sequential workflow."
+                            ),
+                        }
+                    if skill_positions[dependency_skill] >= skill_positions[skill_id]:
+                        dependency = operations_by_id[dependency_id]
+                        return {
+                            "ok": False,
+                            "error": (
+                                "Selected capability order violates operation dependency order: "
+                                f"'{dependency.description}' must run before '{operation.description}'."
+                            ),
+                        }
         status = get_requirement_status()
         missing = status.get("missing_paths", [])
         unresolved_runtime = status.get("unresolved_runtime_paths", [])

@@ -90,6 +90,45 @@ def test_reauthor_then_mesh_plan_finalizes_in_dependency_order() -> None:
     assert draft.finalized is True
 
 
+def test_registered_dag_workflow_owns_cross_skill_dependency_order() -> None:
+    draft = planner._PlanDraft(
+        operations=[
+            _operation("op_1", "Re-author the valve"),
+            _operation("op_2", "Mesh the new CAD", ["op_1"]),
+        ]
+    )
+    candidate = planner.WorkflowPlanningCandidate(
+        workflow_id="author_and_mesh",
+        workflow_version="1.0.0",
+        score=0.0,
+        skills=["author_equipment_geometry", "mesh_geometry"],
+        execution_mode="dag",
+    )
+    tools = {
+        tool.name: tool.func
+        for tool in planner._build_planning_tools(
+            draft,
+            CAPABILITIES,
+            context={},
+            workflow_candidates=[candidate],
+        )
+    }
+
+    tools["select_workflow_template"](workflow_id="author_and_mesh")
+    tools["set_operation_coverage"](
+        covered=[
+            {"operation_id": "op_1", "skill_id": "author_equipment_geometry"},
+            {"operation_id": "op_2", "skill_id": "mesh_geometry"},
+        ],
+        unsupported=[],
+    )
+
+    result = tools["finalize_plan"]()
+
+    assert result["ok"] is True
+    assert draft.finalized is True
+
+
 def test_remesh_plan_rejects_unneeded_authoring_capability() -> None:
     draft = planner._PlanDraft(
         operations=[

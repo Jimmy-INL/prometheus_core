@@ -528,7 +528,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         _result_artifacts(item["result"]),
                     )
 
-        tool_results: Dict[str, Any] = {}
+        tool_results: Dict[str, Any] = dict(state.get("tool_results") or {})
         response_lines = []
         has_errors = False
         missing_required_params: List[str] = []
@@ -1310,6 +1310,10 @@ async def resume_pending_subagent_requests(
         else:
             result_data = resumed.get("result", {})
             accumulated_tool_results[skill_id] = result_data
+            merged_context = merge_artifacts_into_context(
+                merged_context,
+                _result_artifacts(result_data),
+            )
             final_reports.append(extract_result_text(result_data))
 
     state["context"] = merged_context

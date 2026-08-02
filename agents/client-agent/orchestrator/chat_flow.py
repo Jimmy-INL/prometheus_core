@@ -30,6 +30,7 @@ from .execution import (
 )
 from .models import AgentState, ConversationRequest, ConversationResponse
 from .parameter_extraction import ParameterExtractionError
+from .parameters import order_skills_for_workflow
 from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
 
 
@@ -318,6 +319,11 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
 
             try:
                 if state.get("pending_subagent_requests"):
+                    resumed_skill_ids = [
+                        str(pending.get("skill_id") or "")
+                        for pending in state["pending_subagent_requests"]
+                        if pending.get("skill_id")
+                    ]
                     state = await resume_pending_subagent_requests(state, followup_answers)
                     if state.get("missing_info"):
                         followup_result = await ask_followup_dynamic(state)
@@ -341,6 +347,44 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                                     final_state[key] = value
                             return _needs_info_response(conv_id, final_state)
                         return _completed_response(conv_id, final_state)
+                    if rd.get("workflow_type") == "sequential":
+                        selected_skills = order_skills_for_workflow(rd)
+                        resumed_positions = [
+                            selected_skills.index(skill_id)
+                            for skill_id in resumed_skill_ids
+                            if skill_id in selected_skills
+                        ]
+                        remaining_skills = (
+                            selected_skills[max(resumed_positions) + 1 :]
+                            if resumed_positions
+                            else []
+                        )
+                        if remaining_skills:
+                            resumed_report = str(state.get("final_report") or "").strip()
+                            continuation = dict(rd)
+                            continuation["primary_skill"] = remaining_skills[0]
+                            continuation["supporting_skills"] = remaining_skills[1:]
+                            state["routing_decision"] = continuation
+                            final_state = await execute_current_plan(
+                                state,
+                                start_message="Continuing sequential workflow after provided parameters.",
+                            )
+                            final_state["routing_decision"] = rd
+                            if final_state.get("missing_info"):
+                                followup_result = await ask_followup_dynamic(final_state)
+                                for key, value in followup_result.items():
+                                    if value is not None:
+                                        final_state[key] = value
+                                return _needs_info_response(conv_id, final_state)
+                            continuation_report = str(final_state.get("final_report") or "").strip()
+                            if resumed_report and continuation_report:
+                                final_state["final_report"] = (
+                                    f"{resumed_report}\n\n{continuation_report}"
+                                )
+                                history = final_state.get("conversation_history", []) or []
+                                if history and history[-1].get("type") == "final_report":
+                                    history[-1]["content"] = final_state["final_report"]
+                            return _completed_response(conv_id, final_state)
                     return _completed_response(conv_id, state)
 
                 if routing_decision:

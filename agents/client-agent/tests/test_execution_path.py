@@ -1769,6 +1769,111 @@ def test_sequential_execution_stops_when_step_requires_input(monkeypatch) -> Non
     ]
 
 
+def test_chat_continues_sequential_plan_after_pending_step_resumes(monkeypatch) -> None:
+    invoked: list[tuple[str, dict]] = []
+    stored: list[dict] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append((skill_id, params))
+        if skill_id == "author_equipment_geometry":
+            assert params["provided_inputs"] == {"rod_diameter": 0.08}
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "message": "CAD created",
+                    "artifacts": [{"artifact_id": "cad-1", "name": "valve.step"}],
+                },
+            }
+        if skill_id == "mesh_geometry":
+            assert [artifact["artifact_id"] for artifact in params["artifacts"]] == ["cad-1"]
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "message": "Mesh created",
+                    "artifacts": [{"artifact_id": "mesh-1", "name": "valve.exo"}],
+                },
+            }
+        raise AssertionError(f"Unexpected skill: {skill_id}")
+
+    async def no_capability(skill_id):
+        return None
+
+    existing_state = {
+        "conversation_id": "conv-valve",
+        "user_query": (
+            "create a cad geometry of a butterfly valve with a diameter of 90cm, "
+            "4 holes (10cm each), then mesh it"
+        ),
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+            "requires_approval": False,
+        },
+        "context": {},
+        "conversation_history": [],
+        "tool_results": {},
+        "missing_info": ["rod_diameter"],
+        "pending_subagent_requests": [
+            {
+                "skill_id": "author_equipment_geometry",
+                "a2a_context_id": "a2a-context-1",
+                "a2a_task_id": "a2a-task-1",
+                "missing_inputs": [
+                    {
+                        "name": "rod_diameter",
+                        "type": "number",
+                        "required": True,
+                    }
+                ],
+            }
+        ],
+    }
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module,
+        "store_conversation",
+        lambda conversation_id, state: stored.append(state.copy()),
+    )
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+            get_capability_by_skill_id=no_capability,
+        ),
+    )
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                conversation_id="conv-valve",
+                followup_answers={"rod_diameter": 0.08},
+            )
+        )
+    )
+
+    assert response.status == "completed", response.message
+    assert [skill_id for skill_id, _ in invoked] == [
+        "author_equipment_geometry",
+        "mesh_geometry",
+    ]
+    assert set(response.tool_results) == {"author_equipment_geometry", "mesh_geometry"}
+    assert (
+        response.tool_results["author_equipment_geometry"]["artifacts"][0]["artifact_id"]
+        == "cad-1"
+    )
+    assert response.tool_results["mesh_geometry"]["artifacts"][0]["artifact_id"] == "mesh-1"
+    assert response.report == "CAD created\n\nMesh created"
+    assert stored[-1]["pending_subagent_requests"] == []
+    assert stored[-1]["routing_decision"]["primary_skill"] == "author_equipment_geometry"
+    assert stored[-1]["routing_decision"]["supporting_skills"] == ["mesh_geometry"]
+
+
 def test_resume_pending_subagent_request_preserves_task_graph_identity(
     monkeypatch,
 ) -> None:
