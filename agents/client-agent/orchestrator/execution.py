@@ -1255,6 +1255,7 @@ async def resume_pending_subagent_requests(
     still_pending: List[Dict[str, Any]] = []
     merged_context = dict(state.get("context", {}) or {})
     accumulated_tool_results = dict(state.get("tool_results") or {})
+    resumed_tool_inputs: Dict[str, Dict[str, Any]] = {}
     final_reports: List[str] = []
 
     for pending in pending_list:
@@ -1281,17 +1282,19 @@ async def resume_pending_subagent_requests(
             if name in provided_inputs:
                 merged_context[name] = provided_inputs[name]
 
-        resumed = await invoke_skill(
-            skill_id,
-            {
-                **base_params,
-                "provided_inputs": provided_inputs,
-                "_a2a_context_id": pending.get("a2a_context_id"),
-                "_a2a_task_id": pending.get("a2a_task_id"),
-                **_task_graph_resume_params(pending),
-            },
-            conversation_id,
-        )
+        invoke_params = {
+            **base_params,
+            "provided_inputs": provided_inputs,
+            "_a2a_context_id": pending.get("a2a_context_id"),
+            "_a2a_task_id": pending.get("a2a_task_id"),
+            **_task_graph_resume_params(pending),
+        }
+        resumed = await invoke_skill(skill_id, invoke_params, conversation_id)
+        resumed_tool_inputs[skill_id] = {
+            key: copy.deepcopy(value)
+            for key, value in invoke_params.items()
+            if key != "artifacts" and not key.startswith("_")
+        }
 
         if resumed.get("input_required"):
             ir_payload = resumed.get("input_required", {}) or {}
@@ -1340,6 +1343,7 @@ async def resume_pending_subagent_requests(
             if len(pending_list) == 1
             else "agent_response_multi_skill"
         ),
+        "tool_inputs": resumed_tool_inputs,
         "tool_results": accumulated_tool_results,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]

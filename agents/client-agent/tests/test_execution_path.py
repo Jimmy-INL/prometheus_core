@@ -1872,6 +1872,12 @@ def test_chat_continues_sequential_plan_after_pending_step_resumes(monkeypatch) 
     assert stored[-1]["pending_subagent_requests"] == []
     assert stored[-1]["routing_decision"]["primary_skill"] == "author_equipment_geometry"
     assert stored[-1]["routing_decision"]["supporting_skills"] == ["mesh_geometry"]
+    author_invocations = [
+        entry["tool_inputs"]["author_equipment_geometry"]
+        for entry in stored[-1]["conversation_history"]
+        if "author_equipment_geometry" in (entry.get("tool_inputs") or {})
+    ]
+    assert author_invocations[-1]["provided_inputs"] == {"rod_diameter": 0.08}
 
 
 def test_resume_pending_subagent_request_preserves_task_graph_identity(

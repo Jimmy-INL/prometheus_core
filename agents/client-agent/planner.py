@@ -485,10 +485,40 @@ async def resolve_turn(
                 {"type": "null"},
             ]
         }
+        resolution_schema["anyOf"] = [
+            {
+                "properties": {
+                    "resolution_kind": {
+                        "enum": [
+                            "new_task",
+                            "discuss_prior_result",
+                            "needs_clarification",
+                        ]
+                    }
+                }
+            },
+            {
+                "properties": {
+                    "resolution_kind": {
+                        "enum": ["repeat_prior_task_with_changes"]
+                    },
+                    "referenced_invocation_id": {
+                        "type": "string",
+                        "enum": invocation_ids,
+                    },
+                },
+            },
+        ]
     else:
         resolution_schema["properties"]["referenced_invocation_id"] = {
             "type": "null"
         }
+        resolution_kinds = resolution_schema["properties"]["resolution_kind"]["enum"]
+        resolution_schema["properties"]["resolution_kind"]["enum"] = [
+            kind
+            for kind in resolution_kinds
+            if kind != "repeat_prior_task_with_changes"
+        ]
     tool_schema = {
         "type": "function",
         "function": {

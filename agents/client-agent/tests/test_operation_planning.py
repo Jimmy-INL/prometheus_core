@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
 CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
@@ -409,6 +410,86 @@ def test_turn_resolution_expands_elliptical_followup_from_actual_invocation(
     resolver_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
     reference_schema = resolver_schema["properties"]["referenced_invocation_id"]
     assert "invocation_1" in json.dumps(reference_schema)
+    repeat_rule = next(
+        rule
+        for rule in resolver_schema["anyOf"]
+        if rule["properties"]["resolution_kind"]["enum"]
+        == ["repeat_prior_task_with_changes"]
+    )
+    assert repeat_rule["properties"]["referenced_invocation_id"] == {
+        "type": "string",
+        "enum": ["invocation_1"],
+    }
+    validator = Draft202012Validator(resolver_schema)
+    valid_repeat = {
+        "resolution_kind": "repeat_prior_task_with_changes",
+        "standalone_request": standalone_request,
+        "referenced_invocation_id": "invocation_1",
+        "message": "",
+    }
+    assert list(validator.iter_errors(valid_repeat)) == []
+    assert list(validator.iter_errors({**valid_repeat, "referenced_invocation_id": None}))
+
+
+def test_turn_resolution_excludes_repeat_without_recorded_invocations(monkeypatch) -> None:
+    standalone_request = (
+        "Create a 90 cm butterfly valve with four 10 cm holes and an 8 cm rod, "
+        "then mesh it."
+    )
+    fake_llm = _DecompositionLLM(
+        [
+            _turn_resolution_call(
+                {
+                    "resolution_kind": "new_task",
+                    "standalone_request": standalone_request,
+                    "referenced_invocation_id": None,
+                    "message": "",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(runtime, "create_llm", lambda: fake_llm)
+    history = [
+        {
+            "role": "user",
+            "content": (
+                "Create a 90 cm butterfly valve with four 5 cm holes and an 8 cm rod, "
+                "then mesh it."
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": "Equipment authoring complete.",
+            "tool_results": {
+                "author_equipment_geometry": {"message": "Equipment authoring complete."}
+            },
+        },
+    ]
+
+    result = asyncio.run(
+        planner.resolve_turn(
+            query="Redo the valve with 4 holes at 10cm diameter each and then mesh it",
+            history=history,
+            context={},
+        )
+    )
+
+    assert result.resolution_kind == "new_task"
+    resolver_schema = fake_llm.calls[0][1]["tools"][0]["function"]["parameters"]
+    assert "repeat_prior_task_with_changes" not in resolver_schema["properties"][
+        "resolution_kind"
+    ]["enum"]
+    validator = Draft202012Validator(resolver_schema)
+    assert list(
+        validator.iter_errors(
+            {
+                "resolution_kind": "repeat_prior_task_with_changes",
+                "standalone_request": standalone_request,
+                "referenced_invocation_id": None,
+                "message": "",
+            }
+        )
+    )
 
 
 def test_turn_resolution_can_repeat_failed_prior_invocation(monkeypatch) -> None:
