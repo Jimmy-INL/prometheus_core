@@ -6,15 +6,23 @@ import copy
 import json
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from jsonschema import FormatChecker
 from jsonschema.validators import validator_for
+from prometheus_api import load_prompt
 
 from capability_cache import AgentCapability
 from param_schema import is_user_input_schema
 
 from . import runtime
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+PARAMETER_EXTRACTION_SYSTEM_PROMPT = load_prompt(
+    "parameter_extraction_system.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
 class ParameterExtractionError(RuntimeError):
@@ -55,19 +63,20 @@ def build_partial_extraction_schema(input_schema: Dict[str, Any]) -> Dict[str, A
                 continue
             if key in {
                 "additionalProperties",
+                "allOf",
+                "anyOf",
                 "contains",
                 "else",
                 "if",
                 "items",
                 "not",
+                "oneOf",
+                "prefixItems",
                 "propertyNames",
                 "then",
                 "unevaluatedItems",
                 "unevaluatedProperties",
             }:
-                transformed[key] = transform(value)
-                continue
-            if key in {"allOf", "anyOf", "oneOf", "prefixItems"}:
                 transformed[key] = transform(value)
                 continue
             transformed[key] = copy.deepcopy(value)
@@ -206,17 +215,8 @@ def _prompt(
         if replace_existing
         else ""
     )
-    system = (
-        "You extract parameters for capabilities that have already been selected. "
-        "Do not select or change capabilities. Call every extraction tool exactly "
-        "once, using only values supported by the user query, conversation history, "
-        "current context, or existing parameters. Preserve each tool schema's exact "
-        "field names and nesting. Omit values that are not available; do not guess. "
-        "For fields marked as artifact references, use only an artifact_id present "
-        "in the current context. "
-        f"{invocation_guidance}"
-        "Convert units only when the schema description specifies the destination "
-        "unit. Return no prose."
+    system = PARAMETER_EXTRACTION_SYSTEM_PROMPT.format(
+        invocation_guidance=invocation_guidance,
     )
     user = (
         f"User query:\n{query}\n\n"

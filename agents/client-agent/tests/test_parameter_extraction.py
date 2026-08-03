@@ -136,6 +136,55 @@ def test_partial_extraction_schema_preserves_contract_and_excludes_runtime_field
     )
 
 
+def test_partial_extraction_schema_recurses_through_nested_schema_keywords():
+    schema = {
+        "type": "object",
+        "$defs": {
+            "metadata": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "runtime_id": {
+                        "type": "string",
+                        "x_input_source": "runtime",
+                    },
+                },
+                "required": ["label", "runtime_id"],
+            }
+        },
+        "properties": {
+            "values": {
+                "type": "array",
+                "items": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": "number"},
+                                "runtime_value": {
+                                    "type": "number",
+                                    "x_input_source": "runtime",
+                                },
+                            },
+                            "required": ["value", "runtime_value"],
+                        },
+                        {"type": "null"},
+                    ]
+                },
+            }
+        },
+    }
+
+    partial = parameter_extraction.build_partial_extraction_schema(schema)
+
+    metadata = partial["$defs"]["metadata"]
+    assert "required" not in metadata
+    assert list(metadata["properties"]) == ["label"]
+    item_object = partial["properties"]["values"]["items"]["anyOf"][0]
+    assert "required" not in item_object
+    assert list(item_object["properties"]) == ["value"]
+
+
 def test_extract_parameters_uses_exact_nested_tool_schema(monkeypatch):
     tool_name = parameter_extraction.extraction_tool_name(
         1, "author_equipment_geometry"

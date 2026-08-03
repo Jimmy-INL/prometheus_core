@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from prometheus_api import load_prompt
+
 from artifact_handling import (
     extract_artifact_field_paths,
     merge_artifacts_into_context,
@@ -49,13 +51,10 @@ from .utils import (
 )
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-
-
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
-
-
-FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = _load_prompt("followup_extraction.txt")
+FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = load_prompt(
+    "followup_extraction.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
 def _task_graph_pending_fields(result: Dict[str, Any]) -> Dict[str, Any]:

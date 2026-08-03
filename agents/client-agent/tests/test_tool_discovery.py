@@ -23,7 +23,9 @@ if "langchain_core.tools" not in sys.modules:
     sys.modules["langchain_core.tools"] = tools_module
 
 if "prometheus_api.agent" not in sys.modules:
-    prometheus_api_module = types.ModuleType("prometheus_api")
+    prometheus_api_module = sys.modules.get(
+        "prometheus_api", types.ModuleType("prometheus_api")
+    )
     agent_module = types.ModuleType("prometheus_api.agent")
 
     class _ArtifactReference:

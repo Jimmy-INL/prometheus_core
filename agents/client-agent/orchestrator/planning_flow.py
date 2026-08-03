@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from prometheus_api import load_prompt
+
 from artifact_handling import collect_chain_required_paths
 from capability_cache import get_capability_cache
 from param_schema import (
@@ -28,13 +30,10 @@ from .parameter_extraction import extract_parameters_with_schemas
 from .utils import extract_json_from_text, extract_material_ids_from_text
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-
-
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
-
-
-PLAN_REFINEMENT_PROMPT_TEMPLATE = _load_prompt("plan_refinement.txt")
+PLAN_REFINEMENT_PROMPT_TEMPLATE = load_prompt(
+    "plan_refinement.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
 def _capability_params(

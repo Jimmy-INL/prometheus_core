@@ -56,12 +56,12 @@ skill sequences, input bindings, and execution order.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from prometheus_api import load_prompt
+from pydantic import ValidationError
 
 from artifact_handling import collect_chain_required_paths
 from capability_cache import AgentCapability
@@ -73,273 +73,46 @@ from param_schema import (
     has_param_path,
     set_nested_value,
 )
+from planner_models import (
+    AssignDependenciesInput,
+    ClarificationResolutionInput,
+    CoveredOperationInput,
+    DecomposeTaskInput,
+    NewTaskResolutionInput,
+    PlanningResult,
+    PriorResultDiscussionInput,
+    RepeatTaskResolutionInput,
+    RequestedOperation,
+    SelectCapabilitiesInput,
+    SelectRegisteredWorkflowInput,
+    SelectWorkflowTemplateInput,
+    SetOperationCoverageInput,
+    SetPlanStepsInput,
+    SetUserMessageInput,
+    TaskDecomposition,
+    TurnResolution,
+    UnsupportedOperationInput,
+    WorkflowPlanningCandidate,
+    _PlanDraft,
+)
 from workflow_library.naming import workflow_tool_name
 from orchestrator import runtime
 
 PROMPTS_DIR = Path(__file__).with_name("prompts")
 
-
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
-
-
-SYSTEM_PROMPT = _load_prompt("planner_system.txt")
+SYSTEM_PROMPT = load_prompt("planner_system.txt", prompts_dir=PROMPTS_DIR)
+TURN_RESOLUTION_SYSTEM_PROMPT = load_prompt(
+    "turn_resolution_system.txt",
+    prompts_dir=PROMPTS_DIR,
+)
+TASK_DECOMPOSITION_SYSTEM_PROMPT = load_prompt(
+    "task_decomposition_system.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
 class PlanningContractError(RuntimeError):
     """Raised when an LLM planning response violates its declared schema."""
-
-
-class DecomposedOperationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    description: str = Field(min_length=1)
-
-
-class NewTaskResolutionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    standalone_request: str = Field(min_length=1)
-
-
-class RepeatTaskResolutionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    standalone_request: str = Field(min_length=1)
-    referenced_invocation_id: str = Field(min_length=1)
-
-
-class PriorResultDiscussionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    message: str = Field(min_length=1)
-    referenced_invocation_id: Optional[str] = None
-
-
-class ClarificationResolutionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    message: str = Field(min_length=1)
-
-
-class TurnResolution(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    resolution_kind: Literal[
-        "new_task",
-        "repeat_prior_task_with_changes",
-        "discuss_prior_result",
-        "needs_clarification",
-    ]
-    standalone_request: str = ""
-    referenced_invocation_id: Optional[str] = None
-    message: str = ""
-
-
-class DecomposeTaskInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    operations: List[DecomposedOperationInput] = Field(min_length=1)
-
-
-class AssignDependenciesInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    dependencies: Dict[str, List[str]]
-
-
-class RequestedOperation(BaseModel):
-    """Immutable operation from capability-neutral request decomposition."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    operation_id: str
-    description: str
-    depends_on: List[str] = Field(default_factory=list)
-
-
-class TaskDecomposition(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    operations: List[RequestedOperation]
-
-
-class CoveredOperationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    operation_id: str
-    skill_id: str
-
-
-class UnsupportedOperationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    operation_id: str
-    reason: str = Field(min_length=1)
-
-
-class SetOperationCoverageInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    covered: List[CoveredOperationInput] = Field(default_factory=list)
-    unsupported: List[UnsupportedOperationInput] = Field(default_factory=list)
-
-
-class SelectCapabilitiesInput(BaseModel):
-    primary_skill: str = Field(description="Primary skill id to execute")
-    supporting_skills: List[str] = Field(
-        default_factory=list,
-        description="Optional supporting skill ids",
-    )
-    workflow_type: Literal["single", "parallel", "sequential"] = Field(
-        default="single",
-        description="Execution workflow semantics",
-    )
-    reasoning: str = Field(
-        default="",
-        description="Short explanation for why these skills are selected",
-    )
-    confidence: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Planner confidence in the skill selection",
-    )
-
-
-class SelectWorkflowTemplateInput(BaseModel):
-    workflow_id: str = Field(description="Workflow template id")
-    workflow_version: Optional[str] = Field(default=None, description="Specific version (optional)")
-    reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-
-
-class SelectRegisteredWorkflowInput(BaseModel):
-    reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-
-
-class SetPlanStepsInput(BaseModel):
-    steps: List[str] = Field(
-        default_factory=list,
-        description="Human-readable plan steps for UI confirmation",
-    )
-    estimated_duration_seconds: int = Field(
-        default=120,
-        ge=1,
-        description="Estimated end-to-end duration in seconds",
-    )
-
-
-class SetUserMessageInput(BaseModel):
-    message: str = Field(
-        default="",
-        description="Message to show to the user with the generated plan",
-    )
-
-
-class PlanningResult(BaseModel):
-    """Structured planner output consumed by `agent.py` chat flow."""
-
-    outcome: Literal["agent_plan", "fallback", "unsupported"] = "agent_plan"
-    message: str = ""
-    workflow_id: Optional[str] = None
-    workflow_version: Optional[str] = None
-    workflow_match_score: Optional[float] = None
-    selection_source: Optional[str] = None
-    primary_skill: Optional[str] = None
-    supporting_skills: List[str] = Field(default_factory=list)
-    workflow_type: Literal["single", "parallel", "sequential", "workflow_template"] = "single"
-    confidence: float = 0.5
-    reasoning: str = ""
-    extracted_params: Dict[str, Any] = Field(default_factory=dict)
-    steps: List[str] = Field(default_factory=list)
-    estimated_duration_seconds: int = 120
-    operations: List[RequestedOperation] = Field(default_factory=list)
-    operation_coverage: Dict[str, str] = Field(default_factory=dict)
-    unsupported_operations: List[UnsupportedOperationInput] = Field(default_factory=list)
-    resolved_query: str = ""
-    resolution_kind: Optional[
-        Literal[
-            "new_task",
-            "repeat_prior_task_with_changes",
-            "discuss_prior_result",
-            "needs_clarification",
-        ]
-    ] = None
-    referenced_invocation_id: Optional[str] = None
-
-
-@dataclass
-class _PlanDraft:
-    """Mutable draft updated via planning tools during a single planning session."""
-
-    outcome: Literal["agent_plan", "fallback", "unsupported"] = "agent_plan"
-    message: str = ""
-    workflow_id: Optional[str] = None
-    workflow_version: Optional[str] = None
-    workflow_match_score: Optional[float] = None
-    selection_source: Optional[str] = None
-    primary_skill: Optional[str] = None
-    supporting_skills: List[str] = field(default_factory=list)
-    workflow_type: Literal["single", "parallel", "sequential", "workflow_template"] = "single"
-    confidence: float = 0.5
-    reasoning: str = ""
-    extracted_params: Dict[str, Any] = field(default_factory=dict)
-    steps: List[str] = field(default_factory=list)
-    estimated_duration_seconds: int = 120
-    operations: List[RequestedOperation] = field(default_factory=list)
-    covered_operations: Dict[str, str] = field(default_factory=dict)
-    unsupported_operations: Dict[str, str] = field(default_factory=dict)
-    resolved_query: str = ""
-    resolution_kind: Optional[str] = None
-    referenced_invocation_id: Optional[str] = None
-    finalized: bool = False
-
-    def to_result(self) -> PlanningResult:
-        return PlanningResult(
-            outcome=self.outcome,
-            message=self.message,
-            workflow_id=self.workflow_id,
-            workflow_version=self.workflow_version,
-            workflow_match_score=self.workflow_match_score,
-            selection_source=self.selection_source,
-            primary_skill=self.primary_skill,
-            supporting_skills=list(self.supporting_skills),
-            workflow_type=self.workflow_type,
-            confidence=self.confidence,
-            reasoning=self.reasoning,
-            extracted_params=dict(self.extracted_params),
-            steps=list(self.steps),
-            estimated_duration_seconds=self.estimated_duration_seconds,
-            operations=list(self.operations),
-            operation_coverage=dict(self.covered_operations),
-            unsupported_operations=[
-                UnsupportedOperationInput(operation_id=operation_id, reason=reason)
-                for operation_id, reason in self.unsupported_operations.items()
-            ],
-            resolved_query=self.resolved_query,
-            resolution_kind=self.resolution_kind,
-            referenced_invocation_id=self.referenced_invocation_id,
-        )
-
-
-@dataclass
-class WorkflowPlanningCandidate:
-    """Workflow candidate exposed to planner tools."""
-
-    workflow_id: str
-    workflow_version: str
-    score: float
-    required_paths: List[str] = field(default_factory=list)
-    selection_source: str = "matcher"
-    skills: List[str] = field(default_factory=list)
-    execution_mode: str = "sequential"
-    estimated_duration_seconds: Optional[int] = None
-    display_name: Optional[str] = None
-    summary: Optional[str] = None
-    extracted_params: Dict[str, Any] = field(default_factory=dict)
-    tool_name: Optional[str] = None
 
 
 def _result_summary(result: Any, assistant_content: str) -> str:
@@ -461,22 +234,7 @@ async def resolve_turn(
     messages = [
         {
             "role": "system",
-            "content": (
-                "Resolve the current user utterance without considering available capabilities. "
-                "Call exactly one provided resolution function and return no prose. Use "
-                "resolve_new_task for an independent executable request. Use "
-                "resolve_repeat_prior_task_with_changes when the "
-                "utterance substitutes, contrasts, narrows, broadens, or changes parameters of "
-                "a prior capability invocation; this remains executable even if that invocation "
-                "failed or returned no useful result. That branch must reference one supplied "
-                "invocation and produce a complete standalone request containing the prior action "
-                "plus the requested change. Use resolve_prior_result_discussion only when no "
-                "new work is requested and answer directly from the conversation. Use "
-                "resolve_needs_clarification only when a standalone task cannot be determined, "
-                "and ask one focused question. "
-                "Do not select or name a capability. Executable branches populate only "
-                "standalone_request. Non-executable branches populate only message."
-            ),
+            "content": TURN_RESOLUTION_SYSTEM_PROMPT,
         },
         {
             "role": "user",
@@ -607,19 +365,7 @@ async def decompose_task(
     messages = [
         {
             "role": "system",
-            "content": (
-                "Decompose the standalone executable task without considering what tools or "
-                "capabilities may be available. Call decompose_task exactly once and return no "
-                "prose. List every requested outcome as an ordered operation. Do not assign "
-                "dependencies; those are requested separately after the ordered operations are "
-                "frozen. Treat requests to change previously created parameterized geometry as "
-                "a new geometry-authoring outcome followed by any requested downstream outcomes; "
-                "do not assume an in-place CAD editing operation. Remeshing reuses the most recent "
-                "existing CAD. A request that changes only mesh controls such as element size, "
-                "element count, element type, or mesh quality is one meshing outcome; do not add "
-                "a geometry-authoring outcome unless the user also requests a CAD geometry, "
-                "topology, or dimension change."
-            ),
+            "content": TASK_DECOMPOSITION_SYSTEM_PROMPT,
         },
         {
             "role": "user",
