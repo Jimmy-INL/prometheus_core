@@ -180,3 +180,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - OpenAI function-tool parameter schemas must remain a top-level object without oneOf, anyOf, allOf, enum, const, or not; encode branch variants as separate function tools.
 - When explaining a logging change, distinguish lazy logger argument formatting from changes to the values being logged.
 - Treat the Chainlit backend and Chainlit UI as separate surfaces; React may still require the backend after the Chainlit UI stops being exposed or extended.
+- Prefix every GitHub PR review reply written by a code agent with 🤖 so reviewers can identify agent-authored text.

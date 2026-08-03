@@ -192,7 +192,7 @@ For enum fields, use the exact allowed value if mentioned.
 
                         state["extracted_values"][field_name] = value
 
-            logger.info("Extracted %d form value(s) from initial context", len(state["extracted_values"]))
+            logger.info(f"Extracted {len(state['extracted_values'])} form value(s) from initial context")
 
         except Exception as e:
             logger.error(f"Error extracting initial values: {e}")
@@ -323,7 +323,7 @@ Only include fields where you found a clear value. Use null for fields where no 
 
                         state["extracted_values"][field_name] = value
 
-            logger.info("Form state now contains %d extracted value(s)", len(state["extracted_values"]))
+            logger.info(f"Form state now contains {len(state['extracted_values'])} extracted value(s)")
 
         except Exception as e:
             logger.error(f"Error processing NL input: {e}")
@@ -464,7 +464,7 @@ Only include fields where you found a clear value. Use null for fields where no 
 
         # Process input based on type
         if followup_answers:
-            logger.info("Processing %d structured form answer(s)", len(followup_answers))
+            logger.info(f"Processing {len(followup_answers)} structured form answer(s)")
             state = self.process_form_input(state, followup_answers)
         elif query:
             logger.info("Processing natural-language form input")
@@ -481,7 +481,7 @@ Only include fields where you found a clear value. Use null for fields where no 
 
         if not missing:
             # All required fields filled - return completed result
-            logger.info("Form complete with %d value(s)", len(state["extracted_values"]))
+            logger.info(f"Form complete with {len(state['extracted_values'])} value(s)")
 
             return {
                 "status": "completed",
