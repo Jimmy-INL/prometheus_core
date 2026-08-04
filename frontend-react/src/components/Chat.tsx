@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check, Paperclip, X, FileText, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Copy, Check, Paperclip, X, FileText, Loader2 } from "lucide-react";
 import {
   useChatMessages,
   useChatInteract,
@@ -18,7 +18,6 @@ import {
   flattenMessages,
   FlatItem,
   isUserMessage,
-  isAssistantMessage,
   isToolStep,
   isAskAction,
   isAskForm,
@@ -208,6 +207,9 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
 // ---------------------------------------------------------------------------
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const USER_MESSAGE_TOP_PADDING = 16;
+const LATEST_MESSAGE_BOTTOM_PADDING = 24;
+const RESUME_FOLLOW_THRESHOLD = 40;
 
 interface Attachment {
   localId: string;
@@ -241,13 +243,14 @@ export function Chat({ scrollContainerRef }: ChatProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
-  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
-  const loadingDotsRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
+  const followLatestRef = useRef(true);
+  const pendingUserScrollRef = useRef(false);
   const prevUserCountRef = useRef(0);
-  const programmaticScrollUntilRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   const { messages } = useChatMessages();
   const { sendMessage, stopTask, uploadFile } = useChatInteract();
@@ -339,12 +342,12 @@ export function Chat({ scrollContainerRef }: ChatProps) {
   const flat = flattenMessages(messages);
 
   let lastUserIdx = -1;
-  let lastAssistantIdx = -1;
   for (let i = flat.length - 1; i >= 0; i--) {
     if (lastUserIdx === -1 && isUserMessage(flat[i])) lastUserIdx = i;
-    if (lastAssistantIdx === -1 && isAssistantMessage(flat[i])) lastAssistantIdx = i;
-    if (lastUserIdx !== -1 && lastAssistantIdx !== -1) break;
+    if (lastUserIdx !== -1) break;
   }
+  const userCount = flat.filter(isUserMessage).length;
+  const hasMessages = flat.length > 0;
 
   const lastItem: FlatItem | undefined = flat[flat.length - 1];
   const lastMessage = lastItem?.step;
@@ -362,6 +365,9 @@ export function Chat({ scrollContainerRef }: ChatProps) {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
 
+  // Keep enough trailing room for the newest user message to sit near the top.
+  // Measure without clearing the spacer first so the browser never clamps the
+  // current scroll position during a streamed response.
   const updateSpacer = useCallback(() => {
     const el = scrollContainerRef.current;
     const userMsg = lastUserMessageRef.current;
@@ -371,65 +377,120 @@ export function Chat({ scrollContainerRef }: ChatProps) {
       spacer.style.minHeight = "0px";
       return;
     }
-    const tail =
-      awaitingResponse && lastMessage?.type === "user_message"
-        ? loadingDotsRef.current
-        : lastAssistantMessageRef.current ?? userMsg;
-    if (!tail) {
-      spacer.style.minHeight = "0px";
-      return;
-    }
-    spacer.style.minHeight = "0px";
-    const tailBottom = tail.offsetTop + tail.offsetHeight;
-    const needed = Math.max(0, el.clientHeight - (tailBottom - userMsg.offsetTop) - 16);
-    spacer.style.minHeight = `${needed}px`;
-  }, [awaitingResponse, lastMessage?.type, scrollContainerRef]);
+    const elRect = el.getBoundingClientRect();
+    const userTop = el.scrollTop + userMsg.getBoundingClientRect().top - elRect.top;
+    const heightWithoutSpacer = el.scrollHeight - spacer.getBoundingClientRect().height;
+    const needed = Math.max(
+      0,
+      userTop + el.clientHeight - USER_MESSAGE_TOP_PADDING - heightWithoutSpacer,
+    );
+    spacer.style.minHeight = `${Math.ceil(needed)}px`;
+  }, [scrollContainerRef]);
+
+  // The spacer's previous sibling is always the latest rendered content,
+  // including loading, tool, and ask rows that are not assistant messages.
+  const getLatestScrollTop = useCallback(() => {
+    const el = scrollContainerRef.current;
+    const userMsg = lastUserMessageRef.current;
+    const spacer = spacerRef.current;
+    const latestContent = spacer?.previousElementSibling;
+    if (!el || !userMsg || !latestContent) return 0;
+
+    const elRect = el.getBoundingClientRect();
+    const userTop = el.scrollTop + userMsg.getBoundingClientRect().top - elRect.top;
+    const latestContentBottom =
+      el.scrollTop + latestContent.getBoundingClientRect().bottom - elRect.top;
+    return Math.max(
+      userTop - USER_MESSAGE_TOP_PADDING,
+      latestContentBottom - el.clientHeight + LATEST_MESSAGE_BOTTOM_PADDING,
+      0,
+    );
+  }, [scrollContainerRef]);
+
+  const scrollToLatest = useCallback((behavior: ScrollBehavior) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const top = getLatestScrollTop();
+    if (Math.abs(top - el.scrollTop) > 1) el.scrollTo({ top, behavior });
+    if (behavior === "auto") lastScrollTopRef.current = el.scrollTop;
+  }, [getLatestScrollTop, scrollContainerRef]);
 
   useLayoutEffect(() => {
     updateSpacer();
-  }, [updateSpacer, lastMessage?.output, lastMessage?.id, flat.length, awaitingResponse]);
-
-  useEffect(() => {
-    window.addEventListener("resize", updateSpacer);
-    return () => window.removeEventListener("resize", updateSpacer);
-  }, [updateSpacer]);
-
-  useEffect(() => {
-    const userCount = flat.filter(isUserMessage).length;
-    if (userCount > prevUserCountRef.current) {
-      autoScrollRef.current = true;
-      requestAnimationFrame(() => {
-        const target = lastUserMessageRef.current;
-        const el = scrollContainerRef.current;
-        if (!target || !el) return;
-        programmaticScrollUntilRef.current = Date.now() + 800;
-        el.scrollTo({ top: target.offsetTop - el.offsetTop - 16, behavior: "smooth" });
-      });
-    }
+    const newUserMessage = userCount > prevUserCountRef.current;
     prevUserCountRef.current = userCount;
-  }, [flat, scrollContainerRef]);
+
+    if (!followLatestRef.current) return;
+    const smooth = pendingUserScrollRef.current && newUserMessage;
+    if (smooth) pendingUserScrollRef.current = false;
+    scrollToLatest(
+      smooth && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "smooth"
+        : "auto",
+    );
+  }, [
+    awaitingResponse,
+    flat.length,
+    lastMessage?.id,
+    lastMessage?.output,
+    scrollToLatest,
+    updateSpacer,
+    userCount,
+  ]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
-    if (!el || !autoScrollRef.current) return;
-    const target =
-      awaitingResponse && lastMessage?.type === "user_message"
-        ? loadingDotsRef.current
-        : lastAssistantMessageRef.current;
-    if (!target) return;
-    const targetBottom = target.offsetTop - el.offsetTop + target.offsetHeight;
-    const desired = targetBottom - el.clientHeight + 24;
-    if (desired > el.scrollTop) {
-      programmaticScrollUntilRef.current = Date.now() + 400;
-      el.scrollTop = desired;
-    }
-  }, [lastMessage?.output, lastMessage?.type, lastMessage?.id, awaitingResponse, flat.length, scrollContainerRef]);
+    const messageList = messageListRef.current;
+    if (!el || !messageList) return;
+
+    let frame = 0;
+    let initialized = false;
+    const syncLayout = () => {
+      if (!initialized) {
+        initialized = true;
+        return;
+      }
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        updateSpacer();
+        if (followLatestRef.current) scrollToLatest("auto");
+      });
+    };
+    // Handles wrapping, panel resizes, expanded tools, and async viewer loads.
+    const observer = new ResizeObserver(syncLayout);
+    observer.observe(el);
+    observer.observe(messageList);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [hasMessages, scrollContainerRef, scrollToLatest, updateSpacer]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (Date.now() < programmaticScrollUntilRef.current) return;
     const el = e.currentTarget;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    autoScrollRef.current = nearBottom;
+    const scrollingUp = el.scrollTop < lastScrollTopRef.current - 1;
+    const nearLatest = getLatestScrollTop() - el.scrollTop <= RESUME_FOLLOW_THRESHOLD;
+    lastScrollTopRef.current = el.scrollTop;
+
+    if (scrollingUp) {
+      followLatestRef.current = false;
+      setShowScrollToLatest(true);
+    } else if (nearLatest) {
+      followLatestRef.current = true;
+      setShowScrollToLatest(false);
+    } else if (!followLatestRef.current) {
+      setShowScrollToLatest(true);
+    }
+  };
+
+  const handleScrollToLatest = () => {
+    followLatestRef.current = true;
+    setShowScrollToLatest(false);
+    updateSpacer();
+    scrollToLatest(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    );
   };
 
   const handleSend = (content = input.trim()) => {
@@ -438,6 +499,9 @@ export function Chat({ scrollContainerRef }: ChatProps) {
       .map((a) => ({ id: a.id as string }));
     if (!content && !readyRefs.length) return;
     if (uploadingCount > 0) return;
+    followLatestRef.current = true;
+    pendingUserScrollRef.current = true;
+    setShowScrollToLatest(false);
     sendMessage({ name: "user", type: "user_message" as const, output: content }, readyRefs);
     setInput("");
     setAttachments([]);
@@ -473,134 +537,146 @@ export function Chat({ scrollContainerRef }: ChatProps) {
     <div className="flex flex-col flex-1 w-full overflow-hidden">
       {/* For testing Viewers, uncomment the line below and its import and edit Test Harness */} 
       {/* <ViewerTestHarness /> */} 
-      {flat.length === 0 ? (
-        <WelcomeScreen onSelect={(text) => handleSend(text)} />
-      ) : (
-        <div
-          ref={scrollContainerRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-y-auto"
-        >
-          <div className="max-w-4xl mx-auto p-5 space-y-5">
-            {flat.map((item: FlatItem, i: number) => {
-              const { step: m } = item;
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
+        {!hasMessages ? (
+          <WelcomeScreen onSelect={(text) => handleSend(text)} />
+        ) : (
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto"
+          >
+            <div ref={messageListRef} className="max-w-4xl mx-auto p-5 space-y-5">
+              {flat.map((item: FlatItem, i: number) => {
+                const { step: m } = item;
 
-              const joinedActions = item.actions.length
-                ? item.actions
-                : globalActions.filter((a) => a.forId === m.id);
-              const effective: FlatItem =
-                joinedActions.length && item.kind !== "ask_action"
-                  ? { ...item, actions: joinedActions, kind: "ask_action" }
-                  : joinedActions.length !== item.actions.length
-                  ? { ...item, actions: joinedActions }
-                  : item;
+                const joinedActions = item.actions.length
+                  ? item.actions
+                  : globalActions.filter((a) => a.forId === m.id);
+                const effective: FlatItem =
+                  joinedActions.length && item.kind !== "ask_action"
+                    ? { ...item, actions: joinedActions, kind: "ask_action" }
+                    : joinedActions.length !== item.actions.length
+                    ? { ...item, actions: joinedActions }
+                    : item;
 
-              if (isToolStep(effective) || isAskPlain(effective)) {
-                return (
-                  <div key={m.id} className="space-y-2">
-                    <ToolStep item={effective} />
-                  </div>
-                );
-              }
-
-              if (isAskForm(effective)) {
-                const askElements = [
-                  ...((m.elements as AnyElement[] | undefined) ?? []),
-                  ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-                ];
-                return (
-                  <div key={m.id} className="flex gap-2 justify-start">
-                    <AssistantAvatar />
-                    <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                      {m.output && (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                          {m.output}
-                        </ReactMarkdown>
-                      )}
-                      <ElementList elements={askElements} onSend={handleSend} />
+                if (isToolStep(effective) || isAskPlain(effective)) {
+                  return (
+                    <div key={m.id} className="space-y-2">
+                      <ToolStep item={effective} />
                     </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              if (isAskAction(effective)) {
-                const askElements = [
-                  ...((m.elements as AnyElement[] | undefined) ?? []),
-                  ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-                ];
-                return (
-                  <div key={m.id} className="flex gap-2 justify-start">
-                    <AssistantAvatar />
-                    <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                      {m.output && (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                          {m.output}
-                        </ReactMarkdown>
-                      )}
-                      <ElementList elements={askElements} onSend={handleSend} />
-                      <ActionButtons item={effective} onAction={handleAction} />
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={m.id}
-                  ref={
-                    i === lastUserIdx
-                      ? lastUserMessageRef
-                      : i === lastAssistantIdx
-                      ? lastAssistantMessageRef
-                      : undefined
-                  }
-                  className={`flex gap-2 ${
-                    isUserMessage(item) ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {isUserMessage(item) ? (
-                    m.output ? (
-                      <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
-                        {m.output}
-                      </span>
-                    ) : null
-                  ) : (
-                    <>
+                if (isAskForm(effective)) {
+                  const askElements = [
+                    ...((m.elements as AnyElement[] | undefined) ?? []),
+                    ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                  ];
+                  return (
+                    <div key={m.id} className="flex gap-2 justify-start">
                       <AssistantAvatar />
-                      <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                          {m.output}
-                        </ReactMarkdown>
-                        <ElementList
-                          elements={[
-                            ...((m.elements as AnyElement[] | undefined) ?? []),
-                            ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
-                          ]}
-                          onSend={handleSend}
-                        />
+                      <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                        {m.output && (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                            {m.output}
+                          </ReactMarkdown>
+                        )}
+                        <ElementList elements={askElements} onSend={handleSend} />
                       </div>
-                    </>
-                  )}
+                    </div>
+                  );
+                }
+
+                if (isAskAction(effective)) {
+                  const askElements = [
+                    ...((m.elements as AnyElement[] | undefined) ?? []),
+                    ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                  ];
+                  return (
+                    <div key={m.id} className="flex gap-2 justify-start">
+                      <AssistantAvatar />
+                      <div className="flex-1 text-base text-base-content [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                        {m.output && (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                            {m.output}
+                          </ReactMarkdown>
+                        )}
+                        <ElementList elements={askElements} onSend={handleSend} />
+                        <ActionButtons item={effective} onAction={handleAction} />
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={m.id}
+                    ref={i === lastUserIdx ? lastUserMessageRef : undefined}
+                    className={`flex gap-2 ${
+                      isUserMessage(item) ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    {isUserMessage(item) ? (
+                      m.output ? (
+                        <span className="px-4 py-2 rounded-xl max-w-xl text-base whitespace-pre-wrap bg-base-300 text-base-content">
+                          {m.output}
+                        </span>
+                      ) : null
+                    ) : (
+                      <>
+                        <AssistantAvatar />
+                        <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                            {m.output}
+                          </ReactMarkdown>
+                          <ElementList
+                            elements={[
+                              ...((m.elements as AnyElement[] | undefined) ?? []),
+                              ...(globalElements.filter((e) => e.forId === m.id) as unknown as AnyElement[]),
+                            ]}
+                            onSend={handleSend}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {showLoadingDots && (
+                <div
+                  className="flex gap-2 justify-start"
+                  aria-live="polite"
+                  aria-label="Assistant is thinking"
+                >
+                  <AssistantAvatar />
+                  <span className="loading loading-dots loading-md text-base-content self-center" />
                 </div>
-              );
-            })}
+              )}
 
-            {showLoadingDots && (
-              <div
-                ref={loadingDotsRef}
-                className="flex gap-2 justify-start"
-                aria-live="polite"
-                aria-label="Assistant is thinking"
-              >
-                <AssistantAvatar />
-                <span className="loading loading-dots loading-md text-base-content self-center" />
-              </div>
-            )}
-
-            <div ref={spacerRef} aria-hidden />
+              <div ref={spacerRef} aria-hidden />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {hasMessages && (
+          <button
+            type="button"
+            onClick={handleScrollToLatest}
+            className={`btn btn-circle btn-sm absolute bottom-4 left-1/2 z-10 -translate-x-1/2 border border-base-300 bg-base-100 text-base-content shadow-md transition-all duration-200 motion-reduce:transition-none hover:bg-base-200 dark:bg-accent dark:text-accent-content dark:hover:bg-accent/70 ${
+              showScrollToLatest
+                ? "translate-y-0 opacity-100"
+                : "pointer-events-none translate-y-2 opacity-0"
+            }`}
+            aria-label="Scroll to latest message"
+            aria-hidden={!showScrollToLatest}
+            tabIndex={showScrollToLatest ? 0 : -1}
+          >
+            <ArrowDown size={18} />
+          </button>
+        )}
+      </div>
 
       <div className="px-4 pt-3 pb-2">
         <div className="max-w-4xl mx-auto">
