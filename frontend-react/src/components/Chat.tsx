@@ -365,9 +365,9 @@ export function Chat({ scrollContainerRef }: ChatProps) {
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [input]);
 
-  // Keep enough trailing room for the newest user message to sit near the top.
-  // Measure without clearing the spacer first so the browser never clamps the
-  // current scroll position during a streamed response.
+  // Once real content overflows, keep enough trailing room for the newest user
+  // message to sit near the top. Measure with the previous spacer intact so a
+  // temporary reset cannot clamp the scroll position during a streamed response.
   const updateSpacer = useCallback(() => {
     const el = scrollContainerRef.current;
     const userMsg = lastUserMessageRef.current;
@@ -380,6 +380,10 @@ export function Chat({ scrollContainerRef }: ChatProps) {
     const elRect = el.getBoundingClientRect();
     const userTop = el.scrollTop + userMsg.getBoundingClientRect().top - elRect.top;
     const heightWithoutSpacer = el.scrollHeight - spacer.getBoundingClientRect().height;
+    if (heightWithoutSpacer <= el.clientHeight) {
+      spacer.style.minHeight = "0px";
+      return;
+    }
     const needed = Math.max(
       0,
       userTop + el.clientHeight - USER_MESSAGE_TOP_PADDING - heightWithoutSpacer,
