@@ -34,6 +34,6 @@ model_list:
 
   - model_name: embedding
     litellm_params:
-      model: hosted_vllm/bge-m3
+      model: hosted_vllm/llama-nemotron-embed-vl-1b-v2
       api_key: os.environ/INL_HPC_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
