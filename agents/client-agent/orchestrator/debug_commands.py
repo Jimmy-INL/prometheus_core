@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -7,11 +8,27 @@ import task_graph
 from artifact_handling import merge_artifact_catalogs, summarize_artifacts_for_context
 from capability_cache import get_capability_cache
 from tool_discovery import discover_agents
+from workflow_library import get_workflow_registry, workflow_slug
 
 from . import runtime
 from .models import ConversationRequest, ConversationResponse
 
-SUPPORTED_SLASH_COMMANDS = ["agents", "artifacts", "tasks"]
+SLASH_COMMAND_DESCRIPTIONS = {
+    "agents": "List registered agents and their advertised skills.",
+    "artifacts": "List artifacts registered for this conversation.",
+    "forget": "Forget stored OSTI knowledge facts.",
+    "help": "List all available commands.",
+    "tasks": "List tasks, or inspect one with /tasks <id>.",
+    "workflows": "List all currently registered workflows.",
+}
+SUPPORTED_SLASH_COMMANDS = list(SLASH_COMMAND_DESCRIPTIONS)
+
+_OSTI_KNOWLEDGE_KEY_PATTERNS = (
+    ("facts", "osti:factoid:*"),
+    ("indexes", "osti:paper:*:facts"),
+    ("indexes", "osti:topic:*:factoids"),
+)
+_REDIS_DELETE_BATCH_SIZE = 500
 
 _STATE_ICONS = {
     "submitted": "•",
@@ -43,6 +60,23 @@ def _is_slash_command_query(query: Optional[str]) -> bool:
 def _is_supported_slash_command_query(query: Optional[str]) -> bool:
     parsed = _parse_slash_command(query)
     return parsed is not None and parsed[0] in SUPPORTED_SLASH_COMMANDS
+
+
+def _delete_osti_knowledge() -> Dict[str, int]:
+    redis_client = runtime._get_status_redis_client()
+    deleted = {"facts": 0, "indexes": 0}
+
+    for category, pattern in _OSTI_KNOWLEDGE_KEY_PATTERNS:
+        batch = []
+        for key in redis_client.scan_iter(match=pattern, count=_REDIS_DELETE_BATCH_SIZE):
+            batch.append(key)
+            if len(batch) == _REDIS_DELETE_BATCH_SIZE:
+                deleted[category] += redis_client.delete(*batch)
+                batch.clear()
+        if batch:
+            deleted[category] += redis_client.delete(*batch)
+
+    return deleted
 
 
 def _format_debug_skill(skill: Dict[str, Any]) -> str:
@@ -216,6 +250,73 @@ def _format_artifacts_debug_response(artifacts: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _workflow_command_entries(catalog: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    entries_by_id: Dict[str, Dict[str, str]] = {}
+    for workflow in catalog:
+        workflow_id = str(workflow.get("id") or "").strip()
+        if not workflow_id:
+            continue
+        entries_by_id[workflow_id] = {
+            "command": workflow_slug(workflow_id),
+            "workflow_id": workflow_id,
+            "workflow_version": str(workflow.get("version") or ""),
+            "display_name": str(workflow.get("display_name") or workflow_id),
+        }
+    return sorted(entries_by_id.values(), key=lambda entry: entry["command"])
+
+
+def _format_workflows_response(catalog: List[Dict[str, Any]]) -> str:
+    lines = [f"Registered workflows ({len(catalog)})"]
+    if not catalog:
+        lines.extend(["", "No workflows are currently registered."])
+        return "\n".join(lines)
+
+    groups = (
+        ("Platform-owned workflows", [item for item in catalog if item.get("source") != "agent_card"]),
+        ("Agent-owned workflows", [item for item in catalog if item.get("source") == "agent_card"]),
+    )
+    for heading, workflows in groups:
+        lines.extend(["", f"{heading} ({len(workflows)})"])
+        if not workflows:
+            lines.append("- None")
+            continue
+        for workflow in workflows:
+            workflow_id = str(workflow.get("id") or "unnamed-workflow")
+            display_name = str(workflow.get("display_name") or workflow_id)
+            lines.append(f"- {display_name} (`/{workflow_slug(workflow_id)}`)")
+            version = str(workflow.get("version") or "unknown")
+            details = f"  id: {workflow_id}@{version}"
+            owner = str(workflow.get("owner") or "").strip()
+            if owner:
+                details += f" — owner: {owner}"
+            lines.append(details)
+            summary = str(workflow.get("summary") or "").strip()
+            if summary:
+                lines.append(f"  {summary}")
+    return "\n".join(lines)
+
+
+def _format_help_response(workflow_commands: List[Dict[str, str]]) -> str:
+    total = len(SUPPORTED_SLASH_COMMANDS) + len(workflow_commands)
+    lines = [f"Available commands ({total})", "", f"Built-in commands ({len(SUPPORTED_SLASH_COMMANDS)})"]
+    lines.extend(
+        f"- `/{command}` — {SLASH_COMMAND_DESCRIPTIONS[command]}"
+        for command in SUPPORTED_SLASH_COMMANDS
+    )
+    lines.extend(["", f"Workflow commands ({len(workflow_commands)})"])
+    if not workflow_commands:
+        lines.append("- None currently registered")
+    else:
+        for entry in workflow_commands:
+            workflow_ref = entry["workflow_id"]
+            if entry["workflow_version"]:
+                workflow_ref += f"@{entry['workflow_version']}"
+            lines.append(
+                f"- `/{entry['command']}` — {entry['display_name']} ({workflow_ref})"
+            )
+    return "\n".join(lines)
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -275,9 +376,10 @@ def _format_tasks_list(trees: List[Dict[str, Any]]) -> str:
     header = f"Tasks ({len(trees)} total, {active} active)"
     if not trees:
         return header + "\n\nNo tasks have run in this conversation yet."
-    lines = [header, ""]
+    lines = [header, "", "```text"]
     for tree in trees:
         lines.extend(_render_tree_lines(tree))
+    lines.append("```")
     lines.append("")
     lines.append("Use `/tasks <id>` to inspect a task.")
     return "\n".join(lines)
@@ -295,7 +397,7 @@ def _format_task_detail(conversation_id: str, task_id: str) -> str:
         return f"No task found matching '{task_id}' in this conversation."
 
     data = node.to_dict()
-    lines = [f"Task {node.task_id}", ""]
+    lines = [f"Task {node.task_id}", "", "```text"]
     lines.append(f"  state:   {node.state}")
     if node.agent:
         lines.append(f"  agent:   {node.agent}")
@@ -325,6 +427,7 @@ def _format_task_detail(conversation_id: str, task_id: str) -> str:
         lines.append("  subtree:")
         for child in rendered["children"]:
             lines.extend("  " + ln for ln in _render_tree_lines(child, 1))
+    lines.append("```")
     return "\n".join(lines)
 
 
@@ -357,6 +460,23 @@ async def _maybe_handle_slash_command(
         return None
 
     command, _args = parsed
+    if command == "help":
+        catalog = get_workflow_registry().get_catalog() if runtime.ENABLE_WORKFLOW_LIBRARY else []
+        workflow_commands = _workflow_command_entries(catalog)
+        message = _format_help_response(workflow_commands)
+        runtime.store_status_update(conv_id, "Handled /help slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "help",
+                "supported_commands": list(SUPPORTED_SLASH_COMMANDS),
+                "workflow_commands": workflow_commands,
+            },
+        )
+
     if command == "agents":
         entries, errors = await _collect_registered_agent_debug_entries()
         message = _format_agents_debug_response(entries, errors)
@@ -389,6 +509,27 @@ async def _maybe_handle_slash_command(
             },
         )
 
+    if command == "forget":
+        deleted = await asyncio.to_thread(_delete_osti_knowledge)
+        facts_deleted = deleted["facts"]
+        fact_label = "fact" if facts_deleted == 1 else "facts"
+        message = (
+            f"Forgot {facts_deleted} stored OSTI knowledge {fact_label}. "
+            "Cached papers and answers, task state, and conversation data were not changed."
+        )
+        runtime.store_status_update(conv_id, "Handled /forget slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "forget",
+                "facts_deleted": facts_deleted,
+                "index_keys_deleted": deleted["indexes"],
+            },
+        )
+
     if command == "tasks":
         if _args:
             message = _format_task_detail(conv_id, _args.split()[0])
@@ -404,6 +545,21 @@ async def _maybe_handle_slash_command(
             message=message,
             response_text=message,
             message_metadata=metadata,
+        )
+
+    if command == "workflows":
+        catalog = get_workflow_registry().get_catalog() if runtime.ENABLE_WORKFLOW_LIBRARY else []
+        message = _format_workflows_response(catalog)
+        runtime.store_status_update(conv_id, "Handled /workflows slash command.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=message,
+            response_text=message,
+            message_metadata={
+                "slash_command": "workflows",
+                "workflows": catalog,
+            },
         )
 
     supported = ", ".join(f"/{cmd}" for cmd in SUPPORTED_SLASH_COMMANDS)

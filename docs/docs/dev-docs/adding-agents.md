@@ -121,10 +121,16 @@ AGENT_SECRET=your-shared-secret
 AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://localhost:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
-ANTHROPIC_API_KEY=your-api-key
-MODEL_NAME=claude-sonnet-4-6
+LLM_CONFIG_PROFILE=openai
+LLM_CONFIG_FILE=
+OPENAI_API_KEY=your-openai-key
 REDIS_URL=redis://localhost:6379
 ```
+
+Use `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai`
+for `LLM_CONFIG_PROFILE`. If `LLM_CONFIG_FILE` is set, its path must exist
+inside the agent container and it overrides the installed profile. Export the
+provider keys referenced by the selected configuration.
 
 **requirements.txt:**
 ```
@@ -166,11 +172,17 @@ my-analysis-agent:
   environment:
     - AGENT_HOST=my-analysis-agent
     - AGENT_PORT=8000
-    - REGISTRY_URL=${REGISTRY_URL:-}
+    - REGISTRY_URL=${REGISTRY_URL:-http://litellm:4000}
     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - REDIS_URL=${REDIS_URL}
-    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    - MODEL_NAME=${MODEL_NAME:-claude-sonnet-4-6}
+    - LLM_CONFIG_PROFILE=${LLM_CONFIG_PROFILE:-registry}
+    - LLM_CONFIG_FILE=${LLM_CONFIG_FILE:-}
+    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+    - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    - INL_HPC_API_KEY=${INL_HPC_API_KEY:-}
+    - INL_LITELLM_API_KEY=${INL_LITELLM_API_KEY:-}
+    - AMSC_I2_API_KEY=${AMSC_I2_API_KEY:-}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:
@@ -182,6 +194,8 @@ my-analysis-agent:
 ```
 
 Once the container starts, it registers with LiteLLM. The client-agent discovers it automatically through LiteLLM's agent directory and loads the full agent card from the specialist's well-known endpoint when needed.
+The agent selects semantic model flavors such as `medium` in code; its selected
+YAML maps those flavors to provider model IDs.
 
 ## Workflow templates
 

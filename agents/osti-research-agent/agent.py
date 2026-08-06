@@ -26,8 +26,8 @@ from typing import Any, Dict, List, Optional
 
 import redis
 import requests
-from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent, TaskState
+from prometheus_api.llm_client import LLMConfig
 from prometheus_api.redis_utils import create_redis_client
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
@@ -40,8 +40,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 REDIS_URL = os.getenv("REDIS_URL")
 TIMEOUT_SECONDS = 900  # 15 minutes maximum
 PROMPTS_DIR = Path(__file__).with_name("prompts")
@@ -227,7 +225,6 @@ class OSTIResearchAgent(PrometheusAgent):
         super().__init__(*args, **kwargs)
         self._redis_client = None
         self._redis_binary_client = None
-        self._anthropic_client = None
 
     @property
     def redis_client(self) -> redis.Redis:
@@ -244,13 +241,6 @@ class OSTIResearchAgent(PrometheusAgent):
                 REDIS_URL, decode_responses=False, ping=False
             )
         return self._redis_binary_client
-
-    @property
-    def anthropic_client(self) -> Anthropic:
-        """Lazy initialization of Anthropic client."""
-        if self._anthropic_client is None:
-            self._anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        return self._anthropic_client
 
     def extract_json_from_text(self, text: str) -> Optional[Any]:
         """Extract JSON from text that may contain markdown code blocks."""
@@ -272,13 +262,16 @@ class OSTIResearchAgent(PrometheusAgent):
 
         return None
 
-    def check_memory(self, question: str) -> Optional[Dict[str, Any]]:
+    async def check_memory(self, question: str, llm: Any) -> Optional[Dict[str, Any]]:
         """Check if we've already answered this question or have relevant facts."""
         # Hash question for lookup
         question_hash = hashlib.md5(question.lower().encode()).hexdigest()
 
         # Check for exact cached answer
-        cached = self.redis_client.get(f"osti:question:{question_hash}:answer")
+        cached = await asyncio.to_thread(
+            self.redis_client.get,
+            f"osti:question:{question_hash}:answer",
+        )
         if cached:
             logger.info(f"Found cached answer for question: {question}")
             cached_payload = json.loads(cached)
@@ -287,11 +280,11 @@ class OSTIResearchAgent(PrometheusAgent):
             return cached_payload
 
         # Check for relevant factoids
-        factoids = self.search_relevant_factoids(question)
+        factoids = await self.search_relevant_factoids(question, llm)
 
         if factoids and len(factoids) >= 2:  # Minimum 2 factoids to answer
             logger.info(f"Found {len(factoids)} relevant factoids in memory")
-            synthesized = self.synthesize_from_memory(question, factoids)
+            synthesized = await self.synthesize_from_memory(question, factoids, llm)
             if not synthesized:
                 return None
 
@@ -305,24 +298,31 @@ class OSTIResearchAgent(PrometheusAgent):
 
         return None
 
-    def search_relevant_factoids(self, question: str) -> List[Dict[str, Any]]:
+    async def search_relevant_factoids(
+        self,
+        question: str,
+        llm: Any,
+    ) -> List[Dict[str, Any]]:
         """Find factoids relevant to the question."""
         # Get all OSTI factoids
-        all_factoid_keys = self.redis_client.keys("osti:factoid:*")
+        all_factoid_keys = await asyncio.to_thread(
+            self.redis_client.keys,
+            "osti:factoid:*",
+        )
 
         if not all_factoid_keys:
             return []
 
         factoids = []
         for key in all_factoid_keys[:100]:  # Limit for performance
-            data = self.redis_client.get(key)
+            data = await asyncio.to_thread(self.redis_client.get, key)
             if data:
                 factoids.append(json.loads(data))
 
         if not factoids:
             return []
 
-        # Use Claude to select relevant ones
+        # Use the configured model to select relevant ones
         selection_prompt = SELECT_FACTOIDS_PROMPT_TEMPLATE.format(
             question=question,
             factoids_json=json.dumps(
@@ -332,20 +332,20 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=1024,
-                temperature=0,
-                messages=[{"role": "user", "content": selection_prompt}]
-            )
+            response = await llm.medium(selection_prompt, max_tokens=1024, temperature=0)
 
-            selected_ids = self.extract_json_from_text(response.content[0].text) or []
+            selected_ids = self.extract_json_from_text(response.text) or []
             return [f for f in factoids if f["factoid_id"] in selected_ids]
         except Exception as e:
             logger.error(f"Error selecting relevant factoids: {e}")
             return []
 
-    def synthesize_from_memory(self, question: str, factoids: List[Dict]) -> Dict[str, Any]:
+    async def synthesize_from_memory(
+        self,
+        question: str,
+        factoids: List[Dict],
+        llm: Any,
+    ) -> Dict[str, Any]:
         """Synthesize answer from stored factoids."""
         factoids_text = "\n\n".join([
             f"Fact {i}: {f['content']}\n"
@@ -360,14 +360,9 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=2048,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
 
-            raw_text = response.content[0].text
+            raw_text = response.text
             parsed = self.extract_json_from_text(raw_text)
             if isinstance(parsed, dict):
                 answer_text = str(parsed.get("answer", "")).strip() or raw_text.strip()
@@ -463,19 +458,14 @@ class OSTIResearchAgent(PrometheusAgent):
 
         return factoid_id
 
-    def formulate_search_queries(self, question: str) -> str:
-        """Use Claude to generate OSTI search query from research question."""
+    async def formulate_search_queries(self, question: str, llm: Any) -> str:
+        """Use the configured LLM to generate an OSTI search query."""
         prompt = SEARCH_QUERY_PROMPT_TEMPLATE.format(question=question)
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=256,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=256, temperature=0)
 
-            return response.content[0].text.strip().strip('"\'')
+            return response.text.strip().strip('"\'')
         except Exception as e:
             logger.error(f"Error formulating search query: {e}")
             # Fallback: extract key terms from question
@@ -547,8 +537,14 @@ class OSTIResearchAgent(PrometheusAgent):
 
         return results
 
-    def assess_abstract(self, question: str, title: str, abstract: str) -> Dict[str, Any]:
-        """Use Claude to assess if paper is relevant to question."""
+    async def assess_abstract(
+        self,
+        question: str,
+        title: str,
+        abstract: str,
+        llm: Any,
+    ) -> Dict[str, Any]:
+        """Use the configured LLM to assess if a paper is relevant."""
         prompt = ASSESS_ABSTRACT_PROMPT_TEMPLATE.format(
             question=question,
             title=title,
@@ -556,14 +552,9 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=256,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=256, temperature=0)
 
-            result = self.extract_json_from_text(response.content[0].text)
+            result = self.extract_json_from_text(response.text)
             return result or {"relevant": False, "confidence": 0.0, "reason": "Parse failed"}
         except Exception as e:
             logger.error(f"Error assessing abstract: {e}")
@@ -833,8 +824,14 @@ except Exception as e:
             self.convert_pdf_to_text_async(pdf_path)
         )
 
-    def extract_answer_from_paper(self, question: str, paper_text: str, title: str) -> Dict[str, Any]:
-        """Use Claude to extract answer from paper text."""
+    async def extract_answer_from_paper(
+        self,
+        question: str,
+        paper_text: str,
+        title: str,
+        llm: Any,
+    ) -> Dict[str, Any]:
+        """Use the configured LLM to extract an answer from paper text."""
         # Limit paper text to avoid token limits
         paper_text = paper_text[:50000]
 
@@ -845,20 +842,20 @@ except Exception as e:
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=2048,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
 
-            result = self.extract_json_from_text(response.content[0].text)
+            result = self.extract_json_from_text(response.text)
             return result or {"answered": False, "confidence": 0.0}
         except Exception as e:
             logger.error(f"Error extracting answer: {e}")
             return {"answered": False, "confidence": 0.0, "error": str(e)}
 
-    def synthesize_final_answer(self, question: str, answers: List[Dict]) -> str:
+    async def synthesize_final_answer(
+        self,
+        question: str,
+        answers: List[Dict],
+        llm: Any,
+    ) -> str:
         """Synthesize a comprehensive answer from multiple papers."""
         answers_text = "\n\n".join([
             f"Paper {i}: {ans['title']}\n"
@@ -875,23 +872,19 @@ except Exception as e:
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=2048,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
 
-            return response.content[0].text
+            return response.text
         except Exception as e:
             logger.error(f"Error synthesizing answer: {e}")
             # Fallback: concatenate answers
             return "\n\n".join([f"From {ans['title']}: {ans['answer']}" for ans in answers])
 
-    def suggest_followup_queries(
+    async def suggest_followup_queries(
         self,
         question: str,
         answer: str,
+        llm: Any,
         provenance: Optional[List[Dict[str, Any]]] = None,
         limit: int = 3,
     ) -> List[Dict[str, str]]:
@@ -910,13 +903,8 @@ except Exception as e:
         seen = set()
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=512,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            parsed = self.extract_json_from_text(response.content[0].text)
+            response = await llm.medium(prompt, max_tokens=512, temperature=0)
+            parsed = self.extract_json_from_text(response.text)
             if isinstance(parsed, list):
                 for item in parsed:
                     if isinstance(item, dict):
@@ -982,12 +970,21 @@ except Exception as e:
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.completed if final else TaskState.working,
+            state=(
+                TaskState.TASK_STATE_COMPLETED
+                if final
+                else TaskState.TASK_STATE_WORKING
+            ),
             final=final,
             message=status_message,
         )
 
-    def extract_and_store_facts(self, question: str, answers: List[Dict]) -> int:
+    async def extract_and_store_facts(
+        self,
+        question: str,
+        answers: List[Dict],
+        llm: Any,
+    ) -> int:
         """Extract discrete facts from answers and store in memory."""
         answers_text = "\n\n".join([
             f"Paper: {ans['title']} (OSTI #{ans['osti_id']})\n"
@@ -1002,14 +999,9 @@ except Exception as e:
         )
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=2048,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
 
-            facts = self.extract_json_from_text(response.content[0].text)
+            facts = self.extract_json_from_text(response.text)
 
             if not isinstance(facts, list):
                 return 0
@@ -1022,11 +1014,12 @@ except Exception as e:
                     answers[0] if answers else {}
                 )
 
-                self.store_factoid(
+                await asyncio.to_thread(
+                    self.store_factoid,
                     content=fact_data["content"],
                     source_paper=source_paper,
                     topics=fact_data.get("topics", []),
-                    question=question
+                    question=question,
                 )
                 stored_count += 1
 
@@ -1040,6 +1033,7 @@ except Exception as e:
         question: str,
         context: RequestContext,
         event_queue: EventQueue,
+        llm: Any,
         conversation_id: str = None,
     ) -> Dict[str, Any]:
         """Execute the full literature search workflow with timeout protection."""
@@ -1075,7 +1069,7 @@ except Exception as e:
         log_progress("Formulating OSTI search query...")
         await send_status("Formulating OSTI search query...")
 
-        search_query = await asyncio.to_thread(self.formulate_search_queries, question)
+        search_query = await self.formulate_search_queries(question, llm)
         state["search_query"] = search_query
         log_progress(f"Search query: '{search_query}'")
         await send_status(f"OSTI search query: {search_query}")
@@ -1111,11 +1105,11 @@ except Exception as e:
 
             await send_status(f"Assessing abstract {i}/{len(search_results)}...")
 
-            assessment = await asyncio.to_thread(
-                self.assess_abstract,
+            assessment = await self.assess_abstract(
                 question,
                 result["title"],
                 result["description"],
+                llm,
             )
 
             result["assessment"] = assessment
@@ -1187,11 +1181,11 @@ except Exception as e:
             # Extract answer
             await send_status(f"Extracting answer from paper {relevant_count}...")
 
-            answer_data = await asyncio.to_thread(
-                self.extract_answer_from_paper,
+            answer_data = await self.extract_answer_from_paper(
                 question,
                 paper_text,
                 result["title"],
+                llm,
             )
 
             if answer_data.get("answered", False):
@@ -1242,10 +1236,10 @@ except Exception as e:
                 )
 
             log_progress(no_results_msg)
-            suggested_queries = await asyncio.to_thread(
-                self.suggest_followup_queries,
+            suggested_queries = await self.suggest_followup_queries(
                 question=question,
                 answer=no_results_msg,
+                llm=llm,
                 provenance=[],
                 limit=3,
             )
@@ -1265,18 +1259,16 @@ except Exception as e:
         log_progress(f"Synthesizing answer from {len(state['answers_found'])} papers...")
         await send_status( f"Synthesizing answer from {len(state['answers_found'])} papers...")
 
-        final_answer = await asyncio.to_thread(
-            self.synthesize_final_answer, question, state["answers_found"]
-        )
+        final_answer = await self.synthesize_final_answer(question, state["answers_found"], llm)
 
         # Step 5: Extract and store facts
         log_progress("Storing facts in knowledge base...")
         await send_status( "Storing new facts in knowledge base...")
 
-        factoids_stored = await asyncio.to_thread(
-            self.extract_and_store_facts,
+        factoids_stored = await self.extract_and_store_facts(
             question,
             state["answers_found"],
+            llm,
         )
 
         # Step 6: Cache the answer
@@ -1293,10 +1285,10 @@ except Exception as e:
 
         # Convert "Paper X" citations to clickable links using the mapping
         final_answer = linkify_paper_references(final_answer, provenance, paper_to_provenance)
-        suggested_queries = await asyncio.to_thread(
-            self.suggest_followup_queries,
+        suggested_queries = await self.suggest_followup_queries(
             question=question,
             answer=final_answer,
+            llm=llm,
             provenance=provenance,
             limit=3,
         )
@@ -1336,7 +1328,7 @@ except Exception as e:
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
-            state=TaskState.completed,
+            state=TaskState.TASK_STATE_COMPLETED,
             final=True,
             message=result_text,
         )
@@ -1364,7 +1356,7 @@ except Exception as e:
         """
         logger.info("=" * 60)
         logger.info("OSTI Research Agent - _execute called")
-        logger.info(f"Params: {params}")
+        logger.info("Parameter keys: %s", sorted(params))
         logger.info(f"Context task_id: {context.task_id}")
         logger.info("=" * 60)
 
@@ -1384,12 +1376,25 @@ except Exception as e:
         # Step 1: Check memory first
         await self._send_status(context, event_queue, "Checking knowledge base for existing answers...", False, conversation_id)
 
-        cached_answer = await asyncio.to_thread(self.check_memory, question)
+        llm_config = LLMConfig.from_env()
+        if llm_config.proxy_url:
+            llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+        async with self.llm_client(context, config=llm_config) as llm:
+            cached_answer = await self.check_memory(question, llm)
         if cached_answer and cached_answer.get("sufficient", True):
             # Cached answers may reference original paper numbering; preserve that mapping
             # while deduplicating to keep links accurate.
             provenance, paper_to_provenance = deduplicate_provenance_with_mapping(cached_answer["sources"])
             answer = linkify_paper_references(cached_answer["answer"], provenance, paper_to_provenance)
+
+            async with self.llm_client(context, config=llm_config) as llm:
+                suggested_queries = await self.suggest_followup_queries(
+                    question=question,
+                    answer=answer,
+                    llm=llm,
+                    provenance=provenance,
+                    limit=3,
+                )
 
             result = {
                 "status": "completed",
@@ -1398,13 +1403,7 @@ except Exception as e:
                 "source": "knowledge_base",
                 "provenance": provenance,
                 "cached": True,
-                "suggested_queries": await asyncio.to_thread(
-                    self.suggest_followup_queries,
-                    question=question,
-                    answer=answer,
-                    provenance=provenance,
-                    limit=3,
-                ),
+                "suggested_queries": suggested_queries,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             # Send the result to the event queue so it appears in history
@@ -1430,7 +1429,14 @@ except Exception as e:
                 )
 
         # Step 2-9: Full search workflow
-        result = await self.perform_literature_search(question, context, event_queue, conversation_id)
+        async with self.llm_client(context, config=llm_config) as llm:
+            result = await self.perform_literature_search(
+                question,
+                context,
+                event_queue,
+                llm,
+                conversation_id,
+            )
 
         # Send the final result to the event queue so it appears in history
         await self._send_final_result(context, event_queue, result, conversation_id)

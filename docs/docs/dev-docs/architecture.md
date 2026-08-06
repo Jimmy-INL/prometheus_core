@@ -13,7 +13,7 @@ graph TD
   end
 
   subgraph Orchestration
-    CA[Client Agent<br/>LangGraph + Claude]
+    CA[Client Agent<br/>LangGraph + Prometheus LLMClient]
     LLM[LiteLLM Agent Gateway<br/>A2A routing + agent directory]
     RED[(Redis<br/>conversation state + status)]
   end
@@ -173,18 +173,23 @@ The client-agent streams frontend-facing status updates as A2A task events. Down
 LiteLLM is part of the active deployment. It serves two roles:
 
 1. Agent registration/discovery for A2A routing
-2. Optional shared model proxy for LLM calls
+2. Model proxy for agents that select the installed `registry` LLM profile
 
 ```yaml
 # litellm config.yaml
 model_list:
-  - model_name: "claude-sonnet"
+  - model_name: "medium"
     litellm_params:
       model: "anthropic/claude-sonnet-4-6"
-      api_key: "${ANTHROPIC_API_KEY}"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
 ```
 
-Agents call litellm's OpenAI-compatible endpoint instead of Anthropic directly. This centralizes model configuration and enables provider switching without agent changes.
+Agents call the provider-independent `prometheus_api.llm_client` interface and
+select semantic flavors such as `medium` in code. The deployment selects an
+installed or custom YAML that maps those flavors to provider models. The
+`registry` profile targets LiteLLM's OpenAI-compatible endpoint; direct
+provider profiles use their environment-sourced credentials in the agent
+container.
 
 ## Deployment
 
@@ -206,4 +211,6 @@ All services are containerized via Docker Compose:
 | Redis | agent-redis | 6379 | State/status |
 | Chainlit Frontend | chainlit-frontend | 8500 | UI |
 
-All containers share the `agent-network` bridge network. Environment variables for secrets and host mappings (`ANTHROPIC_API_KEY`, `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `LITELLM_DB_PASSWORD`, `LITELLM_LOCAL_PORT`) are passed via `.env` file.
+All containers share the `agent-network` bridge network. Environment variables
+for secrets, LLM profile selection, and host mappings are passed via `.env`.
+Independently deployed agents use their own environment and provider keys.

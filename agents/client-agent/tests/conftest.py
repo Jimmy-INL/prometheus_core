@@ -18,6 +18,7 @@ def _import_light_modules() -> None:
     # module level (the heavy agent runtime is stubbed by individual tests).
     import prometheus_api.a2a_stream  # noqa: F401
     import prometheus_api.contract  # noqa: F401
+    import prometheus_api.llm_client  # noqa: F401
     import prometheus_api.redis_utils  # noqa: F401
 
 
@@ -42,38 +43,8 @@ except ImportError:
 
 
 def _stub_langchain_if_missing() -> None:
-    """Install minimal langchain stubs when the real packages are absent.
-
-    Shared here (instead of per test file) so every module gets functional
-    message classes — `HumanMessage(content=...)` must be constructible
-    because production code builds messages before invoking the (mocked) LLM.
-    """
+    """Install a minimal StructuredTool stub when langchain-core is absent."""
     import types
-
-    try:
-        import langchain_anthropic  # noqa: F401
-    except ImportError:
-        module = types.ModuleType("langchain_anthropic")
-        module.ChatAnthropic = object
-        sys.modules["langchain_anthropic"] = module
-
-    try:
-        import langchain_core.messages  # noqa: F401
-    except ImportError:
-        langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-        messages_module = types.ModuleType("langchain_core.messages")
-
-        class _StubMessage:
-            def __init__(self, content="", **kwargs):
-                self.content = content
-                for key, value in kwargs.items():
-                    setattr(self, key, value)
-
-        messages_module.HumanMessage = type("HumanMessage", (_StubMessage,), {})
-        messages_module.SystemMessage = type("SystemMessage", (_StubMessage,), {})
-        messages_module.ToolMessage = type("ToolMessage", (_StubMessage,), {})
-        sys.modules["langchain_core.messages"] = messages_module
-        langchain_core.messages = messages_module
 
     try:
         import langchain_core.tools  # noqa: F401

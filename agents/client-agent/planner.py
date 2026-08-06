@@ -2,20 +2,24 @@
 LLM tool-calling planner for control-plane routing decisions.
 
 `compile_plan_with_tools` is the single entry point. It is called by `chat()`
-in `agent.py` whenever a new query needs to be routed. It drives a Claude LLM
+in `agent.py` whenever a new query needs to be routed. It drives an LLM
 through a structured tool-call loop and returns a `PlanningResult` describing
 what to do next — no subagents are invoked here.
 
 HOW IT WORKS
 ------------
-1. A `_PlanDraft` accumulates the plan state as the LLM calls tools.
-2. The LLM is given:
+1. A schema-bound LLM call resolves the current turn into a standalone task or
+   an explicit non-executable response.
+2. A second schema-bound call decomposes standalone tasks without seeing capabilities.
+3. A `_PlanDraft` freezes those operations and accumulates routing state.
+4. The routing LLM is given:
    - The user query and conversation history
    - Available capabilities (skills + their input schemas)
    - Optional workflow templates (pre-built execution blueprints)
-3. The LLM calls planning tools until it calls `finalize_plan` or
-   `fallback_to_chat`, at which point the loop exits.
-4. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+5. The LLM calls planning tools until it calls `finalize_plan`, at which point
+   the loop exits.
+6. The `_PlanDraft` is converted to an immutable `PlanningResult` and returned.
+7. Parameter extraction runs separately after the planner selects capabilities.
 
 PLANNING TOOLS (called by the LLM, not external code)
 ------------------------------------------------------
@@ -24,18 +28,19 @@ PLANNING TOOLS (called by the LLM, not external code)
 - `select_workflow_template` — choose a pre-built workflow blueprint by id/version
 - `get_workflow_candidates`  — inspect registered workflow options
 - `get_requirement_status`   — check which required params are still missing
-- `set_extracted_params`     — store param values extracted from the query/context
 - `set_plan_steps`           — set human-readable steps shown in the approval UI
 - `set_user_message`         — set the planning summary shown to the user
-- `finalize_plan`            — commit the plan (validates all required params met)
-- `fallback_to_chat`         — respond directly without invoking any skill
+- `set_operation_coverage`   — map every requested operation or mark it unsupported
+- `finalize_plan`            — commit the plan (preserves missing user inputs for collection)
 
 OUTCOMES (`PlanningResult.outcome`)
 ------------------------------------
 - `"agent_plan"`  — one or more skills selected; `agent.py` will collect missing
                     params then call `execute_current_plan`
-- `"fallback"`    — planner could not or should not invoke a skill; `agent.py`
-                    returns the message directly to the user
+- `"fallback"`    — capability-neutral decomposition produced a conversational
+                    response or clarification; `agent.py` returns it directly
+- `"unsupported"` — one or more requested operations have no registered
+                    capability; no partial plan is executed
 
 WORKFLOW TEMPLATES vs DYNAMIC SKILL SELECTION
 ---------------------------------------------
@@ -50,17 +55,13 @@ skill sequences, input bindings, and execution order.
 """
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
+from prometheus_api import load_prompt
+from pydantic import ValidationError
 
 from artifact_handling import collect_chain_required_paths
 from capability_cache import AgentCapability
@@ -72,164 +73,472 @@ from param_schema import (
     has_param_path,
     set_nested_value,
 )
+from planner_models import (
+    AssignDependenciesInput,
+    ClarificationResolutionInput,
+    CoveredOperationInput,
+    DecomposeTaskInput,
+    NewTaskResolutionInput,
+    PlanningResult,
+    PriorResultDiscussionInput,
+    RepeatTaskResolutionInput,
+    RequestedOperation,
+    SelectCapabilitiesInput,
+    SelectRegisteredWorkflowInput,
+    SelectWorkflowTemplateInput,
+    SetOperationCoverageInput,
+    SetPlanStepsInput,
+    SetUserMessageInput,
+    TaskDecomposition,
+    TurnResolution,
+    UnsupportedOperationInput,
+    WorkflowPlanningCandidate,
+    _PlanDraft,
+)
 from workflow_library.naming import workflow_tool_name
-
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
+from orchestrator import runtime
 
 PROMPTS_DIR = Path(__file__).with_name("prompts")
 
-
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
-
-
-SYSTEM_PROMPT = _load_prompt("planner_system.txt")
-
-
-class SelectCapabilitiesInput(BaseModel):
-    primary_skill: str = Field(description="Primary skill id to execute")
-    supporting_skills: List[str] = Field(
-        default_factory=list,
-        description="Optional supporting skill ids",
-    )
-    workflow_type: Literal["single", "parallel", "sequential"] = Field(
-        default="single",
-        description="Execution workflow semantics",
-    )
-    reasoning: str = Field(
-        default="",
-        description="Short explanation for why these skills are selected",
-    )
-    confidence: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Planner confidence in the skill selection",
-    )
+SYSTEM_PROMPT = load_prompt("planner_system.txt", prompts_dir=PROMPTS_DIR)
+TURN_RESOLUTION_SYSTEM_PROMPT = load_prompt(
+    "turn_resolution_system.txt",
+    prompts_dir=PROMPTS_DIR,
+)
+TASK_DECOMPOSITION_SYSTEM_PROMPT = load_prompt(
+    "task_decomposition_system.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
-class SelectWorkflowTemplateInput(BaseModel):
-    workflow_id: str = Field(description="Workflow template id")
-    workflow_version: Optional[str] = Field(default=None, description="Specific version (optional)")
-    reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+class PlanningContractError(RuntimeError):
+    """Raised when an LLM planning response violates its declared schema."""
 
 
-class SelectRegisteredWorkflowInput(BaseModel):
-    reasoning: str = Field(default="", description="Short rationale for selecting this workflow")
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+def _result_summary(result: Any, assistant_content: str) -> str:
+    if isinstance(result, Mapping):
+        for key in ("error", "answer", "summary", "message", "status"):
+            value = result.get(key)
+            if value not in (None, ""):
+                return str(value)[:500]
+    elif result not in (None, ""):
+        return str(result)[:500]
+    return assistant_content[:500]
 
 
-class SetParamsInput(BaseModel):
-    params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Extracted parameter values keyed by input-schema field names",
-    )
-    merge: bool = Field(
-        default=True,
-        description="If true, merge into current params. If false, replace params.",
-    )
+def _result_outcome(result: Any) -> str:
+    if isinstance(result, Mapping):
+        if result.get("error"):
+            return "error"
+        if result.get("missing_inputs") or result.get("missing_required_params"):
+            return "input_required"
+    return "completed"
 
 
-class SetPlanStepsInput(BaseModel):
-    steps: List[str] = Field(
-        default_factory=list,
-        description="Human-readable plan steps for UI confirmation",
-    )
-    estimated_duration_seconds: int = Field(
-        default=120,
-        ge=1,
-        description="Estimated end-to-end duration in seconds",
-    )
+def _recent_capability_invocations(
+    history: List[Dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    """Return bounded actual invocation records for turn-reference resolution."""
+    records: List[Dict[str, Any]] = []
+    user_request = ""
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if item.get("role") == "user" and content:
+            user_request = content
+        tool_inputs = item.get("tool_inputs")
+        if not isinstance(tool_inputs, Mapping):
+            continue
+        tool_results = item.get("tool_results")
+        if not isinstance(tool_results, Mapping):
+            tool_results = {}
+        for skill_id, params in tool_inputs.items():
+            if str(skill_id) == "workflow_execution" or not isinstance(params, Mapping):
+                continue
+            result = tool_results.get(skill_id)
+            records.append(
+                {
+                    "capability_id": str(skill_id),
+                    "user_request": user_request,
+                    "tool_inputs": dict(params),
+                    "outcome": _result_outcome(result),
+                    "result_summary": _result_summary(result, content),
+                }
+            )
+
+    records = records[-max(1, limit):]
+    for index, record in enumerate(records, 1):
+        record["invocation_id"] = f"invocation_{index}"
+    return records
 
 
-class SetUserMessageInput(BaseModel):
-    message: str = Field(
-        default="",
-        description="Message to show to the user with the generated plan",
-    )
+def _recent_conversation_excerpt(
+    history: List[Dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> List[Dict[str, str]]:
+    excerpt: List[Dict[str, str]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        excerpt.append(
+            {
+                "role": str(item.get("role") or "user"),
+                "content": content[:1000],
+            }
+        )
+    return excerpt[-max(1, limit):]
 
 
-class FallbackResponseInput(BaseModel):
-    message: str = Field(
-        description="Direct assistant response when no capability should be invoked",
-    )
+def _resolver_artifact_context(context: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
+    artifacts: List[Dict[str, str]] = []
+    for item in ((context or {}).get("artifacts") or [])[-12:]:
+        if not isinstance(item, Mapping):
+            continue
+        artifact_id = str(item.get("artifact_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if not artifact_id and not name:
+            continue
+        artifacts.append(
+            {
+                "artifact_id": artifact_id,
+                "name": name,
+                "description": str(item.get("description") or "")[:300],
+                "mime_type": str(item.get("mime_type") or ""),
+            }
+        )
+    return artifacts
 
 
-class PlanningResult(BaseModel):
-    """Structured planner output consumed by `agent.py` chat flow."""
+async def resolve_turn(
+    *,
+    query: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+    context: Optional[Dict[str, Any]] = None,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> TurnResolution:
+    """Resolve the current utterance into a standalone task or explicit response."""
+    if status_callback:
+        status_callback("Planner LLM resolving the current turn.")
 
-    outcome: Literal["agent_plan", "fallback"] = "agent_plan"
-    message: str = ""
-    workflow_id: Optional[str] = None
-    workflow_version: Optional[str] = None
-    workflow_match_score: Optional[float] = None
-    selection_source: Optional[str] = None
-    primary_skill: Optional[str] = None
-    supporting_skills: List[str] = Field(default_factory=list)
-    workflow_type: Literal["single", "parallel", "sequential", "workflow_template"] = "single"
-    confidence: float = 0.5
-    reasoning: str = ""
-    extracted_params: Dict[str, Any] = Field(default_factory=dict)
-    steps: List[str] = Field(default_factory=list)
-    estimated_duration_seconds: int = 120
+    history = history or []
+    invocations = _recent_capability_invocations(history)
+    invocation_ids = [item["invocation_id"] for item in invocations]
 
-
-@dataclass
-class _PlanDraft:
-    """Mutable draft updated via planning tools during a single planning session."""
-
-    outcome: Literal["agent_plan", "fallback"] = "agent_plan"
-    message: str = ""
-    workflow_id: Optional[str] = None
-    workflow_version: Optional[str] = None
-    workflow_match_score: Optional[float] = None
-    selection_source: Optional[str] = None
-    primary_skill: Optional[str] = None
-    supporting_skills: List[str] = field(default_factory=list)
-    workflow_type: Literal["single", "parallel", "sequential", "workflow_template"] = "single"
-    confidence: float = 0.5
-    reasoning: str = ""
-    extracted_params: Dict[str, Any] = field(default_factory=dict)
-    steps: List[str] = field(default_factory=list)
-    estimated_duration_seconds: int = 120
-    finalized: bool = False
-
-    def to_result(self) -> PlanningResult:
-        return PlanningResult(
-            outcome=self.outcome,
-            message=self.message,
-            workflow_id=self.workflow_id,
-            workflow_version=self.workflow_version,
-            workflow_match_score=self.workflow_match_score,
-            selection_source=self.selection_source,
-            primary_skill=self.primary_skill,
-            supporting_skills=list(self.supporting_skills),
-            workflow_type=self.workflow_type,
-            confidence=self.confidence,
-            reasoning=self.reasoning,
-            extracted_params=dict(self.extracted_params),
-            steps=list(self.steps),
-            estimated_duration_seconds=self.estimated_duration_seconds,
+    messages = [
+        {
+            "role": "system",
+            "content": TURN_RESOLUTION_SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Current user query:\n{query}\n\n"
+                "Recent conversation text:\n"
+                f"{json.dumps(_recent_conversation_excerpt(history), default=str)}\n\n"
+                "Recent actual capability invocations:\n"
+                f"{json.dumps(invocations, default=str)}\n\n"
+                "Available artifact references:\n"
+                f"{json.dumps(_resolver_artifact_context(context), default=str)}"
+            ),
+        },
+    ]
+    resolution_specs = [
+        (
+            "resolve_new_task",
+            "Resolve an independent executable request.",
+            NewTaskResolutionInput,
+        ),
+        (
+            "resolve_prior_result_discussion",
+            "Answer a question about prior results without requesting new work.",
+            PriorResultDiscussionInput,
+        ),
+        (
+            "resolve_needs_clarification",
+            "Ask one focused question when no standalone task can be determined.",
+            ClarificationResolutionInput,
+        ),
+    ]
+    if invocation_ids:
+        resolution_specs.insert(
+            1,
+            (
+                "resolve_repeat_prior_task_with_changes",
+                "Repeat one supplied prior invocation with requested changes.",
+                RepeatTaskResolutionInput,
+            ),
         )
 
+    resolution_tools: List[Dict[str, Any]] = []
+    resolution_models: Dict[str, Any] = {}
+    for name, description, model in resolution_specs:
+        schema = model.model_json_schema()
+        if name == "resolve_repeat_prior_task_with_changes":
+            schema["properties"]["referenced_invocation_id"] = {
+                "type": "string",
+                "enum": invocation_ids,
+            }
+        elif name == "resolve_prior_result_discussion":
+            schema["properties"]["referenced_invocation_id"] = (
+                {
+                    "anyOf": [
+                        {"type": "string", "enum": invocation_ids},
+                        {"type": "null"},
+                    ]
+                }
+                if invocation_ids
+                else {"type": "null"}
+            )
+        resolution_models[name] = model
+        resolution_tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": schema,
+                },
+            }
+        )
 
-@dataclass
-class WorkflowPlanningCandidate:
-    """Workflow candidate exposed to planner tools."""
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(
+            messages,
+            temperature=0,
+            max_tokens=2048,
+            tools=resolution_tools,
+        )
 
-    workflow_id: str
-    workflow_version: str
-    score: float
-    required_paths: List[str] = field(default_factory=list)
-    selection_source: str = "matcher"
-    skills: List[str] = field(default_factory=list)
-    execution_mode: str = "sequential"
-    estimated_duration_seconds: Optional[int] = None
-    display_name: Optional[str] = None
-    summary: Optional[str] = None
-    extracted_params: Dict[str, Any] = field(default_factory=dict)
-    tool_name: Optional[str] = None
+    _, calls = _planning_tool_calls(response.raw)
+    if len(calls) != 1 or calls[0].get("name") not in resolution_models:
+        raise PlanningContractError(
+            "Turn resolution must call exactly one provided resolution function."
+        )
+    tool_name = str(calls[0]["name"])
+    try:
+        parsed = resolution_models[tool_name].model_validate(calls[0].get("args"))
+    except ValidationError as exc:
+        raise PlanningContractError(
+            f"Turn resolution violates its schema: {exc}"
+        ) from exc
+
+    standalone_request = str(getattr(parsed, "standalone_request", "")).strip()
+    message = str(getattr(parsed, "message", "")).strip()
+    referenced_invocation_id = getattr(parsed, "referenced_invocation_id", None)
+    if referenced_invocation_id and referenced_invocation_id not in invocation_ids:
+        raise PlanningContractError(
+            "Turn resolution references unavailable prior invocation "
+            f"'{referenced_invocation_id}'."
+        )
+
+    resolution_kinds = {
+        "resolve_new_task": "new_task",
+        "resolve_repeat_prior_task_with_changes": "repeat_prior_task_with_changes",
+        "resolve_prior_result_discussion": "discuss_prior_result",
+        "resolve_needs_clarification": "needs_clarification",
+    }
+
+    return TurnResolution(
+        resolution_kind=resolution_kinds[tool_name],
+        standalone_request=standalone_request,
+        referenced_invocation_id=referenced_invocation_id,
+        message=message,
+    )
+
+
+async def decompose_task(
+    *,
+    query: str,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> TaskDecomposition:
+    """Decompose a standalone task before exposing registered capabilities."""
+    if status_callback:
+        status_callback("Planner LLM decomposing the standalone task into operations.")
+
+    messages = [
+        {
+            "role": "system",
+            "content": TASK_DECOMPOSITION_SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": f"Standalone user task:\n{query}",
+        },
+    ]
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "decompose_task",
+            "description": "Return the exact capability-neutral task decomposition.",
+            "parameters": DecomposeTaskInput.model_json_schema(),
+        },
+    }
+
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(
+            messages,
+            temperature=0,
+            max_tokens=2048,
+            tools=[tool_schema],
+        )
+
+    _, calls = _planning_tool_calls(response.raw)
+    if len(calls) != 1 or calls[0].get("name") != "decompose_task":
+        raise PlanningContractError(
+            "Task decomposition must call decompose_task exactly once."
+        )
+    try:
+        parsed = DecomposeTaskInput.model_validate(calls[0].get("args"))
+    except ValidationError as exc:
+        raise PlanningContractError(
+            f"Task decomposition violates its schema: {exc}"
+        ) from exc
+
+    operation_descriptions: List[str] = []
+    for index, operation in enumerate(parsed.operations, 1):
+        description = operation.description.strip()
+        if not description:
+            raise PlanningContractError(
+                f"Decomposed operation {index} has an empty description."
+            )
+        operation_descriptions.append(description)
+
+    dependency_map = {
+        f"op_{index}": []
+        for index in range(1, len(operation_descriptions) + 1)
+    }
+    if len(operation_descriptions) > 1:
+        if status_callback:
+            status_callback("Planner LLM assigning operation dependencies.")
+        operation_ids = list(dependency_map)
+        dependency_properties = {}
+        for index, operation_id in enumerate(operation_ids):
+            earlier_ids = operation_ids[:index]
+            dependency_properties[operation_id] = {
+                "type": "array",
+                "description": (
+                    f"Earlier operations that {operation_id} directly depends on."
+                ),
+                "items": (
+                    {"type": "string", "enum": earlier_ids}
+                    if earlier_ids
+                    else {"type": "string"}
+                ),
+                "uniqueItems": True,
+                "maxItems": len(earlier_ids),
+            }
+        dependency_tool = {
+            "type": "function",
+            "function": {
+                "name": "assign_dependencies",
+                "description": (
+                    "Assign dependencies among the frozen ordered operations."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "dependencies": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": dependency_properties,
+                            "required": operation_ids,
+                        }
+                    },
+                    "required": ["dependencies"],
+                },
+            },
+        }
+        frozen_operations = [
+            {"operation_id": operation_id, "description": description}
+            for operation_id, description in zip(
+                operation_ids, operation_descriptions
+            )
+        ]
+        dependency_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Assign dependencies among the frozen operations. Call "
+                    "assign_dependencies exactly once and return no prose. Every operation "
+                    "must be present. Dependencies may reference only operation IDs allowed "
+                    "by the tool schema. Prior conversation state and artifacts are context, "
+                    "not operations in this request."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Current user query:\n{query}\n\n"
+                    "Frozen ordered operations:\n"
+                    f"{json.dumps(frozen_operations)}"
+                ),
+            },
+        ]
+        async with runtime.create_llm() as llm:
+            dependency_response = await llm.medium(
+                dependency_messages,
+                temperature=0,
+                max_tokens=1024,
+                tools=[dependency_tool],
+            )
+        _, dependency_calls = _planning_tool_calls(dependency_response.raw)
+        if (
+            len(dependency_calls) != 1
+            or dependency_calls[0].get("name") != "assign_dependencies"
+        ):
+            raise PlanningContractError(
+                "Dependency assignment must call assign_dependencies exactly once."
+            )
+        try:
+            assigned = AssignDependenciesInput.model_validate(
+                dependency_calls[0].get("args")
+            )
+        except ValidationError as exc:
+            raise PlanningContractError(
+                f"Dependency assignment violates its schema: {exc}"
+            ) from exc
+        if set(assigned.dependencies) != set(operation_ids):
+            raise PlanningContractError(
+                "Dependency assignment must contain exactly the frozen operation IDs."
+            )
+        dependency_map = assigned.dependencies
+
+    operations: List[RequestedOperation] = []
+    for index, description in enumerate(operation_descriptions, 1):
+        operation_id = f"op_{index}"
+        dependencies = dependency_map[operation_id]
+        if len(set(dependencies)) != len(dependencies):
+            raise PlanningContractError(
+                f"Decomposed operation {index} has duplicate dependencies."
+            )
+        earlier_ids = {f"op_{earlier}" for earlier in range(1, index)}
+        invalid_dependencies = [
+            dependency
+            for dependency in dependencies
+            if dependency not in earlier_ids
+        ]
+        if invalid_dependencies:
+            raise PlanningContractError(
+                f"Decomposed operation {index} references non-earlier dependencies: "
+                + ", ".join(str(item) for item in invalid_dependencies)
+            )
+        operations.append(
+            RequestedOperation(
+                operation_id=operation_id,
+                description=description,
+                depends_on=list(dependencies),
+            )
+        )
+
+    return TaskDecomposition(operations=operations)
 
 
 def _set_param_path(params: Dict[str, Any], path: str, value: Any) -> None:
@@ -287,18 +596,16 @@ def _build_prompt(
     history: List[Dict[str, Any]],
     context: Optional[Dict[str, Any]],
     capabilities: List[AgentCapability],
+    operations: List[RequestedOperation],
     workflow_candidates: Optional[List[WorkflowPlanningCandidate]] = None,
 ) -> str:
-    """Build planner prompt with full conversation + context + capability metadata."""
+    """Build the routing prompt from resolved intent and bounded conversational text."""
     history_lines: List[str] = []
-    for item in history:
+    for item in history[-12:]:
         role = str(item.get("role", "user"))
         text = str(item.get("content", "")).strip()
         if text:
-            history_lines.append(f"{role}: {text}")
-        tool_results = item.get("tool_results")
-        if isinstance(tool_results, dict) and tool_results:
-            history_lines.append(f"{role}_tool_results: {json.dumps(tool_results, default=str)}")
+            history_lines.append(f"{role}: {text[:1000]}")
 
     artifacts_block = ""
     artifacts = (context or {}).get("artifacts")
@@ -339,6 +646,10 @@ def _build_prompt(
     history_block = "\n".join(history_lines) if history_lines else "(none)"
     capability_block = _build_capability_context(capabilities)
     context_block = json.dumps(context or {}, indent=2, default=str)
+    operations_block = json.dumps(
+        [operation.model_dump() for operation in operations],
+        indent=2,
+    )
     workflow_block = ""
     if workflow_candidates:
         rows = []
@@ -357,8 +668,9 @@ def _build_prompt(
 
     return (
         f"User query:\n{query}\n\n"
-        f"Full conversation history:\n{history_block}\n\n"
+        f"Recent conversation text:\n{history_block}\n\n"
         f"Current conversation context:\n{context_block}\n\n"
+        f"Required operations (immutable):\n{operations_block}\n\n"
         f"{workflow_block}"
         f"{artifacts_block}\n\n"
         f"Available capabilities:\n{capability_block}\n"
@@ -583,18 +895,59 @@ def _build_planning_tools(
             "missing_paths": status.get("missing_paths", []),
         }
 
-    def set_extracted_params(params: Dict[str, Any], merge: bool = True) -> Dict[str, Any]:
-        if merge:
-            merged = dict(draft.extracted_params)
-            merged.update(dict(params or {}))
-            draft.extracted_params = merged
-        else:
-            draft.extracted_params = dict(params or {})
-        status = get_requirement_status()
+    def set_operation_coverage(
+        covered: Optional[List[CoveredOperationInput]] = None,
+        unsupported: Optional[List[UnsupportedOperationInput]] = None,
+    ) -> Dict[str, Any]:
+        operation_ids = {operation.operation_id for operation in draft.operations}
+        covered_map: Dict[str, str] = {}
+        unsupported_map: Dict[str, str] = {}
+
+        for entry in covered or []:
+            operation_id = str(
+                entry.operation_id if isinstance(entry, CoveredOperationInput) else entry.get("operation_id", "")
+            )
+            skill_id = str(
+                entry.skill_id if isinstance(entry, CoveredOperationInput) else entry.get("skill_id", "")
+            )
+            if operation_id not in operation_ids:
+                return {"ok": False, "error": f"Unknown operation_id '{operation_id}'"}
+            if operation_id in covered_map:
+                return {"ok": False, "error": f"Duplicate coverage for '{operation_id}'"}
+            if skill_id not in capabilities_by_skill:
+                return {"ok": False, "error": f"Unknown skill_id '{skill_id}'"}
+            covered_map[operation_id] = skill_id
+
+        for entry in unsupported or []:
+            operation_id = str(
+                entry.operation_id
+                if isinstance(entry, UnsupportedOperationInput)
+                else entry.get("operation_id", "")
+            )
+            reason = str(
+                entry.reason if isinstance(entry, UnsupportedOperationInput) else entry.get("reason", "")
+            ).strip()
+            if operation_id not in operation_ids:
+                return {"ok": False, "error": f"Unknown operation_id '{operation_id}'"}
+            if operation_id in covered_map or operation_id in unsupported_map:
+                return {"ok": False, "error": f"Duplicate coverage for '{operation_id}'"}
+            if not reason:
+                return {"ok": False, "error": f"Unsupported operation '{operation_id}' needs a reason"}
+            unsupported_map[operation_id] = reason
+
+        draft.covered_operations = covered_map
+        draft.unsupported_operations = unsupported_map
+        uncovered = [
+            operation.operation_id
+            for operation in draft.operations
+            if operation.operation_id not in covered_map
+            and operation.operation_id not in unsupported_map
+        ]
         return {
             "ok": True,
-            "params": draft.extracted_params,
-            "missing_paths": status.get("missing_paths", []),
+            "covered_operation_ids": list(covered_map),
+            "unsupported_operation_ids": list(unsupported_map),
+            "uncovered_operation_ids": uncovered,
         }
 
     def set_plan_steps(
@@ -615,20 +968,99 @@ def _build_planning_tools(
         return {"ok": True, "message": draft.message}
 
     def finalize_plan() -> Dict[str, Any]:
+        operation_ids = [operation.operation_id for operation in draft.operations]
+        uncovered = [
+            operation_id
+            for operation_id in operation_ids
+            if operation_id not in draft.covered_operations
+            and operation_id not in draft.unsupported_operations
+        ]
+        if uncovered:
+            return {
+                "ok": False,
+                "error": "Every requested operation must be covered or marked unsupported.",
+                "uncovered_operation_ids": uncovered,
+            }
+
+        if draft.unsupported_operations:
+            draft.outcome = "unsupported"
+            draft.primary_skill = None
+            draft.supporting_skills = []
+            draft.workflow_id = None
+            draft.workflow_version = None
+            draft.extracted_params = {}
+            draft.steps = []
+            draft.finalized = True
+            return {
+                "ok": True,
+                "finalized": True,
+                "unsupported_operation_ids": list(draft.unsupported_operations),
+            }
+
         if not draft.primary_skill and not draft.workflow_id:
             return {
                 "ok": False,
                 "error": "No plan selection found. Call select_capabilities or select_workflow_template first.",
             }
+        selected = selected_skill_ids()
+        unselected_coverage = {
+            operation_id: skill_id
+            for operation_id, skill_id in draft.covered_operations.items()
+            if skill_id not in selected
+        }
+        if unselected_coverage:
+            return {
+                "ok": False,
+                "error": "Operation coverage references capabilities outside the selected plan.",
+                "unselected_coverage": unselected_coverage,
+            }
+        if draft.operations and not draft.workflow_id:
+            covered_skill_ids = set(draft.covered_operations.values())
+            unused_selected = [
+                skill_id for skill_id in selected if skill_id not in covered_skill_ids
+            ]
+            if unused_selected:
+                return {
+                    "ok": False,
+                    "error": (
+                        "Every selected dynamic capability must cover at least one "
+                        "requested operation."
+                    ),
+                    "unused_selected_skill_ids": unused_selected,
+                }
+
+        selected_workflow = get_selected_workflow_candidate()
+        if selected_workflow is None:
+            # Registered templates own dependency validation and ordering through their compiled step graph.
+            sequential = draft.workflow_type == "sequential"
+            skill_positions = {skill_id: index for index, skill_id in enumerate(selected)}
+            operations_by_id = {operation.operation_id: operation for operation in draft.operations}
+            for operation in draft.operations:
+                skill_id = draft.covered_operations.get(operation.operation_id)
+                for dependency_id in operation.depends_on:
+                    dependency_skill = draft.covered_operations.get(dependency_id)
+                    if not dependency_skill or not skill_id or dependency_skill == skill_id:
+                        continue
+                    if not sequential:
+                        return {
+                            "ok": False,
+                            "error": (
+                                "Dependencies covered by different capabilities require a "
+                                "sequential workflow."
+                            ),
+                        }
+                    if skill_positions[dependency_skill] >= skill_positions[skill_id]:
+                        dependency = operations_by_id[dependency_id]
+                        return {
+                            "ok": False,
+                            "error": (
+                                "Selected capability order violates operation dependency order: "
+                                f"'{dependency.description}' must run before '{operation.description}'."
+                            ),
+                        }
         status = get_requirement_status()
         missing = status.get("missing_paths", [])
         unresolved_runtime = status.get("unresolved_runtime_paths", [])
-        if missing:
-            return {
-                "ok": False,
-                "error": "Required fields are still missing.",
-                "missing_paths": missing,
-            }
         if unresolved_runtime and not get_selected_workflow_candidate():
             return {
                 "ok": False,
@@ -645,19 +1077,6 @@ def _build_planning_tools(
             "finalized": True,
             "missing_paths": missing,
         }
-
-    def fallback_to_chat(message: str) -> Dict[str, Any]:
-        text = str(message or "").strip()
-        if not text:
-            return {"ok": False, "error": "Fallback message must not be empty."}
-        draft.outcome = "fallback"
-        draft.message = text
-        draft.primary_skill = None
-        draft.supporting_skills = []
-        draft.extracted_params = {}
-        draft.steps = []
-        draft.finalized = True
-        return {"ok": True, "finalized": True}
 
     workflow_tools: List[StructuredTool] = []
     seen_tool_names: set[str] = set()
@@ -702,12 +1121,6 @@ def _build_planning_tools(
             args_schema=SelectCapabilitiesInput,
         ),
         StructuredTool.from_function(
-            func=set_extracted_params,
-            name="set_extracted_params",
-            description="Set or update parameters extracted from the user request for the selected capability.",
-            args_schema=SetParamsInput,
-        ),
-        StructuredTool.from_function(
             func=get_workflow_candidates,
             name="get_workflow_candidates",
             description="Return registered workflow templates available as workflow_* tools.",
@@ -724,6 +1137,15 @@ def _build_planning_tools(
             description="Return required parameter paths, missing paths, and schema descriptions for currently selected capabilities.",
         ),
         StructuredTool.from_function(
+            func=set_operation_coverage,
+            name="set_operation_coverage",
+            description=(
+                "Map every immutable requested operation to a registered capability, or mark "
+                "the operation unsupported with a concrete reason."
+            ),
+            args_schema=SetOperationCoverageInput,
+        ),
+        StructuredTool.from_function(
             func=set_plan_steps,
             name="set_plan_steps",
             description="Set user-visible plan steps and estimated duration.",
@@ -738,13 +1160,10 @@ def _build_planning_tools(
         StructuredTool.from_function(
             func=finalize_plan,
             name="finalize_plan",
-            description="Finalize the planning decision after selecting capabilities and parameters.",
-        ),
-        StructuredTool.from_function(
-            func=fallback_to_chat,
-            name="fallback_to_chat",
-            description="Finalize a direct conversational response when no capability invocation is needed.",
-            args_schema=FallbackResponseInput,
+            description=(
+                "Finalize the planning decision after selecting capabilities. Parameter extraction "
+                "and missing-input collection run after routing."
+            ),
         ),
     ]
     return workflow_tools + planning_tools
@@ -765,11 +1184,80 @@ def _default_steps_from_selection(
     return steps
 
 
+def _value(item: Any, key: str, default: Any = None) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
+def _planning_tool_schema(tool: StructuredTool) -> Dict[str, Any]:
+    args_schema = getattr(tool, "args_schema", None)
+    if isinstance(args_schema, dict):
+        parameters = args_schema
+    elif hasattr(args_schema, "model_json_schema"):
+        parameters = args_schema.model_json_schema()
+    elif hasattr(args_schema, "schema"):
+        parameters = args_schema.schema()
+    else:
+        parameters = {"type": "object", "properties": {}}
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": parameters,
+        },
+    }
+
+
+def _planning_tool_calls(raw: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    choices = _value(raw, "choices", []) or []
+    message = _value(choices[0], "message", {}) if choices else {}
+    content = _value(message, "content", "")
+    raw_calls = _value(message, "tool_calls", []) or []
+
+    assistant_message: Dict[str, Any] = {
+        "role": "assistant",
+        "content": content or "Planning tool calls requested.",
+    }
+    tool_calls: List[Dict[str, Any]] = []
+    assistant_calls: List[Dict[str, Any]] = []
+    for call in raw_calls:
+        function = _value(call, "function", {}) or {}
+        name = str(_value(function, "name", ""))
+        arguments = _value(function, "arguments", {})
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                parsed_arguments = {}
+            wire_arguments = arguments
+        elif isinstance(arguments, Mapping):
+            parsed_arguments = dict(arguments)
+            wire_arguments = json.dumps(parsed_arguments)
+        else:
+            parsed_arguments = {}
+            wire_arguments = "{}"
+        call_id = str(_value(call, "id", ""))
+        tool_calls.append({"name": name, "args": parsed_arguments, "id": call_id})
+        assistant_calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": wire_arguments},
+            }
+        )
+    if assistant_calls:
+        assistant_message["tool_calls"] = assistant_calls
+    return assistant_message, tool_calls
+
+
 async def compile_plan_with_tools(
     query: str,
     capabilities: List[AgentCapability],
     history: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
+    operations: Optional[List[RequestedOperation]] = None,
     workflow_candidates: Optional[List[WorkflowPlanningCandidate]] = None,
     forced_workflow_id: Optional[str] = None,
     forced_workflow_version: Optional[str] = None,
@@ -784,13 +1272,61 @@ async def compile_plan_with_tools(
     - `chat(...)` in `agent.py` for new user turns and plan refinements.
     """
     history = history or []
+    resolved_query = query
+    resolution_kind: Optional[str] = "new_task"
+    referenced_invocation_id: Optional[str] = None
+    if operations is None:
+        resolution = await resolve_turn(
+            query=query,
+            history=history,
+            context=context,
+            status_callback=status_callback,
+        )
+        resolution_kind = resolution.resolution_kind
+        referenced_invocation_id = resolution.referenced_invocation_id
+        if resolution.resolution_kind not in {
+            "new_task",
+            "repeat_prior_task_with_changes",
+        }:
+            return PlanningResult(
+                outcome="fallback",
+                message=resolution.message,
+                resolution_kind=resolution.resolution_kind,
+                referenced_invocation_id=resolution.referenced_invocation_id,
+            )
+        resolved_query = resolution.standalone_request
+        decomposition = await decompose_task(
+            query=resolved_query,
+            status_callback=status_callback,
+        )
+        operations = list(decomposition.operations)
+    elif not operations:
+        raise PlanningContractError(
+            "Task planning requires at least one decomposed operation."
+        )
+
     capabilities_by_skill = {cap.skill_id: cap for cap in capabilities}
-    draft = _PlanDraft()
+    draft = _PlanDraft(
+        operations=list(operations),
+        resolved_query=resolved_query,
+        resolution_kind=resolution_kind,
+        referenced_invocation_id=referenced_invocation_id,
+    )
 
     if not capabilities_by_skill:
         return PlanningResult(
-            outcome="fallback",
-            message="No capabilities are available right now. Please try again shortly.",
+            outcome="unsupported",
+            operations=list(operations),
+            unsupported_operations=[
+                UnsupportedOperationInput(
+                    operation_id=operation.operation_id,
+                    reason="No registered capability is available for this operation.",
+                )
+                for operation in operations
+            ],
+            resolved_query=resolved_query,
+            resolution_kind=resolution_kind,
+            referenced_invocation_id=referenced_invocation_id,
         )
 
     candidate_list = list(workflow_candidates or [])
@@ -824,70 +1360,73 @@ async def compile_plan_with_tools(
 
     system_prompt = SYSTEM_PROMPT
     user_prompt = _build_prompt(
-        query=query,
+        query=resolved_query,
         history=history,
         context=context,
         capabilities=capabilities,
+        operations=list(operations),
         workflow_candidates=candidate_list,
     )
 
-    llm = ChatAnthropic(
-        model=MODEL_NAME,
-        temperature=0,
-        max_tokens=2048,
-    ).bind_tools(tools)
-
     messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt),
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
+    tool_schemas = [_planning_tool_schema(tool) for tool in tools]
 
-    for _ in range(max(1, max_turns)):
-        if status_callback:
-            status_callback("Planner LLM evaluating routing/tool calls.")
-        ai_message = await asyncio.to_thread(llm.invoke, messages)
-        messages.append(ai_message)
+    async with runtime.create_llm() as llm:
+        for _ in range(max(1, max_turns)):
+            if status_callback:
+                status_callback("Planner LLM evaluating routing/tool calls.")
+            response = await llm.medium(
+                messages,
+                temperature=0,
+                max_tokens=2048,
+                tools=tool_schemas,
+            )
+            assistant_message, tool_calls = _planning_tool_calls(response.raw)
+            messages.append(assistant_message)
 
-        tool_calls = getattr(ai_message, "tool_calls", None) or []
-        if not tool_calls:
+            if not tool_calls:
+                if draft.finalized:
+                    break
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Planning is not complete. You must set exhaustive operation coverage "
+                            "and call finalize_plan."
+                        ),
+                    }
+                )
+                continue
+
+            for call in tool_calls:
+                tool_name = str(call.get("name"))
+                tool_args = call.get("args", {}) or {}
+                tool_id = str(call.get("id") or "")
+                tool = tools_by_name.get(tool_name)
+                if tool is None:
+                    tool_result = {"ok": False, "error": f"Unknown tool '{tool_name}'"}
+                else:
+                    try:
+                        tool_result = tool.invoke(tool_args)
+                    except Exception as exc:
+                        tool_result = {"ok": False, "error": f"{tool_name} failed: {exc}"}
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(tool_result, default=str),
+                        "tool_call_id": tool_id,
+                    }
+                )
             if draft.finalized:
                 break
-            messages.append(
-                HumanMessage(
-                    content=(
-                        "Planning is not complete. You must call finalize_plan for an agent plan "
-                        "or fallback_to_chat for a direct answer."
-                    )
-                )
-            )
-            continue
 
-        for call in tool_calls:
-            tool_name = str(call.get("name"))
-            tool_args = call.get("args", {}) or {}
-            tool_id = str(call.get("id") or "")
-            tool = tools_by_name.get(tool_name)
-            if tool is None:
-                tool_result = {"ok": False, "error": f"Unknown tool '{tool_name}'"}
-            else:
-                try:
-                    tool_result = tool.invoke(tool_args)
-                except Exception as exc:
-                    tool_result = {"ok": False, "error": f"{tool_name} failed: {exc}"}
-
-            messages.append(
-                ToolMessage(
-                    content=json.dumps(tool_result, default=str),
-                    tool_call_id=tool_id,
-                )
-            )
-        if draft.finalized:
-            break
-
-    if not draft.finalized and not draft.primary_skill and not draft.workflow_id:
-        return PlanningResult(
-            outcome="fallback",
-            message="I could not determine a reliable capability plan for that request.",
+    if not draft.finalized:
+        raise PlanningContractError(
+            f"Planner did not finalize a valid decision within {max(1, max_turns)} turns."
         )
 
     if draft.outcome == "agent_plan" and draft.primary_skill:

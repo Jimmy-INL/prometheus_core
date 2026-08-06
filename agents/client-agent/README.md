@@ -123,7 +123,7 @@ Owns environment-driven runtime state and process-wide caches.
 
 Major functions:
 
-- `create_llm()`: Builds the Anthropic chat model used by planner/refinement helpers.
+- `create_llm()`: Builds the request-scoped `AsyncLLMClient` used by planner/refinement helpers.
 - `_get_status_redis_client()`: Lazily creates the Redis client used for status history.
 - `status_stream(emitter)`: Registers a request-local A2A status emitter.
 - `wait_for_status_stream(tasks)`: Waits for queued status emission tasks.
@@ -138,7 +138,6 @@ Major functions:
 Important globals:
 
 - `AGENT_PORT`
-- `MODEL_NAME`
 - `DISCOVERY_REFRESH_SECONDS`
 - `ENABLE_WORKFLOW_LIBRARY`
 - `_tools_cache`

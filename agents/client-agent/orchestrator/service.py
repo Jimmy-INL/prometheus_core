@@ -394,11 +394,11 @@ class OrchestratorAgent(PrometheusAgent):
 
         await emit_upload_status(f"Analyzing {len(uploaded_files)} uploaded file(s).")
 
-        llm = runtime.create_llm()
         try:
-            descriptions = await infer_file_descriptions(
-                request_payload.get("query") or "", uploaded_files, llm,
-            )
+            async with runtime.create_llm(context) as llm:
+                descriptions = await infer_file_descriptions(
+                    request_payload.get("query") or "", uploaded_files, llm,
+                )
         except Exception as exc:
             print(f"[WARN] Failed to infer uploaded file descriptions; using fallbacks: {exc}")
             descriptions = {
@@ -527,11 +527,12 @@ class OrchestratorAgent(PrometheusAgent):
             )
 
         async def _run_chat() -> ConversationResponse:
-            with runtime.status_stream(emit_chat_status) as status_tasks:
-                try:
-                    return await chat(chat_request)
-                finally:
-                    await runtime.wait_for_status_stream(status_tasks)
+            with runtime.llm_request_context(context):
+                with runtime.status_stream(emit_chat_status) as status_tasks:
+                    try:
+                        return await chat(chat_request)
+                    finally:
+                        await runtime.wait_for_status_stream(status_tasks)
 
         task_tracking.begin_turn(conversation_id, chat_request.query or "request")
         deadline = task_tracking.background_deadline_seconds()

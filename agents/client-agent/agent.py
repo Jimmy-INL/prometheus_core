@@ -50,7 +50,6 @@ from workflow_library import (
 )
 
 AGENT_PORT = _runtime.AGENT_PORT
-MODEL_NAME = _runtime.MODEL_NAME
 DISCOVERY_REFRESH_SECONDS = _runtime.DISCOVERY_REFRESH_SECONDS
 ENABLE_WORKFLOW_LIBRARY = _runtime.ENABLE_WORKFLOW_LIBRARY
 _tools_cache = _runtime._tools_cache
@@ -145,7 +144,6 @@ def _exported(name: str) -> Any:
 
 def _sync_runtime_exports() -> None:
     globals()["AGENT_PORT"] = _runtime.AGENT_PORT
-    globals()["MODEL_NAME"] = _runtime.MODEL_NAME
     globals()["DISCOVERY_REFRESH_SECONDS"] = _runtime.DISCOVERY_REFRESH_SECONDS
     globals()["ENABLE_WORKFLOW_LIBRARY"] = _runtime.ENABLE_WORKFLOW_LIBRARY
     globals()["_tools_cache"] = _runtime._tools_cache
@@ -157,7 +155,6 @@ def _sync_runtime_exports() -> None:
 def _sync_compat() -> None:
     """Propagate compatibility-module monkeypatches into split modules."""
     _runtime.AGENT_PORT = globals().get("AGENT_PORT", _runtime.AGENT_PORT)
-    _runtime.MODEL_NAME = globals().get("MODEL_NAME", _runtime.MODEL_NAME)
     _runtime.DISCOVERY_REFRESH_SECONDS = globals().get(
         "DISCOVERY_REFRESH_SECONDS", _runtime.DISCOVERY_REFRESH_SECONDS
     )

@@ -20,6 +20,10 @@ class StepRuntimeResult:
     result: Any = None
     error: str | None = None
     input_required: Dict[str, Any] | None = None
+    a2a_context_id: str | None = None
+    a2a_task_id: str | None = None
+    task_graph_root_id: str | None = None
+    task_graph_node_id: str | None = None
 
 
 def _ordered_steps(workflow: CompiledWorkflow) -> List[WorkflowStep]:
@@ -74,6 +78,10 @@ async def _run_step(
             step_id=step.id,
             status="input_required",
             input_required=invoked.get("input_required"),
+            a2a_context_id=invoked.get("_a2a_context_id"),
+            a2a_task_id=invoked.get("_a2a_task_id"),
+            task_graph_root_id=invoked.get("_task_graph_root_id"),
+            task_graph_node_id=invoked.get("_task_graph_node_id"),
         )
     if "error" in invoked:
         return StepRuntimeResult(
@@ -223,13 +231,20 @@ async def execute_workflow(
                 }
                 _apply_step_outputs(step, item.result, context, context_delta)
             elif item.status == "input_required":
-                input_required_steps.append(
-                    {
-                        "step_id": item.step_id,
-                        "skill_id": step.skill_id,
-                        "input_required": item.input_required,
-                    }
-                )
+                input_required_step = {
+                    "step_id": item.step_id,
+                    "skill_id": step.skill_id,
+                    "input_required": item.input_required,
+                }
+                for key, value in (
+                    ("_a2a_context_id", item.a2a_context_id),
+                    ("_a2a_task_id", item.a2a_task_id),
+                    ("_task_graph_root_id", item.task_graph_root_id),
+                    ("_task_graph_node_id", item.task_graph_node_id),
+                ):
+                    if value:
+                        input_required_step[key] = value
+                input_required_steps.append(input_required_step)
                 stop_scheduling = True
             else:
                 errors.append(

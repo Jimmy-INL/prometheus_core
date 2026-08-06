@@ -10,13 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from anthropic import Anthropic
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 from prometheus_api.agent import PrometheusAgent
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
+from prometheus_api.llm_client import LLMConfig
 
 PROMPTS_DIR = Path(__file__).with_name("prompts")
 
@@ -53,15 +50,6 @@ class SynthesisAgent(PrometheusAgent):
             message=f"Synthesizing specialist analyses for {material_id}.",
         )
 
-        if not ANTHROPIC_API_KEY:
-            return {
-                "material_id": material_id,
-                "analysis_type": "synthesis",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "error": "ANTHROPIC_API_KEY not configured",
-                "tool_results": tool_results,
-            }
-
         prompt = ANALYSIS_PROMPT_TEMPLATE.format(
             material_id=material_id,
             user_query=user_query or "(not provided)",
@@ -70,14 +58,16 @@ class SynthesisAgent(PrometheusAgent):
         )
 
         try:
-            client = Anthropic(api_key=ANTHROPIC_API_KEY)
-            response = client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=1800,
-                temperature=0.2,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = response.content[0].text
+            llm_config = LLMConfig.from_env()
+            if llm_config.proxy_url:
+                llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+            async with self.llm_client(context, config=llm_config) as llm:
+                response = await llm.medium(
+                    prompt,
+                    max_tokens=1800,
+                    temperature=0.2,
+                )
+            text = response.text
             if "```json" in text:
                 text = text.split("```json", 1)[1].split("```", 1)[0].strip()
             elif "```" in text:
@@ -90,7 +80,7 @@ class SynthesisAgent(PrometheusAgent):
             synthesized["material_id"] = material_id
             synthesized["analysis_type"] = "synthesis"
             synthesized["timestamp"] = datetime.now(timezone.utc).isoformat()
-            synthesized["model_used"] = MODEL_NAME
+            synthesized["model_used"] = response.provider_model or response.model_alias
             return synthesized
         except Exception as exc:
             return {

@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 import types
 
+import pytest
+
 # sys.path setup (client-agent dir + prometheus_api contract) lives in conftest.py
 
 if "langchain_core.tools" not in sys.modules:
@@ -21,7 +23,9 @@ if "langchain_core.tools" not in sys.modules:
     sys.modules["langchain_core.tools"] = tools_module
 
 if "prometheus_api.agent" not in sys.modules:
-    prometheus_api_module = types.ModuleType("prometheus_api")
+    prometheus_api_module = sys.modules.get(
+        "prometheus_api", types.ModuleType("prometheus_api")
+    )
     agent_module = types.ModuleType("prometheus_api.agent")
 
     class _ArtifactReference:
@@ -197,6 +201,25 @@ class _FakeStreamingResponse:
             yield line
 
 
+def _input_required_payload(*names: str) -> dict:
+    return {
+        "missing_inputs": [
+            {
+                "name": name,
+                "description": f"{name.replace('_', ' ').title()} in metres.",
+                "user_prompt": f"{name.replace('_', ' ').title()} (m)",
+                "type": "number",
+                "options": None,
+                "resolvable_from_context": False,
+                "sensitive": False,
+                "required": True,
+            }
+            for name in names
+        ],
+        "hint": "Butterfly valve dimensions required",
+    }
+
+
 def test_get_agent_card_prefers_raw_prometheus_endpoint(monkeypatch) -> None:
     responses = {
         "http://thermal-agent:8000/api/agent-card": _FakeResponse(
@@ -245,10 +268,10 @@ def test_call_a2a_agent_enriches_response_with_native_artifacts(monkeypatch) -> 
     a2a_payload = {
         "result": {
             "status": {
+                "state": "TASK_STATE_COMPLETED",
                 "message": {
                     "parts": [
                         {
-                            "kind": "text",
                             "text": json.dumps(
                                 {
                                     "status": "completed",
@@ -351,10 +374,10 @@ def test_call_a2a_agent_preserves_error_payload_from_final_status(monkeypatch) -
     a2a_payload = {
         "result": {
             "status": {
+                "state": "TASK_STATE_COMPLETED",
                 "message": {
                     "parts": [
                         {
-                            "kind": "text",
                             "text": json.dumps(
                                 {
                                     "error": "context.temperature_c is required",
@@ -385,13 +408,155 @@ def test_call_a2a_agent_preserves_error_payload_from_final_status(monkeypatch) -
     assert result == {"error": "context.temperature_c is required"}
 
 
+def test_call_a2a_agent_recognizes_v1_blocking_input_required(monkeypatch) -> None:
+    missing_inputs = _input_required_payload("hole_diameter", "rod_diameter")
+    a2a_payload = {
+        "result": {
+            "task": {
+                "id": "task-1",
+                "contextId": "conv-1",
+                "status": {
+                    "state": "TASK_STATE_INPUT_REQUIRED",
+                    "message": {
+                        "parts": [
+                            {
+                                "data": missing_inputs,
+                            }
+                        ]
+                    },
+                },
+            }
+        }
+    }
+
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _FakeAsyncClient(payload=a2a_payload, **kwargs),
+    )
+
+    result = asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/bim-agent",
+            "author_equipment_geometry",
+            conversation_id="conv-1",
+        )
+    )
+
+    assert result == {
+        "status": "input_required",
+        "input_required": missing_inputs,
+        "_a2a_context_id": "conv-1",
+        "_a2a_task_id": "task-1",
+    }
+
+
+def test_call_a2a_agent_rejects_non_v1_task_state(monkeypatch) -> None:
+    a2a_payload = {
+        "result": {
+            "task": {
+                "id": "task-1",
+                "contextId": "conv-1",
+                "status": {
+                    "state": "input-required",
+                    "message": {
+                        "parts": [
+                            {
+                                "data": _input_required_payload("rod_diameter"),
+                            }
+                        ]
+                    },
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _FakeAsyncClient(payload=a2a_payload, **kwargs),
+    )
+
+    with pytest.raises(ValueError, match="TASK_STATE_"):
+        asyncio.run(
+            tool_discovery.call_a2a_agent(
+                "http://example.test/a2a/bim-agent",
+                "author_equipment_geometry",
+                conversation_id="conv-1",
+            )
+        )
+
+
+def test_call_a2a_agent_rejects_malformed_input_required_payload(monkeypatch) -> None:
+    a2a_payload = {
+        "result": {
+            "task": {
+                "id": "task-1",
+                "contextId": "conv-1",
+                "status": {
+                    "state": "TASK_STATE_INPUT_REQUIRED",
+                    "message": {
+                        "parts": [
+                            {
+                                "data": {
+                                    "missing_inputs": [
+                                        {
+                                            "name": "rod_diameter",
+                                            "user_prompt": "Rod diameter (m)",
+                                        }
+                                    ],
+                                    "hint": "Butterfly valve dimensions required",
+                                },
+                            }
+                        ]
+                    },
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _FakeAsyncClient(payload=a2a_payload, **kwargs),
+    )
+
+    with pytest.raises(ValueError, match="missing_inputs"):
+        asyncio.run(
+            tool_discovery.call_a2a_agent(
+                "http://example.test/a2a/bim-agent",
+                "author_equipment_geometry",
+                conversation_id="conv-1",
+            )
+        )
+
+
+def test_extract_status_payload_rejects_pre_v1_root_part() -> None:
+    with pytest.raises(tool_discovery.A2AContractError, match="unsupported status part"):
+        tool_discovery._extract_status_payload(
+            {
+                "status": {
+                    "message": {
+                        "parts": [
+                            {
+                                "root": {
+                                    "kind": "data",
+                                    "data": _input_required_payload("rod_diameter"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        )
+
+
 def test_call_a2a_agent_propagates_conversation_id_as_context_id(monkeypatch) -> None:
     a2a_payload = {
         "result": {
             "status": {
+                "state": "TASK_STATE_COMPLETED",
                 "message": {
                     "parts": [
-                        {"kind": "text", "text": json.dumps({"status": "completed"})}
+                        {"text": json.dumps({"status": "completed"})}
                     ]
                 }
             }
@@ -500,74 +665,72 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "final": False,
-                    "status": {
-                        "state": "working",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": "Searching publications...",
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": "Searching publications...",
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "artifact-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "artifact": {
-                        "artifactId": "artifact-1",
-                        "name": "paper-summary.json",
-                        "parts": [
-                            {
-                                "kind": "data",
-                                "data": {"count": 4},
-                                "metadata": {
-                                    "mime_type": "application/json",
-                                    "json_type": "prometheus.analysis.summary.v1",
-                                },
-                            }
-                        ],
-                        "metadata": {
-                            "conversation_id": "conv-1",
-                            "producer_agent_id": "osti-research-agent",
+                    "artifactUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "artifact": {
+                            "artifactId": "artifact-1",
+                            "name": "paper-summary.json",
+                            "parts": [
+                                {
+                                    "data": {"count": 4},
+                                    "metadata": {
+                                        "mime_type": "application/json",
+                                        "json_type": "prometheus.analysis.summary.v1",
+                                    },
+                                }
+                            ],
+                            "metadata": {
+                                "conversation_id": "conv-1",
+                                "producer_agent_id": "osti-research-agent",
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-1",
-                    "taskId": "task-1",
-                    "final": True,
-                    "status": {
-                        "state": "completed",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": json.dumps(
-                                        {
-                                            "status": "completed",
-                                            "message": "Research complete.",
-                                        }
-                                    ),
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "status": {
+                            "state": "TASK_STATE_COMPLETED",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": json.dumps(
+                                            {
+                                                "status": "completed",
+                                                "message": "Research complete.",
+                                            }
+                                        ),
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
@@ -634,42 +797,41 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": False,
-                    "status": {
-                        "state": "working",
-                        "message": {
-                            "parts": [{"kind": "text", "text": "Rendering SVG..."}]
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_WORKING",
+                            "message": {
+                                "parts": [{"text": "Rendering SVG..."}]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
         json.dumps(
             {
                 "result": {
-                    "kind": "status-update",
-                    "contextId": "conv-2",
-                    "taskId": "task-2",
-                    "final": True,
-                    "status": {
-                        "state": "completed",
-                        "message": {
-                            "parts": [
-                                {
-                                    "kind": "text",
-                                    "text": json.dumps(
-                                        {
-                                            "status": "completed",
-                                            "message": "SVG ready.",
-                                        }
-                                    ),
-                                }
-                            ]
+                    "statusUpdate": {
+                        "contextId": "conv-2",
+                        "taskId": "task-2",
+                        "status": {
+                            "state": "TASK_STATE_COMPLETED",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "text": json.dumps(
+                                            {
+                                                "status": "completed",
+                                                "message": "SVG ready.",
+                                            }
+                                        ),
+                                    }
+                                ]
+                            },
                         },
-                    },
+                    }
                 }
             }
         ),
@@ -710,6 +872,63 @@ def test_call_a2a_agent_streaming_accepts_ndjson(monkeypatch) -> None:
     assert result["message"] == "SVG ready."
 
 
+def test_call_a2a_agent_recognizes_v1_streaming_input_required(monkeypatch) -> None:
+    missing_inputs = _input_required_payload("hole_diameter", "rod_diameter")
+    streamed_lines = [
+        json.dumps(
+            {
+                "result": {
+                    "statusUpdate": {
+                        "contextId": "conv-1",
+                        "taskId": "task-1",
+                        "status": {
+                            "state": "TASK_STATE_INPUT_REQUIRED",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "data": missing_inputs,
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            }
+        )
+    ]
+
+    class _StreamingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, **kwargs):
+            return _FakeStreamingResponse(streamed_lines, content_type="application/x-ndjson")
+
+    monkeypatch.setattr(a2a_stream.httpx, "AsyncClient", _StreamingClient)
+
+    result = asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/bim-agent",
+            "author_equipment_geometry",
+            conversation_id="conv-1",
+            _prefer_streaming=True,
+        )
+    )
+
+    assert result == {
+        "status": "input_required",
+        "input_required": missing_inputs,
+        "_a2a_context_id": "conv-1",
+        "_a2a_task_id": "task-1",
+    }
+
+
 def test_apply_stream_event_fires_background_callback_on_flag() -> None:
     """A status event tagged metadata.background invokes the background callback
     (declare_long_running → proactive detach)."""
@@ -720,10 +939,10 @@ def test_apply_stream_event_fires_background_callback_on_flag() -> None:
 
     envelope = {
         "result": {
-            "kind": "status-update",
-            "metadata": {"background": True, "estimate_seconds": 30},
-            "status": {},
-            "final": False,
+            "statusUpdate": {
+                "metadata": {"background": True, "estimate_seconds": 30},
+                "status": {"state": "TASK_STATE_WORKING"},
+            }
         }
     }
     asyncio.run(
@@ -743,7 +962,14 @@ def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
     async def bg(meta):
         fired.append(meta)
 
-    envelope = {"result": {"kind": "status-update", "metadata": {"heartbeat": True, "background": True}}}
+    envelope = {
+        "result": {
+            "statusUpdate": {
+                "metadata": {"heartbeat": True, "background": True},
+                "status": {},
+            }
+        }
+    }
     asyncio.run(
         a2a_stream.apply_stream_event(
             {"kind": "task", "artifacts": []}, envelope, background_callback=bg

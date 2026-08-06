@@ -20,7 +20,7 @@ COMPOSE_AGENTS := docker-compose.agents.yml
 CLEAR_COMPOSE_FILES ?= $(COMPOSE_FILES_NG)
 
 # Override this to pin a specific prometheus_api base image.
-PROMETHEUS_API_BASE_IMAGE_HASH ?= a13f710
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 88e920d
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include
@@ -222,4 +222,3 @@ react-build: ##@ Build React frontend for production (frontend-react/)
 
 react-check: ##@ Run React frontend lint + typecheck (frontend-react/)
 	$(MAKE) -C frontend-react check
-	

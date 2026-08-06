@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -8,6 +9,7 @@ from prometheus_api.agent import PrometheusAgent
 
 from artifact_handling import merge_artifacts_into_context, summarize_artifacts_for_context
 from conversation_store import get_conversation, store_conversation
+from planner import PlanningContractError
 from workflow_library import find_workflow_by_command, get_workflow_registry
 
 from . import runtime
@@ -27,6 +29,8 @@ from .execution import (
     resume_pending_subagent_requests,
 )
 from .models import AgentState, ConversationRequest, ConversationResponse
+from .parameter_extraction import ParameterExtractionError
+from .parameters import order_skills_for_workflow
 from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
 
 
@@ -64,6 +68,7 @@ def _needs_info_response(
         status="needs_info",
         message=PrometheusAgent.pending_hint(state.get("pending_subagent_requests"), hint),
         followup_questions=latest.get("questions", []),
+        plan=_format_plan_for_response(state) if state.get("plan") else None,
     )
 
 
@@ -84,6 +89,93 @@ def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationRe
     """Store error status and return an error response."""
     runtime.store_status_update(conv_id, log_msg, final=True)
     return ConversationResponse(conversation_id=conv_id, status="error", message=user_msg)
+
+
+def _structured_followup_entry(query: Optional[str], followup_answers: Dict[str, Any]) -> Dict[str, Any]:
+    """Represent form-submitted answers as ordinary conversation evidence."""
+    return {
+        "role": "user",
+        "content": query or "Provided requested inputs.",
+        "provided_inputs": copy.deepcopy(followup_answers),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _successful_prior_capability_params(
+    existing_state: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Return prior inputs only for capabilities that completed successfully."""
+    if not isinstance(existing_state, dict):
+        return {}
+    routing = existing_state.get("routing_decision")
+    tool_results = existing_state.get("tool_results")
+    if not isinstance(routing, dict) or not isinstance(tool_results, dict):
+        return {}
+
+    successful_skills = {
+        str(skill_id)
+        for skill_id, result in tool_results.items()
+        if skill_id != "workflow_execution"
+        and result is not None
+        and not (isinstance(result, dict) and result.get("error"))
+    }
+    result: Dict[str, Dict[str, Any]] = {}
+    history = existing_state.get("conversation_history")
+    if isinstance(history, list):
+        for entry in reversed(history):
+            if not isinstance(entry, dict):
+                continue
+            tool_inputs = entry.get("tool_inputs")
+            invocation_results = entry.get("tool_results")
+            if not isinstance(tool_inputs, dict) or not isinstance(invocation_results, dict):
+                continue
+            for skill_id, params in tool_inputs.items():
+                skill_id = str(skill_id)
+                invocation_result = invocation_results.get(skill_id)
+                if (
+                    skill_id in result
+                    or skill_id not in successful_skills
+                    or skill_id == "workflow_execution"
+                    or not isinstance(params, dict)
+                    or invocation_result is None
+                    or (
+                        isinstance(invocation_result, dict)
+                        and invocation_result.get("error")
+                    )
+                ):
+                    continue
+                result[skill_id] = copy.deepcopy(params)
+
+    stored = routing.get("capability_params")
+    if isinstance(stored, dict):
+        fallback = {
+            str(skill_id): copy.deepcopy(params)
+            for skill_id, params in stored.items()
+            if str(skill_id) in successful_skills
+            and str(skill_id) not in result
+            and isinstance(params, dict)
+        }
+        primary_skill = routing.get("primary_skill")
+        extracted_params = routing.get("extracted_params")
+        primary_params = fallback.get(str(primary_skill))
+        if isinstance(primary_params, dict) and isinstance(extracted_params, dict):
+            fallback[str(primary_skill)] = {
+                name: extracted_params[name]
+                for name in primary_params
+                if name in extracted_params
+            }
+        result.update(fallback)
+        return result
+
+    primary_skill = routing.get("primary_skill")
+    extracted_params = routing.get("extracted_params")
+    if (
+        primary_skill in successful_skills
+        and str(primary_skill) not in result
+        and isinstance(extracted_params, dict)
+    ):
+        result[str(primary_skill)] = copy.deepcopy(extracted_params)
+    return result
 
 
 async def chat(request: ConversationRequest) -> ConversationResponse:
@@ -218,11 +310,20 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             followup_answers.update(extracted)
 
         if followup_answers:
+            if request.followup_answers and not state.get("pending_subagent_requests"):
+                evidence = _structured_followup_entry(request.query, followup_answers)
+                state["conversation_history"] = state.get("conversation_history", []) + [evidence]
+
             routing_decision = state.get("routing_decision", {}) or {}
             requires_approval = routing_decision.get("requires_approval", False)
 
             try:
                 if state.get("pending_subagent_requests"):
+                    resumed_skill_ids = [
+                        str(pending.get("skill_id") or "")
+                        for pending in state["pending_subagent_requests"]
+                        if pending.get("skill_id")
+                    ]
                     state = await resume_pending_subagent_requests(state, followup_answers)
                     if state.get("missing_info"):
                         followup_result = await ask_followup_dynamic(state)
@@ -246,6 +347,44 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                                     final_state[key] = value
                             return _needs_info_response(conv_id, final_state)
                         return _completed_response(conv_id, final_state)
+                    if rd.get("workflow_type") == "sequential":
+                        selected_skills = order_skills_for_workflow(rd)
+                        resumed_positions = [
+                            selected_skills.index(skill_id)
+                            for skill_id in resumed_skill_ids
+                            if skill_id in selected_skills
+                        ]
+                        remaining_skills = (
+                            selected_skills[max(resumed_positions) + 1 :]
+                            if resumed_positions
+                            else []
+                        )
+                        if remaining_skills:
+                            resumed_report = str(state.get("final_report") or "").strip()
+                            continuation = dict(rd)
+                            continuation["primary_skill"] = remaining_skills[0]
+                            continuation["supporting_skills"] = remaining_skills[1:]
+                            state["routing_decision"] = continuation
+                            final_state = await execute_current_plan(
+                                state,
+                                start_message="Continuing sequential workflow after provided parameters.",
+                            )
+                            final_state["routing_decision"] = rd
+                            if final_state.get("missing_info"):
+                                followup_result = await ask_followup_dynamic(final_state)
+                                for key, value in followup_result.items():
+                                    if value is not None:
+                                        final_state[key] = value
+                                return _needs_info_response(conv_id, final_state)
+                            continuation_report = str(final_state.get("final_report") or "").strip()
+                            if resumed_report and continuation_report:
+                                final_state["final_report"] = (
+                                    f"{resumed_report}\n\n{continuation_report}"
+                                )
+                                history = final_state.get("conversation_history", []) or []
+                                if history and history[-1].get("type") == "final_report":
+                                    history[-1]["content"] = final_state["final_report"]
+                            return _completed_response(conv_id, final_state)
                     return _completed_response(conv_id, state)
 
                 if routing_decision:
@@ -385,6 +524,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             "content": request.query or f"Start workflow {request.workflow_id}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
+        "prior_capability_params": _successful_prior_capability_params(existing_state),
         "routing_decision": None,
         "plan": None,
         "missing_info": [],
@@ -479,5 +619,11 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     final_state[key] = value
             return _needs_info_response(conv_id, final_state)
         return _completed_response(conv_id, final_state)
+    except (PlanningContractError, ParameterExtractionError) as exc:
+        return _error_response(
+            conv_id,
+            f"Planning contract failure: {exc}",
+            "I couldn't build a valid execution plan for this request. Please try again.",
+        )
     except Exception as exc:
         return _error_response(conv_id, f"Request failed: {exc}", f"Error processing request: {exc}")

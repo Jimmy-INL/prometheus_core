@@ -2,7 +2,7 @@
 Form Filler Agent - Extract structured data from natural language using JSON schemas.
 
 This agent:
-1. Auto-extracts field values from context text using Claude
+1. Auto-extracts field values from context text using the configured LLM
 2. Supports multi-turn conversation for missing fields
 3. Accepts both structured form answers and natural language replies
 4. Returns A2A-compliant responses with followup_questions when data is missing
@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import redis
-from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent
+from prometheus_api.llm_client import LLMConfig
 from prometheus_api.redis_utils import create_redis_client
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
@@ -35,8 +35,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 REDIS_URL = os.getenv("REDIS_URL")
 STATE_TTL_SECONDS = 3600  # 1 hour TTL for conversation state
 
@@ -53,7 +51,6 @@ class FormFillerAgent(PrometheusAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._redis_client = None
-        self._anthropic_client = None
 
     @property
     def redis_client(self) -> redis.Redis:
@@ -61,13 +58,6 @@ class FormFillerAgent(PrometheusAgent):
         if self._redis_client is None:
             self._redis_client = create_redis_client(REDIS_URL, ping=False)
         return self._redis_client
-
-    @property
-    def anthropic_client(self) -> Anthropic:
-        """Lazy initialization of Anthropic client."""
-        if self._anthropic_client is None:
-            self._anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        return self._anthropic_client
 
     def get_state(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve conversation state from Redis."""
@@ -121,8 +111,12 @@ class FormFillerAgent(PrometheusAgent):
 
         return None
 
-    def extract_initial_values(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Use Claude to extract field values from context."""
+    async def extract_initial_values(
+        self,
+        state: Dict[str, Any],
+        a2a_context: RequestContext,
+    ) -> Dict[str, Any]:
+        """Use the configured LLM to extract field values from context."""
         context = state["context"]
         schema = state["schema"]
         properties = schema.get("properties", {})
@@ -159,17 +153,16 @@ Return a JSON object with field names as keys and extracted values. Only include
 For numeric fields, extract numbers only (no units).
 For enum fields, use the exact allowed value if mentioned.
 
-Return ONLY the JSON object, no explanation:"""
+        Return ONLY the JSON object, no explanation:"""
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=1024,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            llm_config = LLMConfig.from_env()
+            if llm_config.proxy_url:
+                llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+            async with self.llm_client(a2a_context, config=llm_config) as llm:
+                response = await llm.medium(prompt, max_tokens=1024, temperature=0)
 
-            response_text = response.content[0].text
+            response_text = response.text
             extracted = self.extract_json_from_text(response_text)
 
             if extracted:
@@ -199,7 +192,7 @@ Return ONLY the JSON object, no explanation:"""
 
                         state["extracted_values"][field_name] = value
 
-            logger.info(f"Extracted values: {state['extracted_values']}")
+            logger.info(f"Extracted {len(state['extracted_values'])} form value(s) from initial context")
 
         except Exception as e:
             logger.error(f"Error extracting initial values: {e}")
@@ -240,12 +233,13 @@ Return ONLY the JSON object, no explanation:"""
         state["updated_at"] = datetime.now(timezone.utc).isoformat()
         return state
 
-    def process_nl_input(
+    async def process_nl_input(
         self,
         state: Dict[str, Any],
-        query: str
+        query: str,
+        a2a_context: RequestContext,
     ) -> Dict[str, Any]:
-        """Use Claude to parse natural language into field values."""
+        """Use the configured LLM to parse natural language into field values."""
         schema = state["schema"]
         properties = schema.get("properties", {})
         current_values = state["extracted_values"]
@@ -291,17 +285,16 @@ ALREADY EXTRACTED:
 Return a JSON object with field names as keys for any values you can extract from the user's response.
 Only include fields where you found a clear value. Use null for fields where no value was found.
 
-Return ONLY the JSON object, no explanation:"""
+        Return ONLY the JSON object, no explanation:"""
 
         try:
-            response = self.anthropic_client.messages.create(
-                model=MODEL_NAME,
-                max_tokens=1024,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            llm_config = LLMConfig.from_env()
+            if llm_config.proxy_url:
+                llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+            async with self.llm_client(a2a_context, config=llm_config) as llm:
+                response = await llm.medium(prompt, max_tokens=1024, temperature=0)
 
-            response_text = response.content[0].text
+            response_text = response.text
             extracted = self.extract_json_from_text(response_text)
 
             if extracted:
@@ -330,7 +323,7 @@ Return ONLY the JSON object, no explanation:"""
 
                         state["extracted_values"][field_name] = value
 
-            logger.info(f"Extracted from NL: {state['extracted_values']}")
+            logger.info(f"Form state now contains {len(state['extracted_values'])} extracted value(s)")
 
         except Exception as e:
             logger.error(f"Error processing NL input: {e}")
@@ -471,14 +464,14 @@ Return ONLY the JSON object, no explanation:"""
 
         # Process input based on type
         if followup_answers:
-            logger.info(f"Processing form input: {followup_answers}")
+            logger.info(f"Processing {len(followup_answers)} structured form answer(s)")
             state = self.process_form_input(state, followup_answers)
         elif query:
-            logger.info(f"Processing NL input: {query}")
-            state = self.process_nl_input(state, query)
+            logger.info("Processing natural-language form input")
+            state = await self.process_nl_input(state, query, a2a_context)
         elif not state.get("initial_extraction_done"):
             logger.info("Performing initial extraction")
-            state = self.extract_initial_values(state)
+            state = await self.extract_initial_values(state, a2a_context)
 
         # Save updated state
         self.save_state(conversation_id, state)
@@ -488,7 +481,7 @@ Return ONLY the JSON object, no explanation:"""
 
         if not missing:
             # All required fields filled - return completed result
-            logger.info(f"Form complete: {state['extracted_values']}")
+            logger.info(f"Form complete with {len(state['extracted_values'])} value(s)")
 
             return {
                 "status": "completed",

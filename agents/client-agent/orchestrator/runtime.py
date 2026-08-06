@@ -9,7 +9,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
 
-from langchain_anthropic import ChatAnthropic
+from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
 
 from capability_cache import get_capability_cache
 from tool_discovery import get_all_tools_dynamic
@@ -18,7 +18,6 @@ from workflow_library import get_workflow_registry
 logger = logging.getLogger(__name__)
 
 AGENT_PORT = int(os.getenv("AGENT_PORT", "8000"))
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 DISCOVERY_REFRESH_SECONDS = int(os.getenv("DISCOVERY_REFRESH_SECONDS", "300"))
 ENABLE_WORKFLOW_LIBRARY = os.getenv("ENABLE_WORKFLOW_LIBRARY", "true").lower() in {"1", "true", "yes"}
 
@@ -39,15 +38,29 @@ _status_emit_tail: ContextVar[Optional[asyncio.Task]] = ContextVar(
     "status_emit_tail",
     default=None,
 )
+_llm_request_context: ContextVar[Any] = ContextVar("llm_request_context", default=None)
 
 
-def create_llm():
-    """Create the Claude LLM instance."""
-    return ChatAnthropic(
-        model=MODEL_NAME,
-        temperature=0,
-        max_tokens=4096,
+def create_llm(context: Any = None) -> AsyncLLMClient:
+    """Create a provider-agnostic async client for the active A2A request."""
+    config = LLMConfig.from_env()
+    if config.proxy_url:
+        config = config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+    return AsyncLLMClient.from_a2a_context(
+        context if context is not None else _llm_request_context.get(),
+        config=config,
+        app_name="Nuclear Analysis Client Agent",
     )
+
+
+@contextmanager
+def llm_request_context(context: Any) -> Iterator[None]:
+    """Make the A2A request context available to nested orchestration helpers."""
+    token = _llm_request_context.set(context)
+    try:
+        yield
+    finally:
+        _llm_request_context.reset(token)
 
 
 def _get_status_redis_client():

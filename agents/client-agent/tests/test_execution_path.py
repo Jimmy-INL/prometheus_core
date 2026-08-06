@@ -13,20 +13,6 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-if "langchain_anthropic" not in sys.modules:
-    langchain_anthropic = types.ModuleType("langchain_anthropic")
-    langchain_anthropic.ChatAnthropic = object
-    sys.modules["langchain_anthropic"] = langchain_anthropic
-
-if "langchain_core.messages" not in sys.modules:
-    langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-    messages_module = types.ModuleType("langchain_core.messages")
-    messages_module.HumanMessage = object
-    messages_module.SystemMessage = object
-    messages_module.ToolMessage = object
-    sys.modules["langchain_core.messages"] = messages_module
-    langchain_core.messages = messages_module
-
 if "langchain_core.tools" not in sys.modules:
     tools_module = types.ModuleType("langchain_core.tools")
 
@@ -39,7 +25,9 @@ if "langchain_core.tools" not in sys.modules:
     sys.modules["langchain_core.tools"] = tools_module
 
 if "prometheus_api.agent" not in sys.modules:
-    prometheus_api_module = types.ModuleType("prometheus_api")
+    prometheus_api_module = sys.modules.get(
+        "prometheus_api", types.ModuleType("prometheus_api")
+    )
     agent_api_module = types.ModuleType("prometheus_api.agent")
 
     class _ArtifactReference:
@@ -131,6 +119,77 @@ if "prometheus_api.agent" not in sys.modules:
 
 import agent as agent_module  # noqa: E402
 import file_upload_handler  # noqa: E402
+import planner  # noqa: E402
+
+
+def test_prior_capability_params_include_followup_values_after_success() -> None:
+    params = agent_module._chat_flow._successful_prior_capability_params(
+        {
+            "routing_decision": {
+                "primary_skill": "author_equipment_geometry",
+                "capability_params": {
+                    "author_equipment_geometry": {
+                        "input_data": {
+                            "equipment_type": "butterfly_valve",
+                            "pipe_diameter": 0.9,
+                            "num_holes": 6,
+                            "hole_diameter": 0.05,
+                        }
+                    }
+                },
+                "extracted_params": {
+                    "input_data": {
+                        "equipment_type": "butterfly_valve",
+                        "pipe_diameter": 0.9,
+                        "num_holes": 6,
+                        "hole_diameter": 0.05,
+                        "rod_diameter": 0.08,
+                    }
+                },
+            },
+            "tool_results": {
+                "author_equipment_geometry": {"answer": "Created valve geometry"}
+            },
+        }
+    )
+
+    assert params["author_equipment_geometry"]["input_data"]["rod_diameter"] == 0.08
+
+
+def test_prior_capability_params_use_actual_successful_invocation_inputs() -> None:
+    params = agent_module._chat_flow._successful_prior_capability_params(
+        {
+            "routing_decision": {
+                "primary_skill": "author_equipment_geometry",
+                "supporting_skills": ["mesh_geometry"],
+                "capability_params": {
+                    "author_equipment_geometry": {"message": "Create the valve."},
+                    "mesh_geometry": {"cad_artifact_id": "old-step"},
+                },
+            },
+            "tool_results": {
+                "author_equipment_geometry": {"answer": "Created valve geometry"},
+                "mesh_geometry": {"answer": "Meshed valve geometry"},
+            },
+            "conversation_history": [
+                {
+                    "role": "assistant",
+                    "tool_inputs": {
+                        "author_equipment_geometry": {"message": "Create the valve."},
+                        "mesh_geometry": {"cad_artifact_id": "new-step"},
+                    },
+                    "tool_results": {
+                        "author_equipment_geometry": {
+                            "answer": "Created valve geometry"
+                        },
+                        "mesh_geometry": {"answer": "Meshed valve geometry"},
+                    },
+                }
+            ],
+        }
+    )
+
+    assert params["mesh_geometry"]["cad_artifact_id"] == "new-step"
 
 
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
@@ -428,57 +487,78 @@ def test_execute_current_plan_reports_tool_errors_in_final_status(monkeypatch) -
     assert statuses[-1] == ("Execution finished with errors.", True)
 
 
-def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(monkeypatch) -> None:
+def test_chat_returns_incomplete_plan_and_form_for_missing_required_params(monkeypatch) -> None:
     async def fake_compile_query_plan(state, **kwargs):
         return {
             "routing_decision": {
-                "primary_skill": "analyze_thermal",
+                "primary_skill": "analyze_corrosion",
                 "supporting_skills": [],
                 "workflow_type": "single",
-                "extracted_params": {"material_id": "SS316"},
+                "extracted_params": {
+                    "material_id": "SS316",
+                    "context": {"temperature_c": 300},
+                },
                 "requires_approval": True,
-                "required_params": ["material_id", "context.temperature_c"],
-                "missing_required_params": ["context.temperature_c"],
+                "required_params": [
+                    "context.pressure_mpa",
+                    "context.temperature_c",
+                    "material_id",
+                ],
+                "missing_required_params": ["context.pressure_mpa"],
             },
             "plan": {
-                "intent": "Perform a thermal analysis of ss316",
+                "intent": "Analyze corrosion risk in high-temperature water",
                 "workflow_type": "single",
-                "skills": ["analyze_thermal"],
-                "required_params": ["material_id", "context.temperature_c"],
-                "steps": ["Invoke analyze_thermal"],
-                "missing_info": ["context.temperature_c"],
+                "skills": ["analyze_corrosion"],
+                "required_params": [
+                    "context.pressure_mpa",
+                    "context.temperature_c",
+                    "material_id",
+                ],
+                "steps": ["Invoke analyze_corrosion"],
+                "missing_info": ["context.pressure_mpa"],
                 "estimated_duration_seconds": 5,
                 "param_metadata": {},
             },
-            "missing_info": ["context.temperature_c"],
-            "context": {},
+            "missing_info": ["context.pressure_mpa"],
+            "context": {"temperature_c": 300},
             "material_id": "SS316",
         }
 
-    async def fake_ask_followup_dynamic(state):
-        return {
-            "conversation_history": state.get("conversation_history", []) + [
-                {
-                    "role": "assistant",
-                    "type": "followup_questions",
-                    "questions": [
-                        {
-                            "field": "context.temperature_c",
-                            "question": "Operating temperature in Celsius",
-                            "type": "number",
-                        }
-                    ],
-                }
-            ],
-            "missing_info": ["context.temperature_c"],
-            "awaiting_approval": False,
-        }
+    async def fake_get_capability_by_skill_id(skill_id):
+        assert skill_id == "analyze_corrosion"
+        return SimpleNamespace(
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "material_id": {"type": "string"},
+                    "context": {
+                        "type": "object",
+                        "properties": {
+                            "temperature_c": {"type": "number"},
+                            "pressure_mpa": {
+                                "type": "number",
+                                "description": "Operating pressure in MPa",
+                            },
+                        },
+                        "required": ["temperature_c", "pressure_mpa"],
+                    },
+                },
+                "required": ["material_id", "context"],
+            }
+        )
 
     async def should_not_extract(*args, **kwargs):
         raise AssertionError("Initial turn should not auto-extract missing follow-up answers from the query.")
 
     monkeypatch.setattr(agent_module, "compile_query_plan", fake_compile_query_plan)
-    monkeypatch.setattr(agent_module, "ask_followup_dynamic", fake_ask_followup_dynamic)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id
+        ),
+    )
     monkeypatch.setattr(agent_module, "extract_followup_answers_from_query", should_not_extract)
     monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
     monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
@@ -487,7 +567,10 @@ def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(mon
     response = asyncio.run(
         agent_module.chat(
             agent_module.ConversationRequest(
-                query="Perform a thermal analysis of ss316",
+                query=(
+                    "Analyze corrosion risk for SS316 in a high-temperature "
+                    "water environment at 300 C."
+                ),
                 conversation_id="conv-1",
             )
         )
@@ -496,11 +579,23 @@ def test_chat_asks_followup_when_required_params_are_missing_on_initial_turn(mon
     assert response.status == "needs_info"
     assert response.followup_questions == [
         {
-            "field": "context.temperature_c",
-            "question": "Operating temperature in Celsius",
+            "field": "context.pressure_mpa",
+            "question": "Operating pressure in MPa",
             "type": "number",
         }
     ]
+    assert response.plan["skills"] == ["analyze_corrosion"]
+    assert response.plan["required_params"] == [
+        "context.pressure_mpa",
+        "context.temperature_c",
+        "material_id",
+    ]
+
+
+def test_structured_followup_entry_preserves_answers() -> None:
+    entry = agent_module._chat_flow._structured_followup_entry(None, {"input_data.rod_diameter": 0.08})
+
+    assert entry["provided_inputs"] == {"input_data.rod_diameter": 0.08}
 
 
 def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
@@ -542,6 +637,40 @@ def test_chat_exposes_received_files_to_planner_context(monkeypatch) -> None:
             "size_bytes": 12,
         }
     ]
+
+
+def test_chat_does_not_expose_internal_planning_tool_names(monkeypatch) -> None:
+    status_updates = []
+
+    async def malformed_plan(*args, **kwargs):
+        raise planner.PlanningContractError(
+            "Parameter extraction did not call required tool(s): extract_2_convert_svg_to_png"
+        )
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", malformed_plan)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_conversation", lambda conversation_id, state: None)
+    monkeypatch.setattr(
+        agent_module,
+        "store_status_update",
+        lambda conversation_id, message, **kwargs: status_updates.append(message),
+    )
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                query="Create a CAD valve and mesh it.",
+                conversation_id="conv-contract-error",
+            )
+        )
+    )
+
+    assert response.status == "error"
+    assert response.message == (
+        "I couldn't build a valid execution plan for this request. Please try again."
+    )
+    assert "extract_2_convert_svg_to_png" not in response.message
+    assert any("extract_2_convert_svg_to_png" in update for update in status_updates)
 
 
 def test_agents_slash_command_lists_registered_agents_without_planner(monkeypatch) -> None:
@@ -647,6 +776,111 @@ def test_artifacts_slash_command_lists_conversation_artifacts_without_planner(mo
     assert "deeplynx_file_id: 123" in response.message
     assert "older-result.json" in response.message
     assert [artifact["artifact_id"] for artifact in response.artifacts] == ["svg-1", "older-1"]
+
+
+def test_workflows_slash_command_lists_platform_and_agent_workflows(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    catalog = [
+        {
+            "id": "platform.safety_check",
+            "version": "1.0.0",
+            "display_name": "Platform Safety Check",
+            "summary": "Run the platform safety checks.",
+            "category": "Safety",
+            "requires_approval": True,
+            "estimated_duration_seconds": 60,
+            "owner": "platform-team",
+            "source": "local",
+        },
+        {
+            "id": "thermal.quick_check",
+            "version": "2.1.0",
+            "display_name": "Quick Thermal Check",
+            "summary": "Run the agent's thermal checks.",
+            "category": "Thermal",
+            "requires_approval": False,
+            "estimated_duration_seconds": 30,
+            "owner": "thermal-agent",
+            "source": "agent_card",
+        },
+    ]
+    registry = SimpleNamespace(get_catalog=lambda: catalog)
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(query="/workflows", conversation_id="conv-workflows")
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Registered workflows (2)" in response.message
+    assert "Platform-owned workflows (1)" in response.message
+    assert "Agent-owned workflows (1)" in response.message
+    assert "Platform Safety Check (`/platform_safety_check`)" in response.message
+    assert "Quick Thermal Check (`/thermal_quick_check`)" in response.message
+    assert "owner: thermal-agent" in response.message
+    assert response.message_metadata == {
+        "slash_command": "workflows",
+        "workflows": catalog,
+    }
+
+
+def test_help_slash_command_lists_builtin_and_workflow_commands(monkeypatch) -> None:
+    async def should_not_compile(*args, **kwargs):
+        raise AssertionError("Slash commands must not invoke the planner LLM.")
+
+    registry = SimpleNamespace(
+        get_catalog=lambda: [
+            {
+                "id": "thermal.quick_check",
+                "version": "2.1.0",
+                "display_name": "Quick Thermal Check",
+                "summary": "Run the agent's thermal checks.",
+                "category": "Thermal",
+                "requires_approval": False,
+                "estimated_duration_seconds": 30,
+                "owner": "thermal-agent",
+                "source": "agent_card",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(agent_module, "compile_query_plan", should_not_compile)
+    monkeypatch.setattr(agent_module, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: None)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(query="/help", conversation_id="conv-help")
+        )
+    )
+
+    assert response.status == "answer"
+    assert "Available commands (7)" in response.message
+    for command in ("agents", "artifacts", "forget", "help", "tasks", "workflows"):
+        assert f"`/{command}`" in response.message
+    assert "Workflow commands (1)" in response.message
+    assert "`/thermal_quick_check`" in response.message
+    assert response.message_metadata == {
+        "slash_command": "help",
+        "supported_commands": ["agents", "artifacts", "forget", "help", "tasks", "workflows"],
+        "workflow_commands": [
+            {
+                "command": "thermal_quick_check",
+                "workflow_id": "thermal.quick_check",
+                "workflow_version": "2.1.0",
+                "display_name": "Quick Thermal Check",
+            }
+        ],
+    }
 
 
 def test_workflow_slash_command_forces_explicit_workflow(monkeypatch) -> None:
@@ -952,27 +1186,43 @@ def test_ask_followup_dynamic_uses_pending_subagent_request() -> None:
         "conversation_history": [],
         "pending_subagent_requests": [
             {
-                "skill_id": "analyze_thermal",
+                "skill_id": "author_equipment_geometry",
                 "missing_inputs": [
                     {
-                        "name": "temperature_c",
-                        "description": "Operating temperature in Celsius at which the material should be evaluated.",
-                        "user_prompt": "What operating temperature should I use for the thermal analysis (in Celsius)?",
+                        "name": "hole_diameter",
+                        "description": "Diameter of each through-hole, in metres.",
+                        "user_prompt": "Hole diameter (m)",
                         "type": "number",
-                        "resolvable_from_context": True,
-                    }
+                        "options": None,
+                        "resolvable_from_context": False,
+                        "sensitive": False,
+                        "required": True,
+                    },
+                    {
+                        "name": "rod_diameter",
+                        "description": "Outer diameter of the actuator shaft, in metres.",
+                        "user_prompt": "Rod diameter (m)",
+                        "type": "number",
+                        "options": None,
+                        "resolvable_from_context": False,
+                        "sensitive": False,
+                        "required": True,
+                    },
                 ],
-                "hint": "Thermal analysis requires an operating temperature before it can proceed.",
+                "hint": "Butterfly valve dimensions required",
             },
         ],
     }
 
     result = asyncio.run(agent_module.ask_followup_dynamic(state))
 
-    question = result["conversation_history"][-1]["questions"][0]
-    assert question["field"] == "temperature_c"
-    assert question["type"] == "number"
-    assert result["missing_info"] == ["temperature_c"]
+    questions = result["conversation_history"][-1]["questions"]
+    assert [(question["field"], question["question"]) for question in questions] == [
+        ("hole_diameter", "Hole diameter (m)"),
+        ("rod_diameter", "Rod diameter (m)"),
+    ]
+    assert [question["type"] for question in questions] == ["number", "number"]
+    assert result["missing_info"] == ["hole_diameter", "rod_diameter"]
 
 
 def test_invoke_agent_generic_parallel_preserves_partial_results_on_exception(monkeypatch) -> None:
@@ -1067,6 +1317,8 @@ def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> 
                 {
                     "step_id": "step-1",
                     "skill_id": "skill_a",
+                    "_task_graph_root_id": "root-1",
+                    "_task_graph_node_id": "node-1",
                     "input_required": {
                         "missing_inputs": [{"name": "temperature_c", "type": "number"}],
                         "hint": "Need temperature",
@@ -1075,6 +1327,8 @@ def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> 
                 {
                     "step_id": "step-2",
                     "skill_id": "skill_b",
+                    "_task_graph_root_id": "root-1",
+                    "_task_graph_node_id": "node-2",
                     "input_required": {
                         "missing_inputs": [{"name": "pressure_mpa", "type": "number"}],
                         "hint": "Need pressure",
@@ -1105,6 +1359,8 @@ def test_execute_current_plan_surfaces_all_input_required_steps(monkeypatch) -> 
 
     pending = result["pending_subagent_requests"]
     assert [entry["skill_id"] for entry in pending] == ["skill_a", "skill_b"]
+    assert [entry["task_graph_node_id"] for entry in pending] == ["node-1", "node-2"]
+    assert {entry["task_graph_root_id"] for entry in pending} == {"root-1"}
     assert result["missing_info"] == ["temperature_c", "pressure_mpa"]
 
 
@@ -1152,11 +1408,188 @@ def test_plan_approval_persists_state_before_execution(monkeypatch) -> None:
     assert response.status == "completed"
 
 
+def test_single_execution_uses_latest_extracted_params(monkeypatch) -> None:
+    invoked: dict = {}
+
+    async def no_capability(skill_id):
+        return None
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        raise AssertionError("execution must not re-extract an already resolved plan")
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.update(params)
+        return {"skill_id": skill_id, "result": {"answer": "Nothing."}}
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=no_capability,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    result = asyncio.run(
+        agent_module.invoke_agent_generic(
+            {
+                "conversation_id": "conv-1",
+                "user_query": "What changed in the latest report?",
+                "routing_decision": {
+                    "primary_skill": "search_literature",
+                    "supporting_skills": [],
+                    "workflow_type": "single",
+                    "extracted_params": {"question": "What changed in the latest report?"},
+                    "capability_params": {
+                        "search_literature": {
+                            "question": "stale planning snapshot"
+                        }
+                    },
+                },
+                "context": {},
+                "conversation_history": [],
+            }
+        )
+    )
+
+    assert invoked["question"] == "What changed in the latest report?"
+    assert result["conversation_history"][-1]["tool_inputs"] == {
+        "search_literature": {"question": "What changed in the latest report?"}
+    }
+
+
+def test_sequential_execution_does_not_apply_relative_change_twice(monkeypatch) -> None:
+    invoked: dict[str, dict] = {}
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        if kwargs["capabilities"][0].skill_id == "author_equipment_geometry":
+            return {
+                "input_data": {
+                    "equipment_type": "butterfly_valve",
+                    "hole_diameter": 0.2,
+                }
+            }
+        return {"cad_artifact_id": "new-step"}
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked[skill_id] = dict(params)
+        if skill_id == "author_equipment_geometry":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "artifacts": [
+                        {
+                            "artifact_id": "new-step",
+                            "name": "updated.step",
+                            "mime_type": "application/step",
+                        }
+                    ]
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "completed"}}
+
+    schemas = {
+        "author_equipment_geometry": {
+            "type": "object",
+            "properties": {
+                "input_data": {
+                    "type": "object",
+                    "properties": {
+                        "equipment_type": {"type": "string"},
+                        "hole_diameter": {"type": "number"},
+                    },
+                }
+            },
+        },
+        "mesh_geometry": {
+            "type": "object",
+            "properties": {
+                "cad_artifact_id": {
+                    "type": "string",
+                    "x_artifact_ref": "single",
+                }
+            },
+        },
+    }
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return SimpleNamespace(
+            skill_id=skill_id,
+            input_schema=schemas[skill_id],
+            provides=None,
+        )
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    planned_author_params = {
+        "input_data": {
+            "equipment_type": "butterfly_valve",
+            "hole_diameter": 0.1,
+        }
+    }
+    state = {
+        "conversation_id": "conv-1",
+        "user_query": "Double the hole diameter, then mesh the updated valve.",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": planned_author_params,
+            "capability_params": {
+                "author_equipment_geometry": planned_author_params,
+            },
+            "operations": [
+                {
+                    "operation_id": "op_1",
+                    "description": "Double the valve hole diameter.",
+                    "depends_on": [],
+                },
+                {
+                    "operation_id": "op_2",
+                    "description": "Mesh the updated valve.",
+                    "depends_on": ["op_1"],
+                },
+            ],
+            "operation_coverage": {
+                "op_1": "author_equipment_geometry",
+                "op_2": "mesh_geometry",
+            },
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert invoked["author_equipment_geometry"]["input_data"]["hole_diameter"] == 0.1
+    assert invoked["mesh_geometry"]["cad_artifact_id"] == "new-step"
+
+
 def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) -> None:
-    """Sequential dataflow: a downstream skill's unfilled x_artifact_ref param
-    is bound to the artifact produced by the previous step (create SVG ->
-    convert to PNG)."""
+    """The canonical resolver maps an upstream artifact into the next schema."""
     captured_params: dict = {}
+    resolver_calls: list[dict] = []
 
     convert_schema = {
         "type": "object",
@@ -1183,10 +1616,31 @@ def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) 
 
     async def fake_get_capability_by_skill_id(skill_id):
         if skill_id == "convert_svg_to_png":
-            return SimpleNamespace(input_schema=convert_schema, provides=None)
+            return SimpleNamespace(
+                skill_id=skill_id,
+                input_schema=convert_schema,
+                provides=None,
+            )
         return None
 
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        resolver_calls.append(kwargs)
+        assert kwargs["query"] == "Convert the created SVG to PNG."
+        assert kwargs["history"][-1]["tool_results"]["create_svg_artifact"][
+            "artifacts"
+        ][0]["artifact_id"] == "svg-123"
+        assert [
+            artifact["artifact_id"]
+            for artifact in kwargs["context"]["artifacts"]
+        ] == ["svg-123"]
+        return {"artifact_id": "svg-123"}
+
     monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
     monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         agent_module,
@@ -1204,6 +1658,22 @@ def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) 
             "supporting_skills": ["convert_svg_to_png"],
             "workflow_type": "sequential",
             "extracted_params": {"word": "LBNL is a cool lab"},
+            "operations": [
+                {
+                    "operation_id": "op_1",
+                    "description": "Create an SVG.",
+                    "depends_on": [],
+                },
+                {
+                    "operation_id": "op_2",
+                    "description": "Convert the created SVG to PNG.",
+                    "depends_on": ["op_1"],
+                },
+            ],
+            "operation_coverage": {
+                "op_1": "create_svg_artifact",
+                "op_2": "convert_svg_to_png",
+            },
         },
         "context": {},
         "conversation_history": [],
@@ -1213,9 +1683,329 @@ def test_sequential_execution_binds_produced_artifact_to_next_step(monkeypatch) 
 
     # Step 2 received the artifact produced by step 1.
     assert captured_params["convert_svg_to_png"]["artifact_id"] == "svg-123"
-    # And upstream results were forwarded as before.
-    assert "upstream_results" in captured_params["convert_svg_to_png"]
+    assert len(resolver_calls) == 1
     assert "error" not in result["tool_results"]["convert_svg_to_png"]
+
+
+def test_sequential_execution_stops_when_step_requires_input(monkeypatch) -> None:
+    invoked: list[str] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append(skill_id)
+        if skill_id == "author_equipment_geometry":
+            return {
+                "skill_id": skill_id,
+                "input_required": {
+                    "missing_inputs": [
+                        {
+                            "name": "rod_diameter",
+                            "description": "Outer diameter of the actuator shaft, in metres.",
+                            "user_prompt": "Rod diameter (m)",
+                            "type": "number",
+                            "options": None,
+                            "resolvable_from_context": False,
+                            "sensitive": False,
+                            "required": True,
+                        }
+                    ],
+                    "hint": "Butterfly valve dimensions required",
+                },
+                "_a2a_context_id": "conv-1",
+                "_a2a_task_id": "task-1",
+                "_task_graph_root_id": "root-1",
+                "_task_graph_node_id": "node-1",
+            }
+        raise AssertionError("mesh_geometry must wait for the requested input.")
+
+    async def no_capability(skill_id):
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+            get_capability_by_skill_id=no_capability,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert invoked == ["author_equipment_geometry"]
+    assert result["missing_info"] == ["rod_diameter"]
+    assert result["pending_subagent_requests"] == [
+        {
+            "skill_id": "author_equipment_geometry",
+            "a2a_context_id": "conv-1",
+            "a2a_task_id": "task-1",
+            "task_graph_root_id": "root-1",
+            "task_graph_node_id": "node-1",
+            "missing_inputs": [
+                {
+                    "name": "rod_diameter",
+                    "description": "Outer diameter of the actuator shaft, in metres.",
+                    "user_prompt": "Rod diameter (m)",
+                    "type": "number",
+                    "options": None,
+                    "resolvable_from_context": False,
+                    "sensitive": False,
+                    "required": True,
+                }
+            ],
+            "hint": "Butterfly valve dimensions required",
+        }
+    ]
+
+
+def test_chat_continues_sequential_plan_after_pending_step_resumes(monkeypatch) -> None:
+    invoked: list[tuple[str, dict]] = []
+    stored: list[dict] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append((skill_id, params))
+        if skill_id == "author_equipment_geometry":
+            assert params["provided_inputs"] == {"rod_diameter": 0.08}
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "message": "CAD created",
+                    "artifacts": [{"artifact_id": "cad-1", "name": "valve.step"}],
+                },
+            }
+        if skill_id == "mesh_geometry":
+            assert [artifact["artifact_id"] for artifact in params["artifacts"]] == ["cad-1"]
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "message": "Mesh created",
+                    "artifacts": [{"artifact_id": "mesh-1", "name": "valve.exo"}],
+                },
+            }
+        raise AssertionError(f"Unexpected skill: {skill_id}")
+
+    async def no_capability(skill_id):
+        return None
+
+    existing_state = {
+        "conversation_id": "conv-valve",
+        "user_query": (
+            "create a cad geometry of a butterfly valve with a diameter of 90cm, "
+            "4 holes (10cm each), then mesh it"
+        ),
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+            "requires_approval": False,
+        },
+        "context": {},
+        "conversation_history": [],
+        "tool_results": {},
+        "missing_info": ["rod_diameter"],
+        "pending_subagent_requests": [
+            {
+                "skill_id": "author_equipment_geometry",
+                "a2a_context_id": "a2a-context-1",
+                "a2a_task_id": "a2a-task-1",
+                "missing_inputs": [
+                    {
+                        "name": "rod_diameter",
+                        "type": "number",
+                        "required": True,
+                    }
+                ],
+            }
+        ],
+    }
+
+    monkeypatch.setattr(agent_module, "get_conversation", lambda conversation_id: existing_state)
+    monkeypatch.setattr(
+        agent_module,
+        "store_conversation",
+        lambda conversation_id, state: stored.append(state.copy()),
+    )
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+            get_capability_by_skill_id=no_capability,
+        ),
+    )
+
+    response = asyncio.run(
+        agent_module.chat(
+            agent_module.ConversationRequest(
+                conversation_id="conv-valve",
+                followup_answers={"rod_diameter": 0.08},
+            )
+        )
+    )
+
+    assert response.status == "completed", response.message
+    assert [skill_id for skill_id, _ in invoked] == [
+        "author_equipment_geometry",
+        "mesh_geometry",
+    ]
+    assert set(response.tool_results) == {"author_equipment_geometry", "mesh_geometry"}
+    assert (
+        response.tool_results["author_equipment_geometry"]["artifacts"][0]["artifact_id"]
+        == "cad-1"
+    )
+    assert response.tool_results["mesh_geometry"]["artifacts"][0]["artifact_id"] == "mesh-1"
+    assert response.report == "CAD created\n\nMesh created"
+    assert stored[-1]["pending_subagent_requests"] == []
+    assert stored[-1]["routing_decision"]["primary_skill"] == "author_equipment_geometry"
+    assert stored[-1]["routing_decision"]["supporting_skills"] == ["mesh_geometry"]
+    author_invocations = [
+        entry["tool_inputs"]["author_equipment_geometry"]
+        for entry in stored[-1]["conversation_history"]
+        if "author_equipment_geometry" in (entry.get("tool_inputs") or {})
+    ]
+    assert author_invocations[-1]["provided_inputs"] == {"rod_diameter": 0.08}
+
+
+def test_resume_pending_subagent_request_preserves_task_graph_identity(
+    monkeypatch,
+) -> None:
+    captured: dict = {}
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        captured.update(params)
+        return {
+            "skill_id": skill_id,
+            "input_required": {
+                "missing_inputs": [
+                    {
+                        "name": "hole_diameter",
+                        "type": "number",
+                        "required": True,
+                    }
+                ],
+                "hint": "Hole diameter is still required",
+            },
+            "_a2a_context_id": "a2a-context-1",
+            "_a2a_task_id": "a2a-task-1",
+            "_task_graph_root_id": "root-1",
+            "_task_graph_node_id": "node-1",
+        }
+
+    monkeypatch.setattr(agent_module._execution, "invoke_skill", fake_invoke_skill)
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {"extracted_params": {}},
+        "context": {},
+        "conversation_history": [],
+        "tool_results": {},
+        "pending_subagent_requests": [
+            {
+                "skill_id": "author_equipment_geometry",
+                "a2a_context_id": "a2a-context-1",
+                "a2a_task_id": "a2a-task-1",
+                "task_graph_root_id": "root-1",
+                "task_graph_node_id": "node-1",
+                "missing_inputs": [
+                    {"name": "rod_diameter", "type": "number", "required": True}
+                ],
+                "hint": "Rod diameter is required",
+            }
+        ],
+    }
+
+    result = asyncio.run(
+        agent_module.resume_pending_subagent_requests(
+            state,
+            {"rod_diameter": "0.05"},
+        )
+    )
+
+    assert captured["_task_graph_root_id"] == "root-1"
+    assert captured["_task_graph_node_id"] == "node-1"
+    assert result["pending_subagent_requests"][0]["task_graph_root_id"] == "root-1"
+    assert result["pending_subagent_requests"][0]["task_graph_node_id"] == "node-1"
+
+
+def test_sequential_execution_continues_after_context_resolves_input(monkeypatch) -> None:
+    invoked: list[tuple[str, dict]] = []
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked.append((skill_id, params))
+        if skill_id == "author_equipment_geometry" and "provided_inputs" not in params:
+            return {
+                "skill_id": skill_id,
+                "input_required": {
+                    "missing_inputs": [
+                        {
+                            "name": "rod_diameter",
+                            "description": "Outer diameter of the actuator shaft, in metres.",
+                            "user_prompt": "Rod diameter (m)",
+                            "type": "number",
+                            "options": None,
+                            "resolvable_from_context": True,
+                            "sensitive": False,
+                            "required": True,
+                        },
+                    ],
+                    "hint": "Butterfly valve dimensions required",
+                },
+                "_a2a_context_id": "conv-1",
+                "_a2a_task_id": "task-1",
+            }
+        return {"skill_id": skill_id, "result": {"status": "completed"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return None
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_by_skill_id=lambda skill_id: None,
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {},
+        },
+        "context": {"rod_diameter": 0.05},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert [skill_id for skill_id, _ in invoked] == [
+        "author_equipment_geometry",
+        "author_equipment_geometry",
+        "mesh_geometry",
+    ]
+    assert invoked[1][1]["provided_inputs"] == {"rod_diameter": 0.05}
+    assert result.get("missing_info", []) == []
+    assert result["tool_results"]["mesh_geometry"] == {"status": "completed"}
 
 
 def test_sequential_execution_overrides_stale_planning_time_artifact_binding(monkeypatch) -> None:
@@ -1243,6 +2033,7 @@ def test_sequential_execution_overrides_stale_planning_time_artifact_binding(mon
         "required": ["artifact_id"],
     }
     schemas = {"revise_model": revise_schema, "mesh_model": mesh_schema}
+    resolver_contexts: dict[str, dict] = {}
 
     async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
         captured_params[skill_id] = params
@@ -1261,9 +2052,24 @@ def test_sequential_execution_overrides_stale_planning_time_artifact_binding(mon
 
     async def fake_get_capability_by_skill_id(skill_id):
         schema = schemas.get(skill_id)
-        return SimpleNamespace(input_schema=schema, provides=None) if schema else None
+        return (
+            SimpleNamespace(skill_id=skill_id, input_schema=schema, provides=None)
+            if schema
+            else None
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        skill_id = kwargs["capabilities"][0].skill_id
+        resolver_contexts[skill_id] = kwargs["context"]
+        assert kwargs["query"] == "Mesh the revised valve."
+        return {"artifact_id": "valve-revised", "element_type": "tet"}
 
     monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
     monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         agent_module,
@@ -1286,8 +2092,38 @@ def test_sequential_execution_overrides_stale_planning_time_artifact_binding(mon
                 "instructions": "reduce to 8 holes, five times larger",
                 "element_type": "tet",
             },
+            "capability_params": {
+                "revise_model": {
+                    "artifact_id": "valve-original",
+                    "instructions": "reduce to 8 holes, five times larger",
+                },
+                "mesh_model": {
+                    "artifact_id": "valve-original",
+                    "element_type": "tet",
+                },
+            },
+            "operations": [
+                {
+                    "operation_id": "op_1",
+                    "description": "Revise the valve.",
+                    "depends_on": [],
+                },
+                {
+                    "operation_id": "op_2",
+                    "description": "Mesh the revised valve.",
+                    "depends_on": ["op_1"],
+                },
+            ],
+            "operation_coverage": {
+                "op_1": "revise_model",
+                "op_2": "mesh_model",
+            },
         },
-        "context": {},
+        "context": {
+            "artifacts": [
+                {"artifact_id": "valve-original", "name": "valve.step"}
+            ]
+        },
         "conversation_history": [],
     }
 
@@ -1298,3 +2134,291 @@ def test_sequential_execution_overrides_stale_planning_time_artifact_binding(mon
     # ...and step 2 meshed the chain's own output — the revised model, not the
     # inherited original and not the side-artifact report.
     assert captured_params["mesh_model"]["artifact_id"] == "valve-revised"
+    assert [
+        artifact["artifact_id"]
+        for artifact in resolver_contexts["mesh_model"]["artifacts"]
+    ] == [
+        "valve-original",
+        "valve-revised",
+        "revision-report",
+    ]
+    assert resolver_contexts["mesh_model"]["_operation_dependencies"] == {
+        "revise_model": ["valve-revised", "revision-report"]
+    }
+
+
+def test_sequential_execution_uses_step_local_params_and_dependency_context(
+    monkeypatch,
+) -> None:
+    invoked: dict[str, dict] = {}
+    resolver_calls: list[dict] = []
+
+    author_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+        "required": ["message"],
+    }
+    mesh_schema = {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+            "cad_artifact_id": {
+                "type": "string",
+                "x_artifact_ref": "single",
+            },
+            "reference_artifact_id": {
+                "type": "string",
+                "x_artifact_ref": "single",
+            },
+        },
+        "required": ["message", "cad_artifact_id", "reference_artifact_id"],
+    }
+    schemas = {
+        "author_equipment_geometry": author_schema,
+        "mesh_geometry": mesh_schema,
+    }
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked[skill_id] = dict(params)
+        if skill_id == "author_equipment_geometry":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "message": "Authored updated valve.",
+                    "artifacts": [
+                        {
+                            "artifact_id": "new-step",
+                            "name": "updated.step",
+                            "mime_type": "application/step",
+                        }
+                    ],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "completed"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return SimpleNamespace(
+            skill_id=skill_id,
+            input_schema=schemas[skill_id],
+            provides=None,
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        resolver_calls.append(kwargs)
+        skill_id = kwargs["capabilities"][0].skill_id
+        assert kwargs["query"] == "Mesh the newly authored valve."
+        assert kwargs["existing_params"] == {
+            "message": "Use the prior mesh settings.", "reference_artifact_id": "old-step"
+        }
+        assert kwargs["history"][-1]["content"] == "Authored updated valve."
+        assert kwargs["history"][-1]["tool_results"][
+            "author_equipment_geometry"
+        ]["artifacts"][0]["artifact_id"] == "new-step"
+        assert [
+            artifact["artifact_id"]
+            for artifact in kwargs["context"]["artifacts"]
+        ] == ["old-step", "new-step"]
+        assert kwargs["context"]["_operation_dependencies"] == {
+            "author_equipment_geometry": ["new-step"]
+        }
+        return {
+            "message": "Mesh the STEP produced by the authoring step.",
+            "cad_artifact_id": "new-step",
+            "reference_artifact_id": "old-step",
+        }
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "user_query": "Make the holes larger, then mesh the updated valve.",
+        "routing_decision": {
+            "primary_skill": "author_equipment_geometry",
+            "supporting_skills": ["mesh_geometry"],
+            "workflow_type": "sequential",
+            "extracted_params": {
+                "message": "Re-author the valve with larger holes.",
+                "cad_artifact_id": "old-step",
+            },
+            "capability_params": {
+                "author_equipment_geometry": {
+                    "message": "stale authoring snapshot"
+                },
+                "mesh_geometry": {
+                    "message": "stale current planning params",
+                    "cad_artifact_id": "old-step",
+                },
+            },
+            "operations": [
+                {
+                    "operation_id": "op_1",
+                    "description": "Re-author the valve with larger holes.",
+                    "depends_on": [],
+                },
+                {
+                    "operation_id": "op_2",
+                    "description": "Mesh the newly authored valve.",
+                    "depends_on": ["op_1"],
+                },
+            ],
+            "operation_coverage": {
+                "op_1": "author_equipment_geometry",
+                "op_2": "mesh_geometry",
+            },
+        },
+        "context": {
+            "artifacts": [
+                {"artifact_id": "old-step", "name": "old-valve.step"}
+            ]
+        },
+        "prior_capability_params": {
+            "mesh_geometry": {
+                "message": "Use the prior mesh settings.",
+                "reference_artifact_id": "old-step",
+            }
+        },
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert invoked["author_equipment_geometry"]["message"] == (
+        "Re-author the valve with larger holes."
+    )
+    assert invoked["mesh_geometry"]["message"] == (
+        "Mesh the STEP produced by the authoring step."
+    )
+    assert invoked["mesh_geometry"]["cad_artifact_id"] == "new-step"
+    assert invoked["mesh_geometry"]["reference_artifact_id"] == "old-step"
+    assert len(resolver_calls) == 1
+    assert result["conversation_history"][-1]["tool_inputs"] == {
+        "author_equipment_geometry": {
+            "message": "Re-author the valve with larger holes."
+        },
+        "mesh_geometry": {
+            "message": "Mesh the STEP produced by the authoring step.",
+            "cad_artifact_id": "new-step",
+            "reference_artifact_id": "old-step",
+        },
+    }
+
+
+def test_sequential_execution_uses_text_only_step_result_for_next_inputs(
+    monkeypatch,
+) -> None:
+    """A downstream step can infer inputs from an agent's chat contribution."""
+    invoked: dict[str, dict] = {}
+
+    schemas = {
+        "search_literature": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        "configure_analysis": {
+            "type": "object",
+            "properties": {"element_size_mm": {"type": "number"}},
+            "required": ["element_size_mm"],
+        },
+    }
+
+    async def fake_invoke_skill(skill_id, params, conversation_id, emit_status=True):
+        invoked[skill_id] = dict(params)
+        if skill_id == "search_literature":
+            return {
+                "skill_id": skill_id,
+                "result": {
+                    "answer": "The literature recommends 2 mm elements.",
+                    "citations": ["paper-1"],
+                },
+            }
+        return {"skill_id": skill_id, "result": {"status": "configured"}}
+
+    async def fake_get_capability_by_skill_id(skill_id):
+        return SimpleNamespace(
+            skill_id=skill_id,
+            input_schema=schemas[skill_id],
+            provides=None,
+        )
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        skill_id = kwargs["capabilities"][0].skill_id
+        prior_turn = kwargs["history"][-1]
+        assert prior_turn["content"] == "The literature recommends 2 mm elements."
+        assert prior_turn["tool_results"]["search_literature"]["citations"] == [
+            "paper-1"
+        ]
+        assert kwargs["context"].get("artifacts") is None
+        assert kwargs["context"]["_operation_dependencies"] == {
+            "search_literature": []
+        }
+        return {"element_size_mm": 2.0}
+
+    monkeypatch.setattr(agent_module, "invoke_skill", fake_invoke_skill)
+    monkeypatch.setattr(
+        agent_module._execution,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
+    monkeypatch.setattr(agent_module, "store_status_update", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "get_capability_cache",
+        lambda: SimpleNamespace(
+            get_capability_by_skill_id=fake_get_capability_by_skill_id,
+            get_by_skill_id=lambda skill_id: None,
+        ),
+    )
+
+    state = {
+        "conversation_id": "conv-1",
+        "user_query": "Find a recommended element size and configure the analysis.",
+        "routing_decision": {
+            "primary_skill": "search_literature",
+            "supporting_skills": ["configure_analysis"],
+            "workflow_type": "sequential",
+            "extracted_params": {"query": "recommended mesh element size"},
+            "capability_params": {
+                "search_literature": {
+                    "query": "recommended mesh element size"
+                }
+            },
+            "operations": [
+                {
+                    "operation_id": "op_1",
+                    "description": "Find a recommended mesh element size.",
+                    "depends_on": [],
+                },
+                {
+                    "operation_id": "op_2",
+                    "description": "Configure the analysis from the recommendation.",
+                    "depends_on": ["op_1"],
+                },
+            ],
+            "operation_coverage": {
+                "op_1": "search_literature",
+                "op_2": "configure_analysis",
+            },
+        },
+        "context": {},
+        "conversation_history": [],
+    }
+
+    result = asyncio.run(agent_module.invoke_agent_generic(state))
+
+    assert invoked["configure_analysis"]["element_size_mm"] == 2.0
+    assert result["tool_results"]["configure_analysis"] == {"status": "configured"}

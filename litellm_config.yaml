@@ -1,10 +1,13 @@
 # LiteLLM Proxy Configuration
-# Used as the A2A agent gateway and optional LLM proxy.
+# Used as the A2A agent gateway and shared LLM proxy.
 # Agent registration is done at runtime via POST /v1/agents.
-# No LLM model_list entries are needed unless you also want LiteLLM to
-# proxy Anthropic / other LLM calls.
+# Runtime agents use the generic aliases configured here through LLMClient.
 
-model_list: []
+model_list:
+  - model_name: medium
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

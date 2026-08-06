@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import HumanMessage
+from prometheus_api import load_prompt
 
 from artifact_handling import collect_chain_required_paths
 from capability_cache import get_capability_cache
@@ -15,7 +14,7 @@ from param_schema import (
     is_user_input_schema,
 )
 from planner import PlanningResult, WorkflowPlanningCandidate, compile_plan_with_tools
-from workflow_library import get_workflow_registry, workflow_tool_name
+from workflow_library import get_workflow_registry, workflow_slug, workflow_tool_name
 
 from . import runtime
 from .models import AgentState
@@ -27,16 +26,58 @@ from .parameters import (
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
 )
-from .utils import enrich_material_params, extract_json_from_text, extract_material_ids_from_text
+from .parameter_extraction import extract_parameters_with_schemas
+from .utils import extract_json_from_text, extract_material_ids_from_text
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+PLAN_REFINEMENT_PROMPT_TEMPLATE = load_prompt(
+    "plan_refinement.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+def _capability_params(
+    selected_skills: List[str],
+    capabilities_by_skill: Dict[str, Any],
+    extracted_params: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Keep the exact prior inputs for each successful capability turn."""
+    result: Dict[str, Dict[str, Any]] = {}
+    for skill_id in selected_skills:
+        capability = capabilities_by_skill.get(skill_id)
+        schema = capability.input_schema if capability else {}
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        values = {
+            name: extracted_params[name]
+            for name in properties
+            if name in extracted_params
+        }
+        if values:
+            result[skill_id] = values
+    return result
 
 
-PLAN_REFINEMENT_PROMPT_TEMPLATE = _load_prompt("plan_refinement.txt")
+def _unsupported_message(planning_result: PlanningResult) -> str:
+    descriptions_by_id = {
+        operation.operation_id: operation.description
+        for operation in planning_result.operations
+    }
+    descriptions = [
+        descriptions_by_id.get(item.operation_id, item.operation_id)
+        for item in planning_result.unsupported_operations
+    ]
+    if not descriptions:
+        return "I can't complete this request because it contains an unsupported operation."
+    if len(descriptions) == 1:
+        return (
+            "I can't complete this request because no registered capability supports: "
+            f"{descriptions[0]}."
+        )
+    return (
+        "I can't complete this request because no registered capabilities support these operations: "
+        + "; ".join(descriptions)
+        + "."
+    )
 
 
 def _unique_workflow_skills(workflow) -> List[str]:
@@ -70,6 +111,24 @@ def _workflow_candidate_from_template(
     )
 
 
+def _workflow_named_in_query(query: str, workflows: List[Any]) -> Optional[Any]:
+    normalized_query = f"_{workflow_slug(query)}_"
+    matches: List[Any] = []
+    for workflow in workflows:
+        definition = workflow.definition
+        labels = {
+            str(definition.id or "").strip(),
+            str(definition.name or "").strip(),
+            str(definition.ui.display_name or "").strip(),
+        }
+        if any(
+            label and f"_{workflow_slug(label)}_" in normalized_query
+            for label in labels
+        ):
+            matches.append(workflow)
+    return matches[0] if len(matches) == 1 else None
+
+
 async def compile_query_plan(
     state: AgentState,
     explicit_workflow_id: Optional[str] = None,
@@ -81,6 +140,10 @@ async def compile_query_plan(
     query = state.get("user_query", "") or ""
     conversation_history = state.get("conversation_history", [])
     context = state.get("context", {}) or {}
+    planning_context = dict(context)
+    prior_capability_params = state.get("prior_capability_params")
+    if isinstance(prior_capability_params, dict) and prior_capability_params:
+        planning_context["prior_capability_params"] = prior_capability_params
     conversation_id = state.get("conversation_id")
     runtime.store_status_update(
         conversation_id,
@@ -96,40 +159,62 @@ async def compile_query_plan(
     matched_workflow = None
     workflow_candidates: List[WorkflowPlanningCandidate] = []
     if workflow_registry is not None:
+        registered_workflows = workflow_registry.list_all()
         workflow_candidates = [
             _workflow_candidate_from_template(workflow)
-            for workflow in workflow_registry.list_all()
+            for workflow in registered_workflows
         ]
+        selected = None
         if explicit_workflow_id:
             selected = workflow_registry.get(explicit_workflow_id, version=explicit_workflow_version)
-            if selected:
-                matched_workflow = selected
-                selected_candidate = _workflow_candidate_from_template(
-                    selected,
-                    score=1.0,
-                    selection_source=selection_source or "catalog",
-                    extracted_params=seed_params,
-                )
-                workflow_candidates = [
-                    selected_candidate,
-                    *[
-                        candidate
-                        for candidate in workflow_candidates
-                        if not (
-                            candidate.workflow_id == selected_candidate.workflow_id
-                            and candidate.workflow_version == selected_candidate.workflow_version
-                        )
-                    ],
-                ]
+        else:
+            selected = _workflow_named_in_query(query, registered_workflows)
+            if selected is not None:
+                explicit_workflow_id = selected.definition.id
+                explicit_workflow_version = selected.definition.version
+                selection_source = "workflow_name"
+        if selected:
+            matched_workflow = selected
+            selected_candidate = _workflow_candidate_from_template(
+                selected,
+                score=1.0,
+                selection_source=selection_source or "catalog",
+                extracted_params=seed_params,
+            )
+            workflow_candidates = [
+                selected_candidate,
+                *[
+                    candidate
+                    for candidate in workflow_candidates
+                    if not (
+                        candidate.workflow_id == selected_candidate.workflow_id
+                        and candidate.workflow_version == selected_candidate.workflow_version
+                    )
+                ],
+            ]
 
-    # Catalog-selected workflows bypass matcher/router selection and resolve requirements directly.
+    # Explicit workflow selections bypass matcher/router selection and resolve requirements directly.
     if explicit_workflow_id and matched_workflow is not None:
         runtime.store_status_update(
             conversation_id,
             f"Using selected workflow template '{matched_workflow.definition.id}'.",
         )
         selected_skills = _unique_workflow_skills(matched_workflow)
-        extracted_params = enrich_material_params(query, seed_params)
+        runtime.store_status_update(
+            conversation_id,
+            "Extracting parameters with selected capability schemas.",
+        )
+        extracted_params = await extract_parameters_with_schemas(
+            query=query,
+            capabilities=[
+                capabilities_by_skill[skill_id]
+                for skill_id in selected_skills
+                if skill_id in capabilities_by_skill
+            ],
+            history=conversation_history,
+            context=planning_context,
+            existing_params=seed_params,
+        )
         extracted_params = await resolve_params_via_capability_metadata(
             query=query,
             extracted_params=extracted_params,
@@ -176,11 +261,16 @@ async def compile_query_plan(
             "needs_clarification": False,
             "clarification_question": None,
             "extracted_params": extracted_params,
-            "reasoning": f"Catalog-selected workflow {matched_workflow.definition.id}",
+            "reasoning": f"Selected workflow {matched_workflow.definition.id}",
             "agent_url": None,
             "requires_approval": requires_approval,
             "required_params": required_params,
             "missing_required_params": missing_required_params,
+            "capability_params": _capability_params(
+                selected_skills,
+                capabilities_by_skill,
+                extracted_params,
+            ),
         }
         plan_steps = [
             f"Step {idx}: Invoke '{step.skill_id}' ({step.id})"
@@ -221,13 +311,25 @@ async def compile_query_plan(
         query=query,
         capabilities=capabilities,
         history=conversation_history,
-        context=context,
+        context=planning_context,
         workflow_candidates=workflow_candidates,
         forced_workflow_id=explicit_workflow_id,
         forced_workflow_version=explicit_workflow_version,
         forced_selection_source=selection_source,
         status_callback=lambda msg: runtime.store_status_update(conversation_id, msg),
     )
+
+    if planning_result.outcome == "unsupported":
+        message = _unsupported_message(planning_result)
+        runtime.store_status_update(
+            conversation_id,
+            "Request contains unsupported operations; no capabilities were invoked.",
+            final=True,
+        )
+        return {
+            "is_fallback": True,
+            "fallback_message": message,
+        }
 
     if planning_result.outcome == "fallback" or (
         not planning_result.primary_skill and not planning_result.workflow_id
@@ -239,6 +341,7 @@ async def compile_query_plan(
             "fallback_message": message,
         }
 
+    resolved_query = planning_result.resolved_query or query
     selected_skills: List[str] = [planning_result.primary_skill]
     for skill_id in planning_result.supporting_skills:
         if skill_id and skill_id not in selected_skills:
@@ -302,9 +405,23 @@ async def compile_query_plan(
     if selected_workflow_candidate and selected_workflow_candidate.extracted_params:
         extracted_seed.update(selected_workflow_candidate.extracted_params)
     extracted_seed.update(planning_result.extracted_params)
-    extracted_params = enrich_material_params(query, extracted_seed)
+    runtime.store_status_update(
+        conversation_id,
+        "Extracting parameters with selected capability schemas.",
+    )
+    extracted_params = await extract_parameters_with_schemas(
+        query=resolved_query,
+        capabilities=[
+            capability
+            for capability in chain_capabilities
+            if capability is not None
+        ],
+        history=conversation_history,
+        context=planning_context,
+        existing_params=extracted_seed,
+    )
     extracted_params = await resolve_params_via_capability_metadata(
-        query=query,
+        query=resolved_query,
         extracted_params=extracted_params,
         selected_skills=selected_skills,
         context=context,
@@ -384,12 +501,29 @@ async def compile_query_plan(
         "needs_clarification": False,
         "clarification_question": None,
         "extracted_params": extracted_params,
-        "reasoning": planning_result.reasoning or planning_result.message or query,
+        "reasoning": planning_result.reasoning or planning_result.message or resolved_query,
         "agent_url": primary_capability.agent_url if primary_capability else None,
         "requires_approval": requires_approval,
         "required_params": required_params,
         "missing_required_params": missing_required_params,
+        "operations": [
+            operation.model_dump()
+            for operation in planning_result.operations
+        ],
+        "operation_coverage": dict(planning_result.operation_coverage),
     }
+    if planning_result.resolution_kind:
+        routing_decision["turn_resolution"] = {
+            "kind": planning_result.resolution_kind,
+            "standalone_request": resolved_query,
+            "referenced_invocation_id": planning_result.referenced_invocation_id,
+        }
+    if selected_workflow is not None:
+        routing_decision["capability_params"] = _capability_params(
+            selected_skills,
+            capabilities_by_skill,
+            extracted_params,
+        )
     if planning_result.workflow_type == "workflow_template" and planning_result.workflow_id:
         runtime.store_status_update(
             conversation_id,
@@ -423,7 +557,7 @@ async def compile_query_plan(
         "context": merged_context,
         "question": extracted_params.get("question"),
         "plan": {
-            "intent": planning_result.reasoning or planning_result.message or query,
+            "intent": planning_result.reasoning or planning_result.message or resolved_query,
             "workflow_type": planning_result.workflow_type,
             "workflow_id": planning_result.workflow_id,
             "workflow_version": planning_result.workflow_version,
@@ -433,6 +567,10 @@ async def compile_query_plan(
             "missing_info": missing_required_params,
             "estimated_duration_seconds": estimated_duration,
             "param_metadata": param_metadata,
+            "operations": [
+                operation.model_dump()
+                for operation in planning_result.operations
+            ],
         },
         "missing_info": missing_required_params,
         "planner_message": planning_result.message,
@@ -521,9 +659,9 @@ async def extract_refinement_param_updates(
         param_schema_json=json.dumps(param_schema, indent=2, default=str),
     )
 
-    llm = runtime.create_llm()
-    response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
-    parsed = extract_json_from_text(response.content)
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+    parsed = extract_json_from_text(response.text)
     if not isinstance(parsed, dict):
         return {}
 

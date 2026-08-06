@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage
+from prometheus_api import load_prompt
 
+from artifact_handling import (
+    extract_artifact_field_paths,
+    merge_artifacts_into_context,
+    summarize_artifacts_for_context,
+)
 from capability_cache import get_capability_cache
-from param_schema import get_nested_value, has_param_path
+from param_schema import (
+    get_nested_value,
+    has_param_path,
+    normalize_params_for_input_schema,
+    set_nested_value,
+)
 from workflow_library import execute_workflow, get_workflow_registry, verify_workflow_source_health
 
 from . import runtime
@@ -25,8 +36,11 @@ from .parameters import (
     order_skills_for_workflow,
     resolve_params_via_capability_metadata,
 )
+from .parameter_extraction import (
+    ParameterExtractionError,
+    extract_parameters_with_schemas,
+)
 from .skills import invoke_skill
-from .step_transition import resolve_step_transition_params
 from .utils import (
     build_comparison_summary,
     collect_suggested_queries,
@@ -37,13 +51,254 @@ from .utils import (
 )
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = load_prompt(
+    "followup_extraction.txt",
+    prompts_dir=PROMPTS_DIR,
+)
 
 
-def _load_prompt(name: str) -> str:
-    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+def _task_graph_pending_fields(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy invoke-result Task Graph identity into persisted pending state."""
+    fields: Dict[str, Any] = {}
+    root_id = result.get("_task_graph_root_id")
+    node_id = result.get("_task_graph_node_id")
+    if root_id:
+        fields["task_graph_root_id"] = root_id
+    if node_id:
+        fields["task_graph_node_id"] = node_id
+    return fields
 
 
-FOLLOWUP_EXTRACTION_PROMPT_TEMPLATE = _load_prompt("followup_extraction.txt")
+def _task_graph_resume_params(pending: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate persisted Task Graph identity into invoke-only parameters."""
+    fields: Dict[str, Any] = {}
+    root_id = pending.get("task_graph_root_id")
+    node_id = pending.get("task_graph_node_id")
+    if root_id:
+        fields["_task_graph_root_id"] = root_id
+    if node_id:
+        fields["_task_graph_node_id"] = node_id
+    return fields
+
+
+def _operation_context(
+    routing_decision: Dict[str, Any],
+    skill_id: str,
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Return this skill's operations and the capabilities they depend on."""
+    operations = routing_decision.get("operations")
+    coverage = routing_decision.get("operation_coverage")
+    if not isinstance(operations, list) or not isinstance(coverage, dict):
+        return [], []
+
+    current = [
+        operation
+        for operation in operations
+        if isinstance(operation, dict)
+        and coverage.get(str(operation.get("operation_id") or "")) == skill_id
+    ]
+    dependency_skills: List[str] = []
+    for operation in current:
+        for dependency_id in operation.get("depends_on", []) or []:
+            dependency_skill = coverage.get(str(dependency_id))
+            if (
+                dependency_skill
+                and dependency_skill != skill_id
+                and dependency_skill not in dependency_skills
+            ):
+                dependency_skills.append(str(dependency_skill))
+    return current, dependency_skills
+
+
+def _operation_instruction(
+    operations: List[Dict[str, Any]],
+    fallback: str,
+) -> str:
+    """Use the planned operation as the current automatic-step instruction."""
+    descriptions = [
+        str(operation.get("description") or "").strip()
+        for operation in operations
+        if str(operation.get("description") or "").strip()
+    ]
+    if not descriptions:
+        return fallback
+    if len(descriptions) == 1:
+        return descriptions[0]
+    return "Complete these planned operations:\n- " + "\n- ".join(descriptions)
+
+
+def _invocation_seed(
+    state: AgentState,
+    skill_id: str,
+    dependency_skills: List[str],
+    fallback: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Use current plan inputs for roots and prior actual inputs for transitions."""
+    if not dependency_skills:
+        return copy.deepcopy(fallback)
+    prior_params = state.get("prior_capability_params")
+    if not isinstance(prior_params, dict):
+        return {}
+    prior = prior_params.get(skill_id)
+    return copy.deepcopy(prior) if isinstance(prior, dict) else {}
+
+
+def _invocation_context(
+    context: Dict[str, Any],
+    dependency_skills: List[str],
+    artifacts_by_skill: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """Add derived dependency provenance without restricting the catalog."""
+    current = dict(context)
+    if dependency_skills:
+        current["_operation_dependencies"] = {
+            dependency: [
+                artifact["artifact_id"]
+                for artifact in summarize_artifacts_for_context(
+                    artifacts_by_skill.get(dependency, [])
+                )
+            ]
+            for dependency in dependency_skills
+        }
+    return current
+
+
+def _schema_seed(
+    params: Dict[str, Any],
+    input_schema: Dict[str, Any],
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Limit planning candidates to the target schema and eligible artifacts."""
+    normalized = normalize_params_for_input_schema(params, input_schema)
+    properties = input_schema.get("properties", {}) or {}
+    seed = {
+        name: copy.deepcopy(normalized[name])
+        for name in properties
+        if name in normalized
+    }
+    allowed_ids = {
+        str(artifact.get("artifact_id") or "")
+        for artifact in summarize_artifacts_for_context(context.get("artifacts"))
+    }
+    allowed_ids.discard("")
+    for path, mode in extract_artifact_field_paths(input_schema).items():
+        value = get_nested_value(seed, path)
+        if mode == "multiple" and isinstance(value, list):
+            set_nested_value(seed, path, [item for item in value if str(item) in allowed_ids])
+        elif value is not None and str(value) not in allowed_ids:
+            set_nested_value(seed, path, None)
+    return seed
+
+
+def _validate_artifact_references(
+    params: Dict[str, Any],
+    input_schema: Dict[str, Any],
+    context: Dict[str, Any],
+) -> None:
+    """Reject artifact references that were not offered to the resolver."""
+    allowed_ids = {
+        str(artifact.get("artifact_id") or "")
+        for artifact in summarize_artifacts_for_context(context.get("artifacts"))
+    }
+    allowed_ids.discard("")
+    for path, mode in extract_artifact_field_paths(input_schema).items():
+        value = get_nested_value(params, path)
+        if value is None:
+            continue
+        values = value if mode == "multiple" and isinstance(value, list) else [value]
+        invalid = [str(item) for item in values if str(item) not in allowed_ids]
+        if invalid:
+            raise ParameterExtractionError(
+                f"Resolved input '{path}' references an ineligible artifact."
+            )
+
+
+async def _resolve_invocation_params(
+    *,
+    skill_id: str,
+    instruction: str,
+    history: List[Dict[str, Any]],
+    context: Dict[str, Any],
+    seed_params: Dict[str, Any],
+    conversation_id: str,
+) -> Dict[str, Any]:
+    """Resolve one dynamic invocation through the canonical schema extractor."""
+    capability = await get_capability_cache().get_capability_by_skill_id(skill_id)
+    input_schema = getattr(capability, "input_schema", None)
+    if not capability or not isinstance(input_schema, dict) or not input_schema:
+        return attach_artifact_context(seed_params, context)
+
+    seed = _schema_seed(seed_params, input_schema, context)
+    runtime.store_status_update(
+        conversation_id,
+        f"Resolving current inputs for '{skill_id}'.",
+    )
+    resolved = await extract_parameters_with_schemas(
+        query=instruction,
+        capabilities=[capability],
+        history=history,
+        context=context,
+        existing_params=seed,
+        replace_existing=True,
+    )
+    _validate_artifact_references(resolved, input_schema, context)
+    return attach_artifact_context(resolved, context)
+
+
+async def _prepare_invocation_params(
+    *,
+    skill_id: str,
+    instruction: str,
+    history: List[Dict[str, Any]],
+    context: Dict[str, Any],
+    seed_params: Dict[str, Any],
+    dependency_skills: List[str],
+    conversation_id: str,
+) -> Dict[str, Any]:
+    """Resolve only inputs that can change after an upstream step completes."""
+    if not dependency_skills:
+        capability = await get_capability_cache().get_capability_by_skill_id(skill_id)
+        input_schema = getattr(capability, "input_schema", None)
+        if isinstance(input_schema, dict) and input_schema:
+            seed_params = _schema_seed(seed_params, input_schema, context)
+            _validate_artifact_references(seed_params, input_schema, context)
+        return attach_artifact_context(seed_params, context)
+    return await _resolve_invocation_params(
+        skill_id=skill_id,
+        instruction=instruction,
+        history=history,
+        context=context,
+        seed_params=seed_params,
+        conversation_id=conversation_id,
+    )
+
+
+def _result_artifacts(result: Any) -> List[Dict[str, Any]]:
+    """Return artifacts emitted by one successful capability result."""
+    if not isinstance(result, dict):
+        return []
+    return [artifact for artifact in (result.get("artifacts") or []) if isinstance(artifact, dict)]
+
+
+def _transcript_entry(
+    skill_id: str,
+    result: Any,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Represent an automatic step exactly like a completed conversational turn."""
+    recorded_params = {
+        key: copy.deepcopy(value)
+        for key, value in params.items()
+        if key != "artifacts" and not key.startswith("_")
+    }
+    return {
+        "role": "assistant",
+        "content": extract_result_text(result),
+        "type": f"agent_response_{skill_id}",
+        "tool_inputs": {skill_id: recorded_params},
+        "tool_results": {skill_id: result},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _tool_results_have_errors(tool_results: Dict[str, Any]) -> bool:
@@ -84,16 +339,18 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
     """
     routing_decision = state.get("routing_decision", {})
     selected_skills = order_skills_for_workflow(routing_decision)
-    params = attach_artifact_context(
-        routing_decision.get("extracted_params", {}),
-        state.get("context", {}),
-    )
+    context = dict(state.get("context", {}) or {})
+    seed_params = dict(routing_decision.get("extracted_params", {}) or {})
+    working_history = list(state.get("conversation_history", []) or [])
+    working_context = dict(context)
+    artifacts_by_skill: Dict[str, List[Dict[str, Any]]] = {}
+    invocation_inputs: Dict[str, Dict[str, Any]] = {}
     workflow_type = routing_decision.get("workflow_type", "single")
     conversation_id = state.get("conversation_id", str(uuid.uuid4()))
 
     print(
         f"[DEBUG] invoke_agent_generic: workflow_type={workflow_type}, "
-        f"skills={selected_skills}, params={params}"
+        f"skills={selected_skills}, seed_params={seed_params}"
     )
     runtime.store_status_update(
         conversation_id,
@@ -113,15 +370,41 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
         }
 
     try:
+        context_resolution_attempted_skills: set[str] = set()
         # Execute skills based on workflow type
         if workflow_type == "parallel" and len(selected_skills) > 1:
-            # Parallel: invoke all skills concurrently. return_exceptions=True so
-            # one failing skill cannot cancel its siblings and discard their
-            # partial results; escaped exceptions are folded into per-skill
-            # error items (invoke_skill already returns error dicts for the
-            # common failure paths).
+            parallel_operations = {
+                skill_id: _operation_context(routing_decision, skill_id)
+                for skill_id in selected_skills
+            }
+            resolved_inputs = await asyncio.gather(
+                *[
+                    _prepare_invocation_params(
+                        skill_id=skill_id,
+                        instruction=_operation_instruction(
+                            parallel_operations[skill_id][0],
+                            state.get("user_query", ""),
+                        ),
+                        history=working_history,
+                        context=working_context,
+                        seed_params=_invocation_seed(
+                            state,
+                            skill_id,
+                            parallel_operations[skill_id][1],
+                            seed_params,
+                        ),
+                        dependency_skills=parallel_operations[skill_id][1],
+                        conversation_id=conversation_id,
+                    )
+                    for skill_id in selected_skills
+                ]
+            )
+            invocation_inputs.update(zip(selected_skills, resolved_inputs))
             gathered = await asyncio.gather(
-                *[invoke_skill(skill_id, params, conversation_id) for skill_id in selected_skills],
+                *[
+                    invoke_skill(skill_id, invoke_params, conversation_id)
+                    for skill_id, invoke_params in zip(selected_skills, resolved_inputs)
+                ],
                 return_exceptions=True,
             )
             invocation_results = [
@@ -131,78 +414,120 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                 for skill_id, item in zip(selected_skills, gathered)
             ]
         elif workflow_type == "sequential" and len(selected_skills) > 1:
-            # Sequential: invoke skills in order, passing results between them
-            invocation_results = []
-            previous_results: Dict[str, Any] = {}
-            produced_artifacts: List[Dict[str, Any]] = []
-            chain_steps: List[Dict[str, Any]] = []
-            cache = get_capability_cache()
-            for step_index, skill_id in enumerate(selected_skills):
-                invoke_params = dict(params)
-                if previous_results:
-                    # Pass upstream results to downstream skills
-                    invoke_params["upstream_results"] = previous_results
-                if chain_steps:
-                    # Sequential dataflow: an LLM maps the chain's outputs so
-                    # far (result text and artifact metadata) onto this step's
-                    # input schema — binding artifact references and filling
-                    # params an earlier step only stated in prose. Falls back
-                    # to deterministic metadata matching on LLM failure.
-                    capability = await cache.get_capability_by_skill_id(skill_id)
-                    invoke_params = await resolve_step_transition_params(
-                        skill_id=skill_id,
-                        capability=capability,
-                        params=invoke_params,
-                        chain_steps=chain_steps,
-                        produced_artifacts=produced_artifacts,
-                        user_query=state.get("user_query", ""),
-                        conversation_id=conversation_id,
-                    )
-                item = await invoke_skill(skill_id, invoke_params, conversation_id)
-                invocation_results.append(item)
-                if "result" in item:
-                    previous_results[skill_id] = item["result"]
-                    result_payload = item["result"]
-                    step_artifacts: List[Dict[str, Any]] = []
-                    if isinstance(result_payload, dict):
-                        known_ids = {a["artifact_id"] for a in produced_artifacts}
-                        first_in_step = True
-                        for artifact in result_payload.get("artifacts", []) or []:
-                            if not isinstance(artifact, dict):
-                                continue
-                            artifact_id = str(
-                                artifact.get("artifact_id") or artifact.get("artifactId") or ""
-                            ).strip()
-                            if not artifact_id or artifact_id in known_ids:
-                                continue
-                            record = {
-                                "artifact_id": artifact_id,
-                                "name": artifact.get("name"),
-                                "description": artifact.get("description"),
-                                "mime_type": artifact.get("mime_type")
-                                or artifact.get("mimeType"),
-                                "tags": artifact.get("tags"),
-                                "_step": step_index,
-                                "_primary": first_in_step,
-                            }
-                            produced_artifacts.append(record)
-                            step_artifacts.append(record)
-                            known_ids.add(artifact_id)
-                            first_in_step = False
-                    chain_steps.append(
-                        {
-                            "skill_id": skill_id,
-                            "result_text": extract_result_text(result_payload),
-                            "artifacts": step_artifacts,
-                        }
-                    )
-        else:
-            # Single: invoke skills one by one (no result passing)
+            # Sequential: each completed step becomes ordinary transcript and
+            # context before the same schema resolver prepares the next step.
             invocation_results = []
             for skill_id in selected_skills:
-                invocation_results.append(await invoke_skill(skill_id, params, conversation_id))
+                operations, dependency_skills = _operation_context(
+                    routing_decision,
+                    skill_id,
+                )
+                current_context = _invocation_context(
+                    working_context,
+                    dependency_skills,
+                    artifacts_by_skill,
+                )
+                invoke_params = await _prepare_invocation_params(
+                    skill_id=skill_id,
+                    instruction=_operation_instruction(
+                        operations,
+                        state.get("user_query", ""),
+                    ),
+                    history=working_history,
+                    context=current_context,
+                    seed_params=_invocation_seed(
+                        state,
+                        skill_id,
+                        dependency_skills,
+                        seed_params,
+                    ),
+                    dependency_skills=dependency_skills,
+                    conversation_id=conversation_id,
+                )
+                invocation_inputs[skill_id] = invoke_params
+                item = await invoke_skill(skill_id, invoke_params, conversation_id)
+                if item.get("input_required"):
+                    payload = item.get("input_required", {}) or {}
+                    missing_inputs = (
+                        payload.get("missing_inputs", [])
+                        if isinstance(payload, dict)
+                        else []
+                    )
+                    auto_resolved, _ = resolve_missing_inputs_from_state(
+                        state,
+                        missing_inputs,
+                    )
+                    if auto_resolved:
+                        item = await invoke_skill(
+                            skill_id,
+                            {
+                                **invoke_params,
+                                "provided_inputs": auto_resolved,
+                                "_a2a_context_id": item.get("_a2a_context_id"),
+                                "_a2a_task_id": item.get("_a2a_task_id"),
+                                **_task_graph_resume_params(item),
+                            },
+                            conversation_id,
+                            emit_status=False,
+                        )
+                        context_resolution_attempted_skills.add(skill_id)
+                invocation_results.append(item)
+                if item.get("input_required"):
+                    break
+                if "result" in item:
+                    result_payload = item["result"]
+                    artifacts_by_skill[skill_id] = _result_artifacts(result_payload)
+                    working_context = merge_artifacts_into_context(
+                        working_context,
+                        artifacts_by_skill[skill_id],
+                    )
+                    working_history.append(
+                        _transcript_entry(skill_id, result_payload, invoke_params)
+                    )
+        else:
+            invocation_results = []
+            for skill_id in selected_skills:
+                operations, dependency_skills = _operation_context(
+                    routing_decision,
+                    skill_id,
+                )
+                current_context = _invocation_context(
+                    working_context,
+                    dependency_skills,
+                    artifacts_by_skill,
+                )
+                invoke_params = await _prepare_invocation_params(
+                    skill_id=skill_id,
+                    instruction=_operation_instruction(
+                        operations,
+                        state.get("user_query", ""),
+                    ),
+                    history=working_history,
+                    context=current_context,
+                    seed_params=_invocation_seed(
+                        state,
+                        skill_id,
+                        dependency_skills,
+                        seed_params,
+                    ),
+                    dependency_skills=dependency_skills,
+                    conversation_id=conversation_id,
+                )
+                invocation_inputs[skill_id] = invoke_params
+                invocation_results.append(
+                    await invoke_skill(skill_id, invoke_params, conversation_id)
+                )
 
-        tool_results: Dict[str, Any] = {}
+        if workflow_type != "sequential" or len(selected_skills) <= 1:
+            for item in invocation_results:
+                if isinstance(item, dict) and "result" in item:
+                    skill_id = str(item.get("skill_id") or "")
+                    working_context = merge_artifacts_into_context(
+                        working_context,
+                        _result_artifacts(item["result"]),
+                    )
+
+        tool_results: Dict[str, Any] = dict(state.get("tool_results") or {})
         response_lines = []
         has_errors = False
         missing_required_params: List[str] = []
@@ -224,14 +549,17 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                     state,
                     missing_inputs,
                 )
+                if skill_id in context_resolution_attempted_skills:
+                    auto_resolved = {}
                 if auto_resolved:
                     resumed = await invoke_skill(
                         skill_id,
                         {
-                            **params,
+                            **invocation_inputs.get(skill_id, seed_params),
                             "provided_inputs": auto_resolved,
                             "_a2a_context_id": item.get("_a2a_context_id"),
                             "_a2a_task_id": item.get("_a2a_task_id"),
+                            **_task_graph_resume_params(item),
                         },
                         conversation_id,
                         emit_status=False,
@@ -246,6 +574,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                                 "skill_id": skill_id,
                                 "a2a_context_id": resumed.get("_a2a_context_id"),
                                 "a2a_task_id": resumed.get("_a2a_task_id"),
+                                **_task_graph_pending_fields(resumed),
                                 "missing_inputs": unresolved,
                                 "hint": payload.get("hint"),
                             })
@@ -261,6 +590,7 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
                         "skill_id": skill_id,
                         "a2a_context_id": item.get("_a2a_context_id"),
                         "a2a_task_id": item.get("_a2a_task_id"),
+                        **_task_graph_pending_fields(item),
                         "missing_inputs": unresolved,
                         "hint": payload.get("hint"),
                     })
@@ -313,6 +643,14 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
             "role": "assistant",
             "content": response_content,
             "type": response_type,
+            "tool_inputs": {
+                skill_id: {
+                    key: copy.deepcopy(value)
+                    for key, value in params.items()
+                    if key != "artifacts" and not key.startswith("_")
+                }
+                for skill_id, params in invocation_inputs.items()
+            },
             "tool_results": tool_results,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -326,8 +664,8 @@ async def invoke_agent_generic(state: AgentState) -> Dict:
         }
         if assistant_metadata:
             response_payload["message_metadata"] = assistant_metadata
-        merged_context = dict(state.get("context", {}) or {})
-        context_changed = False
+        merged_context = dict(working_context)
+        context_changed = merged_context != dict(state.get("context", {}) or {})
         cache = get_capability_cache()
         for skill_id, result_data in tool_results.items():
             capability = await cache.get_capability_by_skill_id(skill_id)
@@ -505,10 +843,10 @@ async def extract_followup_answers_from_query(state: AgentState, query: str) -> 
         missing_params_json=json.dumps(missing_params),
     )
 
-    llm = runtime.create_llm()
     runtime.store_status_update(state.get("conversation_id"), "Calling planner LLM to extract follow-up answers.")
-    response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
-    parsed = extract_json_from_text(response.content)
+    async with runtime.create_llm() as llm:
+        response = await llm.medium(prompt, temperature=0, max_tokens=4096)
+    parsed = extract_json_from_text(response.text)
     if not isinstance(parsed, dict):
         return {}
 
@@ -671,7 +1009,13 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
                 if auto_resolved and not unresolved:
                     resumed = await invoke_skill(
                         ir["skill_id"],
-                        {**input_params, "provided_inputs": auto_resolved},
+                        {
+                            **input_params,
+                            "provided_inputs": auto_resolved,
+                            "_a2a_context_id": ir.get("_a2a_context_id"),
+                            "_a2a_task_id": ir.get("_a2a_task_id"),
+                            **_task_graph_resume_params(ir),
+                        },
                         conversation_id,
                     )
                     if not resumed.get("input_required"):
@@ -681,13 +1025,16 @@ async def execute_current_plan(state: AgentState, *, start_message: str) -> Agen
                     unresolved = ir_payload.get("missing_inputs", []) if isinstance(ir_payload, dict) else []
                     ir = {**ir,
                           "_a2a_context_id": resumed.get("_a2a_context_id") or ir.get("_a2a_context_id"),
-                          "_a2a_task_id": resumed.get("_a2a_task_id") or ir.get("_a2a_task_id")}
+                          "_a2a_task_id": resumed.get("_a2a_task_id") or ir.get("_a2a_task_id"),
+                          "_task_graph_root_id": resumed.get("_task_graph_root_id") or ir.get("_task_graph_root_id"),
+                          "_task_graph_node_id": resumed.get("_task_graph_node_id") or ir.get("_task_graph_node_id")}
 
                 if unresolved:
                     still_pending.append({
                         "skill_id": ir["skill_id"],
                         "a2a_context_id": ir.get("_a2a_context_id"),
                         "a2a_task_id": ir.get("_a2a_task_id"),
+                        **_task_graph_pending_fields(ir),
                         "missing_inputs": unresolved,
                         "hint": ir_payload.get("hint") if isinstance(ir_payload, dict) else None,
                     })
@@ -907,6 +1254,7 @@ async def resume_pending_subagent_requests(
     still_pending: List[Dict[str, Any]] = []
     merged_context = dict(state.get("context", {}) or {})
     accumulated_tool_results = dict(state.get("tool_results") or {})
+    resumed_tool_inputs: Dict[str, Dict[str, Any]] = {}
     final_reports: List[str] = []
 
     for pending in pending_list:
@@ -933,16 +1281,19 @@ async def resume_pending_subagent_requests(
             if name in provided_inputs:
                 merged_context[name] = provided_inputs[name]
 
-        resumed = await invoke_skill(
-            skill_id,
-            {
-                **base_params,
-                "provided_inputs": provided_inputs,
-                "_a2a_context_id": pending.get("a2a_context_id"),
-                "_a2a_task_id": pending.get("a2a_task_id"),
-            },
-            conversation_id,
-        )
+        invoke_params = {
+            **base_params,
+            "provided_inputs": provided_inputs,
+            "_a2a_context_id": pending.get("a2a_context_id"),
+            "_a2a_task_id": pending.get("a2a_task_id"),
+            **_task_graph_resume_params(pending),
+        }
+        resumed = await invoke_skill(skill_id, invoke_params, conversation_id)
+        resumed_tool_inputs[skill_id] = {
+            key: copy.deepcopy(value)
+            for key, value in invoke_params.items()
+            if key != "artifacts" and not key.startswith("_")
+        }
 
         if resumed.get("input_required"):
             ir_payload = resumed.get("input_required", {}) or {}
@@ -951,6 +1302,7 @@ async def resume_pending_subagent_requests(
                 "skill_id": skill_id,
                 "a2a_context_id": resumed.get("_a2a_context_id"),
                 "a2a_task_id": resumed.get("_a2a_task_id"),
+                **_task_graph_pending_fields(resumed),
                 "missing_inputs": unresolved,
                 "hint": ir_payload.get("hint"),
             })
@@ -960,6 +1312,10 @@ async def resume_pending_subagent_requests(
         else:
             result_data = resumed.get("result", {})
             accumulated_tool_results[skill_id] = result_data
+            merged_context = merge_artifacts_into_context(
+                merged_context,
+                _result_artifacts(result_data),
+            )
             final_reports.append(extract_result_text(result_data))
 
     state["context"] = merged_context
@@ -986,6 +1342,7 @@ async def resume_pending_subagent_requests(
             if len(pending_list) == 1
             else "agent_response_multi_skill"
         ),
+        "tool_inputs": resumed_tool_inputs,
         "tool_results": accumulated_tool_results,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }]

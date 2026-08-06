@@ -2,19 +2,15 @@
 Data Agent - Specialist for nuclear material data retrieval
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
-import asyncio
 import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from anthropic import Anthropic
 from prometheus_api.agent import PrometheusAgent
+from prometheus_api.llm_client import LLMConfig
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
 ANALYSIS_PROMPT_TEMPLATE = """\
 You are a nuclear materials engineer. Analyze this material data and provide expert insights.
@@ -340,52 +336,46 @@ class MaterialDataAgent(PrometheusAgent):
             "regulatory_info": REGULATORY_INFO,
         }
 
-        if ANTHROPIC_API_KEY:
-            await self.send_status_update(
-                context=context,
-                event_queue=event_queue,
-                message="Generating expert interpretation.",
+        await self.send_status_update(
+            context=context,
+            event_queue=event_queue,
+            message="Generating expert interpretation.",
+        )
+        try:
+            prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+                material_id=material_id,
+                material_json=json.dumps(material, indent=2),
             )
-            try:
-                prompt = ANALYSIS_PROMPT_TEMPLATE.format(
-                    material_id=material_id,
-                    material_json=json.dumps(material, indent=2),
-                )
 
-                client = Anthropic(api_key=ANTHROPIC_API_KEY)
-                response = await asyncio.to_thread(
-                    client.messages.create,
-                    model=MODEL_NAME,
+            llm_config = LLMConfig.from_env()
+            if llm_config.proxy_url:
+                llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
+            async with self.llm_client(context, config=llm_config) as llm:
+                response = await llm.medium(
+                    prompt,
                     max_tokens=1024,
                     temperature=0.3,
-                    messages=[{"role": "user", "content": prompt}],
                 )
 
-                response_text = response.content[0].text
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0].strip()
+            response_text = response.text
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
 
-                base_data["ai_interpretation"] = json.loads(response_text)
-                base_data["model_used"] = MODEL_NAME
-                await self.send_status_update(
-                    context=context,
-                    event_queue=event_queue,
-                    message="Expert interpretation complete.",
-                )
-            except Exception as e:
-                base_data["ai_interpretation"] = {"error": f"Interpretation failed: {str(e)}"}
-                await self.send_status_update(
-                    context=context,
-                    event_queue=event_queue,
-                    message="Interpretation failed; returning base material data.",
-                )
-        else:
+            base_data["ai_interpretation"] = json.loads(response_text)
+            base_data["model_used"] = response.provider_model or response.model_alias
             await self.send_status_update(
                 context=context,
                 event_queue=event_queue,
-                message="No model API key configured; returning base material data.",
+                message="Expert interpretation complete.",
+            )
+        except Exception as e:
+            base_data["ai_interpretation"] = {"error": f"Interpretation failed: {str(e)}"}
+            await self.send_status_update(
+                context=context,
+                event_queue=event_queue,
+                message="Interpretation failed; returning base material data.",
             )
 
         return base_data

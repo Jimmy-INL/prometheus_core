@@ -35,6 +35,43 @@ CONVERT_SCHEMA = {
     "required": ["artifact_id"],
 }
 
+CORROSION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "material_id": {
+            "type": "string",
+            "description": "The unique identifier of the material to analyze",
+        },
+        "context": {
+            "type": "object",
+            "properties": {
+                "temperature_c": {
+                    "type": "number",
+                    "description": "Operating temperature in Celsius",
+                },
+                "pressure_mpa": {
+                    "type": "number",
+                    "description": "Operating pressure in MPa",
+                },
+            },
+            "required": ["temperature_c", "pressure_mpa"],
+        },
+    },
+    "required": ["material_id", "context"],
+}
+
+RUNTIME_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "material_id": {"type": "string"},
+        "tool_results": {
+            "type": "object",
+            "x_input_source": "runtime",
+        },
+    },
+    "required": ["material_id", "tool_results"],
+}
+
 CAPABILITIES = {
     "create_svg_artifact": SimpleNamespace(input_schema=CREATE_SCHEMA),
     "convert_svg_to_png": SimpleNamespace(input_schema=CONVERT_SCHEMA),
@@ -94,7 +131,7 @@ def test_sequential_plan_defers_downstream_artifact_refs():
     )
     assert selected["ok"] is True
 
-    tools["set_extracted_params"]({"word": "LBNL is a cool lab"})
+    draft.extracted_params = {"word": "LBNL is a cool lab"}
 
     status = tools["get_requirement_status"]()
     # artifact_id is produced by step 1 at runtime: deferred, not missing.
@@ -109,9 +146,8 @@ def test_sequential_plan_defers_downstream_artifact_refs():
     assert draft.workflow_type == "sequential"
 
 
-def test_single_plan_still_requires_artifact_refs():
-    """Invoking the converter alone (no upstream producer) must still demand
-    the artifact id, e.g. from the conversation's artifact catalog."""
+def test_single_plan_preserves_missing_artifact_ref_for_followup():
+    """A missing user-supplied artifact ref belongs in the incomplete plan."""
     draft = planner._PlanDraft()
     tools = _tools_by_name(draft)
 
@@ -124,7 +160,65 @@ def test_single_plan_still_requires_artifact_refs():
     assert status["deferred_runtime_paths"] == []
 
     finalized = tools["finalize_plan"]()
+    assert finalized == {
+        "ok": True,
+        "finalized": True,
+        "missing_paths": ["artifact_id"],
+    }
+    assert draft.finalized is True
+
+
+def test_plan_with_missing_user_fields_finalizes_for_followup_collection():
+    draft = planner._PlanDraft()
+    tools = planner._build_planning_tools(
+        draft,
+        {"analyze_corrosion": SimpleNamespace(input_schema=CORROSION_SCHEMA)},
+        context={},
+    )
+    funcs = {tool.name: tool.func for tool in tools}
+
+    funcs["select_capabilities"](
+        primary_skill="analyze_corrosion",
+        workflow_type="single",
+        reasoning="Analyze corrosion risk in high-temperature water",
+        confidence=0.95,
+    )
+    draft.extracted_params = {
+        "material_id": "SS316",
+        "context": {"temperature_c": 300},
+    }
+
+    finalized = funcs["finalize_plan"]()
+
+    assert finalized == {
+        "ok": True,
+        "finalized": True,
+        "missing_paths": ["context.pressure_mpa"],
+    }
+    assert draft.primary_skill == "analyze_corrosion"
+    assert draft.finalized is True
+
+
+def test_plan_with_unresolved_runtime_field_still_cannot_finalize():
+    draft = planner._PlanDraft()
+    tools = planner._build_planning_tools(
+        draft,
+        {"synthesize": SimpleNamespace(input_schema=RUNTIME_INPUT_SCHEMA)},
+        context={},
+    )
+    funcs = {tool.name: tool.func for tool in tools}
+
+    funcs["select_capabilities"](
+        primary_skill="synthesize",
+        workflow_type="single",
+    )
+    draft.extracted_params = {"material_id": "SS316"}
+
+    finalized = funcs["finalize_plan"]()
+
     assert finalized["ok"] is False
+    assert finalized["unresolved_runtime_paths"] == ["tool_results"]
+    assert draft.finalized is False
 
 
 def test_compile_query_plan_does_not_ask_for_deferred_artifact_ids(monkeypatch):
@@ -183,12 +277,21 @@ def test_compile_query_plan_does_not_ask_for_deferred_artifact_ids(monkeypatch):
             primary_skill="create_svg_artifact",
             supporting_skills=["convert_svg_to_png"],
             workflow_type="sequential",
-            extracted_params={"word": "LBNL is a cool lab"},
             reasoning="create then convert",
             confidence=0.9,
         )
 
     monkeypatch.setattr(planning_flow, "compile_plan_with_tools", fake_compile_plan_with_tools)
+
+    async def fake_extract_parameters_with_schemas(**kwargs):
+        assert kwargs["capabilities"] == [create_cap, convert_cap]
+        return {"word": "LBNL is a cool lab"}
+
+    monkeypatch.setattr(
+        planning_flow,
+        "extract_parameters_with_schemas",
+        fake_extract_parameters_with_schemas,
+    )
 
     state = {
         "conversation_id": "conv-1",
@@ -271,3 +374,97 @@ def test_compile_query_plan_does_not_auto_select_registered_workflow_on_fallback
     result = asyncio.run(planning_flow.compile_query_plan(state))
 
     assert result == {"is_fallback": True, "fallback_message": "ask a question"}
+
+
+def test_compile_query_plan_treats_exact_workflow_name_as_explicit_selection(monkeypatch):
+    import asyncio
+
+    from orchestrator import planning_flow
+
+    capability = SimpleNamespace(
+        skill_id="get_material_data",
+        skill_name="Get Material Data",
+        description="Retrieve material data.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "material_id": {"type": "string"},
+                "context": {
+                    "type": "object",
+                    "properties": {"temperature_c": {"type": "number"}},
+                },
+            },
+        },
+        requires_approval=False,
+        agent_url="http://data-agent:8000",
+        expected_duration_seconds=5,
+    )
+    workflow = SimpleNamespace(
+        required_input_paths=["material_id", "context.temperature_c"],
+        definition=SimpleNamespace(
+            id="comprehensive_material_analysis",
+            version="1.0.0",
+            name="Comprehensive Material Analysis",
+            description="Run the complete material analysis workflow.",
+            steps=[SimpleNamespace(id="retrieve", skill_id="get_material_data")],
+            execution=SimpleNamespace(mode="dag"),
+            metadata=SimpleNamespace(requires_approval=False, estimated_duration_seconds=30),
+            ui=SimpleNamespace(
+                display_name="Comprehensive Material Analysis",
+                summary="Complete material analysis.",
+                input_overrides={},
+            ),
+        ),
+    )
+
+    async def fake_get_capabilities():
+        return [capability]
+
+    async def fake_extract_parameters(**kwargs):
+        assert kwargs["query"] == "Do a comprehensive material analysis of SS347"
+        return {"material_id": "SS347"}
+
+    async def fake_resolve_params(**kwargs):
+        return kwargs["extracted_params"]
+
+    async def should_not_compile_with_llm(**kwargs):
+        raise AssertionError("Exact workflow-name selection must bypass the planner LLM.")
+
+    monkeypatch.setattr(
+        planning_flow,
+        "get_capability_cache",
+        lambda: SimpleNamespace(get_capabilities=fake_get_capabilities),
+    )
+    monkeypatch.setattr(planning_flow.runtime, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(
+        planning_flow,
+        "get_workflow_registry",
+        lambda: SimpleNamespace(
+            list_all=lambda: [workflow],
+            get=lambda workflow_id, version=None: workflow
+            if workflow_id == "comprehensive_material_analysis"
+            else None,
+        ),
+    )
+    monkeypatch.setattr(planning_flow, "extract_parameters_with_schemas", fake_extract_parameters)
+    monkeypatch.setattr(planning_flow, "resolve_params_via_capability_metadata", fake_resolve_params)
+    monkeypatch.setattr(planning_flow, "compile_plan_with_tools", should_not_compile_with_llm)
+    monkeypatch.setattr(planning_flow.runtime, "store_status_update", lambda *args, **kwargs: None)
+
+    result = asyncio.run(
+        planning_flow.compile_query_plan(
+            {
+                "conversation_id": "conv-material",
+                "user_query": "Do a comprehensive material analysis of SS347",
+                "conversation_history": [],
+                "context": {},
+            }
+        )
+    )
+
+    routing = result["routing_decision"]
+    assert routing["workflow_id"] == "comprehensive_material_analysis"
+    assert routing["workflow_type"] == "workflow_template"
+    assert routing["selection_source"] == "workflow_name"
+    assert routing["extracted_params"]["material_id"] == "SS347"
+    assert result["missing_info"] == ["context.temperature_c"]

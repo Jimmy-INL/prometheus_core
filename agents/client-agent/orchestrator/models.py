@@ -19,6 +19,7 @@ class AgentState(TypedDict):
     conversation_id: Optional[str]
     user_query: Optional[str]
     conversation_history: List[Dict]
+    prior_capability_params: Dict[str, Dict[str, Any]]
 
     # Dynamic routing decision
     routing_decision: Optional[Dict[str, Any]]  # Full RoutingDecision.to_dict()
@@ -29,7 +30,7 @@ class AgentState(TypedDict):
     awaiting_approval: bool
 
     # All pending INPUT_REQUIRED requests from subagents in the current invocation.
-    # Each entry has: skill_id, a2a_context_id, a2a_task_id, missing_inputs, hint.
+    # Each entry has: skill_id, A2A IDs, Task Graph IDs, missing_inputs, and hint.
     pending_subagent_requests: List[Dict[str, Any]]
 
     # Query parameters (extracted from routing decision)

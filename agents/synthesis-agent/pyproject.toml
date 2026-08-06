@@ -4,7 +4,5 @@ version = "0.1.0"
 description = "Synthesis specialist agent"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.18.0",
     "httpx>=0.26.0",
 ]
-

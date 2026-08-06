@@ -25,7 +25,7 @@ The frontend communicates directly with the client-agent via A2A protocol. The c
 | Service | Port | Stack |
 |---------|------|-------|
 | Chainlit Frontend | 8500 | Chainlit, VTK, pyyaml |
-| Client Agent | 8001 | LangGraph, Claude, A2A SDK |
+| Client Agent | 8001 | LangGraph, Prometheus LLMClient, A2A SDK |
 | LiteLLM Agent Gateway | 9977 | LiteLLM proxy + A2A routing |
 | Redis | 6379 | Factoids, conversation state |
 
@@ -45,8 +45,9 @@ for the schema, ownership model, and authoring rules.
 
 ```bash
 cp .env.example .env
-# Set: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET,
-#      LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, and LITELLM_LOCAL_PORT
+# Set: AGENT_SECRET, REDIS_PASSWORD, CHAINLIT_AUTH_SECRET, LITELLM_MASTER_KEY,
+#      LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT, LLM_CONFIG_PROFILE, and the
+#      provider keys referenced by the selected profile
 docker-compose up --build
 ```
 

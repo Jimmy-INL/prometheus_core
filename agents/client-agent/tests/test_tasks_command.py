@@ -14,18 +14,7 @@ CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
 
-# Stub heavy LLM deps so the orchestrator import chain loads (mirrors
-# test_execution_path.py); the /tasks path never touches them.
-if "langchain_anthropic" not in sys.modules:
-    _la = types.ModuleType("langchain_anthropic")
-    _la.ChatAnthropic = object
-    sys.modules["langchain_anthropic"] = _la
-if "langchain_core.messages" not in sys.modules:
-    _lc = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-    _msgs = types.ModuleType("langchain_core.messages")
-    _msgs.HumanMessage = _msgs.SystemMessage = _msgs.ToolMessage = object
-    sys.modules["langchain_core.messages"] = _msgs
-    _lc.messages = _msgs
+# Stub the remaining LangChain tool dependency; the /tasks path never touches it.
 if "langchain_core.tools" not in sys.modules:
     _tools = types.ModuleType("langchain_core.tools")
 
@@ -81,6 +70,9 @@ def test_tasks_list_renders_tree(populated: _FakeRedis) -> None:
     assert "corrosion_rate" in msg
     assert "Thermal sim" in msg
     assert "step 142/500" in msg  # working node surfaces its status
+    assert "```text\n" in msg
+    assert "\n  └─ " in msg
+    assert "\n```\n\nUse `/tasks <id>`" in msg
     # structured tree is attached for richer rendering
     assert isinstance(response.message_metadata["tasks"], list)
     assert response.message_metadata["tasks"][0]["task_id"] == "root"
@@ -92,6 +84,9 @@ def test_tasks_detail_by_id(populated: _FakeRedis) -> None:
     assert "Task therm" in response.message
     assert "thermal" in response.message
     assert "step 142/500" in response.message
+    assert response.message.startswith("Task therm\n\n```text\n")
+    assert "\n  state:   working\n" in response.message
+    assert response.message.endswith("\n```")
     assert response.message_metadata["task_id"] == "therm"
 
 

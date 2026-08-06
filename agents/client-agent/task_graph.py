@@ -52,7 +52,9 @@ def _client() -> redis.Redis:
 
         _redis_client = create_redis_client(ping=False)
         if _redis_client is None:
-            raise RuntimeError("Redis client could not be created; check REDIS_URL/REDIS_PASSWORD")
+            raise RuntimeError(
+                "Redis client could not be created; check REDIS_URL/REDIS_PASSWORD"
+            )
     return _redis_client
 
 
@@ -181,7 +183,9 @@ def list_roots(conversation_id: str) -> List[str]:
 
 def _publish_event(conversation_id: str, event: Dict[str, Any]) -> None:
     try:
-        _client().publish(events_channel(conversation_id), json.dumps(event, default=str))
+        _client().publish(
+            events_channel(conversation_id), json.dumps(event, default=str)
+        )
     except Exception as exc:
         logger.warning("[TASKGRAPH] Failed to publish event: %s", exc)
 
@@ -295,21 +299,29 @@ def update_own_state(
     if node is None:
         return None
 
-    if own_state is not None:
+    direct_changed = False
+    if own_state is not None and own_state != node.own_state:
         node.own_state = own_state
-    if message is not None:
+        direct_changed = True
+    if message is not None and message != node.last_status_message:
         node.last_status_message = message
-    if progress is not None:
+        direct_changed = True
+    if progress is not None and progress != node.progress:
         node.progress = progress
-    if is_background is not None:
+        direct_changed = True
+    if is_background is not None and is_background != node.is_background:
         node.is_background = is_background
-    if result_ref is not None:
+        direct_changed = True
+    if result_ref is not None and result_ref != node.result_ref:
         node.result_ref = result_ref
-    if error is not None:
+        direct_changed = True
+    if error is not None and error != node.error:
         node.error = error
-    save_node(node)
+        direct_changed = True
+    if direct_changed:
+        save_node(node)
 
-    return _reconcile(conversation_id, task_id)
+    return _reconcile(conversation_id, task_id, _direct_changed=direct_changed)
 
 
 def _root_of(conversation_id: str, task_id: str) -> str:
@@ -327,7 +339,9 @@ def _root_of(conversation_id: str, task_id: str) -> str:
     return current
 
 
-def _deepest_blocking_message(conversation_id: str, node: TaskNode, depth: int = 0) -> str:
+def _deepest_blocking_message(
+    conversation_id: str, node: TaskNode, depth: int = 0
+) -> str:
     """Derive a human message naming the deepest still-running descendant."""
     if depth > _MAX_PERCOLATE_DEPTH:
         return node.last_status_message
@@ -367,6 +381,7 @@ def _reconcile(
     task_id: str,
     _visited: Optional[set[str]] = None,
     _depth: int = 0,
+    _direct_changed: bool = False,
 ) -> Optional[TaskNode]:
     """Recompute a node's effective state and propagate changes to its parent.
 
@@ -403,7 +418,8 @@ def _reconcile(
         )
 
     changed = (
-        new_state != node.state
+        _direct_changed
+        or new_state != node.state
         or waiting_on != node.waiting_on
         or new_message != node.last_status_message
     )
@@ -437,6 +453,7 @@ def _reconcile(
             "state": new_state,
             "title": node.title,
             "message": node.last_status_message,
+            "progress": node.progress,
             "result_ref": node.result_ref,
             "ts": node.updated_at,
         },
@@ -472,6 +489,10 @@ def build_tree(conversation_id: str) -> List[Dict[str, Any]]:
     seen: set[str] = set()
     roots = [r for r in list_roots(conversation_id) if r in nodes]
     # Include any orphan nodes whose parent is missing, so nothing is hidden.
-    roots += [n.task_id for n in nodes.values() if not n.parent_task_id and n.task_id not in roots]
+    roots += [
+        n.task_id
+        for n in nodes.values()
+        if not n.parent_task_id and n.task_id not in roots
+    ]
     trees = [tree for r in roots if (tree := render(r, seen)) is not None]
     return trees

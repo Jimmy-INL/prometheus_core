@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from a2a.types import TaskState
+
 
 def _load_agent_module():
     here = Path(__file__).resolve()
@@ -36,12 +38,21 @@ def test_streaming_agent_emits_intermediate_status_update(monkeypatch):
     agent = mod.CorrosionAnalysisAgent(agent_name="Corrosion Analysis Agent")
 
     # Mock the LLM so _execute runs without network or credentials.
-    monkeypatch.setattr(mod, "ANTHROPIC_API_KEY", "test-key")
-    fake_response = SimpleNamespace(
-        content=[SimpleNamespace(text=json.dumps({"risk_level": "low", "confidence": 0.9}))]
-    )
-    fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_response))
-    monkeypatch.setattr(mod, "Anthropic", lambda **kwargs: fake_client)
+    class FakeLLM:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def medium(self, prompt, **kwargs):
+            return SimpleNamespace(
+                text=json.dumps({"risk_level": "low", "confidence": 0.9}),
+                provider_model="test-model",
+                model_alias="medium",
+            )
+
+    monkeypatch.setattr(agent, "llm_client", lambda *args, **kwargs: FakeLLM())
 
     # Stub base helpers that reach external state (Redis-backed context/catalog);
     # keep send_status_update real so we assert the actual emitted event.
@@ -72,7 +83,8 @@ def test_streaming_agent_emits_intermediate_status_update(monkeypatch):
     status_updates = [
         e
         for e in events
-        if type(e).__name__ == "TaskStatusUpdateEvent" and e.final is False
+        if type(e).__name__ == "TaskStatusUpdateEvent"
+        and e.status.state == TaskState.TASK_STATE_WORKING
     ]
     assert status_updates, "a streaming:true agent must emit a non-final status-update during _execute"
     # The analysis still completes normally.

@@ -163,4 +163,21 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - When replacing an implementation path, delete the obsolete path and tests instead of leaving quarantined fallback code.
+- Before adding a second state store or execution path, step back and test whether the existing abstraction can become canonical; prefer deleting compensating synchronization over layering another fix.
+- Treat dependency provenance as artifact-selection guidance, not an authorization boundary; keep the full conversation catalog available and validate selected IDs against it.
 - Raw A2A v1 callers use PascalCase JSON-RPC methods, ProtoJSON enum/part/configuration shapes, and `A2A-Version: 1.0`; keep the LiteLLM gateway at version 1.92.0 or newer.
+- A2A consumers must accept only exact v1 ProtoJSON enum, part, and payload shapes; reject malformed responses instead of normalizing legacy variants or inferring fields from prose.
+- Never place Markdown backticks inside shell command arguments; use shell-safe plain text or a non-shell file-editing interface.
+- Until identity-backed credential storage exists, each LLM-using agent selects its own LLM config and receives that config's provider keys; semantic model flavors remain hardcoded in agent code.
+- Run `gh` commands for `github.inl.gov` outside the network sandbox.
+- Never search or print `.env` files when inspecting configuration; query variable names without values or use example/config files that contain no secrets.
+- Route butterfly-valve revisions through `author_equipment_geometry` as parameterized re-authoring from conversation context; do not require existing-CAD ingestion or a separate revision skill.
+- Route streaming specialist progress through `SkillTracker` into Task Graph root events; render only root events in one bounded Chainlit Step to avoid child/root duplicates.
+- Derive cross-turn prior capability parameters from actual successful invocation `tool_inputs`; use planning-time `capability_params` only for legacy states without recorded inputs.
+- Freeze ordered operations before assigning dependencies; generate dependency schemas from those operation IDs so self- and forward-dependencies are structurally unavailable.
+- Treat remeshing and mesh-control changes as mesh-only work against existing CAD; select authoring only when the user requests CAD geometry, topology, or dimension changes.
+- When editing a repeated condition, include function-specific patch context and inspect the matched hunk before testing.
+- OpenAI function-tool parameter schemas must remain a top-level object without oneOf, anyOf, allOf, enum, const, or not; encode branch variants as separate function tools.
+- When explaining a logging change, distinguish lazy logger argument formatting from changes to the values being logged.
+- Treat the Chainlit backend and Chainlit UI as separate surfaces; React may still require the backend after the Chainlit UI stops being exposed or extended.
+- Prefix every GitHub PR review reply written by a code agent with 🤖 so reviewers can identify agent-authored text.
