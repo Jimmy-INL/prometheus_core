@@ -46,12 +46,14 @@ tooling.
 calling many LLM providers through OpenAI-compatible request and response
 formats.
 
-Prometheus uses LiteLLM in two related ways:
+Prometheus uses LiteLLM in two related ways selected by an installed or custom
+YAML configuration:
 
-- The LiteLLM proxy or gateway is the primary LLM access path and agent
-  registry, configured through `REGISTRY_URL`.
-- The Python `litellm` package is used by `LLMClient` for local fallback calls
-  when a LiteLLM registry/proxy is unreachable and `LLM_CONFIG_FILE` is set.
+- The installed `registry` profile routes aliases through the LiteLLM proxy or
+  gateway referenced by `REGISTRY_URL`.
+- The Python `litellm` package calls providers directly for profiles containing
+  `model_list`, such as `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, and
+  `openai`.
 
 ## MLflow
 

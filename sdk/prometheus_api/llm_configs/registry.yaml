@@ -1,0 +1,2 @@
+# Default Prometheus deployment: route semantic aliases through the LiteLLM registry.
+proxy_url: os.environ/REGISTRY_URL

@@ -27,6 +27,7 @@ from prometheus_api.llm_client import (
     redact_secrets,
 )
 from prometheus_api.llm_client.tracing import AMSC_API_KEY_ENV, enable_amsc_x_api_key
+from prometheus_api.llm_configs import get_llm_config_path
 
 
 def _fallback_yaml(tmp_path):
@@ -151,42 +152,62 @@ def _install_fake_mlflow(monkeypatch):
 
 def test_config_from_env(monkeypatch, tmp_path):
     config_path = tmp_path / "llm.yaml"
+    config_path.write_text("proxy_url: http://custom-proxy:4000\n", encoding="utf-8")
     env = {
         "REGISTRY_URL": " http://registry:4000 ",
         "LLM_CONFIG_FILE": str(config_path),
-        "LLM_DEFAULT_MODEL": "medium",
+        "LLM_CONFIG_PROFILE": " openai ",
         "LLM_DEBUG_LOG_MESSAGES": "true",
         "ENABLE_MLFLOW_TRACING": "true",
     }
 
     config = LLMConfig.from_env(env)
 
-    assert config.proxy_url == "http://registry:4000"
+    # REQ-005-14, BEH-005-05: an explicit file wins over a packaged profile.
+    assert config.proxy_url == "http://custom-proxy:4000"
     assert config.config_file == config_path
-    assert config.default_model == "medium"
     assert config.debug_log_messages is True
     assert config.enable_mlflow_tracing is True
 
-    monkeypatch.delenv("LLM_DEFAULT_MODEL", raising=False)
-    assert LLMConfig.from_env({}).default_model == "default"
+    profile_config = LLMConfig.from_env({"LLM_CONFIG_PROFILE": " openai "})
+    assert profile_config.config_file == get_llm_config_path("openai")
 
 
 def test_config_from_env_loads_default_dotenv(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("REGISTRY_URL", raising=False)
-    monkeypatch.delenv("LLM_DEFAULT_MODEL", raising=False)
     (tmp_path / ".env").write_text(
-        "REGISTRY_URL=http://from-dotenv:4000\n"
-        "LLM_DEFAULT_MODEL=large\n"
-        "ENABLE_MLFLOW_TRACING=true\n",
+        "REGISTRY_URL=http://from-dotenv:4000\nENABLE_MLFLOW_TRACING=true\n",
         encoding="utf-8",
     )
 
     config = LLMConfig.from_env()
 
+    # REQ-005-02, BEH-005-04: the default registry profile reads the local .env.
     assert config.proxy_url == "http://from-dotenv:4000"
-    assert config.default_model == "large"
+    assert config.config_file == get_llm_config_path("registry")
     assert config.enable_mlflow_tracing is True
+
+
+def test_default_registry_profile_reads_registry_url():
+    config = LLMConfig.from_env({"REGISTRY_URL": " http://registry:4000 "})
+
+    # BEH-005-04: REGISTRY_URL remains the default registry profile endpoint.
+    assert config.config_file == get_llm_config_path("registry")
+    assert config.proxy_url == "http://registry:4000"
+
+
+def test_config_resolves_proxy_url_from_yaml_env_reference(monkeypatch, tmp_path):
+    config_path = tmp_path / "proxy.yaml"
+    config_path.write_text("proxy_url: os.environ/CUSTOM_PROXY_URL\n", encoding="utf-8")
+    monkeypatch.setenv("CUSTOM_PROXY_URL", " https://proxy.example/v1 ")
+
+    config = LLMConfig(config_file=config_path)
+    overridden = LLMConfig(config_file=config_path, proxy_url="http://override:4000")
+
+    # REQ-005-15: YAML environment references resolve unless explicitly overridden.
+    assert config.proxy_url == "https://proxy.example/v1"
+    assert overridden.proxy_url == "http://override:4000"
 
 
 def test_fallback_yaml_parsing_resolves_env_refs(monkeypatch, tmp_path):
@@ -211,32 +232,33 @@ def test_local_development_example_config_parses():
     assert models["embedding"].provider_model
 
 
-def test_default_alias_uses_configured_default_model():
+def test_default_alias_is_fixed():
     requests: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/models":
-            return _proxy_response(request, _proxy_models("default", "medium"))
+            return _proxy_response(request, _proxy_models("default"))
         requests.append(json.loads(request.content))
         return _proxy_response(
             request,
             {
-                "model": "provider-medium",
+                "model": "provider-default",
                 "choices": [{"message": {"content": "handled"}}],
                 "usage": {"total_tokens": 4},
             },
         )
 
     client = LLMClient(
-        config=LLMConfig(proxy_url="http://proxy", default_model="medium"),
+        config=LLMConfig(proxy_url="http://proxy"),
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
     response = client("Summarize this.")
 
     assert response.text == "handled"
-    assert response.model_alias == "medium"
-    assert requests[0]["model"] == "medium"
+    # REQ-006-14: callers cannot configure away the agent-owned default flavor.
+    assert response.model_alias == "default"
+    assert requests[0]["model"] == "default"
 
 
 def test_alias_discovery_and_resolution_from_proxy():
@@ -267,7 +289,7 @@ def test_missing_default_alias_error_is_actionable():
     message = str(exc_info.value)
     assert "LLM alias 'default' is not available" in message
     assert "Available aliases: embedding, large, medium, small" in message
-    assert "Configure it in LiteLLM or fallback LLM_CONFIG_FILE" in message
+    assert "Configure it in LiteLLM or the selected LLM config file" in message
 
 
 def test_normalize_raw_string_and_message_list():

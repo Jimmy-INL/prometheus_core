@@ -144,3 +144,7 @@ config.local.py
 .secrets
 llm_config.yaml
 llm_config.local.yaml
+
+# AI stuff
+.claude
+.codegraph
