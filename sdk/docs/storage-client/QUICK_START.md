@@ -141,10 +141,16 @@ results = client.search.by_tags(["important", "urgent"])
 results = client.search.by_tags(["tag1", "tag2"], match_all=True)
 
 # Advanced search
-results = client.search.advanced_query({
-    "properties.status": "active",
-    "properties.priority": {"$gt": 5}
-})
+results = client.search.advanced_query(
+    filters=[
+        {
+            "filter": "properties",
+            "operator": "KEY_VALUE",
+            "json": '{"status": "active"}',
+        }
+    ],
+    project_ids=[client.config.project_id],
+)
 
 # Recent items
 recent = client.search.recent(limit=50)
@@ -319,10 +325,16 @@ print(f"Created {len(items)} items")
 ### Search and filter
 ```python
 # Find all active experiments
-results = client.search.advanced_query({
-    "properties.type": "experiment",
-    "properties.status": "active"
-})
+results = client.search.advanced_query(
+    filters=[
+        {
+            "filter": "properties",
+            "operator": "KEY_VALUE",
+            "json": '{"type": "experiment", "status": "active"}',
+        }
+    ],
+    project_ids=[client.config.project_id],
+)
 
 for item in results.items:
     print(f"{item.name}: {item.properties}")

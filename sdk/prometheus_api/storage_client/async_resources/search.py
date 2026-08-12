@@ -1,6 +1,6 @@
 """Async search resource."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from ..models.item import Item, Tag
 from ..models.pagination import Page, PageInfo
 from .base import AsyncBaseResource
@@ -31,22 +31,35 @@ class AsyncSearchResource(AsyncBaseResource):
         return self._parse_search_results(items, page, page_size)
 
     async def advanced_query(
-        self, filters: Dict[str, Any], page: int = 1, page_size: int = 100
+        self,
+        filters: List[Dict[str, Any]],
+        project_ids: List[int],
+        text_search: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 25,
     ) -> Page[Item]:
-        """Perform an advanced search with structured filters asynchronously."""
-        payload = {
-            "filters": filters,
-            "page": page,
-            "limit": page_size,
+        """Perform an advanced, server-paginated search asynchronously."""
+        if not 1 <= page_size <= 500:
+            raise ValueError("page_size must be between 1 and 500")
+        if page < 1:
+            raise ValueError("page must be 1 or greater")
+
+        params: Dict[str, Any] = {
+            "projects": project_ids,
+            "PageNumber": page,
+            "PageSize": page_size,
         }
+        if text_search:
+            params["textSearch"] = text_search
 
         response = await self._client._request(
             "POST",
-            f"/organizations/{self._client.config.organization_id}/query/advanced",
-            json=payload,
+            f"/organizations/{self._client.config.organization_id}/query/records/advanced/paginated",
+            params=params,
+            json=filters,
         )
 
-        return self._parse_search_results(response.json(), page, page_size)
+        return self._parse_paginated_results(response.json())
 
     async def by_tags(
         self, tags: List[str], match_all: bool = False, page: int = 1, page_size: int = 100
@@ -99,6 +112,20 @@ class AsyncSearchResource(AsyncBaseResource):
             total_count=total_count,
             has_next=page * page_size < total_count,
             has_previous=page > 1,
+        )
+
+        return Page(items=items, page_info=page_info)
+
+    def _parse_paginated_results(self, data: Dict[str, Any]) -> Page[Item]:
+        """Parse a PaginatedResponse<QueryRecordViewResponseDto> payload."""
+        items = [self._parse_item(item_data) for item_data in data["items"]]
+
+        page_info = PageInfo(
+            page_number=data["pageNumber"],
+            page_size=data["pageSize"],
+            total_count=data["totalCount"],
+            has_next=data["hasNext"],
+            has_previous=data["hasPrevious"],
         )
 
         return Page(items=items, page_info=page_info)

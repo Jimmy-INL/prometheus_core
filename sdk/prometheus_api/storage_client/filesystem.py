@@ -12,6 +12,7 @@ import time
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+import json as json_lib
 
 from fsspec import AbstractFileSystem
 from fsspec.callbacks import DEFAULT_CALLBACK
@@ -670,42 +671,37 @@ class DeepLynxFileSystem(AbstractFileSystem):
         return self._filter_prefix(scanned, prefix, require_version=require_version)
 
     def _search_exact_with_advanced(self, path: str) -> List[Item]:
-        """Attempt exact-path lookup via advanced-query filter variants."""
-        candidates: List[Item] = []
-        filters: List[Dict[Any, Any]] = [
-            {f"properties.{self.META_MANAGED}": True, f"properties.{self.META_PATH}": path},
-            {"properties": {self.META_MANAGED: True, self.META_PATH: path}},
-            {self.META_MANAGED: True, self.META_PATH: path},
+        """Attempt exact-path lookup via advanced-query jsonb containment filter."""
+        filters: List[Dict[str, Any]] = [
+            {
+                "filter": "properties",
+                "operator": "KEY_VALUE",
+                "json": json_lib.dumps({self.META_MANAGED: True, self.META_PATH: path}),
+            }
         ]
-        for payload in filters:
-            candidates.extend(self._search_advanced_items(payload))
-            if candidates:
-                break
-        return candidates
+        return self._search_advanced_items(filters)
 
     def _search_prefix_with_advanced(self, prefix: str) -> List[Item]:
-        """Attempt prefix lookup via broad managed-record advanced query."""
-        # Prefix filtering is applied client-side because advanced filter
-        # support differs across DeepLynx deployments.
+        """Attempt broad managed-record lookup; prefix filtering happens client-side."""
         _ = prefix
-        filters: List[Dict[Any, Any]] = [
-            {f"properties.{self.META_MANAGED}": True},
-            {"properties": {self.META_MANAGED: True}},
-            {self.META_MANAGED: True},
+        filters: List[Dict[str, Any]] = [
+            {
+                "filter": "properties",
+                "operator": "KEY_VALUE",
+                "json": json_lib.dumps({self.META_MANAGED: True}),
+            }
         ]
-        for payload in filters:
-            items = self._search_advanced_items(payload)
-            if items:
-                return items
-        return []
+        return self._search_advanced_items(filters)
 
-    def _search_advanced_items(self, filters: Dict[Any, Any]) -> List[Item]:
+    def _search_advanced_items(self, filters: List[Dict[str, Any]]) -> List[Item]:
         """Run paginated advanced search and return flattened item list."""
         items: List[Item] = []
+        project_ids = [self._client.config.project_id]
         for page in range(1, self._search_max_pages + 1):
             try:
                 result = self._client.search.advanced_query(
                     filters=filters,
+                    project_ids=project_ids,
                     page=page,
                     page_size=self._search_page_size,
                 )
