@@ -12,7 +12,7 @@ Test coverage and `⚠ untested` handling should follow
 - `ConnectionConfig` centralizes DeepLynx org/project, auth, data source, timeout, retry, and SSL settings.
 - Storage resource classes own endpoint contracts for items, tags, search, files, relationships, and timeseries data.
 - `DeepLynxFileSystem` exposes DeepLynx file records as an `fsspec` `deeplynx://` filesystem.
-- `prometheus_api.llm_client` routes chat and embedding calls through [LiteLLM](../docs/DEPENDENCIES.md#litellm) proxy aliases with YAML fallback.
+- `prometheus_api.llm_client` routes chat and embedding calls through installed [LiteLLM](../docs/DEPENDENCIES.md#litellm) YAML profiles for a registry proxy or direct providers.
 - LLM normalization, secret redaction, [A2A](../docs/DEPENDENCIES.md#agent2agent-a2a) credential extraction, and optional [MLflow](../docs/DEPENDENCIES.md#mlflow) tracing sit behind provider-agnostic response models.
 - `prometheus_api.agent` lets specialist agents subclass `PrometheusAgent` while the base handles A2A execution, app wiring, auth, and registry registration.
 - Agent helpers emit status updates, input-required messages, worker-thread progress, and native A2A artifacts.
@@ -27,7 +27,7 @@ Test coverage and `⚠ untested` handling should follow
 | 002 | Storage items, tags, search, and pagination | implemented | Item CRUD, tag resolution, search APIs, model parsing, and sync/async parity. |
 | 003 | Storage files, relationships, and timeseries | implemented | File upload/download, chunked uploads, relationship APIs, and timeseries calls. |
 | 004 | DeepLynx fsspec filesystem | implemented | `deeplynx://` path semantics, metadata versioning, lookup fallbacks, and deletion. |
-| 005 | LLM configuration and aliases | implemented | Environment config, fallback YAML parsing, proxy alias discovery, and alias errors. |
+| 005 | LLM configuration and aliases | implemented | Installed YAML profiles, environment selection, proxy/direct aliases, and alias errors. |
 | 006 | LLM chat and embeddings | implemented | Sync/async chat and embedding calls, proxy/fallback execution, and response shaping. |
 | 007 | LLM security and tracing | implemented | Secret redaction, A2A-provided API keys, prompt-safe debug logging, and MLflow tracing. |
 | 008 | Agent app, card, auth, and registry | implemented | Agent card loading, workflow injection, Starlette routes, bearer auth, and LiteLLM registration. |

@@ -127,9 +127,9 @@ an explicit config.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `REGISTRY_URL` | LiteLLM registry/proxy URL for the primary path. Aliases are discovered from `/v1/models`, and calls are sent through `/v1/chat/completions` or `/v1/embeddings`. | - | Recommended |
-| `LLM_CONFIG_FILE` | LiteLLM YAML fallback config. Used only when the proxy cannot be reached. | - | No |
-| `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` and `llm.chat(..., model=None)`. | `default` | No |
+| `LLM_CONFIG_PROFILE` | Installed configuration profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai`. | `registry` | No |
+| `LLM_CONFIG_FILE` | Custom LiteLLM YAML path. This overrides `LLM_CONFIG_PROFILE`. | - | No |
+| `REGISTRY_URL` | LiteLLM registry/proxy URL referenced by the installed `registry` profile. | - | For `registry` |
 | `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |
 | `ENABLE_MLFLOW_TRACING` | Enable optional MLflow tracing for sync and async LLM chat calls. | `false` | No |
 
@@ -137,11 +137,17 @@ an explicit config.
 
 ```bash
 REGISTRY_URL=http://litellm:4000
-LLM_CONFIG_FILE=./llm_config.yaml
-LLM_DEFAULT_MODEL=default
+LLM_CONFIG_PROFILE=registry
 LLM_DEBUG_LOG_MESSAGES=false
 ENABLE_MLFLOW_TRACING=false
 ```
+
+Every configuration is a YAML file. Selection order is `LLM_CONFIG_FILE`, then
+`LLM_CONFIG_PROFILE`, then the installed `registry` profile. The `registry`
+profile contains `proxy_url: os.environ/REGISTRY_URL`; the provider profiles
+contain the `default`, `small`, `medium`, `large`, `vision`, and `embedding`
+flavors and read credentials from environment variables. Agent code chooses a
+flavor; it never chooses the provider model mapped to that flavor.
 
 ### Optional MLflow Tracing
 
@@ -154,10 +160,10 @@ Configure the tracking server with standard MLflow variables:
 ENABLE_MLFLOW_TRACING=true
 MLFLOW_TRACKING_URI=https://mlflow.example.org
 MLFLOW_EXPERIMENT_NAME=prometheus-llm
-AM_SC_API_KEY=your-amsc-api-key
+AMSC_I2_API_KEY=your-amsc-api-key
 ```
 
-When `AM_SC_API_KEY` is present, the client injects it into MLflow REST calls as
+When `AMSC_I2_API_KEY` is present, the client injects it into MLflow REST calls as
 `X-Api-Key`. If it is absent, the client logs a warning and continues.
 
 Each chat trace includes protected `app_name`, `base_url`, and `model` tags.
@@ -165,7 +171,8 @@ Agents should use `self.llm_client(context)` so `app_name` inherits the agent
 name. Additional tags can be set when constructing `LLMConfig`, creating the
 client, or calling `chat(..., trace_tags={...})`; protected tags always win.
 
-Create the local fallback YAML from the tracked example:
+To customize a profile without modifying the installed package, copy the
+tracked example:
 
 ```bash
 cp llm_config.example.yaml llm_config.yaml
@@ -174,7 +181,7 @@ cp llm_config.example.yaml llm_config.yaml
 `llm_config.yaml` is gitignored so developers can edit provider models for their own
 machine without committing local configuration.
 
-### Fallback LiteLLM YAML
+### Custom LiteLLM YAML
 
 The repository includes a fully commented local development template at
 `llm_config.example.yaml`. The minimal shape is:
@@ -185,7 +192,7 @@ model_list:
     litellm_params:
       model: openai/gpt-5-mini
       api_key: os.environ/OPENAI_API_KEY
-      # Optional: override the fallback provider endpoint
+      # Optional: override the direct provider endpoint
       # api_base: http://localhost:8000/v1
 
   - model_name: small
@@ -207,9 +214,9 @@ model_list:
       # api_base: http://localhost:8000/v1
 ```
 
-`api_base` is optional and applies only to fallback SDK calls made from
-`LLM_CONFIG_FILE`. It is useful for local OpenAI-compatible servers or private
-provider gateways. Proxy calls continue to use `REGISTRY_URL`.
+`api_base` is optional and applies to direct provider SDK calls made from the
+selected configuration. A configuration may instead contain a top-level
+`proxy_url`; `os.environ/NAME` references are resolved in both locations.
 
 ### LLMClient Usage
 
@@ -328,14 +335,14 @@ AGENT_SECRET_REQUIRED=true
 REGISTRY_URL=http://litellm:4000
 
 # ===== LLMClient Configuration =====
-# REGISTRY_URL is also used by LLMClient for chat, vision, and embedding calls.
-LLM_CONFIG_FILE=./llm_config.yaml
-LLM_DEFAULT_MODEL=default
+# The default profile reads REGISTRY_URL for chat, vision, and embedding calls.
+LLM_CONFIG_PROFILE=registry
+# LLM_CONFIG_FILE=./llm_config.yaml  # overrides the installed profile
 LLM_DEBUG_LOG_MESSAGES=false
 ENABLE_MLFLOW_TRACING=false
 # MLFLOW_TRACKING_URI=https://mlflow.example.org
 # MLFLOW_EXPERIMENT_NAME=prometheus-llm
-# AM_SC_API_KEY=your-amsc-api-key
+# AMSC_I2_API_KEY=your-amsc-api-key
 
 # ===== StorageClient Configuration =====
 DEEPLYNX_KEY=your-api-key

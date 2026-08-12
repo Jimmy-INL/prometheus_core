@@ -39,13 +39,24 @@ logger = logging.getLogger(__name__)
 
 StatusCallback = Callable[[str], Awaitable[None]]
 BackgroundCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+_TASK_STATES = {
+    "TASK_STATE_UNSPECIFIED",
+    "TASK_STATE_SUBMITTED",
+    "TASK_STATE_WORKING",
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_INPUT_REQUIRED",
+    "TASK_STATE_AUTH_REQUIRED",
+}
 _STOPPING_STATES = {
-    "completed",
-    "failed",
-    "canceled",
-    "rejected",
-    "input_required",
-    "auth_required",
+    "TASK_STATE_COMPLETED",
+    "TASK_STATE_FAILED",
+    "TASK_STATE_CANCELED",
+    "TASK_STATE_REJECTED",
+    "TASK_STATE_INPUT_REQUIRED",
+    "TASK_STATE_AUTH_REQUIRED",
 }
 
 
@@ -67,20 +78,45 @@ def extract_status_message_text(status_payload: Any) -> str:
     parts = message.get("parts", []) if isinstance(message, dict) else []
     for part in parts:
         if not isinstance(part, dict):
+            raise A2AStreamError("A2A v1 status message Part must be an object")
+        unexpected = set(part) - {
+            "text",
+            "raw",
+            "url",
+            "data",
+            "metadata",
+            "filename",
+            "mediaType",
+        }
+        if unexpected:
+            raise A2AStreamError(
+                f"A2A v1 status message Part has unsupported fields: {sorted(unexpected)}"
+            )
+        content_fields = [field for field in ("text", "raw", "url", "data") if field in part]
+        if len(content_fields) != 1:
+            raise A2AStreamError(
+                "A2A v1 status message Part must contain exactly one content field"
+            )
+        if content_fields[0] != "text":
             continue
         text = part.get("text")
+        if not isinstance(text, str):
+            raise A2AStreamError("A2A v1 status message Part.text must be a string")
         if isinstance(text, str) and text.strip():
             return text.strip()
     return ""
 
 
-def _normalize_task_state(status: Dict[str, Any]) -> Dict[str, Any]:
-    """Keep the helper's app-facing state strings stable across A2A versions."""
-    normalized = dict(status)
-    state = normalized.get("state")
-    if isinstance(state, str) and state.startswith("TASK_STATE_"):
-        normalized["state"] = state.removeprefix("TASK_STATE_").lower()
-    return normalized
+def _validate_task_status(status: Any) -> Dict[str, Any]:
+    """Return an exact A2A v1 status or reject its malformed task state."""
+    if not isinstance(status, dict):
+        raise A2AStreamError("A2A v1 task status must be an object")
+    state = status.get("state")
+    if state not in _TASK_STATES:
+        raise A2AStreamError(
+            "A2A v1 task status.state must be an exact TASK_STATE_* ProtoJSON value"
+        )
+    return dict(status)
 
 
 def merge_artifacts(
@@ -117,16 +153,30 @@ async def apply_stream_event(
     if "error" in envelope:
         raise A2AStreamError(f"Agent error: {envelope['error']}")
 
-    result = envelope.get("result", {})
+    result = envelope.get("result")
     if not isinstance(result, dict):
-        return a2a_result
+        raise A2AStreamError("A2A v1 stream envelope result must be an object")
 
-    if isinstance(result.get("task"), dict):
+    payload_fields = [
+        field for field in ("task", "message", "statusUpdate", "artifactUpdate") if field in result
+    ]
+    if len(payload_fields) != 1:
+        raise A2AStreamError("A2A v1 stream result must contain exactly one StreamResponse payload")
+    payload_field = payload_fields[0]
+    if payload_field == "message":
+        raise A2AStreamError(
+            "Prometheus streaming agents must return a task, not a standalone message"
+        )
+
+    if payload_field == "task":
         task = result["task"]
+        if not isinstance(task, dict):
+            raise A2AStreamError("A2A v1 StreamResponse.task must be an object")
         a2a_result["id"] = task.get("id") or a2a_result.get("id")
         a2a_result["contextId"] = task.get("contextId") or a2a_result.get("contextId")
-        if isinstance(task.get("status"), dict):
-            a2a_result["status"] = _normalize_task_state(task["status"])
+        if "status" not in task:
+            raise A2AStreamError("A2A v1 Task.status is required")
+        a2a_result["status"] = _validate_task_status(task["status"])
         if isinstance(task.get("artifacts"), list):
             a2a_result["artifacts"] = merge_artifacts(
                 a2a_result.get("artifacts", []),
@@ -134,16 +184,14 @@ async def apply_stream_event(
             )
         return a2a_result
 
-    status_update = result.get("statusUpdate")
-    artifact_update = result.get("artifactUpdate")
-    if isinstance(status_update, dict):
-        event = status_update
+    if payload_field == "statusUpdate":
+        event = result["statusUpdate"]
         event_type = "status"
-    elif isinstance(artifact_update, dict):
-        event = artifact_update
-        event_type = "artifact"
     else:
-        return a2a_result
+        event = result["artifactUpdate"]
+        event_type = "artifact"
+    if not isinstance(event, dict):
+        raise A2AStreamError(f"A2A v1 StreamResponse.{payload_field} must be an object")
 
     # Heartbeat keepalives only hold the connection open; they carry no
     # payload, so skip them before they can overwrite accumulated state.
@@ -162,19 +210,20 @@ async def apply_stream_event(
     if event_type == "status":
         a2a_result["id"] = event.get("taskId") or a2a_result.get("id")
         a2a_result["contextId"] = event.get("contextId") or a2a_result.get("contextId")
-        a2a_result["status"] = _normalize_task_state(event.get("status", {}))
+        a2a_result["status"] = _validate_task_status(event.get("status"))
         status_text = extract_status_message_text(a2a_result["status"])
-        state = str(a2a_result["status"].get("state") or "").lower()
+        state = a2a_result["status"]["state"]
         is_stopping = state in _STOPPING_STATES
         if status_callback and status_text and not is_stopping:
             await status_callback(status_text)
     else:
         artifact = event.get("artifact")
-        if isinstance(artifact, dict):
-            a2a_result["artifacts"] = merge_artifacts(
-                a2a_result.get("artifacts", []),
-                [artifact],
-            )
+        if not isinstance(artifact, dict):
+            raise A2AStreamError("A2A v1 artifactUpdate.artifact must be an object")
+        a2a_result["artifacts"] = merge_artifacts(
+            a2a_result.get("artifacts", []),
+            [artifact],
+        )
 
     return a2a_result
 

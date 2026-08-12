@@ -12,7 +12,7 @@ Provide provider-agnostic sync and async chat/embedding APIs that hide LiteLLM p
 - REQ-006-02: Chat input normalization MUST reject empty strings, empty lists, non-dict message entries, missing `role`/`content`, empty roles, and empty string content.
 - REQ-006-03: Embedding input normalization MUST accept a non-empty string or non-empty list of non-empty strings and MUST report whether the original input was a single string.
 - REQ-006-04: `LLMClient.__call__` and `AsyncLLMClient.__call__` MUST delegate to `chat(...)`.
-- REQ-006-05: Chat methods MUST select `model` or `config.default_model`, pass normalized messages and caller kwargs to the backend, and return `ChatResponse`.
+- REQ-006-05: Retired. The default flavor is fixed rather than configurable through `LLMConfig`.
 - REQ-006-06: Convenience methods `small`, `medium`, `large`, and `vision` MUST call chat with those aliases.
 - REQ-006-07: Embedding methods MUST default to alias `embedding`, send a single string to providers when the caller supplied one string, send a list for list input, and return `EmbeddingResponse`.
 - REQ-006-08: Proxy chat MUST POST to `/v1/chat/completions` with `{"model": alias, "messages": messages, ...kwargs}`.
@@ -21,6 +21,7 @@ Provide provider-agnostic sync and async chat/embedding APIs that hide LiteLLM p
 - REQ-006-11: A proxy request-level `httpx.RequestError` MUST trigger fallback for the same alias; a reachable proxy `HTTPStatusError` MUST propagate and MUST NOT fallback.
 - REQ-006-12: `ChatResponse` MUST expose `text`, `model_alias`, `provider_model`, `usage`, and `raw`; `EmbeddingResponse` MUST expose float vectors plus `model_alias`, `provider_model`, `usage`, and `raw`.
 - REQ-006-13: `close()` and `aclose()` MUST close only HTTP clients owned by the LLM client. ⚠ untested
+- REQ-006-14: Chat methods MUST select the caller-provided `model` or the fixed `default` flavor, pass normalized messages and caller kwargs to the backend, and return `ChatResponse`.
 
 ## Behavior
 - BEH-006-01: GIVEN a sync proxy chat response with `choices[0].message.content` WHEN chat returns THEN `ChatResponse.text` is that content.

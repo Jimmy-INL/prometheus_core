@@ -115,15 +115,15 @@ class AnalysisAgent(PrometheusAgent):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REGISTRY_URL` | LiteLLM registry/proxy URL used for primary alias discovery and calls | - |
-| `LLM_CONFIG_FILE` | LiteLLM YAML fallback config used only when the proxy is unreachable | - |
-| `LLM_DEFAULT_MODEL` | Default chat alias used by `LLMClient()` | `default` |
+| `LLM_CONFIG_PROFILE` | Installed profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai` | `registry` |
+| `LLM_CONFIG_FILE` | Custom LiteLLM YAML path; overrides `LLM_CONFIG_PROFILE` | - |
+| `REGISTRY_URL` | LiteLLM proxy URL read by the installed `registry` profile | - |
 | `LLM_DEBUG_LOG_MESSAGES` | Include redacted prompt/embedding content in debug logs | `false` |
 | `ENABLE_MLFLOW_TRACING` | Enable optional MLflow tracing for LLM chat calls | `false` |
 
 When `ENABLE_MLFLOW_TRACING=true`, install `mlflow` in the runtime environment
 and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
-`AM_SC_API_KEY` is forwarded as `X-Api-Key` on MLflow REST calls when present.
+`AMSC_I2_API_KEY` is forwarded as `X-Api-Key` on MLflow REST calls when present.
 
 **[Full Environment Setup Guide](docs/ENV_SETUP.md)**
 
@@ -170,7 +170,7 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 ### LLMClient
 - Sync and async chat calls with generic aliases (`default`, `small`, `medium`, `large`, `vision`)
 - Embeddings through the `embedding` alias
-- LiteLLM proxy primary path with LiteLLM YAML fallback when the proxy is unreachable
+- Installed LiteLLM profiles for registry, INL HPC, AMSc, Anthropic, and OpenAI inference
 - Optional MLflow tracing for sync and async chat calls
 - Prompt-safe debug logging with opt-in redacted content logging
 - A2A `llm_api_key` extraction from structured `DataPart` / `provided_inputs`

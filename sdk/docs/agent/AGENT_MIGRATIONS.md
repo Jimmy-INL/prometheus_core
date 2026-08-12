@@ -4,6 +4,34 @@ This document is the running migration log for `PrometheusAgent` behavior change
 When a base-agent change requires downstream agent updates, add a short section here
 under the relevant version heading with migration steps and a minimal code example.
 
+## 0.10.0
+
+### Select an Installed LLM Profile; Do Not Configure Agent Flavors
+
+`LLMClient` now always loads a YAML configuration. It uses the installed
+`registry` profile by default, or selects `inl_hpc`, `inl_litellm`, `amsc`,
+`anthropic`, or `openai` through `LLM_CONFIG_PROFILE`. A custom
+`LLM_CONFIG_FILE` takes precedence. `LLM_DEFAULT_MODEL` has been removed: a bare `llm(...)` or
+`llm.chat(...)` call always requests `default`, while agents should continue
+hardcoding the semantic flavor their task needs, such as `llm.medium(...)`.
+
+Migration steps:
+
+1. Remove `LLM_DEFAULT_MODEL` from deployment configuration.
+2. Set `LLM_CONFIG_PROFILE` and provide the API keys referenced by that
+   profile, or keep `REGISTRY_URL` for the default registry profile.
+3. Put provider model names and endpoints in the YAML profile, not agent code.
+
+```bash
+LLM_CONFIG_PROFILE=openai
+OPENAI_API_KEY=...
+```
+
+```python
+async with self.llm_client(context) as llm:
+    response = await llm.medium(params["query"])
+```
+
 ## 0.9.0
 
 ### A2A SDK v1 Uses Protobuf Types and Strict Task Streams
@@ -32,8 +60,10 @@ Downstream code that directly constructs or inspects SDK objects must migrate:
    `SendStreamingMessage` and send `A2A-Version: 1.0`.
 6. The shared `prometheus_api.a2a_stream` parser accepts only v1 `task`,
    `statusUpdate`, and `artifactUpdate` envelopes with direct `Part` fields.
-   Remove pre-v1 dashed event kinds, root-wrapped parts, and `final` fields
-   from downstream stream producers and test fixtures.
+   It preserves exact ProtoJSON `TASK_STATE_*` values and raises
+   `A2AStreamError` for invalid state spellings or malformed parts. Remove
+   lowercase state aliases, pre-v1 dashed event kinds, root-wrapped parts, and
+   `final` fields from downstream stream producers and test fixtures.
 
 LiteLLM deployments that route A2A traffic must use version 1.92.0 or newer;
 older releases embed the 0.3 SDK and cannot invoke a protocol-v1 agent. The

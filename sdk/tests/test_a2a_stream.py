@@ -59,12 +59,10 @@ def test_extract_text_from_bare_part():
     assert extract_status_message_text(status) == "hello"
 
 
-def test_extract_text_ignores_non_v1_and_non_text_parts():
+def test_extract_text_ignores_valid_non_text_parts():
     status = {
         "message": {
             "parts": [
-                "garbage",
-                {"root": {"kind": "text", "text": "pre-v1"}},
                 {"data": {"x": 1}},
                 {"text": "found"},
             ]
@@ -73,6 +71,19 @@ def test_extract_text_ignores_non_v1_and_non_text_parts():
     assert extract_status_message_text(status) == "found"
     assert extract_status_message_text(None) == ""
     assert extract_status_message_text({}) == ""
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        "garbage",
+        {"root": {"kind": "text", "text": "pre-v1"}},
+        {"kind": "text", "text": "pre-v1"},
+    ],
+)
+def test_extract_text_rejects_malformed_or_pre_v1_parts(part):
+    with pytest.raises(A2AStreamError, match="Part"):
+        extract_status_message_text({"message": {"parts": [part]}})
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +134,7 @@ async def test_initial_v1_task_populates_accumulator():
 
     assert result["id"] == "task-1"
     assert result["contextId"] == "ctx-1"
-    assert result["status"]["state"] == "submitted"
+    assert result["status"]["state"] == "TASK_STATE_SUBMITTED"
     assert result["artifacts"] == [{"artifactId": "a-1", "name": "input"}]
 
 
@@ -147,16 +158,28 @@ async def test_status_update_accumulates_and_fires_callback():
     assert seen == ["Working on it"]
     assert result["id"] == "task-1"
     assert result["contextId"] == "ctx-1"
-    assert result["status"]["state"] == "completed"
+    assert result["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+async def test_invalid_task_state_spelling_raises():
+    with pytest.raises(A2AStreamError, match="TASK_STATE_"):
+        await apply_stream_event(
+            new_task_accumulator(),
+            _status_event("Done", state="completed"),
+        )
 
 
 async def test_heartbeat_events_are_skipped():
     result = await apply_stream_event(
-        {"kind": "task", "artifacts": [], "status": {"state": "working"}},
+        {
+            "kind": "task",
+            "artifacts": [],
+            "status": {"state": "TASK_STATE_WORKING"},
+        },
         {"result": {"statusUpdate": {"metadata": {"heartbeat": True}, "status": {}}}},
     )
     # Accumulated status not overwritten by the empty heartbeat payload.
-    assert result["status"] == {"state": "working"}
+    assert result["status"] == {"state": "TASK_STATE_WORKING"}
 
 
 async def test_background_metadata_fires_background_callback():
@@ -171,7 +194,7 @@ async def test_background_metadata_fires_background_callback():
             "result": {
                 "statusUpdate": {
                     "metadata": {"background": True, "estimate_seconds": 120},
-                    "status": {},
+                    "status": {"state": "TASK_STATE_WORKING"},
                 }
             }
         },
@@ -185,26 +208,24 @@ async def test_error_envelope_raises():
         await apply_stream_event(new_task_accumulator(), {"error": "boom"})
 
 
-async def test_non_dict_result_is_ignored():
-    acc = new_task_accumulator()
-    assert await apply_stream_event(acc, {"result": "noise"}) is acc
+async def test_non_dict_result_raises():
+    with pytest.raises(A2AStreamError, match="result must be an object"):
+        await apply_stream_event(new_task_accumulator(), {"result": "noise"})
 
 
-async def test_pre_v1_event_shape_is_ignored():
+async def test_pre_v1_event_shape_raises():
     """Covers BEH-011-04."""
-    acc = new_task_accumulator()
-    result = await apply_stream_event(
-        acc,
-        {
-            "result": {
-                "kind": "status-update",
-                "final": True,
-                "status": {"state": "completed"},
-            }
-        },
-    )
-    assert result is acc
-    assert "status" not in result
+    with pytest.raises(A2AStreamError, match="exactly one StreamResponse payload"):
+        await apply_stream_event(
+            new_task_accumulator(),
+            {
+                "result": {
+                    "kind": "status-update",
+                    "final": True,
+                    "status": {"state": "completed"},
+                }
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +272,7 @@ async def test_consume_sse_stream_with_comments_and_multiline_data():
     result = await consume_stream_response(
         _FakeStreamResponse(lines, content_type="text/event-stream")
     )
-    assert result["status"]["state"] == "completed"
+    assert result["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
 async def test_consume_json_response_surfaces_json_rpc_error():

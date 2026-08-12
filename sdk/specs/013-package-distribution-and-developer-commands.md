@@ -10,7 +10,7 @@ Keep the package installable, versioned, testable, and container-buildable throu
 ## Requirements
 - REQ-013-01: The project metadata MUST publish the package as `prometheus-api`, require Python `>=3.12`, and use `README.md` as the package readme.
 - REQ-013-02: `prometheus_api.__version__` MUST read the installed distribution version for `prometheus-api` and MUST fall back to `0.0.0+unknown` in an uninstalled source checkout.
-- REQ-013-03: The setuptools package list MUST include the top-level package plus `llm_client`, `storage_client`, storage models/resources/async_resources/utils, and `agent`.
+- REQ-013-03: The setuptools package list MUST include the top-level package plus `llm_client`, `llm_configs`, `storage_client`, storage models/resources/async_resources/utils, and `agent`.
 - REQ-013-04: Runtime dependencies MUST include the A2A server stack, `fsspec`, `httpx`, `litellm`, `pydantic`, `protobuf`, `pyyaml`, `python-dateutil`, `python-dotenv`, `redis`, `starlette`, and `uvicorn[standard]`.
 - REQ-013-05: Development dependencies MUST include pytest, pytest-asyncio, pytest-cov, mypy, ruff, and pre-commit.
 - REQ-013-06: `make lint`, `make format`, and `make typecheck` MUST run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy prometheus_api/`.
@@ -22,11 +22,13 @@ Keep the package installable, versioned, testable, and container-buildable throu
 - REQ-013-12: Container build targets MUST support local amd64/arm64 image builds and multi-arch buildx push with configurable `IMAGE_REPO`, `IMAGE_TAG`, and optional latest tag.
 - REQ-013-13: The Dockerfile MUST use a Python 3.12 `uv` base image, install runtime dependencies from `uv.lock` without dev dependencies, append any `certs/*.pem` files to the CA bundle, install the package without dependencies, and default to `python`.
 - REQ-013-14: Pytest configuration MUST discover `tests/test_*.py`, enable `asyncio_mode=auto`, and define `unit`, `integration`, and `slow` markers.
+- REQ-013-15: The wheel MUST contain every YAML file in `prometheus_api.llm_configs`, and `make test-install` MUST verify that the installed default profile is readable.
 
 ## Behavior
 - BEH-013-01: GIVEN the package is installed WHEN `from prometheus_api import __version__` is executed THEN the installed package version is returned.
 - BEH-013-02: GIVEN a source checkout not installed as a distribution WHEN `__version__` is imported THEN `0.0.0+unknown` is returned.
 - BEH-013-03: GIVEN `make test-install` succeeds THEN a clean venv can import the top-level, storage, and agent public APIs.
+- BEH-013-04: GIVEN the built wheel is installed in a clean venv WHEN the packaged LLM profile resolver is called THEN the returned YAML path exists and is readable.
 
 ## Interfaces
 - `prometheus_api.__version__: str`
