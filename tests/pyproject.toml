@@ -18,12 +18,13 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-# TODO: re-pin to main (or a version tag) once prometheus_api a2a_1.0 merges.
-prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", branch = "a2a_1.0" }
+# Match the prometheus_api base image used by the running platform.
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", rev = "88e920d33060b5b6bfb245f1f2208685a612d6a6" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
     "integration: requires Docker containers running (deselect with '-m not integration')",
+    "system: requires an already-running full platform with the client-agent port published",
 ]
 testpaths = ["infrastructure"]

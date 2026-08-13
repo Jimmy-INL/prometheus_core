@@ -9,7 +9,8 @@ FRONTEND_DIR = Path(__file__).resolve().parents[1]
 if str(FRONTEND_DIR) not in sys.path:
     sys.path.insert(0, str(FRONTEND_DIR))
 
-from utils.a2a_client import A2AClient
+from prometheus_api.contract import ConversationResponse
+from utils.a2a_client import A2AClient, ChatFinalEvent, ChatProgressEvent
 
 
 class _FakeStreamingResponse:
@@ -330,3 +331,64 @@ def test_stage_upload_streams_file_bytes(monkeypatch, tmp_path: Path) -> None:
     assert captured["headers"]["Authorization"] == "Bearer secret"
     assert captured["headers"]["Content-Length"] == "12"
     assert captured["body"] == b"exodus bytes"
+
+
+def test_chat_session_streams_progress_then_terminal_response(monkeypatch) -> None:
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    chat = client.start_chat("conv-stream")
+
+    async def fake_send(**kwargs):
+        assert kwargs["conversation_id"] == "conv-stream"
+        await kwargs["on_status"]("Planning...")
+        await kwargs["on_status"]("Executing...")
+        return ConversationResponse(
+            conversation_id="conv-stream",
+            status="completed",
+            message="Done.",
+            artifacts=[
+                {
+                    "artifact_id": "artifact-1",
+                    "conversation_id": "conv-stream",
+                    "name": "result.json",
+                    "json_body": {"ok": True},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(client, "send", fake_send)
+
+    async def collect_events():
+        return [event async for event in chat.stream("run it")]
+
+    events = asyncio.run(collect_events())
+
+    assert events[:2] == [
+        ChatProgressEvent(message="Planning..."),
+        ChatProgressEvent(message="Executing..."),
+    ]
+    assert isinstance(events[2], ChatFinalEvent)
+    assert events[2].response.status == "completed"
+    assert chat.artifacts[0]["artifact_id"] == "artifact-1"
+
+
+def test_download_artifact_materializes_inline_json(tmp_path: Path) -> None:
+    client = A2AClient(agent_url="http://example.test", agent_secret="secret")
+    destination = tmp_path / "result.json"
+
+    result = asyncio.run(
+        client.download_artifact(
+            {
+                "artifact_id": "artifact-1",
+                "name": "result.json",
+                "mime_type": "application/json",
+                "json_body": {"sentinel": "prometheus-system-test", "version": 1},
+            },
+            destination,
+        )
+    )
+
+    assert result == destination
+    assert json.loads(destination.read_text(encoding="utf-8")) == {
+        "sentinel": "prometheus-system-test",
+        "version": 1,
+    }

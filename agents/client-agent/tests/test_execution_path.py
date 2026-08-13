@@ -192,6 +192,40 @@ def test_prior_capability_params_use_actual_successful_invocation_inputs() -> No
     assert params["mesh_geometry"]["cad_artifact_id"] == "new-step"
 
 
+def test_resumed_transcript_records_schema_shaped_inputs() -> None:
+    params = agent_module._execution._resumed_transcript_params(
+        {
+            "input_data": {
+                "equipment_type": "butterfly_valve",
+                "hole_diameter": 0.05,
+            },
+            "artifacts": [{"artifact_id": "step-1"}],
+        },
+        {"rod_diameter": 0.08},
+        {
+            "type": "object",
+            "properties": {
+                "input_data": {
+                    "type": "object",
+                    "properties": {
+                        "equipment_type": {"type": "string"},
+                        "hole_diameter": {"type": "number"},
+                        "rod_diameter": {"type": "number"},
+                    },
+                }
+            },
+        },
+    )
+
+    assert params == {
+        "input_data": {
+            "equipment_type": "butterfly_valve",
+            "hole_diameter": 0.05,
+            "rod_diameter": 0.08,
+        }
+    }
+
+
 def test_configured_max_upload_bytes_defaults_to_100_mb(monkeypatch) -> None:
     monkeypatch.delenv("PROMETHEUS_MAX_UPLOAD_BYTES", raising=False)
     assert file_upload_handler.configured_max_upload_bytes() == file_upload_handler.DEFAULT_MAX_UPLOAD_BYTES
@@ -1879,7 +1913,7 @@ def test_chat_continues_sequential_plan_after_pending_step_resumes(monkeypatch) 
         for entry in stored[-1]["conversation_history"]
         if "author_equipment_geometry" in (entry.get("tool_inputs") or {})
     ]
-    assert author_invocations[-1]["provided_inputs"] == {"rod_diameter": 0.08}
+    assert author_invocations[-1]["rod_diameter"] == 0.08
 
 
 def test_resume_pending_subagent_request_preserves_task_graph_identity(

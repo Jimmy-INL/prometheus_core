@@ -1,5 +1,7 @@
 """Static validation of docker-compose.yml structure and service definitions."""
 
+import yaml
+
 SPECIALIST_AGENTS = {
     "artifact-debug-agent",
     "corrosion-agent",
@@ -83,6 +85,26 @@ def test_client_agent_receives_selectable_llm_configuration(compose_data):
 
     proxy_env = compose_data["services"]["litellm"]["environment"]
     assert proxy_env["ANTHROPIC_API_KEY"] == "${ANTHROPIC_API_KEY}"
+
+
+def test_client_agent_port_is_published_only_by_system_test_override(
+    compose_data,
+    project_root,
+):
+    assert "ports" not in compose_data["services"]["client-agent"]
+
+    override_path = project_root / "docker-compose.system-test.yml"
+    override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
+    assert override["services"]["client-agent"]["ports"] == [
+        "${CLIENT_AGENT_PORT:-8001}:8000"
+    ]
+
+
+def test_system_test_target_does_not_start_or_reconfigure_docker(project_root):
+    makefile = (project_root / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("test-system:", 1)[1].split("\n\n", 1)[0]
+    assert "docker" not in recipe.lower()
+    assert "pytest -m system system" in recipe
 
 
 def test_restart_policies(compose_data, infrastructure_services):

@@ -75,7 +75,7 @@ Services and host ports:
 | Service | URL / Port | Role |
 |---|---|---|
 | Chainlit UI | http://localhost:8500 | Entry point |
-| Client agent | http://localhost:8001 | Orchestrator |
+| Client agent | internal only; http://localhost:8001 in system-test mode | Orchestrator |
 | LiteLLM gateway | http://localhost:9977 (`LITELLM_LOCAL_PORT`) | Agent registry + LLM proxy |
 | Valkey | localhost:6379 | Redis-compatible state, status, artifact metadata |
 | Postgres (LiteLLM) | internal only | Persistent agent registrations |
@@ -92,8 +92,9 @@ Default credentials (defined in `frontend/config.yml`):
 The frontend supports hot reload against an already-running Compose stack:
 
 ```bash
-# 1. Start the stack via Compose (see Quickstart) — leaves agents, Valkey,
-#    and LiteLLM running.
+# 1. Start the stack with the client-agent port published.
+make PROMETHEUS_SYSTEM_TESTING=true up
+
 # 2. Stop just the containerized frontend so it doesn't fight for port 8500.
 docker stop chainlit-frontend
 
@@ -104,6 +105,17 @@ make run-local    # http://localhost:8500
 ```
 
 The local frontend uses the `agent-url` from `frontend/config.yml` (default `http://localhost:8001`), which maps to the containerized client-agent.
+
+## Full-system tests
+
+Full-system tests exercise the same LLM-driven planning, parameter requests, specialist agents, and artifacts as the frontend. They never start or reconfigure Docker. Start the full platform with the client-agent host port enabled, then run the suite separately:
+
+```bash
+make PROMETHEUS_SYSTEM_TESTING=true up
+make test-system
+```
+
+`tests/system/prometheus.py` provides concise test helpers for starting a chat, prompting, submitting requested parameters, approving plans, inspecting typed artifacts, and making LLM-judged semantic assertions. It wraps the lower-level lifecycle stream and production artifact APIs in `frontend/utils/a2a_client.py`.
 
 For deployment on the HPC host, `make run` (from `frontend/`) starts Chainlit on `c500-prometheus.hpc.inl.gov:6100`.
 
@@ -127,6 +139,7 @@ Notable environment variables (see `.env.example` for the full list):
 |---|---|
 | `LLM_CONFIG_PROFILE` | Installed agent LLM mapping: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai` |
 | `LLM_CONFIG_FILE` | Optional custom YAML path inside the agent container; overrides `LLM_CONFIG_PROFILE` |
+| `PROMETHEUS_SYSTEM_TESTING` | When `true`, Make includes the Compose override that publishes the client-agent on `CLIENT_AGENT_PORT` |
 | Provider API keys | Credentials referenced by the selected profile; see `.env.example` |
 | `AGENT_SECRET_REQUIRED` | Enforce Bearer auth on specialist agents (default `true`) |
 | `LOCAL_CERT_FILE` / `CERT_FILE` | CA bundle path on host / inside containers |

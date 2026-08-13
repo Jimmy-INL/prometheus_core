@@ -3,9 +3,12 @@ A2A JSON-RPC client for communicating with the client-agent.
 """
 import asyncio
 import json
+import shutil
 import uuid
+from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Coroutine, Dict, List, Literal, Optional, Union
 
 import httpx
 
@@ -28,6 +31,25 @@ def response_from_payload(data: Dict[str, Any]) -> ConversationResponse:
     return ConversationResponse.from_payload(data)
 
 
+@dataclass(frozen=True)
+class ChatProgressEvent:
+    """One lifecycle status emitted while the client-agent handles a turn."""
+
+    message: str
+    kind: Literal["progress"] = "progress"
+
+
+@dataclass(frozen=True)
+class ChatFinalEvent:
+    """The terminal typed response for a streamed chat turn."""
+
+    response: ConversationResponse
+    kind: Literal["final"] = "final"
+
+
+ChatEvent = Union[ChatProgressEvent, ChatFinalEvent]
+
+
 class A2AClient:
     """Async client for the A2A JSON-RPC protocol used by client-agent."""
 
@@ -35,6 +57,84 @@ class A2AClient:
         self.agent_url = agent_url.rstrip("/")
         self.agent_secret = agent_secret
         self.timeout = timeout
+
+    @property
+    def _auth_headers(self) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {self.agent_secret}"}
+
+    def start_chat(self, conversation_id: Optional[str] = None) -> "ChatSession":
+        """Create a stateful local handle for one platform conversation."""
+        return ChatSession(self, conversation_id or str(uuid.uuid4()))
+
+    async def list_artifacts(self, conversation_id: str) -> List[Dict[str, Any]]:
+        """Return artifact references for one conversation."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{self.agent_url}/api/artifacts/{conversation_id}",
+                headers=self._auth_headers,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+        if not isinstance(artifacts, list):
+            raise ValueError("Artifact catalog response did not include an artifact list")
+        return [item for item in artifacts if isinstance(item, dict)]
+
+    async def download_artifact(
+        self,
+        artifact: Dict[str, Any],
+        destination: Path,
+    ) -> Path:
+        """Materialize an artifact reference at an explicit local destination."""
+        target = Path(destination)
+        if target.exists():
+            raise FileExistsError(f"Artifact destination already exists: {target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+
+        try:
+            if artifact.get("json_body") is not None:
+                content = (json.dumps(artifact["json_body"], indent=2) + "\n").encode("utf-8")
+                await asyncio.to_thread(temporary.write_bytes, content)
+            elif artifact.get("text_body") is not None:
+                await asyncio.to_thread(
+                    temporary.write_text,
+                    str(artifact["text_body"]),
+                    "utf-8",
+                )
+            else:
+                uri = str(artifact.get("uri") or "").strip()
+                if uri.startswith("http://") or uri.startswith("https://"):
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        async with client.stream("GET", uri) as response:
+                            response.raise_for_status()
+                            with temporary.open("wb") as stream:
+                                async for chunk in response.aiter_bytes():
+                                    stream.write(chunk)
+                elif uri.startswith("file://") or uri.startswith("/"):
+                    source = Path(uri[7:] if uri.startswith("file://") else uri)
+                    if not source.is_file():
+                        raise FileNotFoundError(f"Artifact file does not exist: {source}")
+                    await asyncio.to_thread(shutil.copyfile, source, temporary)
+                elif uri.startswith("deeplynx://"):
+                    from .uri_resolver import resolve_to_local_path
+
+                    source = await resolve_to_local_path(
+                        uri,
+                        cache_dir=target.parent / ".prometheus-artifact-cache",
+                        artifact=artifact,
+                        artifact_id=artifact.get("artifact_id"),
+                    )
+                    if source is None:
+                        raise FileNotFoundError(f"Could not resolve artifact URI: {uri}")
+                    await asyncio.to_thread(shutil.copyfile, source, temporary)
+                else:
+                    raise ValueError("Artifact has no downloadable content or supported URI")
+
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return target
 
     async def stage_upload(
         self,
@@ -216,3 +316,109 @@ class A2AClient:
     def _dict_to_response(self, data: Dict) -> ConversationResponse:
         """Convert a dict to ConversationResponse."""
         return response_from_payload(data)
+
+
+class ChatSession:
+    """Stateful Python interface for submitting and streaming chat turns."""
+
+    def __init__(self, client: A2AClient, conversation_id: str):
+        self._client = client
+        self.conversation_id = conversation_id
+        self._artifacts: List[Dict[str, Any]] = []
+
+    @property
+    def artifacts(self) -> List[Dict[str, Any]]:
+        return list(self._artifacts)
+
+    async def submit(
+        self,
+        prompt: str,
+        *,
+        followup_answers: Optional[Dict] = None,
+        plan_approved: bool = False,
+        plan_rejected: bool = False,
+        on_status: Optional[Callable[[str], Coroutine]] = None,
+    ) -> ConversationResponse:
+        """Submit one turn and return its terminal response."""
+        response = await self._client.send(
+            query=prompt,
+            conversation_id=self.conversation_id,
+            artifacts=self._artifacts,
+            followup_answers=followup_answers,
+            plan_approved=plan_approved,
+            plan_rejected=plan_rejected,
+            on_status=on_status,
+        )
+        if response.artifacts is not None:
+            self._artifacts = list(response.artifacts)
+        return response
+
+    async def stream(
+        self,
+        prompt: str,
+        *,
+        followup_answers: Optional[Dict] = None,
+        plan_approved: bool = False,
+        plan_rejected: bool = False,
+    ) -> AsyncIterator[ChatEvent]:
+        """Submit one turn and yield lifecycle statuses followed by one final event."""
+        queue: asyncio.Queue = asyncio.Queue()
+        finished = object()
+
+        async def on_status(message: str) -> None:
+            await queue.put(ChatProgressEvent(message=message))
+
+        async def run_turn() -> ConversationResponse:
+            try:
+                return await self.submit(
+                    prompt,
+                    followup_answers=followup_answers,
+                    plan_approved=plan_approved,
+                    plan_rejected=plan_rejected,
+                    on_status=on_status,
+                )
+            finally:
+                await queue.put(finished)
+
+        task = asyncio.create_task(run_turn())
+        try:
+            while True:
+                event = await queue.get()
+                if event is finished:
+                    break
+                yield event
+            yield ChatFinalEvent(response=await task)
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    async def list_artifacts(self) -> List[Dict[str, Any]]:
+        """Refresh and return this conversation's artifact catalog."""
+        self._artifacts = await self._client.list_artifacts(self.conversation_id)
+        return self.artifacts
+
+    async def download_artifact(self, artifact_id: str, destination: Path) -> Path:
+        """Download one catalog artifact by ID."""
+        artifact = next(
+            (
+                item
+                for item in self._artifacts
+                if str(item.get("artifact_id") or "") == artifact_id
+            ),
+            None,
+        )
+        if artifact is None:
+            await self.list_artifacts()
+            artifact = next(
+                (
+                    item
+                    for item in self._artifacts
+                    if str(item.get("artifact_id") or "") == artifact_id
+                ),
+                None,
+            )
+        if artifact is None:
+            raise KeyError(f"Artifact '{artifact_id}' is not in this conversation")
+        return await self._client.download_artifact(artifact, destination)
