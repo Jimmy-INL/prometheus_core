@@ -59,7 +59,7 @@ class PayloadEchoAgent(PrometheusAgent):
         runtime_options = {
             key: value
             for key, value in params.items()
-            if key not in {"query", "conversation_id", "artifacts", "skill_id"}
+            if key not in {"query", "conversation_id", "artifacts", "skill_id", "user_id"}
         }
 
         query_bytes = len(query.encode())
