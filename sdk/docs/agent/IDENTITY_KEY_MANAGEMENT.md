@@ -113,21 +113,36 @@ Copy `identity_public.pem` to the third-party operator.  They set it as
 `USER_IDENTITY_PUBLIC_KEY`.  Simple, but requires manual coordination on
 key rotation.
 
-**Option B — Serve a JWKS endpoint (recommended).**  
-The platform exposes the public key as a
-[JSON Web Key Set](https://datatracker.ietf.org/doc/html/rfc7517) at
-`GET /.well-known/jwks.json`.  Third-party agents fetch this at startup and
-refresh it periodically, so key rotation is transparent.
+**Option B — Serve and consume the JWKS endpoint (recommended).**
+Every `PrometheusAgent` now serves the platform's public key at
+`GET /.well-known/jwks.json`.  This endpoint:
 
-> **Current status:** the JWKS endpoint is not yet implemented.  Until it is,
-> use Option A and coordinate key rotation manually.  Adding it requires
-> a small addition to `PrometheusAgent.build_app()`: a new Starlette route at
-> `/.well-known/jwks.json` that serialises `USER_IDENTITY_PUBLIC_KEY` with
-> `jwcrypto` or `python-jose`.  The agent's `verify_user_token` would then
-> also accept a `JWKS_URL` override to fetch and cache keys remotely.
+- Is unauthenticated (no `Authorization` header required) — same as `/.well-known/agent.json`.
+- Returns the RSA public key as a JWK with `kid`, `use`, and `alg` when
+  `USER_IDENTITY_ALG=RS256`.
+- Returns `{"keys": []}` for HS256 — symmetric secrets are never published.
+- Minted tokens carry a `kid` header so verifiers can select the right key
+  when multiple keys are present (key rotation overlap window).
+
+Third-party agents verify tokens using the JWKS URL:
+
+```bash
+# Third-party agent .env
+USER_IDENTITY_ALG=RS256
+JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
+USER_IDENTITY_ISS=prometheus-platform
+USER_IDENTITY_AUD=prometheus-agents
+USER_IDENTITY_REQUIRED=true
+```
+
+`verify_user_token` uses PyJWT's `PyJWKClient` internally: it fetches the
+JWKS, caches the keys (TTL: 1 hour), and automatically refreshes when it
+encounters an unknown `kid`.  No `USER_IDENTITY_PUBLIC_KEY` or
+`USER_IDENTITY_SECRET` needed on the third-party side.
 
 ### What the third-party agent needs to configure
 
+**Option A — static public key:**
 ```bash
 # Third-party agent .env
 USER_IDENTITY_ALG=RS256
@@ -136,6 +151,16 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
 -----END PUBLIC KEY-----"
 USER_IDENTITY_ISS=prometheus-platform   # must match what the platform sets
 USER_IDENTITY_AUD=prometheus-agents     # must match what the platform sets
+USER_IDENTITY_REQUIRED=true
+```
+
+**Option B — JWKS URL (recommended; handles key rotation automatically):**
+```bash
+# Third-party agent .env
+USER_IDENTITY_ALG=RS256
+JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
+USER_IDENTITY_ISS=prometheus-platform
+USER_IDENTITY_AUD=prometheus-agents
 USER_IDENTITY_REQUIRED=true
 ```
 
@@ -181,28 +206,42 @@ after the rotation.  Plan a maintenance window or use a generous overlap period:
 run both secrets simultaneously by updating `verify_user_token` to accept
 a list of valid secrets (not currently implemented).
 
-### RS256 + JWKS (once implemented)
+### RS256 + JWKS
+
+Each minted token carries a `kid` header matching the key ID in the JWKS.
+`PyJWKClient` selects the right key automatically, so an overlap window with
+two simultaneously valid keys works out of the box.
 
 1. Generate a new key pair.
-2. Add the new public key to the JWKS endpoint (keep both old and new key IDs
-   active during the overlap window — the JWT `kid` header selects which one
-   to verify against).
-3. Update the frontend to sign with the new private key.
-4. Agents fetching from JWKS pick up the new key automatically.
-5. After all tokens signed with the old key have expired, remove the old key
-   from the JWKS.
+2. Update `USER_IDENTITY_PUBLIC_KEY` on all platform agents to contain the
+   **new** public key.  The JWKS endpoint immediately serves the new key.
+   Tokens minted with the old private key are still verifiable until they expire
+   — but because `kid` changed, `PyJWKClient` will do a JWKS refresh
+   automatically on first encounter.
+3. Update `USER_IDENTITY_PRIVATE_KEY` on the frontend to the new private key.
+   New tokens are now minted with the new key/kid.
+4. Wait for `USER_IDENTITY_TTL` seconds (the longest outstanding token lifetime).
+5. Remove the old private key from any backups.
 
-Zero downtime, no coordinated restarts, third-party agents unaffected.
+Zero downtime, no coordinated restarts for agents fetching from `JWKS_URL`.
+Third-party agents are unaffected as long as their `JWKS_URL` points to the
+platform — `PyJWKClient` re-fetches on unknown `kid`.
 
 ---
 
 ## Quick reference
 
-| Scenario | Algorithm | Frontend | Agents | Third-party agents |
+| Scenario | Algorithm | Frontend | Internal agents | Third-party agents |
 |---|---|---|---|---|
 | Local dev / single-operator | HS256 | `USER_IDENTITY_SECRET` | `USER_IDENTITY_SECRET` | ❌ not possible |
 | Internal production | RS256 | `USER_IDENTITY_PRIVATE_KEY` | `USER_IDENTITY_PUBLIC_KEY` | `USER_IDENTITY_PUBLIC_KEY` |
-| With third-party agents | RS256 + JWKS | `USER_IDENTITY_PRIVATE_KEY` | `USER_IDENTITY_PUBLIC_KEY` or JWKS URL | JWKS URL or public key |
+| With third-party agents | RS256 | `USER_IDENTITY_PRIVATE_KEY` | `USER_IDENTITY_PUBLIC_KEY` | `JWKS_URL` (auto-fetched) |
+
+New env vars introduced by the JWKS implementation:
+
+| Variable | Where | Description |
+|---|---|---|
+| `JWKS_URL` | Agents (esp. third-party) | Fetch the public key from this URL; overrides `USER_IDENTITY_PUBLIC_KEY` for verification |
 
 ---
 

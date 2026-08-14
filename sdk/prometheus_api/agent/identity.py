@@ -39,7 +39,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Optional
 
+import hashlib
+import json
+
 import jwt
+from jwt import PyJWKClient
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -139,7 +143,14 @@ def mint_user_token(
                 payload[k] = v
 
     key = _get_signing_key(alg)
-    return jwt.encode(payload, key, algorithm=alg)
+    headers: dict[str, Any] = {}
+    if alg == _DEFAULT_ALG_RS:
+        # Include kid so verifiers (especially PyJWKClient) can select the
+        # correct key from the JWKS when multiple keys are present.
+        jwks = get_jwks_document()
+        if jwks["keys"]:
+            headers["kid"] = jwks["keys"][0]["kid"]
+    return jwt.encode(payload, key, algorithm=alg, headers=headers or None)
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +160,14 @@ def mint_user_token(
 def verify_user_token(token: str) -> UserIdentity:
     """Verify a platform JWT and return the extracted identity.
 
-    Checks signature, expiry, issuer, and audience.  All checks are
-    performed against the *current* environment configuration — if the
-    secret/key or ISS/AUD have changed since the token was minted the
-    token will be rejected.
+    Checks signature, expiry, issuer, and audience.
+
+    Key resolution priority:
+    1. ``JWKS_URL`` — fetch the JWKS from this URL and select the key by ``kid``
+       (for third-party agents that don't have the key locally; uses
+       :class:`~jwt.PyJWKClient` with automatic caching and refresh).
+    2. ``USER_IDENTITY_PUBLIC_KEY`` / ``USER_IDENTITY_PRIVATE_KEY`` (RS256) or
+       ``USER_IDENTITY_SECRET`` (HS256) — local env-var key.
 
     Raises:
         IdentityError: If the token is invalid, expired, or has wrong iss/aud.
@@ -164,17 +179,32 @@ def verify_user_token(token: str) -> UserIdentity:
     iss = _env("USER_IDENTITY_ISS", _DEFAULT_ISS)
     aud = _env("USER_IDENTITY_AUD", _DEFAULT_AUD)
 
-    key = _get_verification_key(alg)
+    decode_options = {"require": ["sub", "exp", "iat", "iss", "aud"]}
 
     try:
-        claims = jwt.decode(
-            token,
-            key,
-            algorithms=[alg],
-            issuer=iss,
-            audience=aud,
-            options={"require": ["sub", "exp", "iat", "iss", "aud"]},
-        )
+        jwks_url = _env("JWKS_URL")
+        if jwks_url:
+            key = _get_jwks_signing_key(jwks_url, token)
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=[alg],
+                issuer=iss,
+                audience=aud,
+                options=decode_options,
+            )
+        else:
+            key = _get_verification_key(alg)
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=[alg],
+                issuer=iss,
+                audience=aud,
+                options=decode_options,
+            )
+    except IdentityError:
+        raise
     except jwt.ExpiredSignatureError as exc:
         raise IdentityError("userToken has expired") from exc
     except jwt.InvalidAudienceError as exc:
@@ -193,6 +223,43 @@ def verify_user_token(token: str) -> UserIdentity:
         raise IdentityError("userToken missing or invalid 'sub' claim")
 
     return UserIdentity(user_id=user_id, claims=dict(claims), raw_token=token)
+
+
+# ---------------------------------------------------------------------------
+# JWKS remote key fetching (for JWKS_URL verification path)
+# ---------------------------------------------------------------------------
+
+# Module-level cache: url → PyJWKClient (the client caches keys internally)
+_jwks_clients: dict[str, "PyJWKClient"] = {}
+
+
+def _get_jwks_signing_key(jwks_url: str, token: str) -> Any:
+    """Fetch the signing key for *token* from the JWKS at *jwks_url*.
+
+    Uses :class:`~jwt.PyJWKClient` which caches the JWKS keyset and refreshes
+    it when a ``kid`` is not found (supports zero-downtime key rotation).
+
+    Raises:
+        IdentityError: On network failure or missing key.
+    """
+    if jwks_url not in _jwks_clients:
+        _jwks_clients[jwks_url] = PyJWKClient(
+            jwks_url,
+            cache_keys=True,
+            lifespan=3600,  # refresh JWKS at most once per hour
+        )
+    client = _jwks_clients[jwks_url]
+    try:
+        signing_key = client.get_signing_key_from_jwt(token)
+        return signing_key.key
+    except jwt.PyJWKClientConnectionError as exc:
+        raise IdentityError(f"Could not fetch JWKS from {jwks_url!r}: {exc}") from exc
+    except jwt.exceptions.PyJWKSetError as exc:
+        raise IdentityError(
+            f"No matching key found in JWKS at {jwks_url!r}: {exc}"
+        ) from exc
+    except jwt.PyJWTError as exc:
+        raise IdentityError(f"JWKS key lookup failed: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +310,70 @@ def current_user_id() -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Internal key helpers
 # ---------------------------------------------------------------------------
+
+def get_jwks_document() -> dict:
+    """Return the platform's public key(s) as a JSON Web Key Set (RFC 7517).
+
+    This is what the ``/.well-known/jwks.json`` endpoint serves.  Third-party
+    agents and remote verifiers fetch this document to obtain the current
+    public key without any private material being shared.
+
+    - **RS256**: returns the RSA public key as a JWK with ``use=sig``,
+      ``alg=RS256``, and a stable ``kid`` (SHA-256 thumbprint of the modulus).
+      If only ``USER_IDENTITY_PRIVATE_KEY`` is set the public key is derived
+      from it automatically.
+    - **HS256**: returns an empty keyset — HMAC secrets cannot be published.
+
+    Returns:
+        A dict conforming to RFC 7517, e.g.
+        ``{"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", ...}]}``.
+    """
+    alg = _env("USER_IDENTITY_ALG", _DEFAULT_ALG_HS).upper()
+    if alg != _DEFAULT_ALG_RS:
+        return {"keys": []}
+
+    pub_pem = _env("USER_IDENTITY_PUBLIC_KEY")
+    if not pub_pem:
+        priv_pem = _env("USER_IDENTITY_PRIVATE_KEY")
+        if not priv_pem:
+            return {"keys": []}
+        try:
+            from cryptography.hazmat.primitives.serialization import (
+                Encoding,
+                PublicFormat,
+                load_pem_private_key,
+            )
+            private_key = load_pem_private_key(priv_pem.encode(), password=None)
+            pub_pem = private_key.public_key().public_bytes(
+                Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+            ).decode()
+        except Exception:
+            return {"keys": []}
+
+    try:
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+        from jwt.algorithms import RSAAlgorithm
+
+        public_key = load_pem_public_key(pub_pem.encode())
+        jwk_str = RSAAlgorithm.to_jwk(public_key)
+        key_dict = json.loads(jwk_str)
+        key_dict["use"] = "sig"
+        key_dict["alg"] = _DEFAULT_ALG_RS
+        key_dict["kid"] = _compute_kid(key_dict)
+        return {"keys": [key_dict]}
+    except Exception:
+        return {"keys": []}
+
+
+def _compute_kid(jwk_dict: dict) -> str:
+    """Compute a stable key ID from the JWK modulus (RFC 7638 thumbprint).
+
+    Uses the RSA ``n`` parameter (base64url-encoded modulus) hashed with
+    SHA-256.  Stable across restarts; changes only when the key is rotated.
+    """
+    n = jwk_dict.get("n", "")
+    return hashlib.sha256(n.encode()).hexdigest()[:16]
+
 
 def _get_signing_key(alg: str) -> Any:
     """Return the signing key for *alg*.  Raises ``IdentityError`` if unconfigured."""

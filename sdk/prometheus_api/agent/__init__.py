@@ -14,6 +14,7 @@ from .identity import (
     identity_scope,
     get_current_identity,
     current_user_id,
+    get_jwks_document,
     mint_user_token,
     verify_user_token,
 )
@@ -63,6 +64,7 @@ __all__ = [
     "identity_scope",
     "get_current_identity",
     "current_user_id",
+    "get_jwks_document",
     "mint_user_token",
     "verify_user_token",
     # auth

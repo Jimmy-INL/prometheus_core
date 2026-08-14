@@ -2075,6 +2075,26 @@ class PrometheusAgent:
             """Serve the canonical v1 card at the former discovery path."""
             return JSONResponse(MessageToDict(agent_card))
 
+        async def jwks_endpoint(request):
+            """Serve the platform's public key(s) as a JSON Web Key Set.
+
+            Third-party agents fetch this endpoint to obtain the RSA public key
+            for verifying platform-minted user tokens.  Returns an empty keyset
+            when the platform is configured for HS256 (symmetric secrets cannot
+            be published).
+
+            This endpoint is intentionally unauthenticated — it is public
+            metadata, like the agent card.  Fingerprint the keys you receive
+            before trusting them in production; the JWKS URL itself should be
+            served over TLS.
+            """
+            from .identity import get_jwks_document
+            return JSONResponse(get_jwks_document())
+
+        app.router.routes.insert(
+            0,
+            Route("/.well-known/jwks.json", jwks_endpoint, methods=["GET"]),
+        )
         app.router.routes.insert(
             0,
             Route("/.well-known/agent.json", legacy_agent_card, methods=["GET"]),

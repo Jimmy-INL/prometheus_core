@@ -11,8 +11,10 @@ from prometheus_api.agent.identity import (
     IdentityError,
     UserIdentity,
     USER_TOKEN_METADATA_KEY,
+    _compute_kid,
     current_user_id,
     get_current_identity,
+    get_jwks_document,
     identity_scope,
     mint_user_token,
     verify_user_token,
@@ -274,3 +276,154 @@ def test_user_identity_is_frozen():
     identity = verify_user_token(token)
     with pytest.raises((AttributeError, TypeError)):
         identity.user_id = "injected"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# get_jwks_document — HS256 (secret must not be published)
+# ---------------------------------------------------------------------------
+
+def test_jwks_hs256_returns_empty_keyset(monkeypatch):
+    monkeypatch.setenv("USER_IDENTITY_ALG", "HS256")
+    doc = get_jwks_document()
+    assert doc == {"keys": []}
+
+
+def test_jwks_hs256_with_secret_still_empty(monkeypatch):
+    monkeypatch.setenv("USER_IDENTITY_ALG", "HS256")
+    monkeypatch.setenv("USER_IDENTITY_SECRET", "some-secret")
+    doc = get_jwks_document()
+    # Symmetric secret must NEVER be published.
+    assert doc == {"keys": []}
+
+
+# ---------------------------------------------------------------------------
+# get_jwks_document — RS256
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def rsa_keypair(tmp_path):
+    """Generate a minimal RSA keypair for tests."""
+    pytest.importorskip("cryptography")
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, NoEncryption, PrivateFormat, PublicFormat,
+    )
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    priv_pem = private_key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+    pub_pem = private_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+    return priv_pem, pub_pem
+
+
+def test_jwks_rs256_returns_public_key(monkeypatch, rsa_keypair):
+    priv_pem, pub_pem = rsa_keypair
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", pub_pem)
+    doc = get_jwks_document()
+    assert len(doc["keys"]) == 1
+    key = doc["keys"][0]
+    assert key["kty"] == "RSA"
+    assert key["use"] == "sig"
+    assert key["alg"] == "RS256"
+    assert "n" in key   # modulus
+    assert "e" in key   # exponent
+    assert "kid" in key
+
+
+def test_jwks_rs256_derives_pubkey_from_private(monkeypatch, rsa_keypair):
+    priv_pem, _ = rsa_keypair
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.delenv("USER_IDENTITY_PUBLIC_KEY", raising=False)
+    monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", priv_pem)
+    doc = get_jwks_document()
+    assert len(doc["keys"]) == 1
+    assert doc["keys"][0]["kty"] == "RSA"
+
+
+def test_jwks_rs256_no_keys_returns_empty(monkeypatch):
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.delenv("USER_IDENTITY_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("USER_IDENTITY_PRIVATE_KEY", raising=False)
+    doc = get_jwks_document()
+    assert doc == {"keys": []}
+
+
+def test_jwks_kid_is_stable(monkeypatch, rsa_keypair):
+    _, pub_pem = rsa_keypair
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", pub_pem)
+    doc1 = get_jwks_document()
+    doc2 = get_jwks_document()
+    assert doc1["keys"][0]["kid"] == doc2["keys"][0]["kid"]
+
+
+def test_jwks_kid_changes_with_different_key(monkeypatch, rsa_keypair, tmp_path):
+    pytest.importorskip("cryptography")
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    _, pub_pem_a = rsa_keypair
+    key_b = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pub_pem_b = key_b.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", pub_pem_a)
+    kid_a = get_jwks_document()["keys"][0]["kid"]
+
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", pub_pem_b)
+    kid_b = get_jwks_document()["keys"][0]["kid"]
+
+    assert kid_a != kid_b
+
+
+# ---------------------------------------------------------------------------
+# mint_user_token includes kid in header for RS256
+# ---------------------------------------------------------------------------
+
+def test_mint_rs256_includes_kid_header(monkeypatch, rsa_keypair):
+    import jwt as _jwt
+    priv_pem, pub_pem = rsa_keypair
+    monkeypatch.setenv("USER_IDENTITY_ALG", "RS256")
+    monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", priv_pem)
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", pub_pem)
+    token = mint_user_token("alice")
+    header = _jwt.get_unverified_header(token)
+    assert "kid" in header
+
+
+def test_mint_hs256_no_kid_header(monkeypatch):
+    import jwt as _jwt
+    monkeypatch.setenv("USER_IDENTITY_ALG", "HS256")
+    token = mint_user_token("bob")
+    header = _jwt.get_unverified_header(token)
+    assert "kid" not in header
+
+
+# ---------------------------------------------------------------------------
+# JWKS route served by PrometheusAgent.build_app()
+# ---------------------------------------------------------------------------
+
+def test_jwks_route_served_unauthenticated(monkeypatch):
+    """/.well-known/jwks.json must not require the agent secret."""
+    import httpx
+    from starlette.testclient import TestClient
+    from prometheus_api.agent import PrometheusAgent
+
+    monkeypatch.setenv("USER_IDENTITY_ALG", "HS256")
+    monkeypatch.setenv("AGENT_SECRET_REQUIRED", "false")
+    monkeypatch.setenv("USER_IDENTITY_REQUIRED", "false")
+
+    class _TestAgent(PrometheusAgent):
+        async def _execute(self, params, context, event_queue):
+            return {}
+
+    agent = _TestAgent(agent_name="test", agent_card_path="tests/fixtures/agent_card.json")
+    try:
+        app = agent.build_app(register_on_startup=False)
+    except Exception:
+        pytest.skip("agent card fixture not available")
+    client = TestClient(app)
+    resp = client.get("/.well-known/jwks.json")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "keys" in body
+    # HS256: empty keyset
+    assert body["keys"] == []
