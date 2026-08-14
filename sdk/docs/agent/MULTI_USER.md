@@ -86,12 +86,17 @@ The client-agent does this automatically for all specialist agent calls via
 |---|---|---|
 | `USER_IDENTITY_SECRET` | *(required for HS256)* | HMAC secret for JWT signing/verification |
 | `USER_IDENTITY_ALG` | `HS256` | `HS256` or `RS256` |
-| `USER_IDENTITY_PRIVATE_KEY` | *(required for RS256)* | PEM private key |
-| `USER_IDENTITY_PUBLIC_KEY` | *(required for RS256 verify)* | PEM public key |
+| `USER_IDENTITY_PRIVATE_KEY` | *(required for RS256)* | PEM private key — **frontend only** |
+| `USER_IDENTITY_PUBLIC_KEY` | *(required for RS256 verify)* | PEM public key — all agents |
 | `USER_IDENTITY_ISS` | `prometheus-platform` | JWT issuer claim |
 | `USER_IDENTITY_AUD` | `prometheus-agents` | JWT audience claim |
 | `USER_IDENTITY_TTL` | `7200` | Token lifetime in seconds |
 | `USER_IDENTITY_REQUIRED` | `true` | Set `false` to skip verification (dev only) |
+
+**Which services need which key?** With HS256 every service needs `USER_IDENTITY_SECRET`;
+with RS256 only the frontend needs the private key and all agents (including third-party
+agents) only need the public key.  See [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md)
+for the full breakdown and the third-party agent integration guide.
 
 ### Dev / CI mode
 
@@ -339,6 +344,7 @@ Specialist agent (e.g. data-agent)
 
 ## See also
 
+- [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) — HS256 vs RS256 key distribution, third-party agent integration, key rotation
 - [PrometheusAgent Developer Guide](GUIDE.md) — general agent authoring
 - [QUICK_START.md](QUICK_START.md) — minimal working agent
 - Platform docs: `prometheus_platform/docs/dev-docs/multi-user-setup.md`

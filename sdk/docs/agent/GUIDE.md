@@ -1115,3 +1115,4 @@ conversation ownership.
 - [`docs/ENV_SETUP.md`](../ENV_SETUP.md) — environment variable details
 - [`docs/agent/QUICK_START.md`](./QUICK_START.md) — condensed getting-started version
 - [`docs/agent/MULTI_USER.md`](./MULTI_USER.md) — multi-user identity, credentials, and isolation
+- [`docs/agent/IDENTITY_KEY_MANAGEMENT.md`](./IDENTITY_KEY_MANAGEMENT.md) — HS256 vs RS256, key distribution per service, third-party agent integration
