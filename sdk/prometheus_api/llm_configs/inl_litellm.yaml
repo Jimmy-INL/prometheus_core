@@ -1,14 +1,5 @@
 # INL LiteLLM proxy inference scaffold.
 # Replace model IDs and the shared endpoint for the target INL LiteLLM deployment.
-#
-# litellm.inl.gov/v1 is itself an OpenAI-compatible proxy, so every model routed
-# through it (Azure OpenAI-backed or Bedrock-backed) must carry the `openai/`
-# provider prefix, matching amsc.yaml's pattern for Claude served over an
-# OpenAI-compatible endpoint. Without the prefix, LiteLLM cannot determine how
-# to format requests to this api_base.
-#
-# Chat flavors are Bedrock-backed Claude deployments. Anthropic does not
-# supply embeddings, so `embedding` stays on the Azure OpenAI deployment.
 
 model_list:
   - model_name: default
