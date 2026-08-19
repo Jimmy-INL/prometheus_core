@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from langchain_core.tools import StructuredTool
@@ -69,6 +69,35 @@ def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
+# Host aliases that only resolve from inside a container. When the client-agent
+# runs on the host (hybrid dev: infra in Docker, agents on the host), a
+# specialist that registered with EXTERNAL_AGENT_URL=http://host.docker.internal:PORT
+# is reachable by the Dockerized LiteLLM proxy for A2A routing, but its direct
+# well-known card URL uses the same alias -- which the host cannot resolve
+# (ENOTFOUND). Routing still works (it goes through the registry), but
+# direct-card discovery silently fails and the orchestrator falls back to
+# LiteLLM's lossy card, which drops non-standard per-skill `inputSchema`.
+# Without the schema the planner invents wrong parameter names and the
+# specialist rejects the call. Rewrite the alias to localhost for the
+# direct-card fetch only when this process cannot resolve it (i.e. we are on
+# the host, not in a container). No-op in full-Docker mode and for non-alias URLs.
+_DOCKER_HOST_ALIASES = ("host.docker.internal", "gateway.docker.internal")
+
+
+def _host_reachable_direct_url(url: str) -> str:
+    normalized = _normalize_url(url)
+    if not normalized:
+        return normalized
+    for alias in _DOCKER_HOST_ALIASES:
+        if alias in normalized:
+            try:
+                _socket.getaddrinfo(alias, None)
+                return normalized  # resolvable here (in-container): leave as-is
+            except OSError:
+                return normalized.replace(alias, "localhost")
+    return normalized
+
+
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
     """Return True when a discovered agent record points to this orchestrator.
 
@@ -120,7 +149,7 @@ async def get_agent_card(agent_id: str, direct_url: Optional[str] = None) -> Dic
     response drops non-standard per-skill metadata such as `inputSchema`.
     Falls back to LiteLLM and finally to the discovery summary payload.
     """
-    normalized_direct_url = _normalize_url(direct_url or "")
+    normalized_direct_url = _host_reachable_direct_url(direct_url or "")
     if normalized_direct_url:
         for path in ("/api/agent-card", "/.well-known/agent-card.json", "/.well-known/agent.json"):
             try:
@@ -212,6 +241,19 @@ def create_input_schema_from_skill(skill: Dict) -> type[BaseModel]:
             field_type = bool
         else:
             field_type = str
+
+        # Propagate an `enum` constraint into the tool schema as a Literal so the
+        # planner LLM is restricted to valid values. Without this the field
+        # degrades to a bare type and the planner can invent a plausible-but-
+        # invalid value (e.g. mode="forward_sampling" when the only allowed value
+        # is "toy_polynomial"), which the specialist then rejects.
+        enum_values = prop_schema.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            try:
+                field_type = Literal[tuple(enum_values)]  # type: ignore[valid-type]
+            except TypeError:
+                # Unhashable enum members (rare): leave the base type in place.
+                pass
 
         # Build field metadata once. For optional fields we must provide the default
         # directly to Field(...); mutating FieldInfo.default later does not reliably
