@@ -12,15 +12,6 @@ from prometheus_api.llm_configs import LLM_CONFIG_PROFILES, get_llm_config_path
 
 EXPECTED_FLAVORS = {"default", "small", "medium", "large", "vision", "embedding"}
 
-# inl_litellm additionally exposes `<flavor>-claude` aliases for its
-# Bedrock-backed Claude deployments, selectable alongside the GPT-backed
-# core flavors. Every other profile's alias set must equal EXPECTED_FLAVORS
-# exactly.
-EXPECTED_ALIASES_BY_PROFILE = {
-    "inl_litellm": EXPECTED_FLAVORS
-    | {"small-claude", "medium-claude", "large-claude", "vision-claude"},
-}
-
 
 def test_packaged_llm_config_paths_are_readable():
     """REQ-005-13, REQ-013-15: every installed profile resolves to readable YAML."""
@@ -58,8 +49,7 @@ def test_provider_profiles_scaffold_every_flavor(profile, api_key_references):
     payload = yaml.safe_load(get_llm_config_path(profile).read_text(encoding="utf-8"))
     models = payload["model_list"]
 
-    expected_aliases = EXPECTED_ALIASES_BY_PROFILE.get(profile, EXPECTED_FLAVORS)
-    assert {entry["model_name"] for entry in models} == expected_aliases
+    assert {entry["model_name"] for entry in models} == EXPECTED_FLAVORS
     assert {entry["litellm_params"]["api_key"] for entry in models} == api_key_references
 
 
