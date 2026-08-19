@@ -1,8 +1,14 @@
 # Prometheus Platform Agent Output Contract
 
 **Version:** 1.2  
-**Status:** Draft  
+**Status:** Draft (Chainlit-era)  
 **Audience:** Frontend (prometheus-frontend) + Backend agent authors
+
+> **Superseded for the new API.** This describes the Chainlit `step.elements`
+> pipeline. The standalone FastAPI chat-backend defines its own JSON/SSE wire
+> contract — see [`chat-backend/CONTRACT.md`](../chat-backend/CONTRACT.md)
+> (machine definition: `chat-backend/app/contract.py`). The backend now performs
+> element/artifact classification server-side and hands the frontend `render_hint`s.
 
 This document defines how backend agents must emit elements so the frontend can render them without custom per-agent handling. The frontend maintains a `VIEWER_REGISTRY` keyed on element type and custom element name. As long as agents follow this contract, new agent outputs are automatically routed to the correct viewer.
 

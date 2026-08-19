@@ -1,5 +1,9 @@
 /**
- * Classifies Chainlit IElement objects and holds the viewer registry.
+ * Classifies `AnyElement` objects and holds the viewer registry.
+ *
+ * Elements now come from the artifact adapter (`artifactAdapter.ts`), which maps the
+ * backend's `render_hint` onto the `AnyElement` shape this classifier recognizes —
+ * no more Chainlit `IElement` payloads.
  *
  * ADDING A VIEWER
  * ───────────────
@@ -9,7 +13,6 @@
  */
 
 import { lazy, type ComponentType } from "react";
-import type { IElement } from "@chainlit/react-client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,16 +30,24 @@ export type ElementKind =
   | "mesh"           // MeshViewer custom element — shared by Exodus and STL
   | "mermaid"        // Mermaid custom element
   | "thermal"        // ThermalAnalysisViewer custom element
+  | "report"         // markdown report rendered inline (render_hint === "report")
+  | "reference"      // citation card (render_hint === "reference")
   | "unknown";
 
-export type AnyElement = IElement & {
+// Standalone element shape. Previously `IElement & {…}` from @chainlit/react-client;
+// now that every element is produced by the artifact adapter (artifactAdapter.ts)
+// rather than a Chainlit socket payload, the type-only Chainlit coupling is gone.
+export interface AnyElement {
+  id?: string;
   type: string;
   name?: string;
   url?: string;
   path?: string;
   mime?: string;
+  display?: string;
+  forId?: string;
   props?: Record<string, unknown>;
-};
+}
 
 export interface ViewerProps {
   element: AnyElement;
@@ -49,14 +60,19 @@ export type ViewerComponent = ComponentType<ViewerProps>;
 // Classifier
 // ---------------------------------------------------------------------------
 
+// gif/webp included so a backend `image` render_hint isn't downgraded to a download
+// when the classifier reaches an image via MIME/extension (frontend note A-8); the
+// set mirrors the backend's _IMAGE_MIMETYPES in services/artifacts.py.
 const IMAGE_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/jpg",
+  "image/gif",
+  "image/webp",
   "image/svg+xml",
 ]);
 
-const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".svg"];
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
 function normalizeMime(mime?: string): string {
   return (mime ?? "").split(";", 1)[0].trim().toLowerCase();
@@ -90,6 +106,8 @@ export function classifyElement(el: AnyElement): ElementKind {
       // Backend COMPONENT_NAME is "ThermalAnalysisViewer", not "ThermalAnalysis"
       // (see prometheus.thermal_analysis.result.v1 plugin __init__.py).
       case "ThermalAnalysisViewer": return "thermal";
+      case "ReportViewer":        return "report";
+      case "ReferenceViewer":     return "reference";
       case "SVGViewer":           return "image";
       default:                    return "unknown";
     }
@@ -148,6 +166,8 @@ import { JSONViewer }                      from "../../viewers/JSONViewer";
 import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestionsElement";
 import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
 import { ThermalAnalysisElement }          from "../../viewers/ThermalAnalysisElement";
+import { ReportElement }                   from "../../viewers/ReportElement";
+import { ReferenceElement }                from "../../viewers/ReferenceElement";
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
   ifc:          IFCViewerElement,
@@ -161,5 +181,7 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   dynamic_form: DynamicFormElement,
   mermaid:      MermaidElement,
   thermal:      ThermalAnalysisElement,
+  report:       ReportElement,
+  reference:    ReferenceElement,
   unknown:      null,
 };

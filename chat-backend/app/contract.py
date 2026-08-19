@@ -1,0 +1,422 @@
+"""Frozen wire contract for the chat-backend HTTP/SSE API.
+
+This module is the single source of truth for the JSON shapes the React frontend
+codes against. It is defined **independently** of ``prometheus_api.contract``
+(``ConversationRequest`` / ``ConversationResponse``): the chat-backend normalizes
+at its service boundary and never leaks base-image types onto its own wire. The
+mapping between the two lives in the turn orchestrator (task 04); this file only
+declares our public shapes.
+
+Design decisions (from tasks/01-contract.md open questions):
+
+- ``render_hint`` — every artifact carries a classifier-derived ``render_hint``
+  (``classify_render_hint`` in ``services/artifacts.py`` fills it) so a thin
+  frontend can route without re-implementing MIME/json_type/extension dispatch.
+  Raw ``mime_type`` / ``json_type`` / ``tags`` are kept alongside it so the
+  frontend can override.
+- Session identity — the SSE session token is the auth JWT's subject/session id;
+  ``conversation_id`` is carried in session state, never in the request body.
+- ``POST /api/sessions`` — sessions are created explicitly, not implicitly on the
+  first message.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Annotated, Any, Literal, Optional, Union, cast, get_args
+
+from pydantic import BaseModel, ConfigDict, Field
+
+# --------------------------------------------------------------------------- #
+# Status enum
+# --------------------------------------------------------------------------- #
+
+
+class ChatStatus(str, Enum):
+    """Public status set, mirroring ``prometheus_api``'s ``ConversationStatus``.
+
+    String-valued so ``response.status == "completed"`` comparisons work on both
+    sides of the wire.
+    """
+
+    NEEDS_INFO = "needs_info"  # follow-up questions for the user
+    PLAN_READY = "plan_ready"  # plan awaiting user approval
+    EXECUTING = "executing"  # plan execution in progress
+    COMPLETED = "completed"  # multi-step plan finished, report ready
+    RECOMMENDATION = "recommendation"  # direct recommendation answer
+    ANSWER = "answer"  # direct single-agent answer
+    BACKGROUNDED = "backgrounded"  # turn detached to a background task
+    ERROR = "error"  # request failed
+
+
+# --------------------------------------------------------------------------- #
+# DynamicForm field schema (needs_info)
+# --------------------------------------------------------------------------- #
+
+FieldInputType = Literal[
+    "text",
+    "number",
+    "email",
+    "password",
+    "date",
+    "datetime",
+    "textarea",
+    "select",
+    "checkbox",
+]
+
+
+_ALLOWED_INPUT_TYPES: frozenset[str] = frozenset(get_args(FieldInputType))
+
+
+def _coerce_input_type(value: Any) -> FieldInputType:
+    """Coerce a raw agent field ``type`` to a known :data:`FieldInputType`.
+
+    Agents emit historically-varying / free-form types (``radio``, ``slider``,
+    ``multiselect``, ``""`` …). The old Chainlit form defaulted unknown types to a
+    text input (its JSX ``switch`` fell through to ``text``); mirror that here so a
+    nonstandard type can never fail contract validation and turn a legitimate
+    ``needs_info`` turn into an ``error`` (T-3).
+    """
+    candidate = str(value).strip().lower() if value else ""
+    if candidate in _ALLOWED_INPUT_TYPES:
+        return cast("FieldInputType", candidate)
+    return "text"
+
+
+class SelectOption(BaseModel):
+    """One option for a ``select`` field."""
+
+    label: str
+    value: str
+
+
+class FormField(BaseModel):
+    """A single DynamicForm field.
+
+    Matches the props consumed by ``frontend-react/src/viewers/DynamicFormElement.tsx``
+    and the normalized shape produced by ``normalize_followup_questions`` below
+    (ported from ``message_handler._handle_needs_info``).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    label: str
+    input_type: FieldInputType = "text"
+    required: bool = True
+    options: Optional[list[SelectOption]] = None
+    default: Optional[Any] = None
+    help: Optional[str] = None
+    placeholder: Optional[str] = None
+    rows: Optional[int] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    step: Optional[float] = None
+
+
+def normalize_followup_questions(questions: list[dict[str, Any]]) -> list[FormField]:
+    """Normalize raw agent ``followup_questions`` into ``FormField`` objects.
+
+    Ports the field-building loop from ``message_handler._handle_needs_info``
+    (frontend/components/message_handler.py ~500-518). Agents emit follow-up
+    questions with loose, historically-varying key names; this collapses them to
+    the frozen schema:
+
+    - ``id``      ← ``field`` | ``id`` | ``question``
+    - ``label``   ← ``question`` | ``label``
+    - ``input_type`` ← ``type`` | ``input_type`` (default ``text``)
+    - ``options`` — bare scalars become ``{label, value}`` pairs
+    - ``help``    ← ``description``
+    """
+    fields: list[FormField] = []
+    for q in questions:
+        raw_options = q.get("options")
+        options: Optional[list[SelectOption]] = None
+        if isinstance(raw_options, list):
+            options = []
+            for opt in raw_options:
+                if isinstance(opt, dict):
+                    value = str(opt.get("value", opt.get("label", "")))
+                    label = str(opt.get("label", value))
+                    options.append(SelectOption(label=label, value=value))
+                else:
+                    options.append(SelectOption(label=str(opt), value=str(opt)))
+
+        fields.append(
+            FormField(
+                id=str(q.get("field") or q.get("id") or q.get("question") or ""),
+                label=str(q.get("question") or q.get("label") or ""),
+                input_type=_coerce_input_type(q.get("type") or q.get("input_type")),
+                required=bool(q.get("required", True)),
+                options=options,
+                default=q.get("default"),
+                help=q.get("description") or q.get("help"),
+                placeholder=q.get("placeholder"),
+                rows=q.get("rows"),
+                min=q.get("min"),
+                max=q.get("max"),
+                step=q.get("step"),
+            )
+        )
+    return fields
+
+
+# --------------------------------------------------------------------------- #
+# Artifact metadata
+# --------------------------------------------------------------------------- #
+
+RenderHint = Literal[
+    "pdf",  # PDF → PdfViewer
+    "image",  # raster image or SVG → ImageViewer (SVG folds into image; no separate svg hint)
+    "json",  # JSON/CSV → JSONViewer (CollapsibleJson)
+    "ifc",  # IFC → IFCViewer
+    "mesh",  # Exodus/STL → MeshViewer (shared VTK viewer)
+    "mermaid",  # Mermaid diagram → MermaidViewer
+    "thermal",  # prometheus.thermal_analysis.result.v1 → ThermalAnalysisViewer
+    "report",  # markdown / plain-text report → markdown renderer (rendered inline, not downloaded)
+    "reference",  # citation / external reference (frontend formats from ``ArtifactMeta.citation``)
+    "file",  # generic downloadable file (CAD/step, archives, octet-stream)
+    "unknown",  # no viewer; offer download
+]
+"""Frontend viewer routing hint. This ``Literal`` is the single authoritative list —
+``chat-backend/CONTRACT.md`` mirrors it, and ``test_contract_matrix.py`` asserts every
+value is reachable so the two cannot drift. Filled by ``classify_render_hint`` in
+``services/artifacts.py``. The React adapter (see ``tasks/frontend/README.md`` Step 05)
+maps each value onto a viewer; ``report`` renders markdown, ``reference`` a citation card.
+Raw ``mime_type`` / ``json_type`` / ``tags`` travel alongside so the frontend can override."""
+
+
+class Citation(BaseModel):
+    """Source / section / page for a ``reference`` (citation) artifact.
+
+    Ported from the old inline citation renderer ``_render_reference_artifact``
+    (frontend/components/message_handler.py:1004), which read these from the raw
+    artifact ``metadata``. The frontend's citation card formats from these fields;
+    without them a ``reference`` artifact loses its provenance on the wire (CON-1).
+    (The ``uri`` link and ``name``/``description`` the old renderer also used are
+    already top-level :class:`ArtifactMeta` fields.)
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    source: Optional[str] = None
+    section: Optional[str] = None
+    page: Optional[str] = None
+
+
+class ArtifactMeta(BaseModel):
+    """Conversation-scoped artifact reference on our wire.
+
+    Snake_case per the Prometheus catalog convention (see
+    docs/docs/dev-docs/artifacts.md). Superset of ``prometheus_api``'s
+    ``ArtifactReference`` fields the frontend needs, plus the derived
+    ``render_hint``. ``json_body`` is inline-only; bytes are fetched via
+    ``GET /api/artifacts/{artifact_id}/content`` (task 07).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    artifact_id: str
+    name: str = ""
+    mime_type: Optional[str] = None
+    json_type: Optional[str] = None
+    description: str = ""
+    uri: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    json_body: Optional[Any] = None  # inline only
+    render_hint: RenderHint = "unknown"
+    citation: Optional[Citation] = None  # populated for reference/citation artifacts
+    producer_agent_id: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Uploads
+# --------------------------------------------------------------------------- #
+
+
+class UploadDescriptor(BaseModel):
+    """Returned by ``POST /api/uploads``; echoed back in the next chat request."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    upload_id: str
+    name: str
+    mime_type: str
+    size_bytes: int
+
+
+# --------------------------------------------------------------------------- #
+# Chat request / response
+# --------------------------------------------------------------------------- #
+
+
+class ChatMessageRequest(BaseModel):
+    """Frontend → chat-backend body for ``POST /api/chat/messages``.
+
+    Mirrors the args ``A2AClient.send()`` accepts (frontend/utils/a2a_client.py:81).
+    ``conversation_id`` is **not** in the body — it comes from session state.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = ""
+    followup_answers: Optional[dict[str, Any]] = None
+    plan_approved: bool = False
+    plan_rejected: bool = False
+    workflow_id: Optional[str] = None
+    upload_ids: Optional[list[UploadDescriptor]] = None
+
+
+class ChatMessageResponse(BaseModel):
+    """chat-backend → frontend body for ``POST /api/chat/messages``.
+
+    A normalized view of ``prometheus_api``'s ``ConversationResponse``. Fields are
+    grouped by the ``status`` that populates them; all are optional so a single
+    model round-trips every variant.
+    """
+
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
+
+    turn_id: str
+    status: ChatStatus
+    message: Optional[str] = None
+
+    # status == needs_info
+    followup_questions: Optional[list[FormField]] = None
+
+    # status == plan_ready
+    plan: Optional[dict[str, Any]] = None
+    auto_approve: bool = False
+
+    # status == completed | answer | recommendation
+    report: Optional[str] = None
+    response_text: Optional[str] = None
+    artifacts: Optional[list[ArtifactMeta]] = None
+    recommended_materials: Optional[list[str]] = None
+    follow_up_suggestions: Optional[list[str]] = None
+
+    # status == backgrounded
+    task_id: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# SSE events (discriminated union on ``type``)
+# --------------------------------------------------------------------------- #
+
+
+class StatusEvent(BaseModel):
+    """Streamed progress line for the in-flight turn."""
+
+    type: Literal["status"] = "status"
+    turn_id: str
+    message: str
+    history: Optional[list[str]] = None
+
+
+class TaskProgressEvent(BaseModel):
+    """Progress line for a detached (backgrounded) task."""
+
+    type: Literal["task_progress"] = "task_progress"
+    task_id: str
+    message: str
+
+
+class TaskDoneEvent(BaseModel):
+    """Terminal event for a detached task, carrying the final response.
+
+    ``response`` is populated only for ``state == "completed"`` (the mapped answer).
+    For non-completed terminal states (failed/canceled/rejected), ``message`` carries
+    a human-readable line for the frontend to render (E-5)."""
+
+    type: Literal["task_done"] = "task_done"
+    task_id: str
+    state: str
+    message: Optional[str] = None
+    response: Optional[ChatMessageResponse] = None
+
+
+ServerEvent = Annotated[
+    Union[StatusEvent, TaskProgressEvent, TaskDoneEvent],
+    Field(discriminator="type"),
+]
+"""Discriminated union of JSON SSE events.
+
+A ``heartbeat`` is sent as an SSE comment line (``: ping``), not a JSON event, so
+it is intentionally not part of this union.
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Session / config (POST /api/sessions, GET /api/config)
+# --------------------------------------------------------------------------- #
+
+
+class ChatProfile(BaseModel):
+    """A selectable chat profile, mirroring Chainlit's ``cl.ChatProfile``.
+
+    Ported from ``frontend/main.py`` ``set_chat_profiles``. The frontend picks one
+    at session creation; ``POST /api/sessions`` echoes the chosen ``profile`` and,
+    for the beginner profile, includes ``workflow_suggestions``.
+    """
+
+    name: str
+    markdown_description: str = ""
+    icon: Optional[str] = None
+
+
+class SessionResponse(BaseModel):
+    """Returned by ``POST /api/sessions`` — starts a conversation."""
+
+    conversation_id: str
+    profile: str = ""
+    chat_intro: str = ""
+    chat_suggestion_title: str = ""
+    workflow_suggestions: list[str] = Field(default_factory=list)
+    auto_approve_steps: bool = False
+
+
+class ConfigResponse(BaseModel):
+    """Returned by ``GET /api/config`` — static, non-session settings."""
+
+    profiles: list[ChatProfile] = Field(default_factory=list)
+    chat_intro: str = ""
+    chat_suggestion_title: str = ""
+    workflow_suggestions: list[str] = Field(default_factory=list)
+    auto_approve_steps: bool = False
+    max_upload_bytes: int = 0
+
+
+# --------------------------------------------------------------------------- #
+# Conversation history (GET /api/conversations/recent)
+# --------------------------------------------------------------------------- #
+
+
+class ConversationSummary(BaseModel):
+    """One recent-conversation row.
+
+    Mirrors the dict shape produced by
+    ``ConversationStateClient.get_conversation_history`` (ported from the Chainlit
+    ``/history`` command); ``status`` is the client's inferred user-facing status.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    conversation_id: str
+    query: str = ""
+    status: str = "unknown"
+    material_id: Optional[str] = None
+    timestamp: str = ""
+
+
+class ConversationHistoryResponse(BaseModel):
+    """Returned by ``GET /api/conversations/recent``.
+
+    ``available`` is ``False`` when Redis is unreachable — the endpoint degrades to
+    an empty list with a 200 rather than erroring (parallels the Chainlit "History
+    unavailable" message).
+    """
+
+    available: bool = False
+    conversations: list[ConversationSummary] = Field(default_factory=list)

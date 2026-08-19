@@ -5,27 +5,15 @@
  *
  * URL resolution
  * ──────────────
- * Chainlit 2.x sends PDF elements with an `id` but no `url`. The URL is
- * resolved via apiClient.getElementUrl(id, sessionId) — the same method
- * the default Chainlit frontend uses internally.
+ * The artifact adapter (artifactAdapter.ts) sets `element.url` to the content
+ * proxy `GET /api/artifacts/{id}/content`, which streams the PDF bytes inline.
  */
 
-import { useContext } from "react";
-import { useRecoilValue } from "recoil";
-import { ChainlitContext, sessionState } from "@chainlit/react-client";
 import { FileDown } from "lucide-react";
 import type { ViewerProps } from "@/lib/chainlit/elements";
 
 export function PdfViewerElement({ element }: ViewerProps) {
-  const apiClient = useContext(ChainlitContext);
-  const session = useRecoilValue(sessionState);
-  const sessionId = session?.socket.id;
-
-  const url =
-    element.url ??
-    (element.id && sessionId && apiClient
-      ? apiClient.getElementUrl(element.id, sessionId)
-      : null);
+  const url = element.url ?? null;
 
   if (!url) return null;
 

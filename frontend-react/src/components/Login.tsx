@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "@/lib/api/client";
 
 interface Props {
   onSuccess: () => void;
@@ -13,17 +14,13 @@ export function Login({ onSuccess }: Props) {
   const handleSubmit = async () => {
     setLoading(true);
     setError("");
-    const res = await fetch("/login", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ username, password }),
-    });
-    setLoading(false);
-    if (res.ok) {
+    try {
+      await api.login(username, password);
       onSuccess();
-    } else {
+    } catch {
       setError("Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,15 +79,8 @@ export function Login({ onSuccess }: Props) {
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
-
-          <div className="divider divider-neutral text-xs py-4">OR</div>
-
-          <a
-            href="/login/oauth/authorize"
-            className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-base-content text-sm font-medium py-2.5 rounded-lg transition-colors"
-          >
-            Continue with Okta
-          </a>
+          {/* "Continue with Okta" is hidden until an OAuth provider is wired
+              (GET /api/auth/callback/{provider} currently returns 501). */}
         </div>
       </div>
     </div>

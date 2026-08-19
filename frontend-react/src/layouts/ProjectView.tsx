@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { LayoutDashboard, MessageSquare, FolderOpen, Bot } from "lucide-react";
-import { useChatInteract } from "@chainlit/react-client";
+import { chatStore } from "@/lib/store/chat";
+import { chatProfileName, useChatType } from "@/lib/useChatType";
 import { Chat } from "../components/Chat";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
@@ -23,7 +24,7 @@ export function ProjectView({ onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
-  const { clear, stopTask } = useChatInteract();
+  const [chatType] = useChatType();
 
   // Owned here (not in Chat) so that when the artifact-viewer panel is
   // added alongside Chat, each panel gets its own scroll ref and scrolls
@@ -31,10 +32,10 @@ export function ProjectView({ onLogout }: Props) {
   // the narrower centered message column inside Chat.
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
+  // New chat: fresh conversation_id + cleared transcript via the store — no full
+  // page reload (the old Chainlit path called clear() + window.location.reload()).
   const handleNewChat = () => {
-    stopTask();
-    clear();
-    window.location.reload();
+    void chatStore.reset(chatProfileName(chatType));
   };
 
   return (

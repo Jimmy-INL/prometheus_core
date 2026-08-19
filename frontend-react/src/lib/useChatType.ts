@@ -12,6 +12,11 @@ export const CHAT_TYPE_DESCRIPTIONS: Record<ChatType, string> = {
 const STORAGE_KEY = "prometheus.chatType";
 const CHANGE_EVENT = "prometheus.chatType.change";
 
+/** Map the local UI chat type to the backend chat-profile name. */
+export function chatProfileName(t: ChatType): string {
+  return t === "Advanced" ? "Advanced Chat" : "Beginner Chat";
+}
+
 function read(): ChatType {
   const v = localStorage.getItem(STORAGE_KEY);
   return v === "Advanced" || v === "Beginner" ? v : DEFAULT_CHAT_TYPE;

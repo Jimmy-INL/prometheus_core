@@ -1,0 +1,81 @@
+"""POST /api/sessions — start a conversation for the authenticated session.
+
+Replaces Chainlit's ``on_chat_start``: mints a fresh ``conversation_id``, records
+it (and the chosen profile) on the in-memory session, and returns the client
+bootstrap payload. For the beginner profile it includes the workflow suggestions,
+mirroring the ``chat_profile == "Beginner Chat"`` branch in ``frontend/main.py``.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Optional, cast
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+
+from app.config import settings
+from app.contract import SessionResponse
+from app.routers.config import BEGINNER_PROFILE, CHAT_PROFILES
+from app.security import TokenClaims, current_claims
+from app.sessions import SessionStore
+
+router = APIRouter(prefix="/api", tags=["sessions"])
+
+# Selectable profile names (AU-8): a client-supplied profile is validated against these.
+_VALID_PROFILES = {p.name for p in CHAT_PROFILES}
+
+
+class CreateSessionBody(BaseModel):
+    """Optional body for ``POST /api/sessions`` — the selected chat profile."""
+
+    profile: Optional[str] = None
+
+
+def _get_store(request: Request) -> SessionStore:
+    return cast(SessionStore, request.app.state.session_store)
+
+
+@router.post("/sessions", response_model=SessionResponse)
+async def create_session(
+    request: Request,
+    body: Optional[CreateSessionBody] = Body(default=None),
+    claims: TokenClaims = Depends(current_claims),
+) -> SessionResponse:
+    """Create a new conversation under the caller's session identity.
+
+    A second call reuses the same session (keyed by the JWT ``sid``) but mints a
+    fresh ``conversation_id``, so the user can start a new conversation without
+    re-authenticating.
+    """
+    store = _get_store(request)
+    state = store.get_or_create(claims.sid)
+
+    requested = body.profile if body else None
+    if requested is not None and requested not in _VALID_PROFILES:
+        # AU-8: reject an unknown profile rather than silently falling through to the
+        # no-suggestions ("advanced") behavior and persisting an arbitrary string.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown profile {requested!r}",
+        )
+
+    profile = requested or state.profile or BEGINNER_PROFILE
+    conversation_id = str(uuid.uuid4())
+
+    state.conversation_id = conversation_id
+    state.profile = profile
+    # A new conversation starts with no artifacts and no in-flight background tasks.
+    state.artifacts = []
+    state.awaited_task_ids = set()
+
+    suggestions = settings.workflow_suggestions if profile == BEGINNER_PROFILE else []
+
+    return SessionResponse(
+        conversation_id=conversation_id,
+        profile=profile,
+        chat_intro=settings.chat_intro,
+        chat_suggestion_title=settings.chat_suggestion_title,
+        workflow_suggestions=suggestions,
+        auto_approve_steps=settings.auto_approve_steps,
+    )

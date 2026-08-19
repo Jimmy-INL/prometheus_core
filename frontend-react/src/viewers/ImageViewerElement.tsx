@@ -1,6 +1,3 @@
-import { useContext } from "react";
-import { useRecoilValue } from "recoil";
-import { ChainlitContext, sessionState } from "@chainlit/react-client";
 import { FileDown } from "lucide-react";
 import type { ViewerProps } from "@/lib/chainlit/elements";
 
@@ -13,10 +10,6 @@ function svgDataUrl(svg: string): string {
 }
 
 export function ImageViewerElement({ element }: ViewerProps) {
-  const apiClient = useContext(ChainlitContext);
-  const session = useRecoilValue(sessionState);
-  const sessionId = session?.socket.id;
-
   const props = element.props ?? {};
   const svgContent = stringProp(props.svgContent);
   const svgUrl = stringProp(props.svgUrl);
@@ -25,13 +18,9 @@ export function ImageViewerElement({ element }: ViewerProps) {
     element.name ||
     (element.mime === "image/svg+xml" ? "image.svg" : "image");
 
-  const url =
-    (svgContent ? svgDataUrl(svgContent) : "") ||
-    svgUrl ||
-    element.url ||
-    (element.id && sessionId && apiClient
-      ? apiClient.getElementUrl(element.id, sessionId)
-      : null);
+  // Inline SVG > explicit SVG url > the artifact content proxy url set by the
+  // adapter (GET /api/artifacts/{id}/content).
+  const url = (svgContent ? svgDataUrl(svgContent) : "") || svgUrl || element.url || null;
 
   if (!url) return null;
 

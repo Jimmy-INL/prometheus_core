@@ -127,36 +127,64 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # Chainlit frontend UI
-  chainlit-frontend:
+  # Standalone FastAPI chat backend (replaces Chainlit's server role; see chat-backend/).
+  # Additive: the chainlit-frontend service below stays commented out and untouched.
+  chat-backend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./chat-backend
       args:
         <<: *prometheus-api-build-args
-    container_name: chainlit-frontend
+    container_name: chat-backend
     ports:
-      - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
+      - "${CHAT_BACKEND_PORT:-8600}:8000"
     networks:
       - agent-network
     environment:
       <<: *common-env
       CLIENT_AGENT_URL: ${CLIENT_AGENT_URL:-http://client-agent:8000}
-      CHAINLIT_URL: ${CHAINLIT_URL:-""}
-      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET}
-      OAUTH_OKTA_CLIENT_ID: ${OAUTH_OKTA_CLIENT_ID:-""}
-      OAUTH_OKTA_CLIENT_SECRET: ${OAUTH_OKTA_CLIENT_SECRET:-""}
-      OAUTH_OKTA_DOMAIN: ${OAUTH_OKTA_DOMAIN:-"identity-preview.inl.gov"}
-      OAUTH_OKTA_AUTHORIZATION_SERVER_ID: ${OAUTH_OKTA_AUTHORIZATION_SERVER_ID:-false}
+      # Session-cookie signing secret. CHAT_BACKEND_JWT_SECRET takes precedence;
+      # CHAINLIT_AUTH_SECRET is the documented fallback (see chat-backend/app/config.py),
+      # so it must be forwarded into the container or login fails with an empty key.
+      CHAT_BACKEND_JWT_SECRET: ${CHAT_BACKEND_JWT_SECRET:-}
+      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET:-}
     volumes: *common-volumes
     depends_on:
-      litellm:
-        condition: service_healthy
-      client-agent:
-        condition: service_started
       redis:
         condition: service_started
+      client-agent:
+        condition: service_started
     restart: unless-stopped
+
+  # Chainlit frontend UI
+  # chainlit-frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: frontend/Dockerfile
+  #     args:
+  #       <<: *prometheus-api-build-args
+  #   container_name: chainlit-frontend
+  #   ports:
+  #     - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
+  #   networks:
+  #     - agent-network
+  #   environment:
+  #     <<: *common-env
+  #     CLIENT_AGENT_URL: ${CLIENT_AGENT_URL:-http://client-agent:8000}
+  #     CHAINLIT_URL: ${CHAINLIT_URL:-""}
+  #     CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET}
+  #     OAUTH_OKTA_CLIENT_ID: ${OAUTH_OKTA_CLIENT_ID:-""}
+  #     OAUTH_OKTA_CLIENT_SECRET: ${OAUTH_OKTA_CLIENT_SECRET:-""}
+  #     OAUTH_OKTA_DOMAIN: ${OAUTH_OKTA_DOMAIN:-"identity-preview.inl.gov"}
+  #     OAUTH_OKTA_AUTHORIZATION_SERVER_ID: ${OAUTH_OKTA_AUTHORIZATION_SERVER_ID:-false}
+  #   volumes: *common-volumes
+  #   depends_on:
+  #     litellm:
+  #       condition: service_healthy
+  #     client-agent:
+  #       condition: service_started
+  #     redis:
+  #       condition: service_started
+  #   restart: unless-stopped
 
   frontend-react-dev:
     profiles: ["dev"]
@@ -173,13 +201,17 @@ services:
       - agent-network
     environment:
       VITE_CHAINLIT_SERVER: http://chainlit-frontend:8500
+      # chat-backend is a sibling container on agent-network. Proxy /api to it by
+      # service name + internal port (8000), NOT the host-mapped 8600 — inside this
+      # container localhost:8600 is its own loopback and refuses the connection.
+      VITE_BACKEND_URL: http://chat-backend:8000
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./frontend-react:/app
       - /app/node_modules
-    depends_on:
-      chainlit-frontend:
-        condition: service_started
+    # depends_on:
+    #   chainlit-frontend:
+    #     condition: service_started
     restart: unless-stopped
 
   frontend-react-prod:
@@ -195,7 +227,4 @@ services:
       - "${FRONTEND_REACT_PROD_PORT:-8080}:8080"
     networks:
       - agent-network
-    depends_on:
-      chainlit-frontend:
-        condition: service_started
     restart: unless-stopped
