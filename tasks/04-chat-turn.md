@@ -8,8 +8,8 @@ streams live status onto the session's event bus via `on_status`, and maps the t
 
 ## Files to create
 
-- `chat-backend/app/services/chat.py`
-- `chat-backend/app/routers/chat.py`
+- `backend/app/services/chat.py`
+- `backend/app/routers/chat.py`
 
 ## What to port from `frontend/components/message_handler.py`
 

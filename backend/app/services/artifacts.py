@@ -12,7 +12,7 @@ fallback ``_classify_artifact`` (message_handler.py:849) — plus the tag table 
 React ``ElementKind`` artifact subset (``frontend-react/src/lib/chainlit/elements.ts``).
 
 The plugin trigger constants are **re-declared here** (copied verbatim from each
-``frontend/plugins/<name>/__init__.py``) rather than imported, so the chat-backend
+``frontend/plugins/<name>/__init__.py``) rather than imported, so the backend
 stays decoupled from the Chainlit ``plugins`` package (task ground rule: port,
 don't couple).
 

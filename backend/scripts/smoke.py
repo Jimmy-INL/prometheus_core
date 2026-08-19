@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""End-to-end status-matrix smoke harness for the chat-backend (task 10).
+"""End-to-end status-matrix smoke harness for the backend (task 10).
 
-Exercises every wire path against a **running stack** (chat-backend + client-agent +
+Exercises every wire path against a **running stack** (backend + client-agent +
 Redis) without the React app — pure httpx + SSE. Prints ``PASS``/``FAIL``/``WARN``/
 ``SKIP`` per path and exits non-zero if anything FAILed.
 
@@ -412,7 +412,7 @@ class Harness:
         ``tasks:events:{conv}``. Returns ``False`` when Redis can't be reached.
         """
         try:
-            import redis  # redis-py (sync) — a chat-backend dependency
+            import redis  # redis-py (sync) — a backend dependency
         except Exception:
             return False
         try:

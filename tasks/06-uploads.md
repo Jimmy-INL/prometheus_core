@@ -7,8 +7,8 @@ descriptor the frontend echoes back on the next chat message. Decision **D5**.
 
 ## Files to create
 
-- `chat-backend/app/services/uploads.py`
-- `chat-backend/app/routers/uploads.py`
+- `backend/app/services/uploads.py`
+- `backend/app/routers/uploads.py`
 
 ## What to port from `frontend/components/message_handler.py`
 

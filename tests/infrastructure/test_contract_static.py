@@ -3,8 +3,8 @@
 These tests catch protocol drift between the three parties of the A2A
 conversation *before* runtime:
 
-1. frontend (``frontend/utils/a2a_client.py``) — builds the JSON-RPC
-   envelope sent to the client-agent
+1. platform A2A client (``tests/system/a2a_client.py``) — builds the
+   JSON-RPC envelope sent to the client-agent
 2. client-agent (``agents/client-agent/tool_discovery.py``) — builds the
    JSON-RPC envelope sent to specialist agents
 3. prometheus_api (``PrometheusAgentExecutor`` + a2a-sdk) — parses what the
@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 PLATFORM_ROOT = Path(__file__).resolve().parents[2]
-for _entry in (PLATFORM_ROOT / "agents" / "client-agent", PLATFORM_ROOT / "frontend"):
+for _entry in (PLATFORM_ROOT / "agents" / "client-agent",):
     if str(_entry) not in sys.path:
         sys.path.insert(0, str(_entry))
 
@@ -42,7 +42,7 @@ from prometheus_api.contract import (  # noqa: E402
 )
 
 import tool_discovery  # noqa: E402  (client-agent)
-from utils.a2a_client import A2AClient  # noqa: E402  (frontend)
+from system.a2a_client import A2AClient  # noqa: E402  (platform A2A client)
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +148,9 @@ def _capture_frontend_request(monkeypatch, response_payload: dict, **send_kwargs
             captured["message"] = kwargs.get("json")
             return _FakeStream()
 
-    import utils.a2a_client as fe_module
+    import system.a2a_client as a2a_module
 
-    monkeypatch.setattr(fe_module.httpx, "AsyncClient", _CapturingClient)
+    monkeypatch.setattr(a2a_module.httpx, "AsyncClient", _CapturingClient)
     client = A2AClient(agent_url="http://client-agent:8000", agent_secret="secret")
     response = asyncio.run(client.send(**send_kwargs))
     return captured["message"], response

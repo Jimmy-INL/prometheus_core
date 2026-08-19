@@ -68,4 +68,4 @@ seam should be real. If deferring, replace the aspirational docstrings with an e
 
 ## Verify
 
-`cd chat-backend && uv run pytest && uv run ruff check && uv run mypy app/` (full suite).
+`cd backend && uv run pytest && uv run ruff check && uv run mypy app/` (full suite).

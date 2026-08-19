@@ -31,22 +31,22 @@ def test_client_agent_depends_on_redis_started(compose_data):
     assert deps["redis"] == "service_started"
 
 
-def test_frontend_depends_on_litellm_healthy(compose_data):
-    deps = _get_depends_on(compose_data, "chainlit-frontend")
-    assert "litellm" in deps
-    assert deps["litellm"] == "service_healthy"
-
-
-def test_frontend_depends_on_client_agent_started(compose_data):
-    deps = _get_depends_on(compose_data, "chainlit-frontend")
+def test_backend_depends_on_client_agent_started(compose_data):
+    deps = _get_depends_on(compose_data, "backend")
     assert "client-agent" in deps
     assert deps["client-agent"] == "service_started"
 
 
-def test_frontend_depends_on_redis_started(compose_data):
-    deps = _get_depends_on(compose_data, "chainlit-frontend")
+def test_backend_depends_on_redis_started(compose_data):
+    deps = _get_depends_on(compose_data, "backend")
     assert "redis" in deps
     assert deps["redis"] == "service_started"
+
+
+def test_backend_does_not_depend_on_litellm(compose_data):
+    """The backend reaches the client-agent over A2A, not LiteLLM directly."""
+    deps = _get_depends_on(compose_data, "backend")
+    assert "litellm" not in deps
 
 
 def test_no_circular_dependencies(compose_data, infrastructure_services):
@@ -109,7 +109,7 @@ def test_startup_order(compose_data, infrastructure_services):
     assert "litellm" in deps_map["client-agent"]
     assert "redis" in deps_map["client-agent"]
 
-    # frontend depends on litellm, client-agent, redis (starts last)
-    assert "litellm" in deps_map["chainlit-frontend"]
-    assert "client-agent" in deps_map["chainlit-frontend"]
-    assert "redis" in deps_map["chainlit-frontend"]
+    # backend depends on client-agent and redis (starts last); it does not need litellm
+    assert "client-agent" in deps_map["backend"]
+    assert "redis" in deps_map["backend"]
+    assert "litellm" not in deps_map["backend"]

@@ -7,12 +7,12 @@ exercises every status path, plus a pytest that asserts we handle every `Convers
 
 ## Files to create
 
-- `chat-backend/scripts/smoke.py` (or `.sh`) — end-to-end harness against a running stack.
-- `chat-backend/tests/test_contract_matrix.py` — status coverage test.
-- `chat-backend/tests/test_*.py` — per-router unit tests (auth, chat mapping, uploads,
+- `backend/scripts/smoke.py` (or `.sh`) — end-to-end harness against a running stack.
+- `backend/tests/test_contract_matrix.py` — status coverage test.
+- `backend/tests/test_*.py` — per-router unit tests (auth, chat mapping, uploads,
   artifacts classification, events).
 
-## Harness (`scripts/smoke.py`) — against a running client-agent + redis + chat-backend
+## Harness (`scripts/smoke.py`) — against a running client-agent + redis + backend
 
 1. `POST /api/auth/login` (`prometheus/prometheus`) → capture cookie.
 2. `GET /api/auth/me` → 200.
@@ -48,13 +48,13 @@ synthetic Redis events (task 05 approach) to exercise the background path determ
 
 ## Acceptance check
 
-- `uv run pytest` green in `chat-backend/tests/`.
+- `uv run pytest` green in `backend/tests/`.
 - `scripts/smoke.py` reports PASS for every status path against a live stack.
 - The old Chainlit app still builds and runs (regression check — it was untouched).
 
 ## Wrap-up
 
-- Update `frontend-react/AGENT-CONTRACT.md` to point at the new `chat-backend/CONTRACT.md`
+- Update `frontend-react/AGENT-CONTRACT.md` to point at the new `backend/CONTRACT.md`
   (task 01) as the source of truth for the new API; note the Chainlit element contract is
   legacy.
-- Confirm no `chainlit` import exists anywhere under `chat-backend/`.
+- Confirm no `chainlit` import exists anywhere under `backend/`.

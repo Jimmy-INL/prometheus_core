@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # so this never trips in the test suite.)
     if not settings.jwt_secret:
         raise RuntimeError(
-            "jwt_secret is not configured: set CHAT_BACKEND_JWT_SECRET or "
+            "jwt_secret is not configured: set BACKEND_JWT_SECRET or "
             "CHAINLIT_AUTH_SECRET (both are forwarded to the container in "
             "docker-compose.yml). Refusing to start with an empty signing key."
         )
@@ -32,11 +32,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Prometheus Chat Backend", lifespan=lifespan)
+app = FastAPI(title="Prometheus Backend", lifespan=lifespan)
 
 # CORS for local dev only; in prod the frontend is served same-origin behind nginx.
 # Explicit origins, not "*", because credentialed requests can't use a wildcard
-# Access-Control-Allow-Origin (AU-9). Configure via CHAT_BACKEND_DEV_ORIGINS.
+# Access-Control-Allow-Origin (AU-9). Configure via BACKEND_DEV_ORIGINS.
 if settings.debug:
     app.add_middleware(
         CORSMiddleware,

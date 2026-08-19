@@ -1,6 +1,6 @@
-# chat-backend wire contract (v1)
+# backend wire contract (v1)
 
-Human-readable spec for the standalone FastAPI chat-backend's JSON/SSE API. The
+Human-readable spec for the standalone FastAPI backend's JSON/SSE API. The
 authoritative machine definition is [`app/contract.py`](app/contract.py); this
 document explains it and gives a JSON example per payload.
 

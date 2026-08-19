@@ -27,6 +27,15 @@ export PROMETHEUS_API_BASE_IMAGE_HASH
 # Default: false.
 DEBUG_AGENTS ?= false
 
+# Publish the client-agent port for host-driven full-system tests without
+# changing the runtime API surface. The system-test suite itself never starts
+# or reconfigures Docker.
+PROMETHEUS_SYSTEM_TESTING ?= false
+CLIENT_AGENT_PORT ?= 8001
+LITELLM_LOCAL_PORT ?= 9977
+PROMETHEUS_SYSTEM_TEST_URL ?= http://localhost:$(CLIENT_AGENT_PORT)
+PROMETHEUS_SYSTEM_TEST_LLM_URL ?= http://localhost:$(LITELLM_LOCAL_PORT)
+
 # Set PROFILE=prod to bring up the React frontend in production mode instead,
 # or PROFILE= (empty) to exclude the React frontend entirely. Default: dev.
 PROFILE ?= dev
@@ -40,6 +49,9 @@ endif
 
 # Build the -f flags for docker compose.
 COMPOSE_FILES := -f $(COMPOSE_BASE)
+ifeq ($(PROMETHEUS_SYSTEM_TESTING),true)
+COMPOSE_FILES += -f docker-compose.system-test.yml
+endif
 ifneq ($(AGENT_COMPOSE_FILES),)
 COMPOSE_FILES += -f $(COMPOSE_AGENTS)
 endif
@@ -50,6 +62,9 @@ endif
 
 # No-generate compose flags: include agents compose only if it already exists on disk.
 COMPOSE_FILES_NG := -f $(COMPOSE_BASE)
+ifeq ($(PROMETHEUS_SYSTEM_TESTING),true)
+COMPOSE_FILES_NG += -f docker-compose.system-test.yml
+endif
 ifneq ($(wildcard $(COMPOSE_AGENTS)),)
 COMPOSE_FILES_NG += -f $(COMPOSE_AGENTS)
 endif
@@ -194,7 +209,7 @@ $(COMPOSE_AGENTS): FORCE $(AGENT_COMPOSE_FILES)
 ##@ Tests
 ##@
 
-.PHONY: test-static test-integration test-infra
+.PHONY: test-static test-integration test-infra test-system
 
 test-static: ##@ Run static infrastructure tests (no Docker needed)
 	cd tests && uv run python -m pytest -m "not integration" -v
@@ -204,6 +219,25 @@ test-integration: ##@ Run integration tests (containers must be running)
 
 test-infra: ##@ Run all infrastructure tests
 	cd tests && uv run python -m pytest -v
+
+test-system: export AGENT_SECRET := $(AGENT_SECRET)
+test-system: export LITELLM_MASTER_KEY := $(LITELLM_MASTER_KEY)
+test-system: export LLM_CONFIG_PROFILE := $(LLM_CONFIG_PROFILE)
+test-system: export ANTHROPIC_API_KEY := $(ANTHROPIC_API_KEY)
+test-system: export EMBEDDING_API_KEY := $(EMBEDDING_API_KEY)
+test-system: export OPENAI_API_KEY := $(OPENAI_API_KEY)
+test-system: export INL_HPC_API_KEY := $(INL_HPC_API_KEY)
+test-system: export INL_LITELLM_API_KEY := $(INL_LITELLM_API_KEY)
+test-system: export AMSC_I2_API_KEY := $(AMSC_I2_API_KEY)
+test-system: export DEEPLYNX_BASE_URL := $(DEEPLYNX_BASE_URL)
+test-system: export DEEPLYNX_KEY := $(DEEPLYNX_KEY)
+test-system: export DEEPLYNX_SECRET := $(DEEPLYNX_SECRET)
+test-system: export DEEPLYNX_ORG_ID := $(DEEPLYNX_ORG_ID)
+test-system: export DEEPLYNX_PROJECT_ID := $(DEEPLYNX_PROJECT_ID)
+test-system: export PROMETHEUS_SYSTEM_TEST_URL := $(PROMETHEUS_SYSTEM_TEST_URL)
+test-system: export PROMETHEUS_SYSTEM_TEST_LLM_URL := $(PROMETHEUS_SYSTEM_TEST_LLM_URL)
+test-system: ##@ Test the user experience on an already-running platform (start with PROMETHEUS_SYSTEM_TESTING=true)
+	cd tests && uv run python -m pytest -m system system -v
 
 ##@
 ##@ Compose

@@ -2,11 +2,11 @@
 
 **Findings:** DOC-1 `[DOC]`, T-3/A2 `[REG]`, CON-1 `[REG]`, A-1 `[REG]`.
 **Depends on:** 00. **Verify:** `test_contract_matrix.py` + new cases green; `CONTRACT.md` and `app/contract.py` agree.
-**Status:** ✅ Implemented (chat-backend/app/contract.py, chat-backend/app/services/artifacts.py, chat-backend/CONTRACT.md; tests extended in test_artifacts.py + test_contract_matrix.py). Canonical enum = current + `report`; `svg`→`image`, `json` (not `data`) kept; `Citation` is a typed sub-model. See the Progress log in `README.md`. **Frontend impact:** the adapter must render `report` as markdown and read `ArtifactMeta.citation` for `reference` cards.
+**Status:** ✅ Implemented (backend/app/contract.py, backend/app/services/artifacts.py, backend/CONTRACT.md; tests extended in test_artifacts.py + test_contract_matrix.py). Canonical enum = current + `report`; `svg`→`image`, `json` (not `data`) kept; `Citation` is a typed sub-model. See the Progress log in `README.md`. **Frontend impact:** the adapter must render `report` as markdown and read `ArtifactMeta.citation` for `reference` cards.
 
 `../frontend/README.md` codes against a *frozen* contract. These four items are places
 where the frozen contract is wrong or ambiguous; fixing them now avoids re-work in the
-cutover. Any shape change updates `chat-backend/CONTRACT.md` + `app/contract.py` +
+cutover. Any shape change updates `backend/CONTRACT.md` + `app/contract.py` +
 contract tests together.
 
 ## DOC-1 — Reconcile the `render_hint` enum (single source of truth)
@@ -62,6 +62,6 @@ test.
 
 ## Verify
 
-`cd chat-backend && uv run pytest tests/test_contract_matrix.py tests/test_artifacts.py &&
+`cd backend && uv run pytest tests/test_contract_matrix.py tests/test_artifacts.py &&
 uv run ruff check && uv run mypy app/`. Confirm `CONTRACT.md` render_hint table == the
 enum. **Pause for review here** (contract changes gate the frontend build).

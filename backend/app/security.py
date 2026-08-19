@@ -168,7 +168,7 @@ def issue_token(user: User, sid: Optional[str] = None) -> str:
     """Sign a JWT for ``user``. Mints a fresh ``sid`` unless one is supplied."""
     if not settings.jwt_secret:
         # Fail loud rather than sign with an empty key (which would make forgery trivial).
-        raise RuntimeError("jwt_secret is not configured (set CHAT_BACKEND_JWT_SECRET or CHAINLIT_AUTH_SECRET)")
+        raise RuntimeError("jwt_secret is not configured (set BACKEND_JWT_SECRET or CHAINLIT_AUTH_SECRET)")
     now = datetime.now(timezone.utc)
     claims = {
         "sub": user.identifier,

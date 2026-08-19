@@ -5,7 +5,7 @@ from collections import Counter
 
 
 def _parse_port_mapping(port_str: str) -> tuple[str, str]:
-    """Parse a docker port string like '${VAR:-8500}:8500' into (host_expr, container_port)."""
+    """Parse a docker port string like '${VAR:-8600}:8000' into (host_expr, container_port)."""
     parts = port_str.split(":")
     if len(parts) == 2:
         return parts[0], parts[1]
@@ -44,20 +44,18 @@ def test_redis_port_mapping(compose_data):
     assert container_port == "6379"
 
 
-def test_frontend_port_mapping(compose_data):
-    svc = compose_data["services"]["chainlit-frontend"]
-    ports = svc.get("ports", [])
-    assert len(ports) == 1
-    _, container_port = _parse_port_mapping(ports[0])
-    assert container_port == "8500"
-
-
-def test_client_agent_port_mapping(compose_data):
-    svc = compose_data["services"]["client-agent"]
+def test_backend_port_mapping(compose_data):
+    svc = compose_data["services"]["backend"]
     ports = svc.get("ports", [])
     assert len(ports) == 1
     _, container_port = _parse_port_mapping(ports[0])
     assert container_port == "8000"
+
+
+def test_client_agent_has_no_base_host_port_mapping(compose_data):
+    svc = compose_data["services"]["client-agent"]
+    assert "ports" not in svc
+    assert svc["environment"]["AGENT_PORT"] == 8000
 
 
 def test_no_host_port_conflicts(compose_data, env_example_vars):
@@ -80,8 +78,7 @@ def test_internal_container_ports_correct(compose_data):
     expected = {
         "litellm": "4000",
         "redis": "6379",
-        "chainlit-frontend": "8500",
-        "client-agent": "8000",
+        "backend": "8000",
     }
     for svc_name, expected_port in expected.items():
         ports = compose_data["services"][svc_name].get("ports", [])

@@ -68,6 +68,6 @@ def test_redis_url_references_redis_password(env_example_vars):
 
 def test_port_vars_have_values(env_example_vars):
     """Port variables should have values defined in .env.example."""
-    port_vars = ["LITELLM_LOCAL_PORT", "REDIS_LOCAL_PORT", "CLIENT_AGENT_PORT", "CHAINLIT_FRONTEND_PORT"]
+    port_vars = ["LITELLM_LOCAL_PORT", "REDIS_LOCAL_PORT", "CLIENT_AGENT_PORT", "BACKEND_PORT"]
     missing = [v for v in port_vars if v not in env_example_vars]
     assert not missing, f"Port variables missing from .env.example: {missing}"

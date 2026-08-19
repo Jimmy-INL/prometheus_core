@@ -1,7 +1,7 @@
 [project]
-name = "chat-backend"
+name = "backend"
 version = "0.1.0"
-description = "Standalone FastAPI chat backend (replaces Chainlit's server role)"
+description = "Standalone FastAPI backend (replaces Chainlit's server role)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

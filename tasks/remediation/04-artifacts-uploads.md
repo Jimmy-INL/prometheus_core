@@ -73,4 +73,4 @@ detail; fold into Bucket A's adapter step, not here.)
 
 ## Verify
 
-`cd chat-backend && uv run pytest tests/test_artifacts.py tests/test_uploads.py && uv run ruff check && uv run mypy app/`.
+`cd backend && uv run pytest tests/test_artifacts.py tests/test_uploads.py && uv run ruff check && uv run mypy app/`.

@@ -28,7 +28,7 @@ max-upload-bytes: 104857600
 debug: false
 auto-approve-steps: false
 
-# Auth / session cookie (jwt-secret overridden by env CHAT_BACKEND_JWT_SECRET / CHAINLIT_AUTH_SECRET)
+# Auth / session cookie (jwt-secret overridden by env BACKEND_JWT_SECRET / CHAINLIT_AUTH_SECRET)
 jwt-secret: ""
 cookie-name: "prometheus_session"
 token-ttl-seconds: 86400

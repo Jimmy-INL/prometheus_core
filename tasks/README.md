@@ -1,6 +1,6 @@
-# Tasks — Standalone FastAPI Chat Backend
+# Tasks — Standalone FastAPI Backend
 
-Ordered, executable steps for building a standalone **FastAPI chat backend** (`chat-backend/`)
+Ordered, executable steps for building a standalone **FastAPI backend** (`backend/`)
 that replaces Chainlit's server role while defining its own JSON/SSE contract. This is a
 **backend-only** effort: `frontend-react/` (currently coupled to Chainlit via
 `@chainlit/react-client`) is rewired in a **separate follow-up**, and the old Chainlit app
@@ -10,7 +10,7 @@ Full design lives in the approved plan: `~/.claude/plans/re-explore-the-current-
 
 ## Ground rules
 
-- **Additive, not destructive.** New `chat-backend/` service on a new port. Do **not** delete
+- **Additive, not destructive.** New `backend/` service on a new port. Do **not** delete
   `frontend/` or touch the `chainlit-frontend` service.
 - **Port, don't couple.** Copy reusable modules out of `frontend/utils/` and adapt; the
   originals stay in place as reference.
@@ -23,7 +23,7 @@ Full design lives in the approved plan: `~/.claude/plans/re-explore-the-current-
 
 | # | File | Summary | Depends on | Status |
 |---|------|---------|------------|--------|
-| 00 | `00-scaffold-tasks-and-service-skeleton.md` | Create `chat-backend/` skeleton, pyproject, app + `/healthz`, config | — | ✅ Done |
+| 00 | `00-scaffold-tasks-and-service-skeleton.md` | Create `backend/` skeleton, pyproject, app + `/healthz`, config | — | ✅ Done |
 | 01 | `01-contract.md` | Freeze `contract.py` (request/response/SSE/form/artifact shapes) — **critical path** | 00 | ✅ Done |
 | 02 | `02-auth-and-sessions.md` | JWT cookie auth, IdP interface, session store, `/api/sessions`, `/api/config` | 00, 01 | ✅ Done |
 | 03 | `03-lift-shared-utils.md` | Copy + de-Chainlit `a2a_client`, `task_events`, `uri_resolver`, `conversation_state` | 00 | ✅ Done |

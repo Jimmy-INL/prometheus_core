@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 const CHAINLIT_TARGET = process.env.VITE_CHAINLIT_SERVER || "http://localhost:8500";
-// chat-backend (new /api contract). The legacy Chainlit routes below are removed at
+// backend (new /api contract). The legacy Chainlit routes below are removed at
 // cutover (Step 09); until then both targets are proxied side by side.
 const BACKEND_TARGET = process.env.VITE_BACKEND_URL || "http://localhost:8600";
 

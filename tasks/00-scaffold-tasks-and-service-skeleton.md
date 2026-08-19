@@ -1,6 +1,6 @@
 # 00 — Scaffold service skeleton
 
-> **Status: ✅ Done** (2026-08-10) — `chat-backend/` skeleton stood up with
+> **Status: ✅ Done** (2026-08-10) — `backend/` skeleton stood up with
 > `pyproject.toml`, `app/{main,config,config.yml}`, `app/routers/health.py`, `tests/`,
 > `README.md`, `.dockerignore`.
 >
@@ -12,14 +12,14 @@
 
 ## Goal
 
-Stand up an empty-but-runnable `chat-backend/` FastAPI service: dependency manifest,
+Stand up an empty-but-runnable `backend/` FastAPI service: dependency manifest,
 app entrypoint with lifespan + `/healthz`, and a config module. Everything after this
 builds inside this skeleton.
 
 ## Files to create
 
 ```
-chat-backend/
+backend/
   pyproject.toml
   app/__init__.py
   app/main.py           # FastAPI() + lifespan + router mounts (health only for now)
@@ -45,7 +45,7 @@ chat-backend/
   (env `REDIS_URL`), `max_upload_bytes` (env `PROMETHEUS_MAX_UPLOAD_BYTES`, default 100 MB),
   `local_users`, `workflow_suggestions`, `chat_intro`, `chat_suggestion_title`,
   `auto_approve_steps`, plus new: `jwt_secret` (env, reuse `CHAINLIT_AUTH_SECRET` or a new
-  `CHAT_BACKEND_JWT_SECRET`), `cookie_name`, `token_ttl_seconds`. Config path override via
+  `BACKEND_JWT_SECRET`), `cookie_name`, `token_ttl_seconds`. Config path override via
   `PROMETHEUS_CONFIG_PATH`.
 - **`app/main.py`** — `FastAPI(title=...)`, an `asynccontextmanager` lifespan that will later
   hold the Redis connection pool + session store (leave a TODO stub now), mount `health`
@@ -54,13 +54,13 @@ chat-backend/
 
 ## Acceptance check
 
-- `cd chat-backend && uv sync` resolves (including `prometheus_api`).
+- `cd backend && uv sync` resolves (including `prometheus_api`).
 - `uv run uvicorn app.main:app --port 8600` starts; `curl localhost:8600/healthz` → `{"status":"ok"}`.
 - `uv run ruff check` and `uv run mypy app/` pass on the skeleton.
 
 ## Notes
 
 - Pick a host port not already used (see CLAUDE.md service map: 8500 Chainlit, 8001
-  client-agent, 8002–8009 specialists). Suggest **8600** for chat-backend; wire the real port
+  client-agent, 8002–8009 specialists). Suggest **8600** for backend; wire the real port
   in task 09.
 - Do not import `chainlit` anywhere. This service must have zero Chainlit dependency.

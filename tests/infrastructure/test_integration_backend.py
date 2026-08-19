@@ -1,4 +1,4 @@
-"""Integration tests for Chainlit frontend container."""
+"""Integration tests for the FastAPI backend container."""
 
 import subprocess
 
@@ -10,36 +10,36 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def frontend_base_url(docker_compose_up, env_test_file):
-    """Return the base URL for the Chainlit frontend."""
+def backend_base_url(docker_compose_up, env_test_file):
+    """Return the base URL for the backend service."""
     env_vars = {}
     for line in env_test_file.read_text().splitlines():
         if "=" in line:
             k, _, v = line.partition("=")
             env_vars[k] = v
-    port = env_vars.get("CHAINLIT_FRONTEND_PORT", "18500")
+    port = env_vars.get("BACKEND_PORT", "18600")
     return f"http://localhost:{port}"
 
 
-def test_frontend_container_running(docker_compose_up):
+def test_backend_container_running(docker_compose_up):
     result = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Status}}", "chainlit-frontend"],
+        ["docker", "inspect", "--format", "{{.State.Status}}", "backend"],
         capture_output=True,
         text=True,
     )
     assert result.stdout.strip() == "running"
 
 
-def test_frontend_serves_on_port(frontend_base_url):
-    """Frontend should serve its HTML page."""
-    resp = httpx.get(frontend_base_url, timeout=15, follow_redirects=True)
+def test_backend_healthz(backend_base_url):
+    """The backend should serve its health endpoint."""
+    resp = httpx.get(f"{backend_base_url}/healthz", timeout=15, follow_redirects=True)
     assert resp.status_code == 200
 
 
-def test_frontend_shared_mount_visible(docker_compose_up):
+def test_backend_shared_mount_visible(docker_compose_up):
     """The bind mount for shared/ should be visible inside the container."""
     result = subprocess.run(
-        ["docker", "exec", "chainlit-frontend", "ls", "/app/shared/__init__.py"],
+        ["docker", "exec", "backend", "ls", "/app/shared/__init__.py"],
         capture_output=True,
         text=True,
     )

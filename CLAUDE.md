@@ -10,11 +10,11 @@ Python versions are split: frontend pins `>=3.12,<3.13` (Chainlit/VTK constraint
 
 ## In-progress: Chainlit → FastAPI + React migration (branch `old-frontend-removal`)
 
-A big-bang cutover is underway to replace the Chainlit `frontend/` with a standalone FastAPI **`chat-backend/`** service (its own JSON/SSE contract, zero Chainlit deps) plus an in-house React app in `frontend-react/`. Until the cutover lands, the Chainlit `frontend/` remains the running frontend — the architecture sections below are still current, and `chat-backend/` is **additive and incomplete**.
+A big-bang cutover is underway to replace the Chainlit `frontend/` with a standalone FastAPI **`backend/`** service (its own JSON/SSE contract, zero Chainlit deps) plus an in-house React app in `frontend-react/`. Until the cutover lands, the Chainlit `frontend/` remains the running frontend — the architecture sections below are still current, and `backend/` is **additive and incomplete**.
 
-- Design: `plan.md` (reconstructed brief + ordered work plan) and `chat-backend/CONTRACT.md` (frozen wire contract).
-- Ordered steps + live status: `tasks/README.md` — steps 00–09 done (skeleton, contract, auth/sessions, lifted utils, chat turn, SSE events, uploads, artifacts content proxy + `render_hint`, conversation history, docker/compose/nginx); only 10 (end-to-end verify) still pending. The `chat-backend` service is in the root `docker-compose.yml` (host port 8600 → container 8000), built from the prometheus_api base image; it comes up with `make up` regardless of `PROFILE`.
-- `chat-backend/` is `uv`-managed Python 3.13: `uv run pytest`, `uv run ruff check`, `uv run mypy app/` (see `chat-backend/README.md`). The chat-backend owns its own contract in `app/contract.py` — do not couple it to `prometheus_api` base-image types on the wire.
+- Design: `plan.md` (reconstructed brief + ordered work plan) and `backend/CONTRACT.md` (frozen wire contract).
+- Ordered steps + live status: `tasks/README.md` — steps 00–09 done (skeleton, contract, auth/sessions, lifted utils, chat turn, SSE events, uploads, artifacts content proxy + `render_hint`, conversation history, docker/compose/nginx); only 10 (end-to-end verify) still pending. The `backend` service is in the root `docker-compose.yml` (host port 8600 → container 8000), built from the prometheus_api base image; it comes up with `make up` regardless of `PROFILE`.
+- `backend/` is `uv`-managed Python 3.13: `uv run pytest`, `uv run ruff check`, `uv run mypy app/` (see `backend/README.md`). The backend owns its own contract in `app/contract.py` — do not couple it to `prometheus_api` base-image types on the wire.
 
 ## Top-level commands (root Makefile)
 

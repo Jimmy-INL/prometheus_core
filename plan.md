@@ -1,4 +1,4 @@
-# Plan: Replace Chainlit with a Standalone FastAPI Chat Backend
+# Plan: Replace Chainlit with a Standalone FastAPI Backend
 
 > Reconstructed 2026-08-10 from the original `/plan` project brief (session Aug 6).
 > The synthesized implementation plan from that session was never saved; this document

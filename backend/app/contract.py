@@ -1,8 +1,8 @@
-"""Frozen wire contract for the chat-backend HTTP/SSE API.
+"""Frozen wire contract for the backend HTTP/SSE API.
 
 This module is the single source of truth for the JSON shapes the React frontend
 codes against. It is defined **independently** of ``prometheus_api.contract``
-(``ConversationRequest`` / ``ConversationResponse``): the chat-backend normalizes
+(``ConversationRequest`` / ``ConversationResponse``): the backend normalizes
 at its service boundary and never leaks base-image types onto its own wire. The
 mapping between the two lives in the turn orchestrator (task 04); this file only
 declares our public shapes.
@@ -180,7 +180,7 @@ RenderHint = Literal[
     "unknown",  # no viewer; offer download
 ]
 """Frontend viewer routing hint. This ``Literal`` is the single authoritative list —
-``chat-backend/CONTRACT.md`` mirrors it, and ``test_contract_matrix.py`` asserts every
+``backend/CONTRACT.md`` mirrors it, and ``test_contract_matrix.py`` asserts every
 value is reachable so the two cannot drift. Filled by ``classify_render_hint`` in
 ``services/artifacts.py``. The React adapter (see ``tasks/frontend/README.md`` Step 05)
 maps each value onto a viewer; ``report`` renders markdown, ``reference`` a citation card.
@@ -253,7 +253,7 @@ class UploadDescriptor(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    """Frontend → chat-backend body for ``POST /api/chat/messages``.
+    """Frontend → backend body for ``POST /api/chat/messages``.
 
     Mirrors the args ``A2AClient.send()`` accepts (frontend/utils/a2a_client.py:81).
     ``conversation_id`` is **not** in the body — it comes from session state.
@@ -270,7 +270,7 @@ class ChatMessageRequest(BaseModel):
 
 
 class ChatMessageResponse(BaseModel):
-    """chat-backend → frontend body for ``POST /api/chat/messages``.
+    """backend → frontend body for ``POST /api/chat/messages``.
 
     A normalized view of ``prometheus_api``'s ``ConversationResponse``. Fields are
     grouped by the ``status`` that populates them; all are optional so a single

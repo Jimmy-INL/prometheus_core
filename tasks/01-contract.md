@@ -26,8 +26,8 @@ the React follow-up will code against, so freezing it early unblocks parallel wo
 
 ## Files to create
 
-- `chat-backend/app/contract.py`
-- `chat-backend/CONTRACT.md` — human-readable spec (supersedes the Chainlit-flavored
+- `backend/app/contract.py`
+- `backend/CONTRACT.md` — human-readable spec (supersedes the Chainlit-flavored
   `frontend-react/AGENT-CONTRACT.md` for the new API; link from it).
 
 ## Models to define

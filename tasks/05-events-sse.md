@@ -8,8 +8,8 @@ the out-of-band `run_task_notifier`. Decision **D2**.
 
 ## Files to create
 
-- `chat-backend/app/services/events.py`
-- `chat-backend/app/routers/events.py`
+- `backend/app/services/events.py`
+- `backend/app/routers/events.py`
 
 ## `services/events.py` — event bus + Redis subscriber
 

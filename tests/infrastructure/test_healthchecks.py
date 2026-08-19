@@ -43,7 +43,7 @@ def test_valkey_has_no_healthcheck(compose_data):
     assert hc is None, "Valkey currently has no healthcheck (update this test if one is added)"
 
 
-def test_frontend_has_no_healthcheck(compose_data):
-    """Document current state: Frontend has no healthcheck defined."""
-    hc = _get_healthcheck(compose_data, "chainlit-frontend")
-    assert hc is None, "Frontend currently has no healthcheck (update this test if one is added)"
+def test_backend_has_no_healthcheck(compose_data):
+    """Document current state: the backend has no healthcheck defined."""
+    hc = _get_healthcheck(compose_data, "backend")
+    assert hc is None, "backend currently has no healthcheck (update this test if one is added)"

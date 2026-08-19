@@ -1,8 +1,8 @@
-# Tasks — Migration remediation (chat-backend correctness + deployment + hardening)
+# Tasks — Migration remediation (backend correctness + deployment + hardening)
 
 Follow-on to the backend build (`../README.md`, steps 00–10 "done") and companion to the
 React cutover (`../frontend/README.md`). A pre-release parity/bug audit compared the old
-Chainlit `frontend/` (source of truth) against the new `chat-backend/` + `frontend-react/`
+Chainlit `frontend/` (source of truth) against the new `backend/` + `frontend-react/`
 and surfaced ~50 findings. Full report + evidence: the approved plan
 `~/.claude/plans/smooth-snuggling-bumblebee.md`.
 
@@ -11,7 +11,7 @@ and surfaced ~50 findings. Full report + evidence: the approved plan
 The **backend is largely built and faithful**; the **React cutover has not started** (the
 app is still a 100% Chainlit websocket client — Bucket A, see below); and the **stack
 can't run in prod** as-configured (nginx points at the removed `chainlit-frontend`
-upstream; the chat-backend JWT secret never reaches the container). Under those blockers
+upstream; the backend JWT secret never reaches the container). Under those blockers
 sit real backend regressions (SSE background-task races, an uploads-only turn that 422s, a
 session artifact catalog that gets wiped, a strict form-field type that errors whole
 turns) plus a hardening backlog.
@@ -60,35 +60,35 @@ in-session). **Next work is Bucket A** — the React cutover in [`../frontend/RE
 which now codes against the corrected contract._
 
 ### Environment notes (read before running anything)
-- `chat-backend/` **and** `tasks/` are currently **untracked** on this branch (`git status`
+- `backend/` **and** `tasks/` are currently **untracked** on this branch (`git status`
   shows `??`), so `git diff` does **not** show the backend edits — this file + the code
   comments are the record of what changed. Don't rely on the diff to review Bucket B.
 - **Tests need `--offline --no-sync`**: `uv run pytest` tries to re-fetch the internal
   `prometheus-api` git dependency and fails without network/VPN auth. The existing
   `.venv` already has it, so run:
-  `cd chat-backend && uv run --offline --no-sync pytest -q` (same for `ruff check` / `mypy app/`).
+  `cd backend && uv run --offline --no-sync pytest -q` (same for `ruff check` / `mypy app/`).
 - Baseline before this work: 133 passed. After steps 00–01: **144 passed**, ruff + mypy clean.
 
 ### ✅ Step 00 — deployment blocker (BLK-3, DEP-1)
-- `docker-compose.yml` — `chat-backend` service now forwards `CHAINLIT_AUTH_SECRET`
+- `docker-compose.yml` — `backend` service now forwards `CHAINLIT_AUTH_SECRET`
   (the documented JWT fallback that previously never reached the container).
-- `chat-backend/app/main.py` — lifespan raises a clear `RuntimeError` on an empty
+- `backend/app/main.py` — lifespan raises a clear `RuntimeError` on an empty
   `jwt_secret` (fail on boot, not a 500 at first login). Safe for tests: they build a bare
   `TestClient(app)` which does **not** run the lifespan.
-- `chat-backend/app/config.py` — new `_redis_url()` folds `REDIS_PASSWORD` into a
+- `backend/app/config.py` — new `_redis_url()` folds `REDIS_PASSWORD` into a
   credential-less `REDIS_URL` (URL-encoded), closing the `NOAUTH` footgun; no-op for the
   documented `.env` form that already embeds the password.
-- `.env.example` — clarified that one of `CHAT_BACKEND_JWT_SECRET` / `CHAINLIT_AUTH_SECRET`
+- `.env.example` — clarified that one of `BACKEND_JWT_SECRET` / `CHAINLIT_AUTH_SECRET`
   must be non-empty.
-- Tests: `chat-backend/tests/test_config.py` (new) — 4 Redis cases + 2 lifespan cases.
+- Tests: `backend/tests/test_config.py` (new) — 4 Redis cases + 2 lifespan cases.
 
 ### ✅ Step 01 — contract correctness (DOC-1, T-3, CON-1, A-1)
-- `chat-backend/app/contract.py` — `RenderHint` is now the single source of truth (added
+- `backend/app/contract.py` — `RenderHint` is now the single source of truth (added
   `report`); `_coerce_input_type()` maps unknown/empty follow-up field types → `text`;
   new `Citation{source,section,page}` sub-model + `ArtifactMeta.citation` field.
-- `chat-backend/app/services/artifacts.py` — `text/markdown` / `text/plain` / `.md` now
+- `backend/app/services/artifacts.py` — `text/markdown` / `text/plain` / `.md` now
   classify as `report` (was `file`); `_citation_from()` lifts citation metadata onto the wire.
-- `chat-backend/CONTRACT.md` — render-hint table rewritten to mirror the enum exactly (+ a
+- `backend/CONTRACT.md` — render-hint table rewritten to mirror the enum exactly (+ a
   `citation` example); `test_contract_matrix.py::test_every_render_hint_value_is_reachable`
   guards against future drift.
 - Tests: extended `test_artifacts.py` (report + citation cases) and `test_contract_matrix.py`
@@ -132,8 +132,8 @@ been validated by a live `make up` — do that (see step 00 verify) before/with 
 ## Ground rules
 
 - **Additive + non-breaking.** The Chainlit stack stays up; changes are testable against
-  the running chat-backend (host `:8600`). No wire-shape change without updating
-  `chat-backend/CONTRACT.md` + `app/contract.py` + the contract tests together.
-- After each step: `cd chat-backend && uv run pytest && uv run ruff check && uv run mypy app/`.
+  the running backend (host `:8600`). No wire-shape change without updating
+  `backend/CONTRACT.md` + `app/contract.py` + the contract tests together.
+- After each step: `cd backend && uv run pytest && uv run ruff check && uv run mypy app/`.
 - Extend the existing suites (`tests/test_chat_turn.py`, `test_events.py`,
   `test_artifacts.py`, `test_contract_matrix.py`) rather than adding parallel ones.

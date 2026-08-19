@@ -1,9 +1,9 @@
 /**
- * Typed fetch wrappers for the chat-backend `/api` surface.
+ * Typed fetch wrappers for the backend `/api` surface.
  *
  * Every call sends the auth cookie (`credentials: "include"`). Non-2xx responses
  * throw an {@link ApiError} carrying the status so callers can distinguish 401
- * (unauthenticated) from other failures. Mirrors `chat-backend/app/routers/*`.
+ * (unauthenticated) from other failures. Mirrors `backend/app/routers/*`.
  */
 
 import type {

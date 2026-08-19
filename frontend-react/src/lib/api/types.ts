@@ -1,7 +1,7 @@
 /**
- * TypeScript mirror of the chat-backend wire contract.
+ * TypeScript mirror of the backend wire contract.
  *
- * Hand-kept in sync with `chat-backend/app/contract.py` (and `chat-backend/CONTRACT.md`).
+ * Hand-kept in sync with `backend/app/contract.py` (and `backend/CONTRACT.md`).
  * These are the shapes the `/api` client and the chat store code against. If the
  * backend contract changes, update this file + the store/adapter together.
  */

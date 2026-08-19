@@ -3,7 +3,7 @@
 ## Goal
 
 Copy the four `frontend/utils/` modules that have **zero Chainlit dependency** into
-`chat-backend/app/`, adapting imports and settings references. Leave the originals in place.
+`backend/app/`, adapting imports and settings references. Leave the originals in place.
 
 ## Files to create (copied + adapted)
 

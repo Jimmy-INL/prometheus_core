@@ -7,7 +7,7 @@
 > dep (FastAPI needs it to read form-encoded login bodies).
 >
 > **Verification:** `ruff check app/` and `mypy app/` clean. Live matrix (uvicorn on
-> :8600, `CHAT_BACKEND_JWT_SECRET` set): JSON + form login → 200 with an
+> :8600, `BACKEND_JWT_SECRET` set): JSON + form login → 200 with an
 > `HttpOnly; SameSite=lax; Secure; Max-Age=86400` cookie; `GET /api/auth/me` returns
 > the user with the cookie and 401 without; bad creds → 401; `POST /api/sessions`
 > mints a fresh `conversation_id` on each call under the same identity and 401s
@@ -25,11 +25,11 @@ session bootstrap endpoints (`/api/config`, `/api/sessions`) that replace Chainl
 
 ## Files to create
 
-- `chat-backend/app/security.py`
-- `chat-backend/app/sessions.py`
-- `chat-backend/app/routers/auth.py`
-- `chat-backend/app/routers/config.py`
-- `chat-backend/app/routers/sessions.py`
+- `backend/app/security.py`
+- `backend/app/sessions.py`
+- `backend/app/routers/auth.py`
+- `backend/app/routers/config.py`
+- `backend/app/routers/sessions.py`
 
 ## Details
 

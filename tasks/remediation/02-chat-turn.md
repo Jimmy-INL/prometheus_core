@@ -2,7 +2,7 @@
 
 **Findings:** T-1 `[REG]`, T-2 `[REG]`, T-7 `[REG]`, T-8 `[REG]`, T-11..16 `[REG/minor]`.
 **Depends on:** 01. **Verify:** `test_chat_turn.py` + new cases green.
-**Status:** ✅ Implemented (chat-backend/app/routers/chat.py, app/services/chat.py, app/sessions.py; tests in test_chat_turn.py). T-1/T-2/T-7/T-8 fixed in the backend. **T-11/T-12/T-15/T-16 deliberately left to the frontend** (pure presentation, or an intentional new-UX change): the new contract keeps `needs_info` as `needs_info` even with zero questions (a contract test asserts this), the `**Error:**` prefix and per-step plan-status are render concerns, and the dropped `/tasks` hint is correct for the SSE-delivered UX. These are recorded as "Presentation parity notes" in `../frontend/README.md`.
+**Status:** ✅ Implemented (backend/app/routers/chat.py, app/services/chat.py, app/sessions.py; tests in test_chat_turn.py). T-1/T-2/T-7/T-8 fixed in the backend. **T-11/T-12/T-15/T-16 deliberately left to the frontend** (pure presentation, or an intentional new-UX change): the new contract keeps `needs_info` as `needs_info` even with zero questions (a contract test asserts this), the `**Error:**` prefix and per-step plan-status are render concerns, and the dropped `/tasks` hint is correct for the SSE-delivered UX. These are recorded as "Presentation parity notes" in `../frontend/README.md`.
 
 ## T-1 — Uploads-only turn is rejected (High)
 
@@ -60,4 +60,4 @@ backend; their behavior lives in the frontend cutover — not fixed here.)
 
 ## Verify
 
-`cd chat-backend && uv run pytest tests/test_chat_turn.py && uv run ruff check && uv run mypy app/`.
+`cd backend && uv run pytest tests/test_chat_turn.py && uv run ruff check && uv run mypy app/`.

@@ -21,10 +21,10 @@ def test_shared_dir_exists(project_root):
     assert (project_root / "shared").is_dir()
 
 
-def test_shared_bind_mount_frontend(compose_data):
-    volumes = _get_volumes(compose_data["services"]["chainlit-frontend"])
+def test_shared_bind_mount_backend(compose_data):
+    volumes = _get_volumes(compose_data["services"]["backend"])
     assert any("./shared:/app/shared" in v for v in volumes), (
-        "chainlit-frontend should mount ./shared:/app/shared"
+        "backend should mount ./shared:/app/shared"
     )
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Paperclip, X, FileText, Loader2, AlertCircle } from "lucide-react";
+import { ArrowDown, ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Paperclip, X, FileText, Loader2, AlertCircle } from "lucide-react";
 import { chatIntro as fallbackIntro, chatSuggestionTitle as fallbackSuggestionTitle, workflowSuggestions as fallbackSuggestions } from "../config";
 import { useChatType } from "@/lib/useChatType";
 import { api } from "@/lib/api/client";
@@ -145,6 +145,9 @@ function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const USER_MESSAGE_TOP_PADDING = 16;
+const LATEST_MESSAGE_BOTTOM_PADDING = 24;
+const RESUME_FOLLOW_THRESHOLD = 40;
 
 interface Attachment {
   localId: string;
@@ -165,6 +168,12 @@ function formatBytes(n: number): string {
 // ---------------------------------------------------------------------------
 
 interface ChatProps {
+  // Owned by the parent (ProjectView) so that, once a second panel (artifact
+  // viewer) is added alongside Chat, each panel scrolls independently and
+  // the scrollbar sits at the panel boundary rather than hugging the
+  // narrower max-w-4xl message column. Chat still owns all the scroll
+  // *behavior* (autoscroll, spacer sizing, follow-latest detection) — only
+  // the DOM node + its overflow styling live one level up.
   scrollContainerRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -175,12 +184,13 @@ export function Chat({ scrollContainerRef }: ChatProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
-  const lastAssistantMessageRef = useRef<HTMLDivElement>(null);
-  const loadingDotsRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
+  const followLatestRef = useRef(true);
+  const pendingUserScrollRef = useRef(false);
   const prevUserCountRef = useRef(0);
-  const programmaticScrollUntilRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -244,12 +254,14 @@ export function Chat({ scrollContainerRef }: ChatProps) {
 
   const lastItem: ChatItem | undefined = items[items.length - 1];
   let lastUserIdx = -1;
-  let lastNonUserIdx = -1;
   for (let i = items.length - 1; i >= 0; i--) {
-    if (lastUserIdx === -1 && items[i].kind === "user") lastUserIdx = i;
-    if (lastNonUserIdx === -1 && items[i].kind !== "user") lastNonUserIdx = i;
-    if (lastUserIdx !== -1 && lastNonUserIdx !== -1) break;
+    if (items[i].kind === "user") {
+      lastUserIdx = i;
+      break;
+    }
   }
+  const userCount = items.filter((i) => i.kind === "user").length;
+  const hasMessages = items.length > 0;
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -260,6 +272,9 @@ export function Chat({ scrollContainerRef }: ChatProps) {
 
   const showLoadingDots = awaiting && lastItem?.kind === "user";
 
+  // Once real content overflows, keep enough trailing room for the newest user
+  // message to sit near the top. Measure with the previous spacer intact so a
+  // temporary reset cannot clamp the scroll position during a streamed response.
   const updateSpacer = useCallback(() => {
     const el = scrollContainerRef.current;
     const userMsg = lastUserMessageRef.current;
@@ -269,64 +284,124 @@ export function Chat({ scrollContainerRef }: ChatProps) {
       spacer.style.minHeight = "0px";
       return;
     }
-    const tail = showLoadingDots ? loadingDotsRef.current : lastAssistantMessageRef.current ?? userMsg;
-    if (!tail) {
+    const elRect = el.getBoundingClientRect();
+    const userTop = el.scrollTop + userMsg.getBoundingClientRect().top - elRect.top;
+    const heightWithoutSpacer = el.scrollHeight - spacer.getBoundingClientRect().height;
+    if (heightWithoutSpacer <= el.clientHeight) {
       spacer.style.minHeight = "0px";
       return;
     }
-    spacer.style.minHeight = "0px";
-    const tailBottom = tail.offsetTop + tail.offsetHeight;
-    const needed = Math.max(0, el.clientHeight - (tailBottom - userMsg.offsetTop) - 16);
-    spacer.style.minHeight = `${needed}px`;
-  }, [showLoadingDots, scrollContainerRef]);
+    const needed = Math.max(
+      0,
+      userTop + el.clientHeight - USER_MESSAGE_TOP_PADDING - heightWithoutSpacer,
+    );
+    spacer.style.minHeight = `${Math.ceil(needed)}px`;
+  }, [scrollContainerRef]);
+
+  // The spacer's previous sibling is always the latest rendered content,
+  // including loading, tool, and ask rows that are not assistant messages.
+  const getLatestScrollTop = useCallback(() => {
+    const el = scrollContainerRef.current;
+    const userMsg = lastUserMessageRef.current;
+    const spacer = spacerRef.current;
+    const latestContent = spacer?.previousElementSibling;
+    if (!el || !userMsg || !latestContent) return 0;
+
+    const elRect = el.getBoundingClientRect();
+    const userTop = el.scrollTop + userMsg.getBoundingClientRect().top - elRect.top;
+    const latestContentBottom =
+      el.scrollTop + latestContent.getBoundingClientRect().bottom - elRect.top;
+    return Math.max(
+      userTop - USER_MESSAGE_TOP_PADDING,
+      latestContentBottom - el.clientHeight + LATEST_MESSAGE_BOTTOM_PADDING,
+      0,
+    );
+  }, [scrollContainerRef]);
+
+  const scrollToLatest = useCallback((behavior: ScrollBehavior) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const top = getLatestScrollTop();
+    if (Math.abs(top - el.scrollTop) > 1) el.scrollTo({ top, behavior });
+    if (behavior === "auto") lastScrollTopRef.current = el.scrollTop;
+  }, [getLatestScrollTop, scrollContainerRef]);
 
   useLayoutEffect(() => {
     updateSpacer();
-  }, [updateSpacer, items, awaiting]);
-
-  useEffect(() => {
-    window.addEventListener("resize", updateSpacer);
-    return () => window.removeEventListener("resize", updateSpacer);
-  }, [updateSpacer]);
-
-  useEffect(() => {
-    const userCount = items.filter((i) => i.kind === "user").length;
-    if (userCount > prevUserCountRef.current) {
-      autoScrollRef.current = true;
-      requestAnimationFrame(() => {
-        const target = lastUserMessageRef.current;
-        const el = scrollContainerRef.current;
-        if (!target || !el) return;
-        programmaticScrollUntilRef.current = Date.now() + 800;
-        el.scrollTo({ top: target.offsetTop - el.offsetTop - 16, behavior: "smooth" });
-      });
-    }
+    const newUserMessage = userCount > prevUserCountRef.current;
     prevUserCountRef.current = userCount;
-  }, [items, scrollContainerRef]);
+
+    if (!followLatestRef.current) return;
+    const smooth = pendingUserScrollRef.current && newUserMessage;
+    if (smooth) pendingUserScrollRef.current = false;
+    scrollToLatest(
+      smooth && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "smooth"
+        : "auto",
+    );
+  }, [awaiting, items, scrollToLatest, updateSpacer, userCount]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
-    if (!el || !autoScrollRef.current) return;
-    const target = showLoadingDots ? loadingDotsRef.current : lastAssistantMessageRef.current;
-    if (!target) return;
-    const targetBottom = target.offsetTop - el.offsetTop + target.offsetHeight;
-    const desired = targetBottom - el.clientHeight + 24;
-    if (desired > el.scrollTop) {
-      programmaticScrollUntilRef.current = Date.now() + 400;
-      el.scrollTop = desired;
-    }
-  }, [items, awaiting, showLoadingDots, scrollContainerRef]);
+    const messageList = messageListRef.current;
+    if (!el || !messageList) return;
+
+    let frame = 0;
+    let initialized = false;
+    const syncLayout = () => {
+      if (!initialized) {
+        initialized = true;
+        return;
+      }
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        updateSpacer();
+        if (followLatestRef.current) scrollToLatest("auto");
+      });
+    };
+    // Handles wrapping, panel resizes, expanded tools, and async viewer loads.
+    const observer = new ResizeObserver(syncLayout);
+    observer.observe(el);
+    observer.observe(messageList);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [hasMessages, scrollContainerRef, scrollToLatest, updateSpacer]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (Date.now() < programmaticScrollUntilRef.current) return;
     const el = e.currentTarget;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    autoScrollRef.current = nearBottom;
+    const scrollingUp = el.scrollTop < lastScrollTopRef.current - 1;
+    const nearLatest = getLatestScrollTop() - el.scrollTop <= RESUME_FOLLOW_THRESHOLD;
+    lastScrollTopRef.current = el.scrollTop;
+
+    if (scrollingUp) {
+      followLatestRef.current = false;
+      setShowScrollToLatest(true);
+    } else if (nearLatest) {
+      followLatestRef.current = true;
+      setShowScrollToLatest(false);
+    } else if (!followLatestRef.current) {
+      setShowScrollToLatest(true);
+    }
+  };
+
+  const handleScrollToLatest = () => {
+    followLatestRef.current = true;
+    setShowScrollToLatest(false);
+    updateSpacer();
+    scrollToLatest(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    );
   };
 
   const handleSend = (content = input.trim()) => {
     if (!content && !readyDescriptors.length) return;
     if (uploadingCount > 0) return;
+    followLatestRef.current = true;
+    pendingUserScrollRef.current = true;
+    setShowScrollToLatest(false);
     void chatStore.sendTurn(content, readyDescriptors);
     setInput("");
     setAttachments([]);
@@ -342,7 +417,6 @@ export function Chat({ scrollContainerRef }: ChatProps) {
   };
 
   const renderItem = (item: ChatItem, i: number) => {
-    const assistantRef = i === lastNonUserIdx ? lastAssistantMessageRef : undefined;
     const userRef = i === lastUserIdx ? lastUserMessageRef : undefined;
 
     switch (item.kind) {
@@ -359,14 +433,14 @@ export function Chat({ scrollContainerRef }: ChatProps) {
 
       case "tool":
         return (
-          <div key={item.id} ref={assistantRef} className="space-y-2">
+          <div key={item.id} className="space-y-2">
             <ToolStep item={item} />
           </div>
         );
 
       case "error":
         return (
-          <div key={item.id} ref={assistantRef} className="flex gap-2 justify-start">
+          <div key={item.id} className="flex gap-2 justify-start">
             <div className="w-6 h-6 shrink-0 flex items-center justify-center">
               <AlertCircle size={14} className="text-error/70" />
             </div>
@@ -377,7 +451,7 @@ export function Chat({ scrollContainerRef }: ChatProps) {
       case "needs_info": {
         const ni = item as NeedsInfoItem;
         return (
-          <div key={item.id} ref={assistantRef} className="flex gap-2 justify-start">
+          <div key={item.id} className="flex gap-2 justify-start">
             <AssistantAvatar />
             <div className="flex-1 text-base text-base-content">
               {ni.message && <Markdown>{ni.message}</Markdown>}
@@ -394,7 +468,7 @@ export function Chat({ scrollContainerRef }: ChatProps) {
       case "plan": {
         const pl = item as PlanItem;
         return (
-          <div key={item.id} ref={assistantRef} className="flex gap-2 justify-start">
+          <div key={item.id} className="flex gap-2 justify-start">
             <AssistantAvatar />
             <div className="flex-1 text-base text-base-content">
               {pl.message && <Markdown>{pl.message}</Markdown>}
@@ -406,7 +480,7 @@ export function Chat({ scrollContainerRef }: ChatProps) {
 
       case "assistant":
         return (
-          <div key={item.id} ref={assistantRef} className="flex gap-2 justify-start">
+          <div key={item.id} className="flex gap-2 justify-start">
             <AssistantAvatar />
             <div className="flex-1 text-base text-base-content [&_p]:text-[length:inherit] [&_p]:leading-normal [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:underline">
               {item.text && <Markdown>{item.text}</Markdown>}
@@ -437,29 +511,51 @@ export function Chat({ scrollContainerRef }: ChatProps) {
 
   return (
     <div className="flex flex-col flex-1 w-full overflow-hidden">
-      {items.length === 0 ? (
-        <WelcomeScreen onSelect={(text) => handleSend(text)} />
-      ) : (
-        <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto p-5 space-y-5">
-            {items.map((item, i) => renderItem(item, i))}
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
+        {!hasMessages ? (
+          <WelcomeScreen onSelect={(text) => handleSend(text)} />
+        ) : (
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto"
+          >
+            <div ref={messageListRef} className="max-w-4xl mx-auto p-5 space-y-5">
+              {items.map((item, i) => renderItem(item, i))}
 
-            {showLoadingDots && (
-              <div
-                ref={loadingDotsRef}
-                className="flex gap-2 justify-start"
-                aria-live="polite"
-                aria-label="Assistant is thinking"
-              >
-                <AssistantAvatar />
-                <span className="loading loading-dots loading-md text-base-content self-center" />
-              </div>
-            )}
+              {showLoadingDots && (
+                <div
+                  className="flex gap-2 justify-start"
+                  aria-live="polite"
+                  aria-label="Assistant is thinking"
+                >
+                  <AssistantAvatar />
+                  <span className="loading loading-dots loading-md text-base-content self-center" />
+                </div>
+              )}
 
-            <div ref={spacerRef} aria-hidden />
+              <div ref={spacerRef} aria-hidden />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {hasMessages && (
+          <button
+            type="button"
+            onClick={handleScrollToLatest}
+            className={`btn btn-circle btn-sm absolute bottom-4 left-1/2 z-10 -translate-x-1/2 border border-base-300 bg-base-100 text-base-content shadow-md transition-all duration-200 motion-reduce:transition-none hover:bg-base-200 dark:bg-accent dark:text-accent-content dark:hover:bg-accent/70 ${
+              showScrollToLatest
+                ? "translate-y-0 opacity-100"
+                : "pointer-events-none translate-y-2 opacity-0"
+            }`}
+            aria-label="Scroll to latest message"
+            aria-hidden={!showScrollToLatest}
+            tabIndex={showScrollToLatest ? 0 : -1}
+          >
+            <ArrowDown size={18} />
+          </button>
+        )}
+      </div>
 
       <div className="px-4 pt-3 pb-2">
         <div className="max-w-4xl mx-auto">

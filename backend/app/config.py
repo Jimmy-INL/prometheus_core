@@ -45,7 +45,7 @@ def get_max_upload_bytes(data: dict[str, Any]) -> int:
 def _jwt_secret(data: dict[str, Any]) -> str:
     # Prefer a dedicated secret, then reuse Chainlit's, then the config file value.
     return (
-        os.environ.get("CHAT_BACKEND_JWT_SECRET")
+        os.environ.get("BACKEND_JWT_SECRET")
         or os.environ.get("CHAINLIT_AUTH_SECRET")
         or data.get("jwt-secret", "")
     )
@@ -56,10 +56,10 @@ def _dev_cors_origins() -> list[str]:
 
     A wildcard ``*`` with credentials is rejected by browsers and is a footgun, so in
     debug we enumerate the local dev origins instead. Override via
-    ``CHAT_BACKEND_DEV_ORIGINS`` (comma-separated); defaults cover the Vite dev server
+    ``BACKEND_DEV_ORIGINS`` (comma-separated); defaults cover the Vite dev server
     on its common ports.
     """
-    raw = os.environ.get("CHAT_BACKEND_DEV_ORIGINS", "")
+    raw = os.environ.get("BACKEND_DEV_ORIGINS", "")
     if raw.strip():
         return [o.strip() for o in raw.split(",") if o.strip()]
     return [
@@ -113,9 +113,9 @@ class Settings(BaseSettings):
 
     # Auth / session
     jwt_secret: str = _jwt_secret(data)
-    cookie_name: str = os.environ.get("CHAT_BACKEND_COOKIE_NAME", data.get("cookie-name", "prometheus_session"))
+    cookie_name: str = os.environ.get("BACKEND_COOKIE_NAME", data.get("cookie-name", "prometheus_session"))
     token_ttl_seconds: int = _positive_int(
-        os.environ.get("CHAT_BACKEND_TOKEN_TTL_SECONDS", data.get("token-ttl-seconds", 86400)),
+        os.environ.get("BACKEND_TOKEN_TTL_SECONDS", data.get("token-ttl-seconds", 86400)),
         "token-ttl-seconds",
     )
 

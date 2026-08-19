@@ -68,4 +68,4 @@ open the stream with `withCredentials` (a Bucket A note).
 
 ## Verify
 
-`cd chat-backend && uv run pytest tests/test_events.py && uv run ruff check && uv run mypy app/`.
+`cd backend && uv run pytest tests/test_events.py && uv run ruff check && uv run mypy app/`.

@@ -27,7 +27,7 @@ from app.contract import UploadDescriptor
 logger = logging.getLogger(__name__)
 
 # Ported verbatim from message_handler.py / plugins.upload_contract. Re-declared here
-# rather than imported so chat-backend stays decoupled from the Chainlit ``plugins``
+# rather than imported so backend stays decoupled from the Chainlit ``plugins``
 # package (task ground rule: port, don't couple).
 GENERIC_UPLOAD_MIMETYPES = {"", "application/octet-stream", "binary/octet-stream"}
 

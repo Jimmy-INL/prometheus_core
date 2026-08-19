@@ -1,9 +1,9 @@
-# Tasks — Rewire `frontend-react/` onto the chat-backend contract
+# Tasks — Rewire `frontend-react/` onto the backend contract
 
 The **separate follow-up** anticipated by [`tasks/README.md`](../README.md): migrate the
-React app off `@chainlit/react-client` and onto the standalone chat-backend's JSON/SSE
-`/api` contract ([`chat-backend/CONTRACT.md`](../../chat-backend/CONTRACT.md), machine def
-`chat-backend/app/contract.py`). After this lands, the app no longer needs the Chainlit
+React app off `@chainlit/react-client` and onto the standalone backend's JSON/SSE
+`/api` contract ([`backend/CONTRACT.md`](../../backend/CONTRACT.md), machine def
+`backend/app/contract.py`). After this lands, the app no longer needs the Chainlit
 `frontend/` service at all.
 
 ## Progress (2026-08-19)
@@ -45,7 +45,7 @@ path** (App/Chat/Login/ProjectView are cut over). New/changed files:
   and `ReportElement` render markdown identically).
 
   Decisions worth noting: **mesh** degrades to a download unless `json_body` carries a VTP
-  manifest — the chat-backend has no VTK→VTP pipeline (restoring interactive mesh is a
+  manifest — the backend has no VTK→VTP pipeline (restoring interactive mesh is a
   backend follow-up); **mermaid** is best-effort from `json_body` (no agent emits it; the
   diagram text isn't a wire field). **ifc** works (ThatOpen loads the raw `.ifc` from the
   content proxy).
@@ -66,7 +66,7 @@ The coupling is at the **transport/protocol** level, not the URL level:
   `connect({transports:["websocket"]})` in `App.tsx:30`) and reads a Chainlit `IStep`
   tree via `useChatMessages()` plus `elementState`/`actionState`/`askUserState` recoil
   atoms filled by Chainlit socket events (`Chat.tsx:252,299-301`).
-- The chat-backend has **no websocket**: `POST /api/chat/messages` returns one
+- The backend has **no websocket**: `POST /api/chat/messages` returns one
   `ChatMessageResponse`; progress arrives one-way over **SSE** at `GET /api/events`.
 
 So repointing a proxy cannot work — `connect()` has nothing to handshake with. The
@@ -93,7 +93,7 @@ new-chat reset (`ProjectView.tsx`), and 3 viewers with runtime coupling
 
 ## Ground rules
 
-- **Contract is frozen; frontend conforms.** Code against `chat-backend/app/contract.py`.
+- **Contract is frozen; frontend conforms.** Code against `backend/app/contract.py`.
   Do not change backend shapes to suit the frontend without updating the contract + its
   tests. Raw `mime_type`/`json_type`/`tags` ride alongside `render_hint` for overrides.
   - ⚠️ **The contract was corrected after this doc was written** (see
@@ -111,7 +111,7 @@ new-chat reset (`ProjectView.tsx`), and 3 viewers with runtime coupling
 
 ## Concept & endpoint mapping
 
-| Chainlit (today) | chat-backend (`/api`) | Notes |
+| Chainlit (today) | backend (`/api`) | Notes |
 |---|---|---|
 | socket.io `connect()` | `EventSource("/api/events")` | one SSE stream per session; auth via cookie |
 | `sendMessage(msg, fileRefs)` | `POST /api/chat/messages` → `ChatMessageResponse` | one response, discriminated by `status` |
@@ -154,7 +154,7 @@ atoms + socket:
 | # | Step | Summary | Depends on | Verify |
 |---|------|---------|------------|--------|
 | 00 | Store + client scaffold | Add `lib/api/{client,events}.ts` + `lib/store/chat.ts` (empty impls, typed to `contract.py`). Store is a `useSyncExternalStore` slice (Decision A). | — | `tsc`/`vite build` clean; no behavior change |
-| 01 | Auth swap | `App.tsx` probe `GET /api/auth/me`; `Login.tsx` → `POST /api/auth/login`; logout → `POST /api/auth/logout`. Remove socket connect/disconnect + session recoil resets. Okta button per Decision C. | 00 | login/logout/refresh cycle works against chat-backend |
+| 01 | Auth swap | `App.tsx` probe `GET /api/auth/me`; `Login.tsx` → `POST /api/auth/login`; logout → `POST /api/auth/logout`. Remove socket connect/disconnect + session recoil resets. Okta button per Decision C. | 00 | login/logout/refresh cycle works against backend |
 | 02 | Bootstrap | On auth, `GET /api/config` (intro/suggestions/`max_upload_bytes`/auto-approve) + `POST /api/sessions` (conversation_id). Replace static `config.ts` reads; keep `useChatType` localStorage toggle. | 00, 01 | welcome text + suggestions load from backend; upload cap from config |
 | 03 | SSE stream | Open `EventSource("/api/events")`; route `status`/`task_progress`/`task_done` into the store. | 00, 01 | events observed in devtools; heartbeats ignored; reconnect works |
 | 04 | Send turn + statuses | `POST /api/chat/messages`; map `answer`/`recommendation`/`completed`/`executing`/`error` → `ChatItem`s; live `status` history → `ToolStep` progress. Rewire `Chat.tsx` off `useChatMessages`/`useChatInteract`. | 00, 03 | round-trip Q&A renders; progress animates then settles |
@@ -162,7 +162,7 @@ atoms + socket:
 | 06 | Follow-ups + plan | `needs_info` → `DynamicFormElement` from `FormField[]`, submit re-POSTs `followup_answers` (replace `askUserState.callback`); `plan_ready` → `PlanViewer` + approve/reject re-POST (`auto_approve` hides buttons). | 04, 05 | a needs_info turn and a plan_ready turn both complete |
 | 07 | Uploads | `POST /api/uploads`; keep the attachment-chip UX; echo `UploadDescriptor` in `upload_ids`; cap from config. | 04 | attach → send → agent receives upload |
 | 08 | New chat + history | `handleNewChat` → `POST /api/sessions` + store reset (drop `clear()`/reload). Optional: `GET /api/conversations/recent` into `LeftPanel`. | 02, 04 | new chat resets cleanly without full reload |
-| 09 | Cutover | Vite proxy `/api` → chat-backend (drop Chainlit routes); rename `VITE_CHAINLIT_SERVER`→`VITE_BACKEND_URL` pointing at `chat-backend:8000`; `frontend-react-dev depends_on: chat-backend`; fix `nginx1.conf` (→ `chat-backend`); remove `@chainlit/react-client` from `package.json` + delete dead Chainlit atoms; update package description. | all | `make up PROFILE=dev` yields a working app end-to-end; no `chainlit-frontend` refs |
+| 09 | Cutover | Vite proxy `/api` → backend (drop Chainlit routes); rename `VITE_CHAINLIT_SERVER`→`VITE_BACKEND_URL` pointing at `backend:8000`; `frontend-react-dev depends_on: backend`; fix `nginx1.conf` (→ `backend`); remove `@chainlit/react-client` from `package.json` + delete dead Chainlit atoms; update package description. | all | `make up PROFILE=dev` yields a working app end-to-end; no `chainlit-frontend` refs |
 
 ## Step detail highlights
 
@@ -178,7 +178,7 @@ atoms + socket:
   the artifacts content route) so viewers stay untouched. `dedupeElements` +
   `artifactFilePresentation` keep working on the adapted shape.
 - **Step 09 is the only destructive step.** Everything before it is additive and testable
-  against a running chat-backend (host `:8600`) with the Chainlit stack still intact.
+  against a running backend (host `:8600`) with the Chainlit stack still intact.
 
 ## Open decisions (resolve before Step 00)
 
@@ -221,7 +221,7 @@ Rendering moved to the frontend, so a few old-app behaviors are now the client's
 
 ## Cutover & rollback
 
-Steps 00–08 ship behind the running chat-backend while Chainlit stays up, so the app is
+Steps 00–08 ship behind the running backend while Chainlit stays up, so the app is
 verifiable incrementally. Step 09 flips the proxy/compose and removes the Chainlit client in
 one commit. Rollback = revert Step 09 (re-point proxy at `chainlit-frontend`, restore the
 dep) — the intermediate steps remain valid because the contract is frozen.

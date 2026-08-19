@@ -1,4 +1,4 @@
-# chat-backend
+# backend
 
 Standalone FastAPI service that replaces Chainlit's server role for the Prometheus
 Platform, exposing its own JSON/SSE contract. It has **zero Chainlit dependency** and
@@ -11,7 +11,7 @@ separate follow-up; the old Chainlit app (`frontend/`) is left untouched.
 ## Layout
 
 ```
-chat-backend/
+backend/
   pyproject.toml
   app/
     main.py          # FastAPI() + lifespan + router mounts
@@ -47,8 +47,8 @@ Environment overrides:
 | `AGENT_SECRET` | `agent_secret` |
 | `REDIS_URL` | `redis_url` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | `max_upload_bytes` (default 100 MB) |
-| `CHAT_BACKEND_JWT_SECRET` / `CHAINLIT_AUTH_SECRET` | `jwt_secret` |
-| `CHAT_BACKEND_COOKIE_NAME` | `cookie_name` |
-| `CHAT_BACKEND_TOKEN_TTL_SECONDS` | `token_ttl_seconds` |
+| `BACKEND_JWT_SECRET` / `CHAINLIT_AUTH_SECRET` | `jwt_secret` |
+| `BACKEND_COOKIE_NAME` | `cookie_name` |
+| `BACKEND_TOKEN_TTL_SECONDS` | `token_ttl_seconds` |
 
 Default host port is **8600** (wired into compose/nginx in task 09).

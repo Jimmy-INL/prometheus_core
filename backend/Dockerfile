@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Standalone FastAPI chat backend. Built FROM the prometheus_api base image (same
+# Standalone FastAPI backend. Built FROM the prometheus_api base image (same
 # as the agents) because the app imports prometheus_api.{a2a_stream,contract,
 # storage_client} at runtime, and that package is preinstalled in the base image.
 #
@@ -11,7 +11,7 @@
 #                  repo while resolving the lock (the deciding flag — --no-dev alone
 #                  still resolves the source)
 #   --inexact      keep the prometheus-api + deps already preinstalled in the image
-#   --no-install-project  don't install chat-backend itself; the code is COPYed below
+#   --no-install-project  don't install backend itself; the code is COPYed below
 ARG PROMETHEUS_API_BASE_IMAGE_HASH
 FROM containers.github.inl.gov/genesis/prometheus_api:${PROMETHEUS_API_BASE_IMAGE_HASH}
 

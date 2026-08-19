@@ -7,7 +7,7 @@ the Chainlit `/history` slash command. Slash-command parsing moves to the fronte
 
 ## Files to create
 
-- `chat-backend/app/routers/conversations.py`
+- `backend/app/routers/conversations.py`
 
 ## What to port
 

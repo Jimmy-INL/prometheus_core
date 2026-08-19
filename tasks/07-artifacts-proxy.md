@@ -8,8 +8,8 @@ Chainlit's server-side rendering; the React viewers already exist. Decision **D3
 
 ## Files to create
 
-- `chat-backend/app/services/artifacts.py`
-- `chat-backend/app/routers/artifacts.py`
+- `backend/app/services/artifacts.py`
+- `backend/app/routers/artifacts.py`
 
 ## `services/artifacts.py`
 

@@ -1,7 +1,7 @@
 /**
  * Artifact adapter (frontend cutover Step 05).
  *
- * Maps a wire `ArtifactMeta` (chat-backend contract) onto the app's `AnyElement`
+ * Maps a wire `ArtifactMeta` (backend contract) onto the app's `AnyElement`
  * shape so the existing `ElementRenderer` / `VIEWER_REGISTRY` route it to a viewer
  * with **no changes to the viewers themselves**. This is the seam that replaces the
  * old Chainlit `render_artifacts()` element construction.
@@ -17,7 +17,7 @@
  *
  * Notes on the two gaps carried over from the Chainlit stack:
  *   - **mesh**: the old app rendered Exodus/STL via a Chainlit-side VTK→VTP pipeline
- *     that produced a `baseUrl` + `manifest`. The chat-backend has no such pipeline
+ *     that produced a `baseUrl` + `manifest`. The backend has no such pipeline
  *     (the CONTRACT example ships `json_body: null` for a mesh artifact), so unless a
  *     manifest arrives inline we degrade to a file download rather than mount a viewer
  *     with nothing to show. Restoring interactive mesh rendering is a backend follow-up.
