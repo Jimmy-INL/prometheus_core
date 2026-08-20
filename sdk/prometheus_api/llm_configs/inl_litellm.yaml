@@ -1,39 +1,39 @@
-# INL HPC OpenAI-compatible inference scaffold.
-# Replace model IDs and the shared endpoint for the target HPC deployment.
+# INL LiteLLM proxy inference scaffold.
+# Replace model IDs and the shared endpoint for the target INL LiteLLM deployment.
 
 model_list:
   - model_name: default
     litellm_params:
-      model: gpt-5-1-gov-az
+      model: openai/claude-sonnet-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: small
     litellm_params:
-      model: gpt-4-1-mini-gov-va
+      model: openai/claude-sonnet-4-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: medium
     litellm_params:
-      model: gpt-4-1-gov-va
+      model: openai/claude-sonnet-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: large
     litellm_params:
-      model: gpt-5-1-gov-az
+      model: openai/claude-opus-4-8-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: vision
     litellm_params:
-      model: gpt-5-1-gov-az
+      model: openai/claude-opus-4-8-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: embedding
     litellm_params:
-      model: text-embedding-3-large-gov-va
+      model: openai/text-embedding-3-large-gov-va
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
