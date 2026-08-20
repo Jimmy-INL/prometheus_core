@@ -131,20 +131,6 @@ check-prerequisites: ##@ Verify certificates, .env, and Docker before running pl
 		printf "          Create the project .env file before running this target.\n"; \
 		status=1; \
 	fi; \
-	if [ ! -d ./certs ]; then \
-		printf "  [ERROR] ./certs does not exist.\n"; \
-		printf "          Create ./certs and add ca-bundle.pem certificate file.\n"; \
-		status=1; \
-	else \
-		pem_file=$$(find ./certs -type f -name '*.pem' -print -quit 2>/dev/null); \
-		if [ -n "$$pem_file" ]; then \
-			printf "  [OK] Certificate found: %s\n" "$$pem_file"; \
-		else \
-			printf "  [ERROR] ./certs does not contain a .pem file.\n"; \
-			printf "          Add at least one .pem certificate file under ./certs.\n"; \
-			status=1; \
-		fi; \
-	fi; \
 	if ! command -v docker >/dev/null 2>&1; then \
 		printf "  [ERROR] The docker command is not available.\n"; \
 		printf "          Install Docker and ensure it is available on PATH.\n"; \
