@@ -94,7 +94,7 @@ class SelectOption(BaseModel):
 class FormField(BaseModel):
     """A single DynamicForm field.
 
-    Matches the props consumed by ``frontend-react/src/viewers/DynamicFormElement.tsx``
+    Matches the props consumed by ``frontend/src/viewers/DynamicFormElement.tsx``
     and the normalized shape produced by ``normalize_followup_questions`` below
     (ported from ``message_handler._handle_needs_info``).
     """

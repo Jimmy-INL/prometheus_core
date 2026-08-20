@@ -323,11 +323,11 @@ regenerate: clean-generated generate
 
 .PHONY: react-dev react-build react-check
 
-react-dev: ##@ Run React frontend dev server on host, no Docker (frontend-react/)
-	$(MAKE) -C frontend-react dev
+react-dev: ##@ Run React frontend dev server on host, no Docker (frontend/)
+	$(MAKE) -C frontend dev
 
-react-build: ##@ Build React frontend for production (frontend-react/)
-	$(MAKE) -C frontend-react build
+react-build: ##@ Build React frontend for production (frontend/)
+	$(MAKE) -C frontend build
 
-react-check: ##@ Run React frontend lint + typecheck (frontend-react/)
-	$(MAKE) -C frontend-react check
+react-check: ##@ Run React frontend lint + typecheck (frontend/)
+	$(MAKE) -C frontend check

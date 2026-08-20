@@ -9,7 +9,7 @@ intent of the two Chainlit classifiers — the plugin dispatch order in
 ``frontend/plugins/__init__.py`` (json_type → mime → extension) and the MIME
 fallback ``_classify_artifact`` (message_handler.py:849) — plus the tag table in
 ``docs/docs/dev-docs/artifacts.md``. The hint values are aligned 1:1 with the
-React ``ElementKind`` artifact subset (``frontend-react/src/lib/chainlit/elements.ts``).
+React ``ElementKind`` artifact subset (``frontend/src/lib/chainlit/elements.ts``).
 
 The plugin trigger constants are **re-declared here** (copied verbatim from each
 ``frontend/plugins/<name>/__init__.py``) rather than imported, so the backend

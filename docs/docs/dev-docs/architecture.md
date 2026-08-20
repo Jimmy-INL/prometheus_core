@@ -209,7 +209,9 @@ All services are containerized via Docker Compose:
 | Artifact Debug | artifact-debug-agent | 8008 | Testing |
 | Synthesis Agent | synthesis-agent | 8009 | Specialist |
 | Redis | agent-redis | 6379 | State/status |
-| Chainlit Frontend | chainlit-frontend | 8500 | UI |
+| React Frontend (dev) | frontend-dev | 5150 | UI (dev profile) |
+| React Frontend (prod) | frontend-prod | 8080 | UI (prod profile) |
+| Backend | backend | 8600 | JSON/SSE API + auth |
 
 All containers share the `agent-network` bridge network. Environment variables
 for secrets, LLM profile selection, and host mappings are passed via `.env`.

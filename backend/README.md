@@ -5,8 +5,8 @@ Platform, exposing its own JSON/SSE contract. It has **zero Chainlit dependency*
 talks to the client-agent over A2A JSON-RPC (Bearer `AGENT_SECRET`), using Valkey/Redis
 for session and conversation state.
 
-This is a backend-only effort. The React frontend (`frontend-react/`) is rewired in a
-separate follow-up; the old Chainlit app (`frontend/`) is left untouched.
+The React frontend (`frontend/`) is rewired onto this backend's contract separately;
+the old Chainlit app has been removed.
 
 ## Layout
 

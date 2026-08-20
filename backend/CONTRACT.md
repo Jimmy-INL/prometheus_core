@@ -5,7 +5,7 @@ authoritative machine definition is [`app/contract.py`](app/contract.py); this
 document explains it and gives a JSON example per payload.
 
 This **supersedes** the Chainlit-flavored
-[`frontend-react/AGENT-CONTRACT.md`](../frontend-react/AGENT-CONTRACT.md) for the
+[`frontend/AGENT-CONTRACT.md`](../frontend/AGENT-CONTRACT.md) for the
 new API. That document described how agents emit Chainlit `step.elements`; the new
 frontend consumes the normalized shapes below instead — the backend does the
 element/artifact classification and hands the frontend `render_hint`s.
@@ -222,8 +222,9 @@ One model covers every `status`; only the status-relevant fields are populated.
 
 This table is the authoritative enum, mirroring the `RenderHint` `Literal` in
 [`app/contract.py`](app/contract.py) exactly (a contract test asserts they stay in
-lockstep). Note two folds: SVG (`image/svg+xml`) classifies as `image`, and CSV
-(`text/csv`) classifies as `json` — there is **no** separate `svg` or `data` hint.
+lockstep). Note two folds: SVG (`image/svg+xml`) classifies as `image`, and the
+`data` tag folds into `json` — there is **no** separate `svg` or `data` hint. CSV
+(`text/csv`) classifies as `file` (the JSON viewer can't parse it), **not** `json`.
 
 | `render_hint` | viewer | typical source |
 |---|---|---|

@@ -126,8 +126,8 @@ services:
     restart: unless-stopped
 
   # Standalone FastAPI backend (replaces Chainlit's server role; see backend/).
-  # The old chainlit-frontend service is no longer defined here; the Chainlit
-  # code stays in frontend/ until the Step 09 cutover.
+  # The React frontend now lives in frontend/ (built by the frontend-dev /
+  # frontend-prod services below); the old Chainlit frontend has been removed.
   backend:
     build:
       context: ./backend
@@ -154,17 +154,17 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  frontend-react-dev:
+  frontend-dev:
     profiles: ["dev"]
     build:
       context: .
-      dockerfile: frontend-react/Dockerfile
+      dockerfile: frontend/Dockerfile
       target: dev
       additional_contexts:
         certs: ./certs
-    container_name: frontend-react-dev
+    container_name: frontend-dev
     ports:
-      - "${FRONTEND_REACT_DEV_PORT:-5150}:5150"
+      - "${FRONTEND_DEV_PORT:-5150}:5150"
     networks:
       - agent-network
     environment:
@@ -175,24 +175,24 @@ services:
       VITE_BACKEND_URL: http://backend:8000
       CHOKIDAR_USEPOLLING: "true"
     volumes:
-      - ./frontend-react:/app
+      - ./frontend:/app
       - /app/node_modules
     # depends_on:
     #   chainlit-frontend:
     #     condition: service_started
     restart: unless-stopped
 
-  frontend-react-prod:
+  frontend-prod:
     profiles: ["prod"]
     build:
       context: .
-      dockerfile: frontend-react/Dockerfile
+      dockerfile: frontend/Dockerfile
       target: prod
       additional_contexts:
         certs: ./certs
-    container_name: frontend-react-prod
+    container_name: frontend-prod
     ports:
-      - "${FRONTEND_REACT_PROD_PORT:-8080}:8080"
+      - "${FRONTEND_PROD_PORT:-8080}:8080"
     networks:
       - agent-network
     depends_on:

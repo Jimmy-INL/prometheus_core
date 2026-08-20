@@ -1,6 +1,5 @@
-frontend/.venv
-frontend/__pycache__
-frontend/.files
+frontend/node_modules
+frontend/dist
 **/__pycache__
 **/*.pyc
 **/*.pyo
