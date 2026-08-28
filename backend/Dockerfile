@@ -20,6 +20,15 @@ WORKDIR /app
 ENV UV_PROJECT_ENVIRONMENT="/usr/local" \
     UV_LINK_MODE=copy
 
+# VTK (added in pyproject.toml for the Exodus/STL→VTP mesh pipeline) links libGL and
+# a few X client libs at `import vtk`, even though the pipeline only uses headless
+# IO/filters (no rendering context). The prometheus_api base is a Debian-based Python
+# image, so install them via apt. If a mesh render 500s with
+# "libGL.so.1: cannot open shared object file", this layer is the fix.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 libxrender1 libxext6 libsm6 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml /app/
 RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=locked \
     uv sync --no-dev --no-install-project --inexact --no-sources

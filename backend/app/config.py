@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     # Uploads
     max_upload_bytes: int = get_max_upload_bytes(data)
 
+    # Mesh (Exodus/STL) → VTP conversion cache root (empty = <tempdir>/prometheus-mesh).
+    # Overridden by env PROMETHEUS_MESH_CACHE_DIR.
+    mesh_cache_dir: str = os.environ.get("PROMETHEUS_MESH_CACHE_DIR", data.get("mesh-cache-dir", ""))
+
     # Behavior
     debug: bool = data.get("debug", False)
     auto_approve_steps: bool = data.get("auto-approve-steps", False)

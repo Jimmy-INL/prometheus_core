@@ -13,6 +13,10 @@ dependencies = [
     "httpx>=0.27.0",
     "pyjwt>=2.8",
     "pyyaml>=6.0.3",
+    # Exodus/STL → VTP conversion for the MeshViewer (app/services/mesh/*). Headless
+    # IO + filters only (no offscreen GL), but `import vtk` still links libGL, so the
+    # image installs the GL/X client libs (see Dockerfile).
+    "vtk>=9.3",
 ]
 
 [dependency-groups]

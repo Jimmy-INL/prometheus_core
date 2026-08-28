@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -29,6 +30,7 @@ from starlette.background import BackgroundTask
 from app import uri_resolver
 from app.security import TokenClaims, current_claims
 from app.services.artifacts import artifact_download_payload, artifact_identity, classify_render_hint
+from app.services.mesh.service import mesh_cache_root
 from app.sessions import SessionState, SessionStore
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,10 @@ router = APIRouter(prefix="/api", tags=["artifacts"])
 
 # Render hints served as a browser download rather than viewed inline.
 _DOWNLOAD_HINTS = {"file", "unknown"}
+
+# One safe path segment (no separators; `..` additionally rejected below). Guards the
+# dataset_id/filename the browser sends to the mesh VTP route.
+_MESH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _get_store(request: Request) -> SessionStore:
@@ -143,3 +149,37 @@ async def get_artifact_content(
         status_code=http_status.HTTP_404_NOT_FOUND,
         detail=f"Artifact {artifact_id!r} has no downloadable content.",
     )
+
+
+def _reject_unsafe_segment(value: str) -> None:
+    """Reject any path segment that isn't a single safe name (path-traversal guard)."""
+    if not _MESH_SEGMENT_RE.match(value) or ".." in value:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid mesh path.")
+
+
+@router.get("/artifacts/mesh/{dataset_id}/{filename}")
+async def get_mesh_file(
+    dataset_id: str,
+    filename: str,
+    claims: TokenClaims = Depends(current_claims),
+) -> Response:
+    """Serve a converted VTP timestep for the React MeshViewer (auth-required).
+
+    A mesh artifact's ``json_body.baseUrl`` is ``/api/artifacts/mesh/{dataset_id}``
+    (see ``services/mesh/service.py``); the viewer fetches each
+    ``${baseUrl}/${filename}`` from here. ``dataset_id`` is a content hash and the
+    cached files are session-independent, so the guard is auth + path-traversal
+    safety: both segments must be single safe names and the resolved path must stay
+    inside the mesh cache root.
+    """
+    _reject_unsafe_segment(dataset_id)
+    _reject_unsafe_segment(filename)
+
+    root = mesh_cache_root().resolve()
+    candidate = (root / dataset_id / filename).resolve()
+    if not candidate.is_relative_to(root):  # defense in depth beyond the segment check
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid mesh path.")
+    if not candidate.is_file():
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Mesh file not found.")
+
+    return FileResponse(path=str(candidate), media_type="application/xml")

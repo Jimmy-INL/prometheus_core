@@ -25,6 +25,10 @@ redis-url: "redis://localhost:6379"
 # Upload handling (overridden by env var PROMETHEUS_MAX_UPLOAD_BYTES)
 max-upload-bytes: 104857600
 
+# Mesh (Exodus/STL) → VTP conversion cache root (empty = <tempdir>/prometheus-mesh).
+# Overridden by env PROMETHEUS_MESH_CACHE_DIR.
+mesh-cache-dir: ""
+
 debug: false
 auto-approve-steps: false
 
