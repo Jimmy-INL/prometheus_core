@@ -1,6 +1,11 @@
 # File Upload Workflow
 
-Users can attach files to a query in the Chainlit frontend. This document describes how those files flow through the system to DeepLynx and how they become available to specialist agents.
+> **Note:** The Chainlit frontend has been removed; uploads now originate from the React
+> `frontend/` and flow through the FastAPI `backend/`. The client-agent → DeepLynx portion below
+> is unchanged, but the "Frontend encoding" details referencing `frontend/components/message_handler.py`
+> describe the removed Chainlit frontend and are retained only as historical reference.
+
+Users can attach files to a query in the frontend. This document describes how those files flow through the system to DeepLynx and how they become available to specialist agents.
 
 ## High-level flow
 

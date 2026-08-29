@@ -1,31 +1,40 @@
 # syntax=docker/dockerfile:1
-ARG PROMETHEUS_API_BASE_IMAGE_HASH
-FROM containers.github.inl.gov/genesis/prometheus_api:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
-RUN --mount=type=cache,id=prometheus-apt-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=prometheus-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-    build-essential \
-    libx11-6 \
-    libxext6 \
-    libxrender1 \
-    libgl1 \
-    libglib2.0-0 \
-    libgomp1
-
+# ---- base (shared) ----
+FROM node:22.19.0-bookworm-slim AS base
 WORKDIR /app
-ENV UV_PROJECT_ENVIRONMENT="/usr/local" \
-    UV_LINK_MODE=copy
 
-COPY frontend/pyproject.toml frontend/uv.lock /app/
-RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=locked \
-    uv sync --no-dev --frozen --no-install-project --inexact
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=certs ca-bundle.pem /usr/local/share/ca-certificates/ca-bundle.crt
+RUN update-ca-certificates
 
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
+    NPM_CONFIG_cafile=/etc/ssl/certs/ca-certificates.crt
 
-COPY frontend/. /app/.
+# ---- deps ----
+FROM base AS deps
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,id=prometheus-npm-cache,target=/root/.npm,sharing=locked \
+    npm ci --no-audit --no-fund --include=optional || \
+    npm install --no-audit --no-fund --include=optional
 
-EXPOSE 8500
+# ---- dev ----
+FROM deps AS dev
+COPY frontend/. .
+EXPOSE 5150
+ENV HOST=0.0.0.0
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5150"]
 
-CMD ["chainlit", "run", "main.py", "--host", "0.0.0.0", "--port", "8500"]
+# ---- build (prod) ----
+FROM deps AS build
+COPY frontend/. .
+RUN npm run build
+
+# ---- prod ----
+FROM nginx:alpine AS prod
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]

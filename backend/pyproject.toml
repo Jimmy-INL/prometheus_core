@@ -1,0 +1,67 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Standalone FastAPI backend (replaces Chainlit's server role)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "python-multipart>=0.0.9",  # required for form-encoded POST /api/auth/login
+    "uvicorn[standard]>=0.34",
+    "pydantic-settings>=2.0",
+    "redis>=4.2",
+    "httpx>=0.27.0",
+    "pyjwt>=2.8",
+    "pyyaml>=6.0.3",
+    # Exodus/STL → VTP conversion for the MeshViewer (app/services/mesh/*). Headless
+    # IO + filters only (no offscreen GL), but `import vtk` still links libGL, so the
+    # image installs the GL/X client libs (see Dockerfile).
+    "vtk>=9.3",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.11",
+    "types-pyyaml>=6.0.12.20250915",
+    # Local dev/tests import prometheus_api.contract; in Docker the package
+    # comes preinstalled from the prometheus_api base image (--no-dev skips
+    # this entry at image build time).
+    "prometheus-api",
+]
+
+[tool.uv.sources]
+# TODO: re-pin to main (or a version tag) once prometheus_api a2a_1.0 merges.
+# Working on prometheus_api locally? Override with:
+#   uv pip install -e /path/to/prometheus_api
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", branch = "a2a_1.0" }
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+lint.select = ["E", "F"]
+lint.ignore = ["E501"]
+lint.per-file-ignores = { "tests/*" = ["E402"] }
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+explicit_package_bases = true

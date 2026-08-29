@@ -1,6 +1,12 @@
 # Visualization plugins
 
-The Chainlit frontend includes custom React elements for rendering specialized content. These are located in `frontend/public/elements/` and are rendered via Chainlit's `cl.CustomElement` API.
+> **Note:** The Chainlit frontend has been removed; the platform's frontend is now the React
+> app in `frontend/`. Current viewers live in `frontend/src/viewers/` (with some custom-element
+> JSX still in `frontend/public/elements/`) and are driven by the backend's artifact payloads.
+> The `cl.CustomElement` API and the Python integration-module workflow described below are from
+> the removed Chainlit frontend and are retained here only as historical reference.
+
+The former Chainlit frontend included custom React elements for rendering specialized content, located in `frontend/public/elements/` and rendered via Chainlit's `cl.CustomElement` API.
 
 > **Future:** letting *agents* ship their own viewers (rendered in a sandboxed iframe, not baked into the
 > frontend) is designed in [`agent-provided-plugins.md`](../../dev-docs/agent-provided-plugins.md).

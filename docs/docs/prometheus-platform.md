@@ -6,25 +6,27 @@ icon: lucide/layout-dashboard
 
 # Prometheus Platform
 
-A multi-agent analysis platform for nuclear engineering. Users interact through a Chainlit chat UI that routes queries to specialist agents via a central client-agent orchestrator using the A2A (Agent-to-Agent) JSON-RPC 2.0 protocol.
+A multi-agent analysis platform for nuclear engineering. Users interact through a React chat UI (served by a FastAPI backend) that routes queries to specialist agents via a central client-agent orchestrator using the A2A (Agent-to-Agent) JSON-RPC 2.0 protocol.
 
 ## Architecture
 
 ```mermaid
 graph TD
-  U[User] -->|chat / file upload| CL[Chainlit Frontend]
-  CL -->|A2A JSON-RPC| CA[Client Agent]
+  U[User] -->|chat / file upload| FE[React Frontend]
+  FE -->|JSON / SSE| BE[FastAPI Backend]
+  BE -->|A2A JSON-RPC| CA[Client Agent]
   CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
   CA -->|state + factoids| RED[(Redis)]
   LLM -->|A2A| SA[Specialist Agents]
-  CL -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
+  FE -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
 ```
 
-The frontend communicates directly with the client-agent via A2A protocol. The client-agent discovers specialist agents from LiteLLM's agent directory, manages multi-turn conversation state in Redis, and dispatches analysis work through LiteLLM's A2A gateway.
+The React frontend communicates with the FastAPI backend over its JSON/SSE contract; the backend relays to the client-agent via the A2A protocol. The client-agent discovers specialist agents from LiteLLM's agent directory, manages multi-turn conversation state in Redis, and dispatches analysis work through LiteLLM's A2A gateway.
 
 | Service | Port | Stack |
 |---------|------|-------|
-| Chainlit Frontend | 8500 | Chainlit, VTK, pyyaml |
+| React Frontend | 5150 (dev) / 8080 (prod) | React, Vite, VTK.js |
+| Backend | 8600 | FastAPI, A2A client |
 | Client Agent | 8001 | LangGraph, Prometheus LLMClient, A2A SDK |
 | LiteLLM Agent Gateway | 9977 | LiteLLM proxy + A2A routing |
 | Redis | 6379 | Factoids, conversation state |
@@ -54,8 +56,8 @@ docker-compose up --build
 ### Local development
 
 ```bash
-cd prometheus_platform/frontend && uv sync --group dev
-make run        # Chainlit UI
+cd prometheus_platform/frontend && make install
+make dev        # React dev server (http://localhost:5150)
 ```
 
 Log in with `prometheus` / `prometheus`.
@@ -65,17 +67,16 @@ Log in with `prometheus` / `prometheus`.
 From `frontend/`:
 
 ```bash
-make run        # Start Chainlit
-make test       # Run pytest
-make lint       # Ruff linter (report only)
-make format     # Ruff formatter check
-make fix        # Auto-fix lint + format
-make check      # All checks (lint + format + typecheck)
+make dev        # Start the Vite dev server (port 5150)
+make build      # Production bundle → dist/
+make lint       # eslint
+make typecheck  # tsc
+make check      # lint + typecheck
 ```
 
 ## Configuration
 
-The frontend reads `frontend/config.yml`:
+The backend reads `backend/app/config.yml`:
 
 ```yaml
 chat-intro: "Welcome to the Prometheus Platform."
@@ -103,11 +104,11 @@ Override the config path with `PROMETHEUS_CONFIG_PATH=/path/to/config.yml`.
 
 ### Chat flow
 
-1. User sends a message in the Chainlit UI
-2. Frontend sends an A2A JSON-RPC request to the client-agent
+1. User sends a message in the React UI
+2. The React frontend posts it to the FastAPI backend, which relays an A2A JSON-RPC request to the client-agent
 3. Client-agent classifies the query, discovers relevant agents through LiteLLM, and collects parameters if needed
 4. Specialist agents execute analysis and return results with artifacts
-5. Frontend renders the response and any visualization elements
+5. The backend streams the response back over SSE and the frontend renders any visualization elements
 
 ### Multi-turn conversations
 
@@ -119,18 +120,18 @@ The client-agent maintains conversation state in Redis. Each turn can:
 
 ### File upload
 
-The frontend detects file type on upload and processes locally:
+Uploads are sent to the backend; the frontend renders each type with the matching viewer:
 
-- `.e` / `.exo` (Exodus) -- VTK processing, rendered with MeshViewer
-- `.stl` (STL) -- VTK processing (shared with Exodus), rendered with MeshViewer
-- `.ifc` -- Copied to `public/ifc-data/`, rendered with IFCViewer
-- `.pdf` -- Displayed inline
+- `.e` / `.exo` (Exodus) -- rendered client-side with MeshViewer (VTK.js)
+- `.stl` (STL) -- rendered client-side with MeshViewer (VTK.js)
+- `.ifc` -- rendered with IFCViewer
+- `.pdf` -- displayed inline
 
 ## Frontend components
 
-### Custom React elements
+### Viewers and custom elements
 
-Located in `frontend/public/elements/`, rendered via Chainlit's `cl.CustomElement`:
+React viewers live in `frontend/src/viewers/`; some custom-element JSX remains in `frontend/public/elements/`. They are driven by the backend's artifact/event payloads (no Chainlit `cl.CustomElement` coupling):
 
 | Component | Purpose |
 |-----------|---------|

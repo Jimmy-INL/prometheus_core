@@ -67,7 +67,7 @@ def litellm_config_data(litellm_config_path: Path) -> dict:
 @pytest.fixture(scope="session")
 def infrastructure_services() -> set[str]:
     """Return the set of infrastructure service names (excludes specialist agents)."""
-    return {"litellm-db", "litellm", "redis", "chainlit-frontend", "client-agent"}
+    return {"litellm-db", "litellm", "redis", "backend", "client-agent"}
 
 
 def _extract_compose_var_refs(compose_text: str) -> list[tuple[str, bool]]:
@@ -234,7 +234,7 @@ def env_test_file(project_root: Path):
         f"LITELLM_LOCAL_PORT=19977\n"
         f"REDIS_LOCAL_PORT=16379\n"
         f"CLIENT_AGENT_PORT=18001\n"
-        f"CHAINLIT_FRONTEND_PORT=18500\n"
+        f"BACKEND_PORT=18600\n"
         f"CLIENT_AGENT_URL=http://client-agent:8000\n"
     )
     yield env_path
@@ -248,7 +248,7 @@ def test_ports() -> dict[str, int]:
         "litellm": 19977,
         "redis": 16379,
         "client_agent": 18001,
-        "frontend": 18500,
+        "backend": 18600,
     }
 
 
@@ -281,7 +281,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
 
     # Start in phases so frontend/client-agent don't fail while LiteLLM is still booting.
     core_services = ["litellm-db", "litellm", "redis"]
-    app_services = ["client-agent", "chainlit-frontend"]
+    app_services = ["client-agent", "backend"]
 
     try:
         # Start core infrastructure first.
@@ -321,7 +321,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
 
         app_readiness_checks = [
             ("client-agent", "running", _wait_for_container_running, 120),
-            ("chainlit-frontend", "running", _wait_for_container_running, 180),
+            ("backend", "running", _wait_for_container_running, 180),
         ]
         for container_name, expected_state, wait_fn, timeout in app_readiness_checks:
             if wait_fn(container_name, timeout=timeout):
@@ -338,7 +338,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
 
         env_vars = _parse_env_test_file(env_test_file)
         litellm_port = env_vars.get("LITELLM_LOCAL_PORT", "19977")
-        frontend_port = env_vars.get("CHAINLIT_FRONTEND_PORT", "18500")
+        backend_port = env_vars.get("BACKEND_PORT", "18600")
 
         if not _wait_for_http_ready(
             f"http://localhost:{litellm_port}/health/readiness",
@@ -352,13 +352,13 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
             )
 
         if not _wait_for_http_ready(
-            f"http://localhost:{frontend_port}",
+            f"http://localhost:{backend_port}/healthz",
             timeout=180,
             ok_statuses=(200,),
         ):
-            logs = _get_container_logs("chainlit-frontend")
+            logs = _get_container_logs("backend")
             pytest.fail(
-                "Chainlit frontend did not serve HTTP 200 within 180s.\n"
+                "backend /healthz did not return HTTP 200 within 180s.\n"
                 f"Recent logs:\n{logs}"
             )
 

@@ -8,7 +8,7 @@ import pytest
 
 from prometheus_api.contract import ConversationResponse
 from system import prometheus
-from utils.a2a_client import ChatFinalEvent, ChatProgressEvent
+from system.a2a_client import ChatFinalEvent, ChatProgressEvent
 
 
 class _FakeSession:

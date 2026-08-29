@@ -1,13 +1,14 @@
 # Prometheus Platform
 
-A multi-agent analysis platform for nuclear engineering. Users interact through a Chainlit chat UI that routes queries to specialist agents via a central client-agent orchestrator. The platform supports 3D visualization (Exodus, STL, IFC), multi-step analysis workflows, conversation state, and a DeepLynx-backed artifact catalog.
+A multi-agent analysis platform for nuclear engineering. Users interact through a React chat UI (served by a FastAPI backend) that routes queries to specialist agents via a central client-agent orchestrator. The platform supports 3D visualization (Exodus, STL, IFC), multi-step analysis workflows, conversation state, and a DeepLynx-backed artifact catalog.
 
 ## Architecture
 
 ```mermaid
 graph TD
-  U[User] -->|chat / file upload| CL[Chainlit Frontend]
-  CL -->|A2A JSON-RPC| CA[Client Agent]
+  U[User] -->|chat / file upload| FE[React Frontend]
+  FE -->|JSON / SSE| BE[FastAPI Backend]
+  BE -->|A2A JSON-RPC| CA[Client Agent]
   CA -->|agent discovery + A2A routing| LLM[LiteLLM Agent Gateway]
   CA -->|state + factoids| RED[(Valkey<br/>Redis-compatible)]
   LLM -->|A2A| CORR[Corrosion Agent]
@@ -17,19 +18,20 @@ graph TD
   LLM -->|A2A| SYNTH[Synthesis Agent]
   LLM -->|A2A| OSTI[OSTI Research Agent]
   LLM -->|A2A| FF[Form Filler Agent]
-  CL -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
+  FE -->|renders| VIZ[MeshViewer / IFCViewer / MermaidViewer]
 ```
 
-**Request flow:** User sends a message in Chainlit. The frontend forwards it as an A2A JSON-RPC request to the client-agent. The client-agent classifies the query, discovers relevant specialist agents through LiteLLM's agent directory, collects any missing parameters, builds an execution plan, and dispatches work through LiteLLM's A2A gateway. Results (including artifacts) flow back through the client-agent to the frontend for rendering.
+**Request flow:** A user sends a message in the React frontend, which posts it to the FastAPI backend over its JSON/SSE contract. The backend forwards it as an A2A JSON-RPC request to the client-agent, which classifies the query, discovers relevant specialist agents through LiteLLM's agent directory, collects any missing parameters, builds an execution plan, and dispatches work through LiteLLM's A2A gateway. Results (including artifacts) flow back through the client-agent and backend to the frontend for rendering.
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image)
-- [uv](https://docs.astral.sh/uv/) and Python — only required if you run components outside Docker:
-  - Frontend pins **Python 3.12** (`>=3.12,<3.13`)
+- [uv](https://docs.astral.sh/uv/) and Python — only required to run the Python components outside Docker:
+  - Backend: **3.12+**
   - Client-agent: **3.12+**
   - Infrastructure tests: **3.13+**
+- Node.js + npm — only required to run the React `frontend/` dev server outside Docker
 
 ## Quickstart
 
@@ -74,7 +76,8 @@ Services and host ports:
 
 | Service | URL / Port | Role |
 |---|---|---|
-| Chainlit UI | http://localhost:8500 | Entry point |
+| React frontend | http://localhost:5150 (dev profile, default) / 8080 (prod profile) | Entry point |
+| Backend (FastAPI) | http://localhost:8600 (`BACKEND_PORT`) | JSON/SSE API + auth/sessions |
 | Client agent | internal only; http://localhost:8001 in system-test mode | Orchestrator |
 | LiteLLM gateway | http://localhost:9977 (`LITELLM_LOCAL_PORT`) | Agent registry + LLM proxy |
 | Valkey | localhost:6379 | Redis-compatible state, status, artifact metadata |
@@ -82,29 +85,27 @@ Services and host ports:
 
 ### Log in
 
-Default credentials (defined in `frontend/config.yml`):
+Default credentials (defined in `backend/app/config.yml` under `local-users`):
 
 - Username: `prometheus`
 - Password: `prometheus`
 
 ## Local frontend development (hot reload)
 
-The frontend supports hot reload against an already-running Compose stack:
+The React frontend supports hot reload against an already-running Compose stack:
 
 ```bash
-# 1. Start the stack with the client-agent port published.
-make PROMETHEUS_SYSTEM_TESTING=true up
+# 1. Start the stack. The backend is published on 8600 regardless of PROFILE.
+#    Use PROFILE= to skip the containerized frontend so it doesn't hold port 5150.
+make PROFILE= up
 
-# 2. Stop just the containerized frontend so it doesn't fight for port 8500.
-docker stop chainlit-frontend
-
-# 3. Run the frontend locally with uv.
+# 2. Run the Vite dev server locally.
 cd frontend
-uv sync --group dev
-make run-local    # http://localhost:8500
+make install
+make dev           # http://localhost:5150
 ```
 
-The local frontend uses the `agent-url` from `frontend/config.yml` (default `http://localhost:8001`), which maps to the containerized client-agent.
+The Vite dev server proxies `/api` to the backend at `VITE_BACKEND_URL` (default `http://localhost:8600`), which maps to the containerized backend.
 
 ## Full-system tests
 
@@ -115,23 +116,24 @@ make PROMETHEUS_SYSTEM_TESTING=true up
 make test-system
 ```
 
-`tests/system/prometheus.py` provides concise test helpers for starting a chat, prompting, submitting requested parameters, approving plans, inspecting typed artifacts, and making LLM-judged semantic assertions. It wraps the lower-level lifecycle stream and production artifact APIs in `frontend/utils/a2a_client.py`.
-
-For deployment on the HPC host, `make run` (from `frontend/`) starts Chainlit on `c500-prometheus.hpc.inl.gov:6100`.
+`tests/system/prometheus.py` provides concise test helpers for starting a chat, prompting, submitting requested parameters, approving plans, inspecting typed artifacts, and making LLM-judged semantic assertions. It wraps the lower-level lifecycle stream and production artifact APIs in `tests/system/a2a_client.py`.
 
 ## Configuration
 
-Frontend settings come from `frontend/config.yml` (override the path with `PROMETHEUS_CONFIG_PATH`):
+Backend settings come from `backend/app/config.yml` (override the path with `PROMETHEUS_CONFIG_PATH`):
 
 | Key | Description |
 |-----|-------------|
 | `agent-url` | Client-agent A2A endpoint (default: `http://localhost:8001`). Overridden by `CLIENT_AGENT_URL`. |
 | `agent-secret` | Bearer token for agent auth. Overridden by `AGENT_SECRET`. |
-| `redis-url` | Redis connection URL for memory browsing. Overridden by `REDIS_URL`. |
-| `debug` | Enable debug features in the UI settings panel |
+| `redis-url` | Redis connection URL for session/conversation state. Overridden by `REDIS_URL`. |
+| `jwt-secret` | Session-cookie signing key. Overridden by `BACKEND_JWT_SECRET` / `CHAINLIT_AUTH_SECRET`. |
+| `debug` | Enable debug features |
 | `auto-approve-steps` | Skip manual approval between workflow steps |
 | `workflow-suggestions` | Chat suggestions shown on startup |
 | `local-users` | Username/password pairs for local auth |
+
+The React app itself is configured through `frontend/config.ts` and `VITE_*` environment variables (e.g. `VITE_BACKEND_URL`).
 
 Notable environment variables (see `.env.example` for the full list):
 
@@ -156,20 +158,19 @@ Notable environment variables (see `.env.example` for the full list):
 ```
 prometheus_platform/
   Makefile                  # Top-level orchestration (Compose, generate, tests)
-  docker-compose.yml        # Core infra: Valkey, LiteLLM, Postgres, client-agent, frontend
+  docker-compose.yml        # Core infra: Valkey, LiteLLM, Postgres, client-agent, backend, frontend
   docker-compose.agents.yml # Auto-generated from agents/*/docker-compose.yml — do not edit
   litellm_config.yaml       # LiteLLM proxy config (model_list, master key, db url)
   scripts/
     generate-agents-compose.sh
-  frontend/
-    main.py                 # Chainlit app entry point
-    config.yml              # Application configuration
-    components/             # Message handling, file processing, settings
-    utils/                  # Settings loader, A2A client, conversation state client
-    plugins/                # Visualization plugin wrappers (exodus, stl, ifc, mermaid, ...)
-    public/elements/        # Custom React components (JSX)
-    public/js/              # Bundled JS for IFC and VTK viewers
+  backend/
+    app/                    # FastAPI app: routers, services, contract, config
     tests/
+  frontend/                 # React + Vite single-page app
+    src/                    # App, components, viewers, lib (backend contract adapter)
+    public/                 # Static assets, custom-element JSX, IFC/VTK JS bundles
+    Dockerfile              # dev (Vite) + prod (nginx) build stages
+    nginx.conf              # prod SPA + /api proxy config
 
   agents/
     client-agent/           # A2A orchestrator
@@ -196,21 +197,15 @@ prometheus_platform/
 ```bash
 cd frontend
 
-make run-local   # Start Chainlit locally on port 8500 (hot reload)
-make run         # Start Chainlit on the HPC host (c500-prometheus.hpc.inl.gov:6100)
-make test        # Run pytest
-make lint        # Ruff linter
-make format      # Ruff formatter check
-make fix         # Auto-fix lint + format
-make check       # All checks (lint + format + typecheck)
+make install     # npm install
+make dev         # Vite dev server on port 5150 (hot reload)
+make build       # Production bundle → dist/
+make lint        # eslint
+make typecheck   # tsc
+make check       # lint + typecheck
 ```
 
-Run a single test:
-
-```bash
-uv run python -m pytest tests/test_chat.py       # By file
-uv run python -m pytest -k test_name             # By name
-```
+The Vite dev server proxies `/api` to the backend (`VITE_BACKEND_URL`, default `http://localhost:8600`). React unit tests live alongside the source as `src/**/*.test.ts`.
 
 ### Per-agent
 

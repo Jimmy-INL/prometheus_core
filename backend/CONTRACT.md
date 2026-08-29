@@ -1,0 +1,316 @@
+# backend wire contract (v1)
+
+Human-readable spec for the standalone FastAPI backend's JSON/SSE API. The
+authoritative machine definition is [`app/contract.py`](app/contract.py); this
+document explains it and gives a JSON example per payload.
+
+This **supersedes** the Chainlit-flavored
+[`frontend/AGENT-CONTRACT.md`](../frontend/AGENT-CONTRACT.md) for the
+new API. That document described how agents emit Chainlit `step.elements`; the new
+frontend consumes the normalized shapes below instead — the backend does the
+element/artifact classification and hands the frontend `render_hint`s.
+
+## Principles
+
+- **Own the contract.** These shapes mirror `prometheus_api`'s `ConversationRequest` /
+  `ConversationResponse` but are defined independently. Normalization happens at the
+  service boundary (task 04); base-image types never reach the wire.
+- **`render_hint`, not raw dispatch.** The backend classifies each artifact and emits a
+  `render_hint` so a thin frontend routes to the right viewer without re-implementing
+  MIME / `json_type` / extension dispatch. Raw `mime_type` / `json_type` / `tags` ride
+  along so the frontend can override.
+- **Session-carried `conversation_id`.** The `conversation_id` lives in server-side
+  session state (keyed by the auth JWT's session id), never in a request body.
+
+## Status values
+
+`ChatStatus` mirrors `prometheus_api.ConversationStatus`:
+
+| status | meaning | key fields |
+|---|---|---|
+| `needs_info` | follow-up questions for the user | `followup_questions` |
+| `plan_ready` | plan awaiting approval | `plan`, `auto_approve` |
+| `executing` | plan execution in progress | `message` |
+| `completed` | multi-step plan finished | `report`, `artifacts`, `recommended_materials`, `follow_up_suggestions` |
+| `answer` | direct single-agent answer | `response_text`, `artifacts` |
+| `recommendation` | direct recommendation | `response_text`, `recommended_materials` |
+| `backgrounded` | turn detached to a task | `task_id` |
+| `error` | request failed | `message` |
+
+---
+
+## `POST /api/sessions` → `SessionResponse`
+
+Explicit session creation (not implicit-on-first-message). Returns the new
+`conversation_id` and the chat-profile content.
+
+```json
+{
+  "conversation_id": "c-8f2a…",
+  "chat_intro": "Welcome to the Prometheus Platform.",
+  "chat_suggestion_title": "What would you like to do today?",
+  "workflow_suggestions": ["Design a nuclear system", "Run FTL Safety Analysis"],
+  "auto_approve_steps": false
+}
+```
+
+## `GET /api/config` → `ConfigResponse`
+
+Static, non-session settings (no `conversation_id`).
+
+```json
+{
+  "chat_intro": "Welcome to the Prometheus Platform.",
+  "chat_suggestion_title": "What would you like to do today?",
+  "workflow_suggestions": ["Design a nuclear system"],
+  "auto_approve_steps": false,
+  "max_upload_bytes": 104857600
+}
+```
+
+## `POST /api/uploads` → `UploadDescriptor`
+
+Multipart upload; staged toward DeepLynx (task 06). The returned descriptor is
+echoed back in the next `ChatMessageRequest.upload_ids`.
+
+```json
+{ "upload_id": "u-1a2b", "name": "part.stl", "mime_type": "model/stl", "size_bytes": 40213 }
+```
+
+## `POST /api/chat/messages`
+
+### Request — `ChatMessageRequest`
+
+Mirrors the args `A2AClient.send()` accepts. `conversation_id` is **not** here.
+
+```json
+{
+  "query": "Perform a thermal analysis of SS316 at 400C",
+  "followup_answers": null,
+  "plan_approved": false,
+  "plan_rejected": false,
+  "workflow_id": null,
+  "upload_ids": [
+    { "upload_id": "u-1a2b", "name": "part.stl", "mime_type": "model/stl", "size_bytes": 40213 }
+  ]
+}
+```
+
+A follow-up submission reuses the same endpoint with `followup_answers` populated
+(keys are `FormField.id`s):
+
+```json
+{ "query": "Perform a thermal analysis of SS316", "followup_answers": { "temp_c": 400 } }
+```
+
+Plan approval / rejection:
+
+```json
+{ "query": "", "plan_approved": true }
+```
+
+### Response — `ChatMessageResponse`
+
+One model covers every `status`; only the status-relevant fields are populated.
+
+**`needs_info`** — `followup_questions` is a list of normalized `FormField`s:
+
+```json
+{
+  "turn_id": "turn-01",
+  "status": "needs_info",
+  "message": "Additional information needed",
+  "followup_questions": [
+    {
+      "id": "temp_c",
+      "label": "Operating temperature?",
+      "input_type": "number",
+      "required": true,
+      "options": null,
+      "default": null,
+      "help": "Degrees Celsius",
+      "placeholder": null,
+      "rows": null,
+      "min": 0,
+      "max": 1000,
+      "step": null
+    },
+    {
+      "id": "material",
+      "label": "Material?",
+      "input_type": "select",
+      "required": true,
+      "options": [
+        { "label": "SS316", "value": "SS316" },
+        { "label": "SS347", "value": "ss347" }
+      ]
+    }
+  ]
+}
+```
+
+**`plan_ready`** — `auto_approve` tells the frontend whether to show approve/reject buttons:
+
+```json
+{
+  "turn_id": "turn-02",
+  "status": "plan_ready",
+  "message": "Here's my plan",
+  "plan": { "steps": [{ "agent": "thermal-agent", "description": "…" }] },
+  "auto_approve": false
+}
+```
+
+**`executing`**:
+
+```json
+{ "turn_id": "turn-03", "status": "executing", "message": "Running step 2 of 4…" }
+```
+
+**`completed`** — report + artifacts (each with a `render_hint`) + suggestions:
+
+```json
+{
+  "turn_id": "turn-04",
+  "status": "completed",
+  "report": "## Thermal Analysis\nSS316 at 400°C …",
+  "artifacts": [
+    {
+      "artifact_id": "art-9",
+      "name": "temperature_field.e",
+      "mime_type": "application/x-exodus",
+      "json_type": null,
+      "description": "Steady-state temperature field",
+      "uri": "deeplynx://…",
+      "tags": ["mesh", "thermal"],
+      "json_body": null,
+      "render_hint": "mesh",
+      "producer_agent_id": "thermal-agent",
+      "created_at": "2026-08-10T12:00:00Z"
+    }
+  ],
+  "recommended_materials": ["SS316", "SS347"],
+  "follow_up_suggestions": ["Compare against SS347", "Export the mesh"]
+}
+```
+
+**`answer`**:
+
+```json
+{ "turn_id": "turn-05", "status": "answer", "response_text": "The yield strength is …", "artifacts": null }
+```
+
+**`recommendation`**:
+
+```json
+{ "turn_id": "turn-06", "status": "recommendation", "response_text": "Use SS347 because …", "recommended_materials": ["SS347"] }
+```
+
+**`backgrounded`** — the server registers `task_id` as awaited; progress arrives on the SSE stream:
+
+```json
+{ "turn_id": "turn-07", "status": "backgrounded", "task_id": "bg-42", "message": "This is running in the background." }
+```
+
+**`error`**:
+
+```json
+{ "turn_id": "turn-08", "status": "error", "message": "The thermal agent is unavailable." }
+```
+
+### Artifact `render_hint` values
+
+This table is the authoritative enum, mirroring the `RenderHint` `Literal` in
+[`app/contract.py`](app/contract.py) exactly (a contract test asserts they stay in
+lockstep). Note two folds: SVG (`image/svg+xml`) classifies as `image`, and the
+`data` tag folds into `json` — there is **no** separate `svg` or `data` hint. CSV
+(`text/csv`) classifies as `file` (the JSON viewer can't parse it), **not** `json`.
+
+| `render_hint` | viewer | typical source |
+|---|---|---|
+| `pdf` | PDF viewer | `application/pdf` |
+| `image` | image | `image/png`, `image/jpeg`, `image/svg+xml` (SVG folds in), … |
+| `json` | CollapsibleJson | `application/json`, inline `json_body` (CSV → `file`, not JSON) |
+| `ifc` | IFCViewer | `model/ifc`, `.ifc` |
+| `mesh` | MeshViewer | Exodus (`application/x-exodus`, `.exo`/`.e`), STL |
+| `mermaid` | MermaidViewer | `text/x-mermaid` |
+| `thermal` | ThermalAnalysisViewer | `json_type == prometheus.thermal_analysis.result.v1` |
+| `report` | markdown (rendered inline) | `text/markdown`, `text/plain`, `.md` |
+| `reference` | citation card | `reference`/`citation` tag; source/section/page in `citation` |
+| `file` | download | CAD/STEP, `application/octet-stream`, zip/gzip |
+| `unknown` | download fallback | anything unclassified |
+
+The classifier lives in `classify_render_hint` / `to_artifact_meta`
+(`app/services/artifacts.py`); the frontend may override using the raw
+`mime_type` / `json_type` / `tags` fields.
+
+For `reference` artifacts, `ArtifactMeta.citation` carries `{source, section, page}`
+(lifted from the raw artifact `metadata`) so the frontend can render a citation card:
+
+```json
+{
+  "artifact_id": "ref-3",
+  "name": "ASME BPVC II-D",
+  "description": "Allowable stress table",
+  "uri": "https://…",
+  "tags": ["reference"],
+  "render_hint": "reference",
+  "citation": { "source": "ASME BPVC", "section": "II-D", "page": "42" }
+}
+```
+
+---
+
+## `GET /api/events` — Server-Sent Events
+
+Per-session SSE stream (task 05). Session is identified by the auth JWT. Each JSON
+event is a discriminated union on `type`; a heartbeat is a bare SSE **comment**
+line (`: ping`), not a JSON event.
+
+The `event:` name is the JSON `type`, so the browser can
+`addEventListener("status" | "task_progress" | "task_done", …)`.
+
+**`status`** — progress for the in-flight turn. `history` is the accumulated,
+consecutive-duplicate-suppressed list of status lines for this turn (drives the running
+step list); `message` is the latest line:
+
+```
+event: status
+data: {"type":"status","turn_id":"turn-04","message":"Invoking thermal-agent…","history":["Understanding query","Planning","Invoking thermal-agent…"]}
+```
+
+**`task_progress`** — progress for a detached (backgrounded) task:
+
+```
+event: task_progress
+data: {"type":"task_progress","task_id":"bg-42","message":"Step 3 of 5…"}
+```
+
+**`task_done`** — terminal event for a detached task. `completed` carries the mapped
+final response in `response`; non-completed terminal states (failed/canceled/rejected)
+carry a human-readable `message` and a null `response`:
+
+```
+event: task_done
+data: {"type":"task_done","task_id":"bg-42","state":"completed","response":{"turn_id":"bg-42","status":"completed","report":"…"}}
+data: {"type":"task_done","task_id":"bg-43","state":"failed","message":"Background task ended (failed).","response":null}
+```
+
+**heartbeat** (comment line, ignored by JSON parsers):
+
+```
+: ping
+```
+
+---
+
+## `GET /api/artifacts/{artifact_id}/content`
+
+Resolves `deeplynx://` / remote URIs and streams the artifact bytes with the
+correct `Content-Type` (task 07). Replaces the frontend's old
+`_render_pdf_artifact` / `_render_remote_file_artifact` / `_render_download_artifact`
+download paths.
+
+## `GET /api/conversations/recent`
+
+Redis-backed history list (task 08).

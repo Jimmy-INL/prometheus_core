@@ -1,0 +1,199 @@
+/**
+ * TypeScript mirror of the backend wire contract.
+ *
+ * Hand-kept in sync with `backend/app/contract.py` (and `backend/CONTRACT.md`).
+ * These are the shapes the `/api` client and the chat store code against. If the
+ * backend contract changes, update this file + the store/adapter together.
+ */
+
+// --- Status + enums ---------------------------------------------------------
+
+export type ChatStatus =
+  | "needs_info"
+  | "plan_ready"
+  | "executing"
+  | "completed"
+  | "recommendation"
+  | "answer"
+  | "backgrounded"
+  | "error";
+
+export type RenderHint =
+  | "pdf"
+  | "image"
+  | "json"
+  | "ifc"
+  | "mesh"
+  | "mermaid"
+  | "thermal"
+  | "report"
+  | "reference"
+  | "file"
+  | "unknown";
+
+export type FieldInputType =
+  | "text"
+  | "number"
+  | "email"
+  | "password"
+  | "date"
+  | "datetime"
+  | "textarea"
+  | "select"
+  | "checkbox";
+
+// --- needs_info form schema -------------------------------------------------
+
+export interface SelectOption {
+  label: string;
+  value: string;
+}
+
+export interface FormField {
+  id: string;
+  label: string;
+  input_type: FieldInputType;
+  required: boolean;
+  options?: SelectOption[] | null;
+  default?: unknown;
+  help?: string | null;
+  placeholder?: string | null;
+  rows?: number | null;
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+}
+
+// --- artifacts --------------------------------------------------------------
+
+export interface Citation {
+  source?: string | null;
+  section?: string | null;
+  page?: string | null;
+}
+
+export interface ArtifactMeta {
+  artifact_id: string;
+  name: string;
+  mime_type?: string | null;
+  json_type?: string | null;
+  description: string;
+  uri?: string | null;
+  tags: string[];
+  json_body?: unknown;
+  render_hint: RenderHint;
+  citation?: Citation | null;
+  producer_agent_id?: string | null;
+  created_at?: string | null;
+}
+
+// --- uploads ----------------------------------------------------------------
+
+export interface UploadDescriptor {
+  upload_id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
+// --- chat request / response ------------------------------------------------
+
+export interface ChatMessageRequest {
+  query: string;
+  followup_answers?: Record<string, unknown> | null;
+  plan_approved?: boolean;
+  plan_rejected?: boolean;
+  workflow_id?: string | null;
+  upload_ids?: UploadDescriptor[] | null;
+}
+
+export interface ChatMessageResponse {
+  turn_id: string;
+  status: ChatStatus;
+  message?: string | null;
+  // needs_info
+  followup_questions?: FormField[] | null;
+  // plan_ready
+  plan?: Record<string, unknown> | null;
+  auto_approve?: boolean;
+  // completed | answer | recommendation
+  report?: string | null;
+  response_text?: string | null;
+  artifacts?: ArtifactMeta[] | null;
+  recommended_materials?: string[] | null;
+  follow_up_suggestions?: string[] | null;
+  // backgrounded
+  task_id?: string | null;
+}
+
+// --- SSE events (discriminated on `type`) -----------------------------------
+
+export interface StatusEvent {
+  type: "status";
+  turn_id: string;
+  message: string;
+  history?: string[] | null;
+}
+
+export interface TaskProgressEvent {
+  type: "task_progress";
+  task_id: string;
+  message: string;
+}
+
+export interface TaskDoneEvent {
+  type: "task_done";
+  task_id: string;
+  state: string;
+  message?: string | null;
+  response?: ChatMessageResponse | null;
+}
+
+export type ServerEvent = StatusEvent | TaskProgressEvent | TaskDoneEvent;
+
+// --- auth / session / config ------------------------------------------------
+
+export interface User {
+  identifier: string;
+  role: string;
+  provider: string;
+}
+
+export interface SessionResponse {
+  conversation_id: string;
+  profile: string;
+  chat_intro: string;
+  chat_suggestion_title: string;
+  workflow_suggestions: string[];
+  auto_approve_steps: boolean;
+}
+
+export interface ChatProfile {
+  name: string;
+  markdown_description: string;
+  icon?: string | null;
+}
+
+export interface ConfigResponse {
+  profiles: ChatProfile[];
+  chat_intro: string;
+  chat_suggestion_title: string;
+  workflow_suggestions: string[];
+  auto_approve_steps: boolean;
+  max_upload_bytes: number;
+}
+
+// --- history ----------------------------------------------------------------
+
+export interface ConversationSummary {
+  conversation_id: string;
+  query: string;
+  status: string;
+  material_id?: string | null;
+  timestamp: string;
+}
+
+export interface ConversationHistoryResponse {
+  available: boolean;
+  conversations: ConversationSummary[];
+}

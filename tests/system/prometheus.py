@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-if str(FRONTEND_DIR) not in sys.path:
-    sys.path.insert(0, str(FRONTEND_DIR))
+from prometheus_api.contract import ConversationResponse
+from prometheus_api.llm_client import AsyncLLMClient, LLMConfig
 
-from prometheus_api.contract import ConversationResponse  # noqa: E402
-from prometheus_api.llm_client import AsyncLLMClient, LLMConfig  # noqa: E402
-from utils.a2a_client import (  # noqa: E402
+from system.a2a_client import (
     A2AClient,
     ChatFinalEvent,
     ChatProgressEvent,

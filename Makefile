@@ -17,10 +17,9 @@ COMPOSE := docker compose -p $(COMPOSE_PROJECT_NAME)
 
 COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
-CLEAR_COMPOSE_FILES ?= $(COMPOSE_FILES_NG)
 
 # Override this to pin a specific prometheus_api base image.
-PROMETHEUS_API_BASE_IMAGE_HASH ?= 88e920d
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 0465517
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include
@@ -73,6 +72,8 @@ ifneq ($(wildcard docker-compose.override.yml),)
 COMPOSE_FILES_NG += -f docker-compose.override.yml
 endif
 
+CLEAR_COMPOSE_FILES ?= $(COMPOSE_FILES_NG)
+
 LITELLM_DB_VOLUME := $(COMPOSE_PROJECT_NAME)_litellm-db-data
 
 ##@
@@ -111,6 +112,66 @@ else ifeq ($(UNAME), Darwin)
 else
 	@printf "\nmake help not supported on $(UNAME)\n"
 endif
+
+##@
+##@ Prerequisites
+##@
+
+.PHONY: check-prerequisites
+check-prerequisites: ##@ Verify certificates, .env, and Docker before running platform tasks
+	@if [ "$(SKIP_PREREQUISITES)" = "1" ]; then \
+		exit 0; \
+	fi; \
+	printf "\nChecking prerequisites...\n"; \
+	status=0; \
+	if [ -f .env ]; then \
+		printf "  [OK] .env exists.\n"; \
+	else \
+		printf "  [ERROR] .env does not exist.\n"; \
+		printf "          Create the project .env file before running this target.\n"; \
+		status=1; \
+	fi; \
+	if ! command -v docker >/dev/null 2>&1; then \
+		printf "  [ERROR] The docker command is not available.\n"; \
+		printf "          Install Docker and ensure it is available on PATH.\n"; \
+		status=1; \
+	elif ! docker info >/dev/null 2>&1; then \
+		printf "  [ERROR] Docker is installed, but the Docker daemon is unavailable.\n"; \
+		printf "          Start Docker, then verify access by running 'docker info'.\n"; \
+		printf "          Also check your Docker socket permissions if needed.\n"; \
+		status=1; \
+	else \
+		printf "  [OK] Docker is running.\n"; \
+	fi; \
+	if [ "$$status" -ne 0 ]; then \
+		printf "\nPrerequisite check failed. Resolve the errors above and try again.\n\n"; \
+		exit "$$status"; \
+	fi; \
+	printf "All prerequisites are available.\n\n"
+
+# These targets require the platform runtime prerequisites. Static tests,
+# frontend-only tasks, help, and compose-file generation are intentionally
+# excluded because they do not require certificates or Docker.
+PREREQUISITE_TARGETS := \
+	test-integration \
+	test-infra \
+	up \
+	up-fg \
+	restart \
+	restart-fg \
+	ng-up \
+	ng-up-fg \
+	ng-restart \
+	ng-restart-fg \
+	clear-litellm-db \
+	down \
+	down-v \
+	build \
+	build-plain \
+	logs \
+	ps
+
+$(PREREQUISITE_TARGETS): check-prerequisites
 
 .PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg clear-litellm-db help
 
@@ -170,22 +231,22 @@ test-system: ##@ Test the user experience on an already-running platform (start 
 
 up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
 up: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d
 
 up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
 up-fg: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build
 
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
 restart: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d
 
 restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
 restart-fg: generate
-	$(MAKE) --no-print-directory clear-litellm-db CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)"
+	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
@@ -248,11 +309,11 @@ regenerate: clean-generated generate
 
 .PHONY: react-dev react-build react-check
 
-react-dev: ##@ Run React frontend dev server on host, no Docker (frontend-react/)
-	$(MAKE) -C frontend-react dev
+react-dev: ##@ Run React frontend dev server on host, no Docker (frontend/)
+	$(MAKE) -C frontend dev
 
-react-build: ##@ Build React frontend for production (frontend-react/)
-	$(MAKE) -C frontend-react build
+react-build: ##@ Build React frontend for production (frontend/)
+	$(MAKE) -C frontend build
 
-react-check: ##@ Run React frontend lint + typecheck (frontend-react/)
-	$(MAKE) -C frontend-react check
+react-check: ##@ Run React frontend lint + typecheck (frontend/)
+	$(MAKE) -C frontend check

@@ -125,75 +125,77 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # Chainlit frontend UI
-  chainlit-frontend:
+  # Standalone FastAPI backend (replaces Chainlit's server role; see backend/).
+  # The React frontend now lives in frontend/ (built by the frontend-dev /
+  # frontend-prod services below); the old Chainlit frontend has been removed.
+  backend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./backend
       args:
         <<: *prometheus-api-build-args
-    container_name: chainlit-frontend
+    container_name: backend
     ports:
-      - "${CHAINLIT_FRONTEND_PORT:-8500}:8500"
+      - "${BACKEND_PORT:-8600}:8000"
     networks:
       - agent-network
     environment:
       <<: *common-env
       CLIENT_AGENT_URL: ${CLIENT_AGENT_URL:-http://client-agent:8000}
-      CHAINLIT_URL: ${CHAINLIT_URL:-""}
-      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET}
-      OAUTH_OKTA_CLIENT_ID: ${OAUTH_OKTA_CLIENT_ID:-""}
-      OAUTH_OKTA_CLIENT_SECRET: ${OAUTH_OKTA_CLIENT_SECRET:-""}
-      OAUTH_OKTA_DOMAIN: ${OAUTH_OKTA_DOMAIN:-"identity-preview.inl.gov"}
-      OAUTH_OKTA_AUTHORIZATION_SERVER_ID: ${OAUTH_OKTA_AUTHORIZATION_SERVER_ID:-false}
+      # Session-cookie signing secret. BACKEND_JWT_SECRET takes precedence;
+      # CHAINLIT_AUTH_SECRET is the documented fallback (see backend/app/config.py),
+      # so it must be forwarded into the container or login fails with an empty key.
+      BACKEND_JWT_SECRET: ${BACKEND_JWT_SECRET:-}
+      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET:-}
     volumes: *common-volumes
     depends_on:
-      litellm:
-        condition: service_healthy
-      client-agent:
-        condition: service_started
       redis:
+        condition: service_started
+      client-agent:
         condition: service_started
     restart: unless-stopped
 
-  frontend-react-dev:
+  frontend-dev:
     profiles: ["dev"]
     build:
       context: .
-      dockerfile: frontend-react/Dockerfile
+      dockerfile: frontend/Dockerfile
       target: dev
       additional_contexts:
         certs: ./certs
-    container_name: frontend-react-dev
+    container_name: frontend-dev
     ports:
-      - "${FRONTEND_REACT_DEV_PORT:-5150}:5150"
+      - "${FRONTEND_DEV_PORT:-5150}:5150"
     networks:
       - agent-network
     environment:
       VITE_CHAINLIT_SERVER: http://chainlit-frontend:8500
+      # backend is a sibling container on agent-network. Proxy /api to it by
+      # service name + internal port (8000), NOT the host-mapped 8600 — inside this
+      # container localhost:8600 is its own loopback and refuses the connection.
+      VITE_BACKEND_URL: http://backend:8000
       CHOKIDAR_USEPOLLING: "true"
     volumes:
-      - ./frontend-react:/app
+      - ./frontend:/app
       - /app/node_modules
-    depends_on:
-      chainlit-frontend:
-        condition: service_started
+    # depends_on:
+    #   chainlit-frontend:
+    #     condition: service_started
     restart: unless-stopped
 
-  frontend-react-prod:
+  frontend-prod:
     profiles: ["prod"]
     build:
       context: .
-      dockerfile: frontend-react/Dockerfile
+      dockerfile: frontend/Dockerfile
       target: prod
       additional_contexts:
         certs: ./certs
-    container_name: frontend-react-prod
+    container_name: frontend-prod
     ports:
-      - "${FRONTEND_REACT_PROD_PORT:-8080}:8080"
+      - "${FRONTEND_PROD_PORT:-8080}:8080"
     networks:
       - agent-network
     depends_on:
-      chainlit-frontend:
+      backend:
         condition: service_started
     restart: unless-stopped
