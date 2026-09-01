@@ -19,6 +19,7 @@ from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
 
+from app import identity
 from app.a2a_client import A2AClient
 from app.config import settings
 from app.contract import ChatMessageRequest, ChatMessageResponse, ChatStatus, StatusEvent
@@ -120,6 +121,7 @@ async def post_message(
     turn_id = str(uuid.uuid4())
     event_bus = _get_event_bus(request)
     on_status = _make_on_status(event_bus, claims.sid, turn_id)
+    user_token = identity.mint_for_user(claims.sub)
 
     try:
         response = await chat_service.handle_turn(
@@ -134,6 +136,7 @@ async def post_message(
             uploaded_files=chat_service.upload_descriptors_to_dicts(body.upload_ids),
             auto_approve=settings.auto_approve_steps,
             on_status=on_status,
+            user_token=user_token,
         )
     except Exception as exc:
         # Mirror message_handler's inline "Error communicating with agent"; the

@@ -247,6 +247,35 @@ async def test_handle_turn_forwards_args_and_maps():
     assert client.sent["artifacts"] == [{"artifact_id": "a1"}]
 
 
+async def test_handle_turn_forwards_user_token():
+    session = _session()
+    client = _StubClient(_resp(status="answer", response_text="ok"))
+
+    await chat_service.handle_turn(
+        client,  # type: ignore[arg-type]
+        session,
+        turn_id="t1",
+        query="hello",
+        user_token="fake.jwt.token",
+    )
+
+    assert client.sent["user_token"] == "fake.jwt.token"
+
+
+async def test_handle_turn_user_token_defaults_to_none():
+    session = _session()
+    client = _StubClient(_resp(status="answer", response_text="ok"))
+
+    await chat_service.handle_turn(
+        client,  # type: ignore[arg-type]
+        session,
+        turn_id="t1",
+        query="hello",
+    )
+
+    assert client.sent["user_token"] is None
+
+
 async def test_handle_turn_requires_conversation_id():
     session = SessionState(sid="sid-x")  # no conversation_id
     client = _StubClient(_resp(status="answer"))

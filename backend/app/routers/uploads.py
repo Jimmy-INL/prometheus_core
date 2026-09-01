@@ -20,6 +20,7 @@ from typing import cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status as http_status
 
+from app import identity
 from app.a2a_client import A2AClient
 from app.config import settings
 from app.contract import UploadDescriptor
@@ -101,6 +102,7 @@ async def post_upload(
             conversation_id=session.conversation_id,
             element_mime=file.content_type,
             size_bytes=size,
+            user_token=identity.mint_for_user(claims.sub),
         )
     except upload_service.UploadStagingError as exc:
         raise HTTPException(

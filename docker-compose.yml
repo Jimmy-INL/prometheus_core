@@ -14,6 +14,19 @@ x-common-env: &common-env
   DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
   DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
   PROMETHEUS_MAX_UPLOAD_BYTES: ${PROMETHEUS_MAX_UPLOAD_BYTES:-104857600}
+  # Multi-user identity plane: the backend mints a short-lived JWT per turn
+  # (USER_IDENTITY_SECRET/RS256 keys); agents verify it. See
+  # docs/dev-docs/multi-user-setup.md.
+  USER_IDENTITY_SECRET: ${USER_IDENTITY_SECRET:-}
+  USER_IDENTITY_ALG: ${USER_IDENTITY_ALG:-HS256}
+  USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
+  USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
+  USER_IDENTITY_TTL: ${USER_IDENTITY_TTL:-7200}
+  USER_IDENTITY_REQUIRED: ${USER_IDENTITY_REQUIRED:-true}
+  # Multi-user credential plane: per-user JIT credentials for third-party
+  # resources (DeepLynx, SLURM). "env" (default) preserves today's global
+  # credential behavior; "vault" activates per-user Vault policies.
+  CREDENTIAL_BROKER: ${CREDENTIAL_BROKER:-env}
 
 x-common-volumes: &common-volumes
   - ./shared:/app/shared

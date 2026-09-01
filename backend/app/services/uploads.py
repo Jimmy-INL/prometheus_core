@@ -88,6 +88,7 @@ async def stage_upload(
     conversation_id: str,
     element_mime: Optional[str] = None,
     size_bytes: Optional[int] = None,
+    user_token: Optional[str] = None,
 ) -> UploadDescriptor:
     """Enforce the size limit, guess the MIME, and stage one file to DeepLynx.
 
@@ -96,6 +97,9 @@ async def stage_upload(
     a response missing ``upload_id`` raises :class:`UploadStagingError`. On success
     returns the wire :class:`UploadDescriptor` the frontend echoes back on the next
     ``POST /api/chat/messages``.
+
+    ``user_token`` (see ``app.identity``) is forwarded to the client-agent so it can
+    stamp the staged upload's ownership and reject cross-user retrieval.
     """
     size = size_bytes if size_bytes is not None else file_path.stat().st_size
     if size > MAX_UPLOAD_BYTES:
@@ -108,6 +112,7 @@ async def stage_upload(
             name=name,
             mime_type=mime,
             conversation_id=conversation_id,
+            user_token=user_token,
         )
     except Exception as exc:
         logger.warning("Could not stage %r for upload: %s", name, exc)

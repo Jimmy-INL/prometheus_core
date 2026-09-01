@@ -1,7 +1,7 @@
 """Redis-backed client for browsing persisted conversation state."""
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     import redis
@@ -34,13 +34,32 @@ class ConversationStateClient:
     def available(self) -> bool:
         return self.client is not None
 
-    def get_conversation_history(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Retrieve recent conversation summaries from Redis."""
+    def get_conversation_history(
+        self,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve recent conversation summaries from Redis.
+
+        When *user_id* is provided, only conversations owned by that user are
+        returned (via the ``user:convs:{user_id}`` index populated by
+        ``prometheus_api.agent.ownership.record_conversation_owner`` on the
+        client-agent side). When *user_id* is absent, falls back to the global
+        ``conversation:*`` scan — used only for conversations created before
+        ownership tracking existed, or when identity is unconfigured.
+        """
         client = self.client
         if client is None:
             return []
         try:
-            keys = client.keys("conversation:*")
+            if user_id:
+                try:
+                    conv_ids = client.smembers(f"user:convs:{user_id}")
+                    keys = [f"conversation:{cid}" for cid in (conv_ids or [])]
+                except Exception:
+                    keys = []
+            else:
+                keys = client.keys("conversation:*")
             conversations = []
             # AU-2: build summaries for ALL keys, then sort by timestamp, then slice —
             # ``keys(...)`` is unordered, so the old slice-before-sort could drop the

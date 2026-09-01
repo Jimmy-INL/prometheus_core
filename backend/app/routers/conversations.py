@@ -43,16 +43,17 @@ def _client() -> ConversationStateClient:
     return inst
 
 
-def _fetch_recent(limit: int) -> tuple[bool, list[dict]]:
+def _fetch_recent(limit: int, user_id: str) -> tuple[bool, list[dict]]:
     """Blocking Redis read, run in a worker thread.
 
     Returns ``(available, rows)``: ``available`` distinguishes "Redis down" from
-    "Redis up but empty" (both yield an empty ``rows``).
+    "Redis up but empty" (both yield an empty ``rows``). ``user_id`` scopes the
+    result to the caller's own conversations (see ``ConversationStateClient``).
     """
     client = _client()
     if not client.available:
         return False, []
-    return True, client.get_conversation_history(limit=limit)
+    return True, client.get_conversation_history(limit=limit, user_id=user_id)
 
 
 @router.get("/conversations/recent", response_model=ConversationHistoryResponse)
@@ -60,7 +61,7 @@ async def get_recent_conversations(
     limit: int = Query(20, ge=1, le=100),
     claims: TokenClaims = Depends(current_claims),
 ) -> ConversationHistoryResponse:
-    available, rows = await asyncio.to_thread(_fetch_recent, limit)
+    available, rows = await asyncio.to_thread(_fetch_recent, limit, claims.sub)
     return ConversationHistoryResponse(
         available=available,
         conversations=[ConversationSummary(**row) for row in rows],

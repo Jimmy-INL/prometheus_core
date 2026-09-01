@@ -113,6 +113,7 @@ Two contracts sit back to back. The **React frontend ↔ backend** wire contract
 
 - `.env` (copied from `.env.example`) holds `LLM_CONFIG_PROFILE`, optional `LLM_CONFIG_FILE`, provider keys, `AGENT_SECRET`, `REDIS_PASSWORD`, `CHAINLIT_AUTH_SECRET`, `LITELLM_MASTER_KEY`, `LITELLM_DB_PASSWORD`, `LITELLM_LOCAL_PORT`, optional `DEEPLYNX_*`, and optional proxy vars.
 - The backend loads `backend/app/config.yml` (`agent_url`, `agent_secret`, `redis_url`, session/JWT settings). Env vars (`CLIENT_AGENT_URL`, `AGENT_SECRET`, `REDIS_URL`, `BACKEND_JWT_SECRET`/`CHAINLIT_AUTH_SECRET`, `BACKEND_COOKIE_NAME`, `BACKEND_TOKEN_TTL_SECONDS`) override individual keys; `PROMETHEUS_CONFIG_PATH` overrides the file path. The React app is configured via `frontend/config.ts` + `VITE_*` env (e.g. `VITE_BACKEND_URL`).
+- Multi-user identity is a **separate secret** from the session cookie above: `USER_IDENTITY_SECRET` (or an RS256 keypair) signs the short-lived JWT the backend mints per turn (`backend/app/identity.py`) to prove the caller's identity to agents; `CREDENTIAL_BROKER` selects the per-user credential backend (`env` default, `vault` for production). See `docs/dev-docs/multi-user-setup.md`.
 - Agents hardcode semantic flavors such as `medium`. Their selected installed or custom YAML maps those flavors to provider models. `litellm_config.yaml` supplies the proxy mapping used by the `registry` profile.
 - The base image `prometheus_api` is pulled from `mooseharbor.hpc.inl.gov`; pinned via the `PROMETHEUS_API_BASE_IMAGE_HASH` build arg in `docker-compose.yml`. Bumping the platform's PrometheusAgent SDK = bumping that hash.
 
@@ -145,3 +146,9 @@ All services share the `agent-network` bridge.
 - `docs/docs/dev-docs/artifacts.md` — artifact reference model and rendering rules
 - `docs/docs/dev-docs/visualization-plugins.md` — JSX viewer components and triggers
 - `docs/docs/dev-docs/migration.md` — what changed when `multi_agent_testbed` was merged in (and why)
+- `docs/docs/dev-docs/multi-user-setup.md` — multi-user configuration, credential broker, isolation (operator + developer guide)
+
+## Further reading (prometheus_api repo)
+
+- `prometheus_api/docs/agent/MULTI_USER.md` — identity JWT flow, credential broker backends, per-user worker pool, conversation ownership (agent author reference)
+- `prometheus_api/docs/agent/IDENTITY_KEY_MANAGEMENT.md` — HS256 vs RS256, key distribution per service, third-party agent integration via JWKS

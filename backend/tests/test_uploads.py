@@ -67,8 +67,12 @@ def test_upload_small_file_returns_descriptor(monkeypatch):
 
     captured: dict = {}
 
-    async def _stub_stage(a2a_client, file_path, *, name, conversation_id, element_mime=None, size_bytes=None):
-        captured.update(name=name, conversation_id=conversation_id, size_bytes=size_bytes)
+    async def _stub_stage(
+        a2a_client, file_path, *, name, conversation_id, element_mime=None, size_bytes=None, user_token=None
+    ):
+        captured.update(
+            name=name, conversation_id=conversation_id, size_bytes=size_bytes, user_token=user_token
+        )
         return UploadDescriptor(
             upload_id="up-1",
             name=name,
@@ -86,6 +90,32 @@ def test_upload_small_file_returns_descriptor(monkeypatch):
     assert body["size_bytes"] == len(b"solid data")
     # A conversation id is minted so the upload can attach even before the first turn.
     assert captured["conversation_id"]
+    # No USER_IDENTITY_SECRET configured in this test env, so mint_for_user
+    # degrades to None rather than raising -- the router must still succeed.
+    assert captured["user_token"] is None
+
+
+def test_upload_passes_minted_user_token(monkeypatch):
+    """When identity is configured, the router mints and forwards a user_token."""
+    client = _authed_client(monkeypatch)
+
+    from app import identity
+
+    monkeypatch.setattr(identity, "mint_for_user", lambda user_id: f"token-for-{user_id}")
+
+    captured: dict = {}
+
+    async def _stub_stage(
+        a2a_client, file_path, *, name, conversation_id, element_mime=None, size_bytes=None, user_token=None
+    ):
+        captured["user_token"] = user_token
+        return UploadDescriptor(upload_id="up-2", name=name, mime_type="text/plain", size_bytes=size_bytes or 0)
+
+    monkeypatch.setattr(upload_service, "stage_upload", _stub_stage)
+
+    resp = client.post("/api/uploads", files={"file": ("f.txt", b"hi", "text/plain")})
+    assert resp.status_code == 200
+    assert captured["user_token"] == "token-for-alice"
 
 
 def test_upload_over_limit_returns_413(monkeypatch):
