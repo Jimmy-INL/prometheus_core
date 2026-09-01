@@ -27,6 +27,15 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
+      # Multi-user identity (RS256 only). This agent only ever verifies who is
+      # calling it -- it never mints a token, so it never needs a private key.
+      # Set JWKS_URL (recommended) or USER_IDENTITY_PUBLIC_KEY, not both.
+      JWKS_URL: ${JWKS_URL:-}
+      USER_IDENTITY_PUBLIC_KEY: ${USER_IDENTITY_PUBLIC_KEY:-}
+      USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
+      USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
+      USER_IDENTITY_REQUIRED: ${USER_IDENTITY_REQUIRED:-true}
+
       # deeplynx environment
       DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-}
       DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}

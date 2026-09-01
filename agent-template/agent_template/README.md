@@ -151,5 +151,27 @@ DeepLynx file storage.
 | `LITELLM_MASTER_KEY` | LiteLLM gateway auth. |
 | `REDIS_URL` / `REDIS_PASSWORD` | Conversation state and artifact registry. |
 | `PROMETHEUS_API_BASE_IMAGE_HASH` | Base image tag the Dockerfile builds from. |
+| `JWKS_URL` | Multi-user identity (recommended): fetch the platform's public key automatically. See below. |
+| `USER_IDENTITY_PUBLIC_KEY` | Multi-user identity (alternative to `JWKS_URL`): a static public key from the platform operator. **Never** the private key — this agent only verifies. |
+| `USER_IDENTITY_ISS` / `USER_IDENTITY_AUD` | Must match the platform operator's values exactly. |
 
 See `.env.example` for the full list (including optional DeepLynx and proxy settings).
+
+### Verifying platform users (multi-user)
+
+If the platform is running in multi-user mode, every request carries a verified
+`user_id`:
+
+```python
+async def _execute(self, params, context, event_queue):
+    user_id = params["user_id"]   # verified by the base class; never spoofable
+```
+
+Signing is RS256 only, so this agent never needs (or should have) a private
+key — only `JWKS_URL` or `USER_IDENTITY_PUBLIC_KEY`. Generate/inspect keys with
+`prometheus-identity-keygen` (ships in `prometheus_api`, already installed in
+this image) or `openssl`. See
+[TUTORIAL.md](https://github.inl.gov/genesis/prometheus_agent_template/blob/main/TUTORIAL.md#verifying-which-platform-user-is-calling-you-multi-user-identity)
+and
+[Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md)
+for the full picture.

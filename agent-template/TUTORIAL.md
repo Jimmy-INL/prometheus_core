@@ -1007,6 +1007,48 @@ Keep the platform boundary in mind: browser-facing features should usually be
 aggregated, proxied, or cataloged by the client-agent instead of giving the
 frontend arbitrary direct access to specialist agents.
 
+### Verifying which platform user is calling you (multi-user identity)
+
+On a multi-user platform deployment, every A2A request carries a short-lived
+JWT identifying the human the platform is acting for. The base class verifies
+it for you before `_execute` runs — you just read the result:
+
+```python
+async def _execute(self, params, context, event_queue):
+    user_id = params["user_id"]   # verified by the base class; never spoofable
+    # or equivalently: user_id = self.current_user_id()
+    ...
+```
+
+**Signing is RS256 only.** This agent only ever *verifies* — it can never mint
+a token, so it never needs a private key, only a public one (or a JWKS URL).
+Set one of these in your `.env` (see `.env.example`):
+
+```bash
+# Recommended: fetch and cache the platform's public key automatically,
+# including transparent key rotation. Ask the platform operator for their URL.
+JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
+
+# Or: a static public key the operator gives you directly. Generate/inspect
+# with `prometheus-identity-keygen` (ships in prometheus_api, already
+# installed in this image) or `openssl`.
+USER_IDENTITY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+
+USER_IDENTITY_ISS=prometheus-platform   # must match the operator's setting
+USER_IDENTITY_AUD=prometheus-agents     # must match the operator's setting
+```
+
+If your agent fetches per-user credentials for a third-party resource (a
+database, an HPC cluster, etc.) rather than just reading `user_id`, see the
+credential-broker section of
+[MULTI_USER.md](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md)
+in `prometheus_api` — `self.get_credential(resource)` and
+`requires_user_isolation` are the two pieces you'll want.
+
+Local/standalone testing without a platform identity configured: set
+`USER_IDENTITY_REQUIRED=false` and `params["user_id"]` becomes the synthetic
+value `"local"` instead of failing the request.
+
 ### Emitting artifacts
 
 Instead of (or in addition to) returning a dict, your agent can emit typed artifacts that the frontend knows how to render — JSON data, files, PDFs.
@@ -1191,4 +1233,6 @@ same conversation. If you need per-invocation scoping instead, key by
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
 | [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
+| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md) | `params["user_id"]`, per-user credentials, process isolation |
+| [Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS setup for this template |
 | [`examples/agent_patterns.py`](https://github.inl.gov/genesis/prometheus_api/blob/main/examples/agent_patterns.py) | Runnable reference implementation |

@@ -44,3 +44,30 @@ def test_create_agent_copies_prompt_and_workflow_template_dirs(tmp_path, monkeyp
     assert "def load_prompt(" not in agent_py
     assert "add_http_endpoint" in agent_py
     assert "add_static_endpoint" in agent_py
+
+
+def test_select_platform_env_values_includes_identity_verification_keys(tmp_path):
+    """USER_IDENTITY_PUBLIC_KEY/ISS/AUD must be copied from the platform .env --
+    a scaffolded agent should be able to verify platform users out of the box,
+    without the developer having to hunt these down manually. The private key
+    must NEVER be selected: this agent verifies, it never mints."""
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text(
+        "AGENT_SECRET=shared-secret\n"
+        "REDIS_PASSWORD=redis-pw\n"
+        "LITELLM_MASTER_KEY=sk-litellm\n"
+        "USER_IDENTITY_PRIVATE_KEY=should-never-be-copied\n"
+        "USER_IDENTITY_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----abc-----END PUBLIC KEY-----\n"
+        "USER_IDENTITY_ISS=prometheus-platform\n"
+        "USER_IDENTITY_AUD=prometheus-agents\n"
+        "DEEPLYNX_ORG_ID=42\n",
+        encoding="utf-8",
+    )
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert selected["USER_IDENTITY_PUBLIC_KEY"] == "-----BEGIN PUBLIC KEY-----abc-----END PUBLIC KEY-----"
+    assert selected["USER_IDENTITY_ISS"] == "prometheus-platform"
+    assert selected["USER_IDENTITY_AUD"] == "prometheus-agents"
+    assert "USER_IDENTITY_PRIVATE_KEY" not in selected
+    assert selected["DEEPLYNX_ORG_ID"] == "42"
