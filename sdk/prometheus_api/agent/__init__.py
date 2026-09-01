@@ -8,6 +8,7 @@ from .ownership import (
     record_conversation_owner,
 )
 from .identity import (
+    ALG,
     IdentityError,
     UserIdentity,
     USER_TOKEN_METADATA_KEY,
@@ -18,6 +19,7 @@ from .identity import (
     mint_user_token,
     verify_user_token,
 )
+from .identity_keygen import generate_keypair
 from .middleware import BearerTokenMiddleware
 from .base import (
     AgentEndpoint,
@@ -58,6 +60,7 @@ __all__ = [
     "list_user_conversations",
     "record_conversation_owner",
     # identity
+    "ALG",
     "IdentityError",
     "UserIdentity",
     "USER_TOKEN_METADATA_KEY",
@@ -67,6 +70,7 @@ __all__ = [
     "get_jwks_document",
     "mint_user_token",
     "verify_user_token",
+    "generate_keypair",
     # auth
     "BearerTokenMiddleware",
     "AgentEndpoint",

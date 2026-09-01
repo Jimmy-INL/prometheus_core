@@ -19,10 +19,10 @@ safe to run with multiple concurrent users:
 Platform identity (who is the user) and downstream credential access (what external
 systems may this user's agents touch) are intentionally separate:
 
-- **Identity** is platform-internal — the frontend mints its own JWT after login,
-  regardless of whether the user authenticated via Okta, generic OIDC, or a local
-  password.  Agents verify *this* token, not the external IdP token.  This means the
-  platform deploys identically whether or not a federated IdP exists.
+- **Identity** is platform-internal — the platform backend mints its own JWT after
+  login, regardless of whether the user authenticated via Okta, generic OIDC, or a
+  local password.  Agents verify *this* token, not the external IdP token.  This
+  means the platform deploys identically whether or not a federated IdP exists.
 - **Credentials** are user-linked — the broker fetches JIT credentials *on behalf of*
   the verified user.  A scoping bug exposes chat data; a credentials bug exposes real
   third-party access.  The higher blast radius justifies independent hardening.
@@ -36,7 +36,7 @@ systems may this user's agents touch) are intentionally separate:
 ```
 User logs in (Okta / OIDC / local password)
     ↓
-Frontend mints a short-lived HS256 platform JWT
+Backend mints a short-lived RS256 platform JWT, signed with USER_IDENTITY_PRIVATE_KEY
   { sub: "alice", iss: "prometheus-platform", aud: "prometheus-agents", exp: <now+2h> }
     ↓
 JWT placed in A2A message.metadata["userToken"] on every turn
@@ -82,21 +82,25 @@ The client-agent does this automatically for all specialist agent calls via
 
 ### Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `USER_IDENTITY_SECRET` | *(required for HS256)* | HMAC secret for JWT signing/verification |
-| `USER_IDENTITY_ALG` | `HS256` | `HS256` or `RS256` |
-| `USER_IDENTITY_PRIVATE_KEY` | *(required for RS256)* | PEM private key — **frontend only** |
-| `USER_IDENTITY_PUBLIC_KEY` | *(required for RS256 verify)* | PEM public key — all agents |
-| `USER_IDENTITY_ISS` | `prometheus-platform` | JWT issuer claim |
-| `USER_IDENTITY_AUD` | `prometheus-agents` | JWT audience claim |
-| `USER_IDENTITY_TTL` | `7200` | Token lifetime in seconds |
-| `USER_IDENTITY_REQUIRED` | `true` | Set `false` to skip verification (dev only) |
+Signing is **RS256 only** — there is no symmetric-secret option. Generate a keypair
+with `prometheus-identity-keygen` (ships in this package) or `openssl`; see
+[IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md).
 
-**Which services need which key?** With HS256 every service needs `USER_IDENTITY_SECRET`;
-with RS256 only the frontend needs the private key and all agents (including third-party
-agents) only need the public key.  See [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md)
-for the full breakdown and the third-party agent integration guide.
+| Variable | Default | Description | Needed by |
+|---|---|---|---|
+| `USER_IDENTITY_PRIVATE_KEY` | *(required to mint)* | PEM private key | **Backend only** |
+| `USER_IDENTITY_PUBLIC_KEY` | *(required to verify)* | PEM public key | Every agent |
+| `JWKS_URL` | — | Fetch the public key remotely instead of a static value | Third-party agents |
+| `USER_IDENTITY_ISS` | `prometheus-platform` | JWT issuer claim | Backend + agents |
+| `USER_IDENTITY_AUD` | `prometheus-agents` | JWT audience claim | Backend + agents |
+| `USER_IDENTITY_TTL` | `7200` | Token lifetime in seconds | Backend only (minting) |
+| `USER_IDENTITY_REQUIRED` | `true` | Set `false` to skip verification (dev only) | Every agent |
+
+**Which services need which key?** Only the backend needs `USER_IDENTITY_PRIVATE_KEY` —
+it is the only thing that ever mints a token. Every agent, including third-party ones,
+needs only `USER_IDENTITY_PUBLIC_KEY` (or `JWKS_URL`) — enough to verify, never enough
+to forge. See [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) for the full
+breakdown, the keygen tool, and the third-party agent integration guide.
 
 ### Dev / CI mode
 
@@ -320,10 +324,10 @@ Redis keys:
 
 ```
 Browser (user "alice")
-  │ POST /chainlit
+  │ POST /api/chat/messages
   ▼
-Chainlit frontend
-  ├─ mint JWT: { sub: "alice", exp: now+2h }   (USER_IDENTITY_SECRET)
+Platform backend
+  ├─ mint JWT: { sub: "alice", exp: now+2h }   (signed with USER_IDENTITY_PRIVATE_KEY)
   ├─ embed in message.metadata["userToken"]
   └─ POST A2A message/send → client-agent
 
@@ -344,7 +348,7 @@ Specialist agent (e.g. data-agent)
 
 ## See also
 
-- [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) — HS256 vs RS256 key distribution, third-party agent integration, key rotation
+- [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) — RS256 key generation and distribution, third-party agent integration, key rotation
 - [PrometheusAgent Developer Guide](GUIDE.md) — general agent authoring
 - [QUICK_START.md](QUICK_START.md) — minimal working agent
 - Platform docs: `prometheus_platform/docs/dev-docs/multi-user-setup.md`

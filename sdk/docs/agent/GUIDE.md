@@ -1084,7 +1084,9 @@ and `file://` artifacts are validated against allowed local roots.
 ## Multi-User Identity and Credentials
 
 From `_execute`, the verified user identity and per-user credentials are available
-without any additional setup beyond setting `USER_IDENTITY_SECRET` in the environment:
+without any additional setup beyond setting `USER_IDENTITY_PUBLIC_KEY` (this agent
+verifies) and, on the platform backend only, `USER_IDENTITY_PRIVATE_KEY` (it mints).
+Generate a keypair with `prometheus-identity-keygen` (ships in this package):
 
 ```python
 async def _execute(self, params, context, event_queue):
@@ -1115,4 +1117,4 @@ conversation ownership.
 - [`docs/ENV_SETUP.md`](../ENV_SETUP.md) — environment variable details
 - [`docs/agent/QUICK_START.md`](./QUICK_START.md) — condensed getting-started version
 - [`docs/agent/MULTI_USER.md`](./MULTI_USER.md) — multi-user identity, credentials, and isolation
-- [`docs/agent/IDENTITY_KEY_MANAGEMENT.md`](./IDENTITY_KEY_MANAGEMENT.md) — HS256 vs RS256, key distribution per service, third-party agent integration
+- [`docs/agent/IDENTITY_KEY_MANAGEMENT.md`](./IDENTITY_KEY_MANAGEMENT.md) — RS256 key generation, key distribution per service, third-party agent integration

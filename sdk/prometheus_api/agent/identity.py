@@ -5,9 +5,17 @@ of how authentication happened (Okta, generic OIDC, local password).  This token
 propagates to agents — never the external IdP token — so the trust model works even when
 the deployment has no federated IdP.
 
+Signing is **RS256 only** (asymmetric).  The minting side (the platform backend) holds
+``USER_IDENTITY_PRIVATE_KEY``; every verifying side (every agent, including third-party
+ones) holds only ``USER_IDENTITY_PUBLIC_KEY`` or a ``JWKS_URL`` — nothing that can forge
+a token ever needs to leave the backend.  There is deliberately no symmetric (HS256)
+option: a shared secret would let any agent holding it impersonate any user.  Generate a
+keypair with :mod:`prometheus_api.agent.identity_keygen` (``prometheus-identity-keygen``
+console script) or plain ``openssl``; see ``docs/agent/IDENTITY_KEY_MANAGEMENT.md``.
+
 Usage
 -----
-Frontend (mint on each turn)::
+Backend (mint on each turn)::
 
     from prometheus_api.agent.identity import mint_user_token
     token = mint_user_token(user_id="alice")
@@ -65,11 +73,12 @@ def _int_env(key: str, default: int) -> int:
 #: The base class reads this key; outbound propagation should use the same key.
 USER_TOKEN_METADATA_KEY = "userToken"
 
+#: The only supported signing algorithm.  RS256 only — see module docstring.
+ALG = "RS256"
+
 # Defaults — can all be overridden via env vars.
 _DEFAULT_ISS = "prometheus-platform"
 _DEFAULT_AUD = "prometheus-agents"
-_DEFAULT_ALG_HS = "HS256"
-_DEFAULT_ALG_RS = "RS256"
 _DEFAULT_TTL = 7200  # generous default; background turns can be long
 
 
@@ -108,12 +117,11 @@ def mint_user_token(
     extra_claims: Optional[dict[str, Any]] = None,
     ttl_seconds: Optional[int] = None,
 ) -> str:
-    """Mint a short-lived platform JWT for *user_id*.
+    """Mint a short-lived platform JWT for *user_id*, signed RS256.
 
-    Algorithm and key are selected from environment variables:
-    - ``USER_IDENTITY_ALG=RS256`` + ``USER_IDENTITY_PRIVATE_KEY`` — asymmetric;
-      the private key is the PEM string (with or without passphrase).
-    - ``USER_IDENTITY_ALG=HS256`` (default) + ``USER_IDENTITY_SECRET`` — HMAC.
+    Requires ``USER_IDENTITY_PRIVATE_KEY`` (PEM, with or without passphrase).
+    Only the minting side (the platform backend) needs this — agents verify
+    with the public key or a JWKS URL and can never sign a token themselves.
 
     Args:
         user_id: The canonical identifier for the authenticated user.
@@ -124,7 +132,6 @@ def mint_user_token(
     Returns:
         A signed JWT string.
     """
-    alg = _env("USER_IDENTITY_ALG", _DEFAULT_ALG_HS).upper()
     iss = _env("USER_IDENTITY_ISS", _DEFAULT_ISS)
     aud = _env("USER_IDENTITY_AUD", _DEFAULT_AUD)
     ttl = ttl_seconds if ttl_seconds is not None else _int_env("USER_IDENTITY_TTL", _DEFAULT_TTL)
@@ -142,15 +149,14 @@ def mint_user_token(
             if k not in ("sub", "iat", "exp", "iss", "aud"):
                 payload[k] = v
 
-    key = _get_signing_key(alg)
+    key = _get_signing_key()
+    # Include kid so verifiers (especially PyJWKClient) can select the
+    # correct key from the JWKS when multiple keys are present (rotation).
     headers: dict[str, Any] = {}
-    if alg == _DEFAULT_ALG_RS:
-        # Include kid so verifiers (especially PyJWKClient) can select the
-        # correct key from the JWKS when multiple keys are present.
-        jwks = get_jwks_document()
-        if jwks["keys"]:
-            headers["kid"] = jwks["keys"][0]["kid"]
-    return jwt.encode(payload, key, algorithm=alg, headers=headers or None)
+    jwks = get_jwks_document()
+    if jwks["keys"]:
+        headers["kid"] = jwks["keys"][0]["kid"]
+    return jwt.encode(payload, key, algorithm=ALG, headers=headers or None)
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +164,7 @@ def mint_user_token(
 # ---------------------------------------------------------------------------
 
 def verify_user_token(token: str) -> UserIdentity:
-    """Verify a platform JWT and return the extracted identity.
+    """Verify a platform JWT (RS256) and return the extracted identity.
 
     Checks signature, expiry, issuer, and audience.
 
@@ -166,8 +172,8 @@ def verify_user_token(token: str) -> UserIdentity:
     1. ``JWKS_URL`` — fetch the JWKS from this URL and select the key by ``kid``
        (for third-party agents that don't have the key locally; uses
        :class:`~jwt.PyJWKClient` with automatic caching and refresh).
-    2. ``USER_IDENTITY_PUBLIC_KEY`` / ``USER_IDENTITY_PRIVATE_KEY`` (RS256) or
-       ``USER_IDENTITY_SECRET`` (HS256) — local env-var key.
+    2. ``USER_IDENTITY_PUBLIC_KEY`` (or ``USER_IDENTITY_PRIVATE_KEY`` as a
+       single-host fallback) — local env-var key.
 
     Raises:
         IdentityError: If the token is invalid, expired, or has wrong iss/aud.
@@ -175,7 +181,6 @@ def verify_user_token(token: str) -> UserIdentity:
     if not token or not isinstance(token, str):
         raise IdentityError("userToken is missing or not a string")
 
-    alg = _env("USER_IDENTITY_ALG", _DEFAULT_ALG_HS).upper()
     iss = _env("USER_IDENTITY_ISS", _DEFAULT_ISS)
     aud = _env("USER_IDENTITY_AUD", _DEFAULT_AUD)
 
@@ -188,17 +193,17 @@ def verify_user_token(token: str) -> UserIdentity:
             claims = jwt.decode(
                 token,
                 key,
-                algorithms=[alg],
+                algorithms=[ALG],
                 issuer=iss,
                 audience=aud,
                 options=decode_options,
             )
         else:
-            key = _get_verification_key(alg)
+            key = _get_verification_key()
             claims = jwt.decode(
                 token,
                 key,
-                algorithms=[alg],
+                algorithms=[ALG],
                 issuer=iss,
                 audience=aud,
                 options=decode_options,
@@ -318,20 +323,15 @@ def get_jwks_document() -> dict:
     agents and remote verifiers fetch this document to obtain the current
     public key without any private material being shared.
 
-    - **RS256**: returns the RSA public key as a JWK with ``use=sig``,
-      ``alg=RS256``, and a stable ``kid`` (SHA-256 thumbprint of the modulus).
-      If only ``USER_IDENTITY_PRIVATE_KEY`` is set the public key is derived
-      from it automatically.
-    - **HS256**: returns an empty keyset — HMAC secrets cannot be published.
+    Returns the RSA public key as a JWK with ``use=sig``, ``alg=RS256``, and a
+    stable ``kid`` (SHA-256 thumbprint of the modulus).  If only
+    ``USER_IDENTITY_PRIVATE_KEY`` is set the public key is derived from it
+    automatically.  Returns an empty keyset when neither key is configured.
 
     Returns:
         A dict conforming to RFC 7517, e.g.
         ``{"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", ...}]}``.
     """
-    alg = _env("USER_IDENTITY_ALG", _DEFAULT_ALG_HS).upper()
-    if alg != _DEFAULT_ALG_RS:
-        return {"keys": []}
-
     pub_pem = _env("USER_IDENTITY_PUBLIC_KEY")
     if not pub_pem:
         priv_pem = _env("USER_IDENTITY_PRIVATE_KEY")
@@ -358,7 +358,7 @@ def get_jwks_document() -> dict:
         jwk_str = RSAAlgorithm.to_jwk(public_key)
         key_dict = json.loads(jwk_str)
         key_dict["use"] = "sig"
-        key_dict["alg"] = _DEFAULT_ALG_RS
+        key_dict["alg"] = ALG
         key_dict["kid"] = _compute_kid(key_dict)
         return {"keys": [key_dict]}
     except Exception:
@@ -375,45 +375,42 @@ def _compute_kid(jwk_dict: dict) -> str:
     return hashlib.sha256(n.encode()).hexdigest()[:16]
 
 
-def _get_signing_key(alg: str) -> Any:
-    """Return the signing key for *alg*.  Raises ``IdentityError`` if unconfigured."""
-    if alg == _DEFAULT_ALG_HS:
-        secret = _env("USER_IDENTITY_SECRET")
-        if not secret:
-            raise IdentityError(
-                "USER_IDENTITY_SECRET is required for HS256 identity tokens"
-            )
-        return secret
-    if alg == _DEFAULT_ALG_RS:
-        key_pem = _env("USER_IDENTITY_PRIVATE_KEY")
-        if not key_pem:
-            raise IdentityError(
-                "USER_IDENTITY_PRIVATE_KEY (PEM) is required for RS256 identity tokens"
-            )
-        return key_pem
-    raise IdentityError(f"Unsupported USER_IDENTITY_ALG: {alg!r}")
-
-
-def _get_verification_key(alg: str) -> Any:
-    """Return the verification key for *alg*.  Raises ``IdentityError`` if unconfigured."""
-    if alg == _DEFAULT_ALG_HS:
-        secret = _env("USER_IDENTITY_SECRET")
-        if not secret:
-            raise IdentityError(
-                "USER_IDENTITY_SECRET is required to verify HS256 identity tokens"
-            )
-        return secret
-    if alg == _DEFAULT_ALG_RS:
-        # For verification, prefer the public key; fall back to extracting from the
-        # private key (useful in single-host deployments).
-        pub = _env("USER_IDENTITY_PUBLIC_KEY")
-        if pub:
-            return pub
-        priv = _env("USER_IDENTITY_PRIVATE_KEY")
-        if priv:
-            return priv
+def _get_signing_key() -> Any:
+    """Return the RS256 private signing key.  Raises ``IdentityError`` if unconfigured."""
+    key_pem = _env("USER_IDENTITY_PRIVATE_KEY")
+    if not key_pem:
         raise IdentityError(
-            "USER_IDENTITY_PUBLIC_KEY (or USER_IDENTITY_PRIVATE_KEY) is required "
-            "to verify RS256 identity tokens"
+            "USER_IDENTITY_PRIVATE_KEY (PEM) is required to mint identity tokens. "
+            "Generate a keypair with prometheus_api.agent.identity_keygen "
+            "(prometheus-identity-keygen) or openssl."
         )
-    raise IdentityError(f"Unsupported USER_IDENTITY_ALG: {alg!r}")
+    return key_pem
+
+
+def _get_verification_key() -> Any:
+    """Return the RS256 public verification key.  Raises ``IdentityError`` if unconfigured.
+
+    PyJWT's RS256 verifier requires an actual public key (it has no ``.verify()``
+    method on a private key object), so when only ``USER_IDENTITY_PRIVATE_KEY`` is
+    set (single-host deployments where the same process mints and verifies, e.g.
+    local dev), the public key is derived from it rather than passed through.
+    """
+    pub = _env("USER_IDENTITY_PUBLIC_KEY")
+    if pub:
+        return pub
+    priv = _env("USER_IDENTITY_PRIVATE_KEY")
+    if priv:
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+            load_pem_private_key,
+        )
+        private_key = load_pem_private_key(priv.encode(), password=None)
+        return private_key.public_key().public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+    raise IdentityError(
+        "USER_IDENTITY_PUBLIC_KEY (or USER_IDENTITY_PRIVATE_KEY, or JWKS_URL) is "
+        "required to verify identity tokens. Generate a keypair with "
+        "prometheus_api.agent.identity_keygen (prometheus-identity-keygen) or openssl."
+    )

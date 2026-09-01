@@ -5,6 +5,40 @@ changes. When a base-agent change requires downstream agent updates, add a short
 section here under the relevant version heading with migration steps and a
 minimal code example.
 
+## 0.12.0
+
+### HS256 Identity Tokens Removed — RS256 Only
+
+`prometheus_api.agent.identity` no longer supports HS256 (symmetric-secret)
+signing for the multi-user identity JWT. Signing is **RS256 only**: the platform
+backend mints with `USER_IDENTITY_PRIVATE_KEY`; every agent verifies with
+`USER_IDENTITY_PUBLIC_KEY` or `JWKS_URL`. `USER_IDENTITY_SECRET` and
+`USER_IDENTITY_ALG` are no longer read anywhere — setting them has no effect.
+
+This closes a real weakness: under HS256 every agent held the same secret used to
+*mint* tokens, so a compromised or careless agent deployment could forge a token
+for any user. Under RS256, only the backend can forge; every agent (including
+third-party ones) holds only a verification key.
+
+Migration steps:
+
+1. If you were running `USER_IDENTITY_ALG=HS256` + `USER_IDENTITY_SECRET`,
+   generate an RSA keypair instead:
+   ```bash
+   prometheus-identity-keygen --out-dir ./keys
+   # or: openssl genrsa -out identity_private.pem 4096 && \
+   #     openssl rsa -in identity_private.pem -pubout -out identity_public.pem
+   ```
+2. Set `USER_IDENTITY_PRIVATE_KEY` on the platform backend only.
+3. Set `USER_IDENTITY_PUBLIC_KEY` (or `JWKS_URL`) on every agent — never the
+   private key.
+4. Remove `USER_IDENTITY_SECRET` and `USER_IDENTITY_ALG` from every `.env` /
+   compose file; they are now unused.
+
+No code changes are needed if you were already using RS256 — this is a
+configuration-only migration for anyone still on HS256. See
+[IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) for the full guide.
+
 ## 0.11.0
 
 ### Select an Installed LLM Profile; Do Not Configure Agent Flavors

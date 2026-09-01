@@ -2080,8 +2080,7 @@ class PrometheusAgent:
 
             Third-party agents fetch this endpoint to obtain the RSA public key
             for verifying platform-minted user tokens.  Returns an empty keyset
-            when the platform is configured for HS256 (symmetric secrets cannot
-            be published).
+            when no key is configured.
 
             This endpoint is intentionally unauthenticated — it is public
             metadata, like the agent card.  Fingerprint the keys you receive
