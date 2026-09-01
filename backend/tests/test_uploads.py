@@ -90,7 +90,7 @@ def test_upload_small_file_returns_descriptor(monkeypatch):
     assert body["size_bytes"] == len(b"solid data")
     # A conversation id is minted so the upload can attach even before the first turn.
     assert captured["conversation_id"]
-    # No USER_IDENTITY_SECRET configured in this test env, so mint_for_user
+    # No USER_IDENTITY_PRIVATE_KEY configured in this test env, so mint_for_user
     # degrades to None rather than raising -- the router must still succeed.
     assert captured["user_token"] is None
 

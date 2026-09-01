@@ -59,12 +59,20 @@ def _build_app() -> Starlette:
     return Starlette(routes=[Route("/uploads/stage", _route, methods=["POST"])])
 
 
+@pytest.fixture(scope="module")
+def rsa_keypair():
+    from prometheus_api.agent.identity_keygen import generate_keypair
+
+    return generate_keypair(key_size=2048)
+
+
 @pytest.fixture(autouse=True)
-def identity_env(monkeypatch, tmp_path):
-    monkeypatch.setenv("USER_IDENTITY_SECRET", "test-secret-32-chars-xxxxxxxxxxx")
+def identity_env(monkeypatch, tmp_path, rsa_keypair):
+    private_pem, public_pem = rsa_keypair
+    monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", private_pem)
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", public_pem)
     monkeypatch.setenv("USER_IDENTITY_ISS", "prometheus-platform")
     monkeypatch.setenv("USER_IDENTITY_AUD", "prometheus-agents")
-    monkeypatch.setenv("USER_IDENTITY_ALG", "HS256")
     # Isolate staged uploads to a scratch dir so tests don't collide/leak.
     monkeypatch.setenv("PROMETHEUS_STAGED_UPLOAD_DIR", str(tmp_path))
 

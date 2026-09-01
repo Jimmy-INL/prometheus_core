@@ -22,7 +22,8 @@ carrying { sub: user_id, role, sid, exp } — this is NOT the identity token bel
     ↓
 Every POST /api/chat/messages (backend/app/routers/chat.py):
   identity.mint_for_user(claims.sub) mints a short-lived PLATFORM JWT
-  (USER_IDENTITY_SECRET) via prometheus_api.agent.identity.mint_user_token
+  (signed RS256 with USER_IDENTITY_PRIVATE_KEY) via
+  prometheus_api.agent.identity.mint_user_token
     ↓
 backend/app/a2a_client.py::A2AClient.send() attaches it to
   message.metadata["userToken"] on the outbound A2A call
@@ -36,11 +37,13 @@ Specialist agents verify the JWT independently
   └─ Can call self.get_credential(resource) for per-user JIT secrets
 ```
 
-**Two distinct JWTs, two distinct secrets** — easy to conflate, so be precise:
-- `BACKEND_JWT_SECRET` (or its `CHAINLIT_AUTH_SECRET` fallback) signs the
+**Two distinct JWTs, two distinct keys** — easy to conflate, so be precise:
+- `BACKEND_JWT_SECRET` (or its `CHAINLIT_AUTH_SECRET` fallback, HS256) signs the
   **browser session cookie** — backend-to-browser only, never leaves the backend.
-- `USER_IDENTITY_SECRET` (or an RS256 keypair) signs the **platform identity
-  JWT** — backend-to-agents, carried in `message.metadata["userToken"]`.
+- `USER_IDENTITY_PRIVATE_KEY` (RS256, backend only) signs the **platform
+  identity JWT** — backend-to-agents, carried in `message.metadata["userToken"]`.
+  Every agent verifies with `USER_IDENTITY_PUBLIC_KEY` (or `JWKS_URL`), never
+  the private key — a compromised agent cannot forge tokens for other users.
 
 The platform mints its **own** internal identity JWT rather than forwarding the
 session cookie or any external IdP token. This means multi-user works
@@ -51,36 +54,57 @@ users only).
 
 ## Configuration
 
+### Generate a keypair
+
+Signing is RS256 only — there is no shared-secret option. Generate a keypair with
+the tool that ships in `prometheus_api` (already installed in every agent
+container, including the backend):
+
+```bash
+prometheus-identity-keygen --out-dir ./keys
+# → ./keys/identity_private.pem  (0600 — backend only, never on an agent)
+# → ./keys/identity_public.pem   (safe to distribute to every agent)
+```
+
+Or with plain `openssl` (zero dependencies):
+```bash
+openssl genrsa -out identity_private.pem 4096
+openssl rsa -in identity_private.pem -pubout -out identity_public.pem
+```
+
+See `prometheus_api/docs/agent/IDENTITY_KEY_MANAGEMENT.md` for key rotation and
+third-party (JWKS) distribution.
+
 ### Required env vars (add to `.env`)
 
 ```bash
-# Identity — must match across all services (backend + all agents)
-USER_IDENTITY_SECRET=change-this-to-a-long-random-string
-USER_IDENTITY_ALG=HS256          # HS256 (default) or RS256
+# Backend only — mints tokens. Never set this on an agent container.
+USER_IDENTITY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Every agent — verifies tokens. Safe to distribute; cannot forge anything.
+USER_IDENTITY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+
+# Shared across backend + all agents; must match exactly.
 USER_IDENTITY_ISS=prometheus-platform   # default
 USER_IDENTITY_AUD=prometheus-agents     # default
-USER_IDENTITY_TTL=7200           # seconds; must cover the longest expected turn
+
+USER_IDENTITY_TTL=7200           # seconds; backend only (minted-token lifetime)
 USER_IDENTITY_REQUIRED=true      # false for dev/smoke-test only
 ```
 
-For RS256 (asymmetric, preferred for production):
-```bash
-USER_IDENTITY_ALG=RS256
-USER_IDENTITY_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
-USER_IDENTITY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n..."
-# Private key is only needed by the backend (minting).
-# Public key is sufficient for agents (verification only).
-```
+Multi-line PEM values need careful quoting in `.env`/compose; the
+`\n`-escaped single-line form above (which `prometheus-identity-keygen`
+prints by default) is the simplest to paste directly.
 
-### `.env.example` additions (already added)
+### `.env.example` / `docker-compose.yml` (already wired up)
 
-The following variables have been added to `docker-compose.yml` and should be
-templated in `.env.example`:
-```
-USER_IDENTITY_SECRET=
-USER_IDENTITY_REQUIRED=true
-CREDENTIAL_BROKER=env
-```
+`USER_IDENTITY_PRIVATE_KEY` and `USER_IDENTITY_TTL` are set **only** on the
+`backend` service's own `environment:` block. `USER_IDENTITY_PUBLIC_KEY`,
+`USER_IDENTITY_ISS`, `USER_IDENTITY_AUD`, `USER_IDENTITY_REQUIRED`, and
+`CREDENTIAL_BROKER` live in the root `x-common-env` anchor, shared by `backend`
+and every agent. Every per-agent `docker-compose.yml` (no shared anchor across
+separate compose files) carries the same four verification-side vars
+individually.
 
 ### Local users
 
@@ -152,12 +176,11 @@ policy HCL.
 
 ### Third-party agent providers
 
-If an external team or vendor registers an agent with your platform, **use RS256**.
-Give them only the `USER_IDENTITY_PUBLIC_KEY` — they can verify that incoming JWTs
-were signed by your platform without being able to forge tokens.
-
-With HS256 you would have to share `USER_IDENTITY_SECRET`, which lets them
-impersonate any user.  Never do this.
+If an external team or vendor registers an agent with your platform, give them
+only `USER_IDENTITY_PUBLIC_KEY` (or point them at `JWKS_URL`) — they can verify
+that incoming JWTs were signed by your platform without being able to forge
+tokens for any user. This is the whole point of RS256: never share
+`USER_IDENTITY_PRIVATE_KEY` with anyone outside the platform backend.
 
 Every `PrometheusAgent` now serves `GET /.well-known/jwks.json` — the RSA public
 key as a JSON Web Key Set.  Third-party agents set `JWKS_URL` to this endpoint
@@ -299,7 +322,8 @@ still work (scoped to the `"local"` user_id).
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Agent returns `"Identity verification failed: userToken has expired"` | Turn lasted longer than `USER_IDENTITY_TTL` | Increase `USER_IDENTITY_TTL` (default 7200) |
-| Agent returns `"No 'userToken' found in message metadata"` | `USER_IDENTITY_REQUIRED=true` but `backend` has no `USER_IDENTITY_SECRET` configured | Set `USER_IDENTITY_SECRET` in `.env` |
+| Agent returns `"No 'userToken' found in message metadata"` | `USER_IDENTITY_REQUIRED=true` but `backend` has no `USER_IDENTITY_PRIVATE_KEY` configured | Generate a keypair (`prometheus-identity-keygen`) and set `USER_IDENTITY_PRIVATE_KEY` on the backend |
+| Agent fails to verify with "USER_IDENTITY_PUBLIC_KEY ... is required" | Agent has no public key or `JWKS_URL` configured | Set `USER_IDENTITY_PUBLIC_KEY` (never the private key) on the agent |
 | `CredentialError: VAULT_ADDR is required` | `CREDENTIAL_BROKER=vault` but Vault env not set | Set `VAULT_ADDR` and `VAULT_JWT_ROLE`, or switch to `CREDENTIAL_BROKER=env` |
 | `/history` shows no conversations | User has not yet created any conversations in this deployment | Expected — history is now per-user |
 | Worker pool capacity error | Too many concurrent users for `USER_WORKER_MAX` | Increase `USER_WORKER_MAX` (default 32) |
@@ -309,7 +333,7 @@ still work (scoped to the `"local"` user_id).
 ## See also
 
 - `prometheus_api/docs/agent/MULTI_USER.md` — implementation reference for agent authors
-- `prometheus_api/docs/agent/IDENTITY_KEY_MANAGEMENT.md` — HS256 vs RS256, key distribution, third-party agent integration via JWKS
+- `prometheus_api/docs/agent/IDENTITY_KEY_MANAGEMENT.md` — RS256 key generation, key distribution, third-party agent integration via JWKS
 - `prometheus_api/docs/agent/GUIDE.md` — general PrometheusAgent developer guide
 - `docs/docs/dev-docs/adding-agents.md` — how to create a new specialist agent
 - `docs/docs/dev-docs/artifacts.md` — artifact model and rendering

@@ -26,11 +26,12 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       AGENT_SECRET_REQUIRED: ${AGENT_SECRET_REQUIRED:-true}
-      USER_IDENTITY_SECRET: ${USER_IDENTITY_SECRET:-}
-      USER_IDENTITY_ALG: ${USER_IDENTITY_ALG:-HS256}
+      # Multi-user identity plane (RS256 only): this agent verifies with the
+      # public key (or JWKS_URL for a third-party deployment) -- it never
+      # holds the private key. See docs/dev-docs/multi-user-setup.md.
+      USER_IDENTITY_PUBLIC_KEY: ${USER_IDENTITY_PUBLIC_KEY:-}
       USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
       USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
-      USER_IDENTITY_TTL: ${USER_IDENTITY_TTL:-7200}
       USER_IDENTITY_REQUIRED: ${USER_IDENTITY_REQUIRED:-true}
       CREDENTIAL_BROKER: ${CREDENTIAL_BROKER:-env}
       PYTHONDONTWRITEBYTECODE: 1

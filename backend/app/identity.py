@@ -5,6 +5,12 @@ session cookie or any external IdP token — so agents can verify *who* is
 calling them independent of how the user logged in (local password or a
 future OIDC provider).
 
+Signing is RS256 only — the backend is the only service that holds
+``USER_IDENTITY_PRIVATE_KEY``; every agent verifies with
+``USER_IDENTITY_PUBLIC_KEY`` or a ``JWKS_URL``, never the private key.
+Generate a keypair with ``prometheus-identity-keygen`` (ships in
+``prometheus_api``, already installed in this container) or ``openssl``.
+
 Verification-side lives in ``prometheus_api.agent.identity``; see
 ``docs/dev-docs/multi-user-setup.md`` for the full picture (identity plane,
 credential plane, per-user worker isolation).
@@ -21,10 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _is_configured() -> bool:
     """Return True when enough env config exists to mint a token."""
-    alg = os.environ.get("USER_IDENTITY_ALG", "HS256").upper()
-    if alg == "RS256":
-        return bool(os.environ.get("USER_IDENTITY_PRIVATE_KEY"))
-    return bool(os.environ.get("USER_IDENTITY_SECRET"))
+    return bool(os.environ.get("USER_IDENTITY_PRIVATE_KEY"))
 
 
 def mint_for_user(user_id: str) -> Optional[str]:
