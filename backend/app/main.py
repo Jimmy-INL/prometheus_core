@@ -1,4 +1,6 @@
+import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
@@ -8,6 +10,19 @@ from app.config import settings
 from app.routers import artifacts, auth, chat, config, conversations, events, health, sessions, uploads
 from app.services.events import EventBus
 from app.sessions import SessionStore
+
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
+
+
+def _run_admin_db_migrations() -> None:
+    """Apply pending Alembic migrations against admin-db. Synchronous (Alembic's
+    command API blocks); called via asyncio.to_thread from the lifespan below so
+    it doesn't block the event loop during startup."""
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(_ALEMBIC_INI))
+    command.upgrade(cfg, "head")
 
 
 @asynccontextmanager
@@ -22,6 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "CHAINLIT_AUTH_SECRET (both are forwarded to the container in "
             "docker-compose.yml). Refusing to start with an empty signing key."
         )
+    # Bring admin-db (local users, OIDC provider config, signing keys) up to the
+    # latest schema before serving any request. A single-replica backend, so
+    # there's no concurrent-migration race to worry about; if this fails the
+    # app refuses to start rather than serving against a stale/missing schema.
+    await asyncio.to_thread(_run_admin_db_migrations)
     # In-memory session store — one per process, lost on restart (documented in
     # app/sessions.py).
     app.state.session_store = SessionStore()

@@ -36,6 +36,11 @@ RUN --mount=type=cache,id=prometheus-uv-cache,target=/root/.cache/uv,sharing=loc
 # Brings app/config.yml along with the package sources.
 COPY app /app/app
 
+# Alembic migrations for the admin plane (users, OIDC providers, signing
+# keys) -- applied automatically on startup, see app/main.py's lifespan.
+COPY alembic /app/alembic
+COPY alembic.ini /app/alembic.ini
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
