@@ -5,6 +5,10 @@ multiple simultaneous users.  It is the operator/developer companion to the
 `prometheus_api` implementation reference at
 `prometheus_api/docs/agent/MULTI_USER.md`.
 
+For a security-architecture view of every secret and key mentioned below —
+what each one protects, where it's set, and what breaks if it's lost or
+rotated — see `docs/docs/dev-docs/encryption-and-keys.md`.
+
 ---
 
 ## How multi-user works at the platform level

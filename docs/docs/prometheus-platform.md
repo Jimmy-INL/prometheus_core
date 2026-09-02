@@ -86,11 +86,6 @@ workflow-suggestions:
   - "Design a Rankine cycle based power generation system"
   - "Run FTL Safety Analysis"
 
-local-users:
-  - username: "prometheus"
-    password: "prometheus"
-    role: "user"
-
 agent-url: "http://localhost:8001"
 agent-secret: ""
 redis-url: "redis://localhost:6379"
@@ -99,6 +94,12 @@ auto-approve-steps: false
 ```
 
 Override the config path with `PROMETHEUS_CONFIG_PATH=/path/to/config.yml`.
+
+Local user accounts are no longer configured here — they live in a
+Postgres-backed admin plane, created via a first-run setup wizard and managed
+through an in-app admin UI (users, RS256 signing keys, OIDC identity
+providers). See `docs/docs/dev-docs/multi-user-setup.md` and
+`docs/docs/dev-docs/encryption-and-keys.md`.
 
 ## Data flow
 
