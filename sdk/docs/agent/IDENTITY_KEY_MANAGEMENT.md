@@ -9,6 +9,14 @@ the platform backend (which holds the private key) can mint tokens, and every
 verifying agent — including third-party ones — needs only the public key or a
 JWKS URL, neither of which can be used to forge anything.
 
+A platform whose backend has an admin UI (Admin > Signing Keys) can generate,
+activate, and retire keys through Postgres instead of hand-managed env vars —
+in that case the backend's own `GET /.well-known/jwks.json` becomes the
+authoritative source (see "Option B" below), and `USER_IDENTITY_PRIVATE_KEY`
+is only a bootstrap fallback for a fresh deployment with no keys generated
+yet. Everything below still applies to a platform running purely on env vars
+with no admin-db.
+
 ---
 
 ## Generating a keypair
@@ -111,30 +119,37 @@ Copy `identity_public.pem` to the third-party operator. They set it as
 `USER_IDENTITY_PUBLIC_KEY`. Simple, but requires manual coordination on key
 rotation.
 
-### Option B — Serve and consume the JWKS endpoint (recommended)
+### Option B — Point JWKS_URL at the platform backend (recommended)
 
-Every `PrometheusAgent` serves the platform's public key at
-`GET /.well-known/jwks.json`. This endpoint:
-
-- Is unauthenticated (no `Authorization` header required) — same as `/.well-known/agent.json`.
-- Returns the RSA public key as a JWK with `kid`, `use`, and `alg`.
-- Returns `{"keys": []}` when no key is configured.
-- Minted tokens carry a `kid` header so verifiers can select the right key
-  when multiple keys are present (key rotation overlap window).
-
-Third-party agents verify tokens using the JWKS URL:
+Since the platform's admin UI (Admin > Signing Keys) can generate, activate,
+and retire RS256 keys in its own Postgres-backed store, **the platform
+backend itself is the authoritative JWKS host** — `GET
+/.well-known/jwks.json` on the backend serves every key in that store (active
+or recently retired), not just whatever single key happens to be in one
+agent's `USER_IDENTITY_PUBLIC_KEY` env var. Point `JWKS_URL` there:
 
 ```bash
 # Third-party agent .env
-JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
+JWKS_URL=https://<platform-backend-host>/.well-known/jwks.json
 USER_IDENTITY_ISS=prometheus-platform
 USER_IDENTITY_AUD=prometheus-agents
 USER_IDENTITY_REQUIRED=true
 ```
 
-`verify_user_token` uses PyJWT's `PyJWKClient` internally: it fetches the JWKS,
-caches the keys (TTL: 1 hour), and automatically refreshes when it encounters an
-unknown `kid`. No `USER_IDENTITY_PUBLIC_KEY` needed on the third-party side.
+This is the only setup that survives a key rotation done through the admin UI
+with zero agent-side changes — see "Key rotation" below. `verify_user_token`
+uses PyJWT's `PyJWKClient` internally: it fetches the JWKS, caches the keys
+(TTL: 1 hour), and automatically refreshes when it encounters an unknown
+`kid`. No `USER_IDENTITY_PUBLIC_KEY` needed on the third-party side.
+
+Every `PrometheusAgent` *also* serves its own `GET /.well-known/jwks.json`,
+built from that one agent's own `USER_IDENTITY_PUBLIC_KEY` /
+`USER_IDENTITY_PRIVATE_KEY` env vars (same unauthenticated shape as
+`/.well-known/agent.json`). This still works and is useful for a
+deployment that has no admin-db / never touches the admin UI — but it
+reflects only that one agent's static env-var configuration, never a
+DB-rotated key, so prefer the platform backend's endpoint whenever it's
+available.
 
 ### What the third-party agent needs to configure
 
@@ -152,7 +167,7 @@ USER_IDENTITY_REQUIRED=true
 **Option B — JWKS URL (recommended; handles key rotation automatically):**
 ```bash
 # Third-party agent .env
-JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
+JWKS_URL=https://<platform-backend-host>/.well-known/jwks.json
 USER_IDENTITY_ISS=prometheus-platform
 USER_IDENTITY_AUD=prometheus-agents
 USER_IDENTITY_REQUIRED=true
@@ -176,12 +191,14 @@ User "alice" logs in via the platform frontend
     ↓
 Platform backend mints JWT: { sub: "alice", iss: "prometheus-platform",
                                aud: "prometheus-agents", exp: now+2h }
-                             signed with USER_IDENTITY_PRIVATE_KEY
+                             signed with the active key -- either an
+                             admin-db SigningKey row (once one exists) or
+                             USER_IDENTITY_PRIVATE_KEY as a bootstrap fallback
     ↓
 client-agent forwards JWT in message.metadata["userToken"]
     ↓
 Third-party agent receives the A2A request
-    verifies JWT against USER_IDENTITY_PUBLIC_KEY (or via JWKS_URL)
+    verifies JWT against JWKS_URL (recommended) or USER_IDENTITY_PUBLIC_KEY
     → confirms: this request is from a genuine platform user named "alice"
     → cannot forge a different user (never had the private key)
     → cannot call other platform internals (no Redis, no agent secret)
@@ -195,11 +212,34 @@ Each minted token carries a `kid` header matching the key ID in the JWKS.
 `PyJWKClient` selects the right key automatically, so an overlap window with two
 simultaneously valid keys works out of the box.
 
+### Via the admin UI (recommended; no agent changes at all)
+
+If the platform operator manages signing keys through **Admin > Signing
+Keys**, rotation needs **zero action on any agent** that's configured with
+`JWKS_URL` pointed at the platform backend:
+
+1. Operator generates a new key, then activates it — the backend now mints
+   with the new key/kid, and its `/.well-known/jwks.json` immediately serves
+   both the new key and the previous one (not yet retired).
+2. Every agent's `PyJWKClient` transparently refreshes on the first token it
+   sees with an unrecognized `kid` — no restart, no config change.
+3. Once the operator is confident no in-flight token still needs the old key
+   (past `USER_IDENTITY_TTL`, or whatever TTL the active key was minting
+   with), they retire it. It keeps appearing in the JWKS for a grace period
+   so already-issued tokens keep verifying, then can be deleted.
+
+This is the reason `JWKS_URL` (Option B above) is the recommended setup for
+every agent, not just third-party ones — the alternative (`USER_IDENTITY_PUBLIC_KEY`
+as a static value) has no way to observe an admin-UI rotation at all.
+
+### Via env vars (no admin-db, or agents not using JWKS_URL)
+
 1. Generate a new keypair (`prometheus-identity-keygen`).
 2. Update `USER_IDENTITY_PUBLIC_KEY` on all platform agents to contain the **new**
-   public key. The JWKS endpoint immediately serves the new key. Tokens minted with
-   the old private key are still verifiable until they expire — but because `kid`
-   changed, `PyJWKClient` will do a JWKS refresh automatically on first encounter.
+   public key. Each agent's own JWKS endpoint immediately serves the new key.
+   Tokens minted with the old private key are still verifiable until they
+   expire — but because `kid` changed, `PyJWKClient` will do a JWKS refresh
+   automatically on first encounter.
 3. Update `USER_IDENTITY_PRIVATE_KEY` on the backend to the new private key. New
    tokens are now minted with the new key/kid.
 4. Wait for `USER_IDENTITY_TTL` seconds (the longest outstanding token lifetime).
@@ -215,9 +255,8 @@ platform — `PyJWKClient` re-fetches on unknown `kid`.
 
 | Service | Env var | Purpose |
 |---|---|---|
-| Platform backend | `USER_IDENTITY_PRIVATE_KEY` | Mint tokens |
-| Every agent (internal) | `USER_IDENTITY_PUBLIC_KEY` | Verify tokens |
-| Third-party agent | `JWKS_URL` (recommended) or `USER_IDENTITY_PUBLIC_KEY` | Verify tokens without manual key distribution |
+| Platform backend | `USER_IDENTITY_PRIVATE_KEY` (bootstrap fallback; the admin UI's Postgres-backed key takes priority once one is activated) | Mint tokens |
+| Every agent, including third-party | `JWKS_URL` pointed at the platform backend (recommended) or `USER_IDENTITY_PUBLIC_KEY` | Verify tokens — only `JWKS_URL` survives an admin-UI key rotation with no agent-side change |
 | Backend + every agent | `USER_IDENTITY_ISS`, `USER_IDENTITY_AUD` | Must match across all services |
 | Backend only | `USER_IDENTITY_TTL` | Minted-token lifetime |
 | Every agent | `USER_IDENTITY_REQUIRED` | `false` only for local dev / smoke tests |
@@ -227,6 +266,9 @@ platform — `PyJWKClient` re-fetches on unknown `kid`.
 ## See also
 
 - [MULTI_USER.md](./MULTI_USER.md) — full identity and credential reference
-- [AGENT_MIGRATIONS.md](./AGENT_MIGRATIONS.md) — migration steps, including HS256 removal
+- [AGENT_MIGRATIONS.md](./AGENT_MIGRATIONS.md) — migration steps, including HS256 removal and the 0.12.1 admin-UI/JWKS-host update
 - [ENV_SETUP.md](../ENV_SETUP.md) — environment variable reference
-- Platform docs: `prometheus_platform/docs/dev-docs/multi-user-setup.md`
+- Platform docs: `prometheus_platform/docs/docs/dev-docs/multi-user-setup.md`
+  (operator-facing: first-run setup, admin UI usage, OIDC providers) and
+  `prometheus_platform/docs/docs/dev-docs/encryption-and-keys.md` (every secret
+  and key in the platform, what encrypts what, and where each one lives)

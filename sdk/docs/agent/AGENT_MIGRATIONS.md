@@ -5,6 +5,47 @@ changes. When a base-agent change requires downstream agent updates, add a short
 section here under the relevant version heading with migration steps and a
 minimal code example.
 
+## 0.12.1
+
+### Platform Backend Is Now the Recommended JWKS Host
+
+No code change in `prometheus_api` itself — this is a guidance update
+following new capability on the platform side (`prometheus_platform`'s admin
+UI, Admin > Signing Keys and Admin > Identity Providers). Recording it here
+because it changes the *recommended* value of `JWKS_URL` for every agent,
+including third-party ones.
+
+The platform backend can now generate, activate, and retire RS256 signing
+keys through Postgres instead of a hand-managed `USER_IDENTITY_PRIVATE_KEY`
+env var, and serves its own `GET /.well-known/jwks.json` built from that
+store. Point `JWKS_URL` at the **platform backend**, not at an individual
+agent's own JWKS endpoint (every `PrometheusAgent` still serves one, per
+`identity.py::get_jwks_document()`, but it only reflects that one agent's own
+static env vars and can't see a DB-driven rotation):
+
+```bash
+# Every agent's .env, including third-party -- was previously pointed at
+# some agent's own host; point it at the platform backend now.
+JWKS_URL=https://<platform-backend-host>/.well-known/jwks.json
+```
+
+Migration steps:
+
+1. If any agent currently sets `JWKS_URL` to a peer agent's host, change it
+   to the platform backend's host instead.
+2. If any agent currently sets only `USER_IDENTITY_PUBLIC_KEY` (static value,
+   no `JWKS_URL`), consider switching to `JWKS_URL` — it's the only setup
+   that survives a key rotation done through the admin UI with no further
+   agent-side change.
+3. No action needed for a platform still running purely on
+   `USER_IDENTITY_PRIVATE_KEY`/`_PUBLIC_KEY` env vars with no admin-db (that
+   path is unchanged and still fully supported as a bootstrap fallback).
+
+See [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) (updated:
+"Option B", "Key rotation") for the full picture, and
+`prometheus_platform/docs/docs/dev-docs/encryption-and-keys.md` for how this
+fits into the platform's other secrets.
+
 ## 0.12.0
 
 ### HS256 Identity Tokens Removed — RS256 Only
