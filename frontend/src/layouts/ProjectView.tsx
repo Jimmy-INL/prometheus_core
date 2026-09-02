@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
-import { LayoutDashboard, MessageSquare, FolderOpen, Bot } from "lucide-react";
+import { LayoutDashboard, MessageSquare, FolderOpen, Bot, ShieldCheck } from "lucide-react";
 import { chatStore } from "@/lib/store/chat";
+import { useCurrentUser } from "@/lib/store/session";
 import { chatProfileName, useChatType } from "@/lib/useChatType";
+import { AdminUsers } from "../components/admin/AdminUsers";
 import { Chat } from "../components/Chat";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
 import { LeftPanel } from "../components/LeftPanel";
 
-type TabId = "chat" | "dashboard" | "artifacts" | "agents";
+type TabId = "chat" | "dashboard" | "artifacts" | "agents" | "admin";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "chat",      label: "Chat",      icon: <MessageSquare size={15} /> },
@@ -15,6 +17,16 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "artifacts", label: "Artifacts", icon: <FolderOpen size={15} /> },
   { id: "agents",    label: "Agents",    icon: <Bot size={15} /> },
 ];
+
+// Only shown to role: "admin" -- appended to TABS below, not part of the
+// always-visible set. Today this is just Users (Phase 2); Signing Keys and
+// Identity Providers land as more sub-sections of this same tab in later
+// phases, not as separate top-level tabs.
+const ADMIN_TAB: { id: TabId; label: string; icon: React.ReactNode } = {
+  id: "admin",
+  label: "Admin",
+  icon: <ShieldCheck size={15} />,
+};
 
 interface Props {
   onLogout: () => void;
@@ -25,6 +37,8 @@ export function ProjectView({ onLogout }: Props) {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [chatType] = useChatType();
+  const currentUser = useCurrentUser();
+  const tabs = currentUser?.role === "admin" ? [...TABS, ADMIN_TAB] : TABS;
 
   // Owned here (not in Chat) so that when the artifact-viewer panel is
   // added alongside Chat, each panel gets its own scroll ref and scrolls
@@ -52,7 +66,7 @@ export function ProjectView({ onLogout }: Props) {
           {/* Tab bar */}
           <div className="px-4 pt-3 pb-3">
             <div className="inline-flex items-center gap-1 bg-base-200 rounded-xl p-1">
-              {TABS.map((tab) => {
+              {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
                 return (
                   <button
@@ -94,6 +108,7 @@ export function ProjectView({ onLogout }: Props) {
               Agents coming soon
             </div>
           )}
+          {activeTab === "admin" && currentUser?.role === "admin" && <AdminUsers />}
         </main>
 
         <aside

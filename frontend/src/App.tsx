@@ -4,6 +4,7 @@ import { Login } from "@/components/Login";
 import { SetupWizard } from "@/components/SetupWizard";
 import { api } from "@/lib/api/client";
 import { chatStore } from "@/lib/store/chat";
+import { setCurrentUser } from "@/lib/store/session";
 import { chatProfileName, useChatType } from "@/lib/useChatType";
 
 /**
@@ -28,24 +29,19 @@ export default function App() {
   // setup-status probe itself fails (e.g. admin-db unreachable), fall through
   // to the normal auth probe rather than getting stuck on "loading" forever.
   useEffect(() => {
+    const probeAuth = () =>
+      api
+        .me()
+        .then((user) => {
+          setCurrentUser(user);
+          setBoot("authed");
+        })
+        .catch(() => setBoot("unauthed"));
+
     api
       .setupStatus()
-      .then((status) => {
-        if (status.needs_setup) {
-          setBoot("needs_setup");
-          return;
-        }
-        return api
-          .me()
-          .then(() => setBoot("authed"))
-          .catch(() => setBoot("unauthed"));
-      })
-      .catch(() => {
-        api
-          .me()
-          .then(() => setBoot("authed"))
-          .catch(() => setBoot("unauthed"));
-      });
+      .then((status) => (status.needs_setup ? setBoot("needs_setup") : probeAuth()))
+      .catch(probeAuth);
   }, []);
 
   // On auth, load config + create a session, then open the SSE stream. The profile
@@ -66,6 +62,7 @@ export default function App() {
     }
     chatStore.disconnect();
     bootstrappedRef.current = false;
+    setCurrentUser(null);
     setBoot("unauthed");
   };
 

@@ -231,3 +231,16 @@ def current_claims(session_cookie: Optional[str] = Cookie(default=None, alias=se
 def current_user(claims: TokenClaims = Depends(current_claims)) -> User:
     """Dependency: the authenticated :class:`User` derived from the cookie."""
     return User(identifier=claims.sub, role=claims.role, provider=claims.provider)
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    """Dependency: like :func:`current_user`, but 403s unless ``role == "admin"``.
+
+    Guards the admin API (``routers/admin_users.py`` and friends). The role comes
+    from the session JWT, minted at login from the ``users`` table -- a role change
+    via the admin API takes effect on that user's *next* login, not retroactively on
+    an already-issued token (same staleness window as the JWT's other claims).
+    """
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return user

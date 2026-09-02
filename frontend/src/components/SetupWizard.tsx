@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api/client";
+import { setCurrentUser } from "@/lib/store/session";
 
 interface Props {
   onSuccess: () => void;
@@ -30,7 +31,8 @@ export function SetupWizard({ onSuccess }: Props) {
     setLoading(true);
     setError("");
     try {
-      await api.bootstrap(username, password);
+      const user = await api.bootstrap(username, password);
+      setCurrentUser(user);
       onSuccess();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {

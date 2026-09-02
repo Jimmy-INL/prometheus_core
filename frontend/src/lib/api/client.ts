@@ -7,6 +7,9 @@
  */
 
 import type {
+  AdminUser,
+  AdminUserCreate,
+  AdminUserUpdate,
   ChatMessageRequest,
   ChatMessageResponse,
   ConfigResponse,
@@ -124,5 +127,30 @@ export const api = {
   /** URL for an artifact's bytes; used directly as an <img>/<embed> src or fetch target. */
   artifactContentUrl(artifactId: string): string {
     return `${API_BASE}/artifacts/${encodeURIComponent(artifactId)}/content`;
+  },
+
+  // --- admin: users (require_admin server-side; 403 for non-admins) ---
+  listAdminUsers(): Promise<AdminUser[]> {
+    return request<AdminUser[]>("/admin/users");
+  },
+
+  createAdminUser(input: AdminUserCreate): Promise<AdminUser> {
+    return request<AdminUser>("/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAdminUser(userId: string, patch: AdminUserUpdate): Promise<AdminUser> {
+    return request<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  },
+
+  deleteAdminUser(userId: string): Promise<void> {
+    return request<void>(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
   },
 };

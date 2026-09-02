@@ -124,9 +124,16 @@ creates that first account (and refuses, `409`, once any account exists).
 `backend/app/security.py::PasswordIdentityProvider` then authenticates against
 that table on every login.
 
-Creating *additional* local users beyond the first admin currently requires
-inserting directly into the `users` table (`INSERT ... password_hash = bcrypt
-hash`) — an admin UI for user management is planned but not wired up yet.
+Creating *additional* local users, editing roles, deactivating, or deleting
+accounts is now an admin-only API: `GET/POST /api/admin/users` and
+`PATCH/DELETE /api/admin/users/{id}` (`backend/app/routers/admin_users.py`),
+gated by `app.security.require_admin` (403 for non-admins). It refuses any
+change that would leave zero active admins (demoting, deactivating, or
+deleting the last one all `409`). The React app surfaces this as an **Admin**
+tab (`frontend/src/layouts/ProjectView.tsx`), visible only when the logged-in
+user's `role` is `"admin"` (tracked in `frontend/src/lib/store/session.ts`) —
+`frontend/src/components/admin/AdminUsers.tsx` is the users table + create/edit
+forms.
 
 **Okta/OIDC is not wired up yet.** `security.py` models an `IdentityProvider`
 protocol with a provider registry (`register_provider()`/`get_provider()`) so a

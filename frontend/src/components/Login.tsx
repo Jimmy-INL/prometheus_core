@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "@/lib/api/client";
+import { setCurrentUser } from "@/lib/store/session";
 
 interface Props {
   onSuccess: () => void;
@@ -15,7 +16,8 @@ export function Login({ onSuccess }: Props) {
     setLoading(true);
     setError("");
     try {
-      await api.login(username, password);
+      const user = await api.login(username, password);
+      setCurrentUser(user);
       onSuccess();
     } catch {
       setError("Invalid credentials");

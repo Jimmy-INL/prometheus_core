@@ -7,7 +7,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import artifacts, auth, chat, config, conversations, events, health, sessions, setup, uploads
+from app.routers import (
+    admin_users,
+    artifacts,
+    auth,
+    chat,
+    config,
+    conversations,
+    events,
+    health,
+    sessions,
+    setup,
+    uploads,
+)
 from app.services.events import EventBus
 from app.sessions import SessionStore
 
@@ -76,3 +88,4 @@ app.include_router(events.router)
 app.include_router(uploads.router)
 app.include_router(artifacts.router)
 app.include_router(conversations.router)
+app.include_router(admin_users.router)

@@ -163,6 +163,35 @@ export interface SetupStatus {
   needs_setup: boolean;
 }
 
+// --- admin: users -------------------------------------------------------------
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: string;
+  provider: string;
+  external_subject?: string | null;
+  email?: string | null;
+  display_name?: string | null;
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AdminUserCreate {
+  username: string;
+  password: string;
+  role: string;
+}
+
+export interface AdminUserUpdate {
+  role?: string;
+  password?: string;
+  is_active?: boolean;
+  display_name?: string;
+  email?: string;
+}
+
 export interface SessionResponse {
   conversation_id: string;
   profile: string;
