@@ -80,6 +80,19 @@ def test_admin_can_create_a_provider(monkeypatch, wire_db_session):
     assert provider.name == "okta"
 
 
+def test_create_without_encryption_key_returns_an_actionable_error(monkeypatch, wire_db_session):
+    """Same regression as test_admin_keys.py's equivalent -- client_secret
+    encryption hits the same app.crypto.EncryptionError path."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_db_encryption_key", "")
+    client = _client_as(monkeypatch, role="admin", sid="s-noenckey")
+
+    resp = client.post("/api/admin/oidc-providers", json=_CREATE_PAYLOAD)
+    assert resp.status_code == 500
+    assert "ADMIN_DB_ENCRYPTION_KEY" in resp.json()["detail"]
+
+
 def test_create_rejects_bad_slug(monkeypatch, wire_db_session):
     client = _client_as(monkeypatch, role="admin", sid="s-badslug")
     payload = dict(_CREATE_PAYLOAD, provider_id="Not A Slug!")

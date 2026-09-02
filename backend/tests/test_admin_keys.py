@@ -62,6 +62,20 @@ def test_admin_can_generate_a_key_without_activating_it(monkeypatch, wire_db_ses
     assert "PRIVATE KEY" not in str(body)  # private key material never returned
 
 
+def test_generate_without_encryption_key_returns_an_actionable_error(monkeypatch, wire_db_session):
+    """Regression: ADMIN_DB_ENCRYPTION_KEY unset used to 500 with a bare,
+    JSON-less body (app.crypto.EncryptionError uncaught) -- app.main's
+    exception_handler now turns it into a real, parseable detail message."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_db_encryption_key", "")
+    client = _client_as(monkeypatch, role="admin", sid="s-noenckey")
+
+    resp = client.post("/api/admin/signing-keys")
+    assert resp.status_code == 500
+    assert "ADMIN_DB_ENCRYPTION_KEY" in resp.json()["detail"]
+
+
 def test_list_shows_generated_keys(monkeypatch, wire_db_session):
     client = _client_as(monkeypatch, role="admin", sid="s-list")
 

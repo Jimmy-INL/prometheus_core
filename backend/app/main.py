@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.crypto import EncryptionError
 from app.db import get_session_factory
 from app.routers import (
     admin_keys,
@@ -89,6 +91,21 @@ if settings.debug:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.exception_handler(EncryptionError)
+async def _encryption_error_handler(request: Request, exc: EncryptionError) -> JSONResponse:
+    """ADMIN_DB_ENCRYPTION_KEY missing/invalid, or a row encrypted under a
+    since-rotated key (app/crypto.py) -- a deployment misconfiguration, not a
+    client error, but one an admin can act on immediately if the message
+    actually reaches them. Without this handler these routes' encrypt()/
+    decrypt() calls (admin_keys.py, admin_oidc.py) 500 with a bare,
+    JSON-less "Internal Server Error" body -- the frontend's ApiError can't
+    extract any detail from that, so this exact message is what shows up in
+    the UI instead of a dead end.
+    """
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 
 app.include_router(health.router)
 app.include_router(jwks.router)
