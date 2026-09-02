@@ -104,3 +104,27 @@ def no_real_signing_key_db_lookup(monkeypatch):
     monkeypatch.setattr(identity_mod, "_load_active_key_from_db", _no_active_key)
     yield
     signing_keys.invalidate_active_key_cache()
+
+
+@pytest.fixture(autouse=True)
+def no_real_oidc_provider_registration(monkeypatch):
+    """app.main.lifespan() queries admin-db for every configured OidcProvider
+    row at startup (app.security.register_existing_oidc_providers) so they're
+    resolvable via get_provider() immediately. No live admin-db in tests --
+    stub it to a no-op like the migrations fixture above. Tests exercising the
+    OIDC flow register a GenericOidcProvider directly via
+    ``app.security.register_provider`` and don't need this step at all.
+
+    Also clears the provider registry back to just the password provider
+    after each test, so a provider registered by one test can't leak into the
+    next (module-level global, like the signing-key cache above).
+    """
+    import app.security as security_mod
+
+    async def _no_op(db) -> None:
+        return None
+
+    monkeypatch.setattr(security_mod, "register_existing_oidc_providers", _no_op)
+    yield
+    security_mod._PROVIDERS.clear()
+    security_mod._PROVIDERS[security_mod.password_provider.name] = security_mod.password_provider

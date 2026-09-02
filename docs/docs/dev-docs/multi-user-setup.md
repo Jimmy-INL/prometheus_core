@@ -15,7 +15,8 @@ old Chainlit Python frontend. Login, session state, and A2A calls all live in
 `backend/`; the identity plane sits on top of that:
 
 ```
-User logs in (local password today; OAuth is a modeled-but-deferred seam)
+User logs in (local password, or an admin-configured OIDC provider -- see
+"OIDC identity providers" below)
     ↓
 backend/app/security.py issues a session-cookie JWT (BACKEND_JWT_SECRET),
 carrying { sub: user_id, role, sid, exp } — this is NOT the identity token below
@@ -167,14 +168,54 @@ user's `role` is `"admin"` (tracked in `frontend/src/lib/store/session.ts`) —
 `frontend/src/components/admin/AdminUsers.tsx` is the users table + create/edit
 forms.
 
-**Okta/OIDC is not wired up yet.** `security.py` models an `IdentityProvider`
-protocol with a provider registry (`register_provider()`/`get_provider()`) so a
-real OAuth provider is a drop-in later, but only the password provider is
-registered today — `GET /api/auth/callback/{provider}` stubs `501` regardless
-of which `.env` `OAUTH_OKTA_*` vars are set. Whichever identity source ends up
-wired through this seam, the identity-plane code in this doc is unaffected:
-`identity.mint_for_user(claims.sub)` mints from whatever `sub` the login flow
-resolves, local password or OIDC alike.
+### OIDC identity providers (Okta or any generic OIDC issuer)
+
+Configured entirely through **Admin > Identity Providers**
+(`frontend/src/components/admin/AdminOidcProviders.tsx`) — no `.env` vars, no
+restart. Backend CRUD: `GET/POST /api/admin/oidc-providers`,
+`PATCH/DELETE /api/admin/oidc-providers/{id}` (`backend/app/routers/admin_oidc.py`),
+same `require_admin` gate as the users/keys admin APIs. `client_secret` is
+write-only — accepted on create/update, Fernet-encrypted at rest
+(`app/crypto.py`), never returned by any response. `provider_id` (a URL slug,
+e.g. `okta`) is immutable after creation — it's the path segment in the login
+routes below and the value stored in `users.provider` for accounts created
+through it.
+
+The full authorization-code flow (`app/security.py::GenericOidcProvider`,
+`app/oidc.py` for the discovery/token-exchange/verification plumbing):
+
+- `GET /api/auth/login/{provider_id}` — redirects the browser to the
+  provider's `authorization_endpoint` (fetched fresh from
+  `{issuer_url}/.well-known/openid-configuration` on every login — an admin
+  editing `issuer_url` takes effect immediately, nothing to restart). Sets a
+  short-lived, signed `oidc_flow` cookie carrying this one attempt's
+  `state`/`nonce` — there is no server-side flow-state store, matching the
+  rest of the app's single-replica, in-memory-everything-else design.
+- **Register this exact URL as the redirect URI with the provider**:
+  `<backend-public-url>/api/auth/callback/{provider_id}`.
+- `GET /api/auth/callback/{provider_id}` — verifies `state` against the flow
+  cookie, exchanges the code for tokens, verifies the `id_token`'s signature
+  against the issuer's own JWKS (`jwt.PyJWKClient`, so key rotation on the
+  *IdP's* side is handled automatically), plus `iss`/`aud`/`exp`/`nonce`, then
+  upserts a `users` row keyed by `(provider_id, external_subject)` —
+  auto-provisioned with the provider's configured `default_role` on first
+  login, matched by that same key (not username) on every login after.
+  Existing local accounts and other providers' accounts are never touched.
+- `GET /api/auth/providers` (public, unauthenticated) lists enabled providers
+  by `provider_id`/`display_name` — `Login.tsx` renders a
+  "Sign in with {display_name}" button per entry, replacing what used to be a
+  permanently-hidden Okta-shaped stub.
+
+Deactivating an OIDC-provisioned account (**Admin > Users**, same as a local
+account) blocks that identity's next login (`400`) without touching the
+provider config or other accounts under it. Disabling the provider itself
+(**Admin > Identity Providers**) blocks *all* logins through it, including
+existing accounts, until re-enabled — both routes read live from the DB on
+every request, never a cached snapshot.
+
+Whichever identity source signs a user in, `mint_for_user(claims.sub)` (the
+platform identity JWT described above) is unaffected — it mints from whatever
+`sub` the login flow resolved, local password or OIDC alike.
 
 ---
 

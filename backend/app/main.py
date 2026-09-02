@@ -7,8 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db import get_session_factory
 from app.routers import (
     admin_keys,
+    admin_oidc,
     admin_users,
     artifacts,
     auth,
@@ -22,6 +24,7 @@ from app.routers import (
     setup,
     uploads,
 )
+from app import security
 from app.services.events import EventBus
 from app.sessions import SessionStore
 
@@ -56,6 +59,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # there's no concurrent-migration race to worry about; if this fails the
     # app refuses to start rather than serving against a stale/missing schema.
     await asyncio.to_thread(_run_admin_db_migrations)
+    # Every already-configured OIDC provider becomes resolvable via
+    # security.get_provider() before the first request -- routers/admin_oidc.py
+    # keeps this in sync afterward (create registers, delete unregisters; an
+    # update needs no registry change, see GenericOidcProvider's docstring).
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        await security.register_existing_oidc_providers(db)
     # In-memory session store — one per process, lost on restart (documented in
     # app/sessions.py).
     app.state.session_store = SessionStore()
@@ -93,3 +103,4 @@ app.include_router(artifacts.router)
 app.include_router(conversations.router)
 app.include_router(admin_users.router)
 app.include_router(admin_keys.router)
+app.include_router(admin_oidc.router)

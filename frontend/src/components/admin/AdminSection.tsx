@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { AdminOidcProviders } from "./AdminOidcProviders";
 import { AdminSigningKeys } from "./AdminSigningKeys";
 import { AdminUsers } from "./AdminUsers";
 
-type AdminSubTab = "users" | "signing-keys";
+type AdminSubTab = "users" | "signing-keys" | "identity-providers";
 
 // Grows with each admin phase: Users (Phase 2), Signing Keys (Phase 3),
 // Identity Providers (Phase 4) -- sub-sections of one Admin tab, not separate
@@ -10,6 +11,7 @@ type AdminSubTab = "users" | "signing-keys";
 const SUB_TABS: { id: AdminSubTab; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "signing-keys", label: "Signing Keys" },
+  { id: "identity-providers", label: "Identity Providers" },
 ];
 
 export function AdminSection() {
@@ -37,6 +39,7 @@ export function AdminSection() {
       <div className="flex flex-1 overflow-hidden">
         {subTab === "users" && <AdminUsers />}
         {subTab === "signing-keys" && <AdminSigningKeys />}
+        {subTab === "identity-providers" && <AdminOidcProviders />}
       </div>
     </div>
   );

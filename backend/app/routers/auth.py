@@ -1,9 +1,10 @@
-"""Authentication endpoints — login, logout, me, and a reserved OAuth callback.
+"""Authentication endpoints — login, logout, me, and the OIDC redirect flow.
 
 Replaces Chainlit's built-in auth surface. Login issues a JWT session cookie
 (httpOnly, SameSite=Lax, Secure outside debug); ``/api/auth/me`` replaces the
-React app's ``fetch("/user")`` probe. The OAuth ``callback`` route is reserved and
-returns 501 until a real identity provider is wired (see :mod:`app.security`).
+React app's ``fetch("/user")`` probe. ``/login/{provider_id}`` and
+``/callback/{provider}`` are the two legs of the OIDC authorization-code flow
+(see :mod:`app.security`'s ``GenericOidcProvider`` for the actual exchange).
 """
 
 from __future__ import annotations
@@ -11,12 +12,16 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db_session
+from app.db.models import OidcProvider
 from app.security import (
+    OIDC_FLOW_COOKIE,
     User,
     current_user,
     get_provider,
@@ -32,6 +37,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 class LoginResult(BaseModel):
     user: User
+
+
+class ProviderInfo(BaseModel):
+    provider_id: str
+    display_name: str
 
 
 async def _read_credentials(request: Request) -> tuple[Optional[str], Optional[str]]:
@@ -101,22 +111,72 @@ async def me(user: User = Depends(current_user)) -> User:
     return user
 
 
-@router.get("/callback/{provider}")
-async def oauth_callback(provider: str) -> Response:
-    """OAuth redirect callback — resolved through the provider registry (AU-6).
+@router.get("/providers", response_model=list[ProviderInfo])
+async def list_providers(db: AsyncSession = Depends(get_db_session)) -> list[ProviderInfo]:
+    """Public: enabled OIDC providers, for <Login> to render a button per entry."""
+    rows = (
+        await db.scalars(
+            select(OidcProvider).where(OidcProvider.is_enabled.is_(True)).order_by(OidcProvider.display_name)
+        )
+    ).all()
+    return [ProviderInfo(provider_id=row.provider_id, display_name=row.display_name) for row in rows]
 
-    A registered provider completes the handshake via ``IdentityProvider.callback``.
-    No OAuth provider is wired today, so this returns 501 — but the seam is real: a
-    future provider registered via ``security.register_provider`` is picked up here
-    without changing this route.
+
+@router.get("/login/{provider_id}")
+async def login_via_provider(
+    provider_id: str, request: Request, db: AsyncSession = Depends(get_db_session)
+) -> Response:
+    """Start the OIDC authorization-code flow: redirect the browser to the
+    identity provider, with the state/nonce cookie ``callback`` reads back."""
+    provider = get_provider(provider_id)
+    login_redirect_url = getattr(provider, "login_redirect_url", None)
+    if login_redirect_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Identity provider '{provider_id}' not found"
+        )
+
+    auth_url, flow_cookie_value = await login_redirect_url(request, db)
+
+    redirect = RedirectResponse(url=auth_url)
+    redirect.set_cookie(
+        key=OIDC_FLOW_COOKIE,
+        value=flow_cookie_value,
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        max_age=300,
+        path="/api/auth",
+    )
+    return redirect
+
+
+@router.get("/callback/{provider}")
+async def oauth_callback(provider: str, request: Request, db: AsyncSession = Depends(get_db_session)) -> Response:
+    """OIDC redirect callback — resolved through the provider registry (AU-6).
+
+    A registered provider completes the handshake via ``IdentityProvider.callback``,
+    which raises on any failure (``HTTPException`` for a request-level problem,
+    ``NotImplementedError`` for a provider with no redirect flow at all).
     """
     impl = get_provider(provider)
-    if impl is not None:
-        try:
-            impl.callback(provider, {})
-        except NotImplementedError:
-            pass  # fall through to 501 below
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"OAuth provider '{provider}' is not configured",
-    )
+    if impl is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"OAuth provider '{provider}' is not configured",
+        )
+    try:
+        user = await impl.callback(request, db)
+    except NotImplementedError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"OAuth provider '{provider}' is not configured",
+        ) from None
+
+    token = issue_token(user)
+    get_store(request).get_or_create(verify_token(token).sid)
+    # Land back in the SPA root; App.tsx's boot sequence sees the fresh
+    # session cookie on its next /api/auth/me probe and renders <ProjectView>.
+    redirect = RedirectResponse(url="/")
+    set_session_cookie(redirect, token)
+    redirect.delete_cookie(key=OIDC_FLOW_COOKIE, path="/api/auth")
+    return redirect
