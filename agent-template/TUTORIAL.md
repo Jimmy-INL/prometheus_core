@@ -1025,13 +1025,17 @@ a token, so it never needs a private key, only a public one (or a JWKS URL).
 Set one of these in your `.env` (see `.env.example`):
 
 ```bash
-# Recommended: fetch and cache the platform's public key automatically,
-# including transparent key rotation. Ask the platform operator for their URL.
+# Recommended: fetch and cache the platform's public key(s) automatically,
+# including transparent key rotation done through the platform's admin UI.
+# Point this at the platform BACKEND's own JWKS endpoint -- every agent
+# serves one too, but only the backend's reflects an admin-UI-rotated key.
 JWKS_URL=https://prometheus.example.com/.well-known/jwks.json
 
 # Or: a static public key the operator gives you directly. Generate/inspect
 # with `prometheus-identity-keygen` (ships in prometheus_api, already
-# installed in this image) or `openssl`.
+# installed in this image) or `openssl`. Won't observe a key rotated through
+# the admin UI -- ask the operator for the new key if verification starts
+# failing after a rotation.
 USER_IDENTITY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
 
 USER_IDENTITY_ISS=prometheus-platform   # must match the operator's setting

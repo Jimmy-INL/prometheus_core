@@ -151,8 +151,8 @@ DeepLynx file storage.
 | `LITELLM_MASTER_KEY` | LiteLLM gateway auth. |
 | `REDIS_URL` / `REDIS_PASSWORD` | Conversation state and artifact registry. |
 | `PROMETHEUS_API_BASE_IMAGE_HASH` | Base image tag the Dockerfile builds from. |
-| `JWKS_URL` | Multi-user identity (recommended): fetch the platform's public key automatically. See below. |
-| `USER_IDENTITY_PUBLIC_KEY` | Multi-user identity (alternative to `JWKS_URL`): a static public key from the platform operator. **Never** the private key — this agent only verifies. |
+| `JWKS_URL` | Multi-user identity (recommended): the platform operator's JWKS URL — point it at the **platform backend** (`https://<platform-host>/.well-known/jwks.json`), not at another agent. Fetches the verification key automatically, including any rotation done through the platform's admin UI. See below. |
+| `USER_IDENTITY_PUBLIC_KEY` | Multi-user identity (alternative to `JWKS_URL`): a static public key from the platform operator. **Never** the private key — this agent only verifies. Won't observe a key rotated through the admin UI; re-ask the operator for the new key if verification starts failing. |
 | `USER_IDENTITY_ISS` / `USER_IDENTITY_AUD` | Must match the platform operator's values exactly. |
 
 See `.env.example` for the full list (including optional DeepLynx and proxy settings).
@@ -168,9 +168,13 @@ async def _execute(self, params, context, event_queue):
 ```
 
 Signing is RS256 only, so this agent never needs (or should have) a private
-key — only `JWKS_URL` or `USER_IDENTITY_PUBLIC_KEY`. Generate/inspect keys with
-`prometheus-identity-keygen` (ships in `prometheus_api`, already installed in
-this image) or `openssl`. See
+key — only `JWKS_URL` or `USER_IDENTITY_PUBLIC_KEY`. Prefer `JWKS_URL` pointed
+at the platform backend: platforms with an admin UI can generate, activate,
+and retire signing keys through Postgres, and only `JWKS_URL` picks that up
+automatically (a static `USER_IDENTITY_PUBLIC_KEY` needs manual updating after
+every rotation). Generate/inspect keys with `prometheus-identity-keygen`
+(ships in `prometheus_api`, already installed in this image) or `openssl`.
+See
 [TUTORIAL.md](https://github.inl.gov/genesis/prometheus_agent_template/blob/main/TUTORIAL.md#verifying-which-platform-user-is-calling-you-multi-user-identity)
 and
 [Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md)
