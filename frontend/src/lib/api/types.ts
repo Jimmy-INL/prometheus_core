@@ -159,6 +159,10 @@ export interface User {
   provider: string;
 }
 
+export interface SetupStatus {
+  needs_setup: boolean;
+}
+
 export interface SessionResponse {
   conversation_id: string;
   profile: string;

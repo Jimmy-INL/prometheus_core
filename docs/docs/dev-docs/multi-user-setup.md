@@ -114,12 +114,15 @@ dedicated Postgres database (`admin-db`, separate from `litellm-db`; see
 `ADMIN_DB_ENCRYPTION_KEY` in `.env.example`). Passwords are hashed with bcrypt
 (`backend/app/passwords.py`), never stored or compared in cleartext.
 
-On first run (no `users` row exists yet), the backend serves a setup wizard
-that creates the first account — with `role: "admin"` — and logs it in
-immediately: `GET /api/setup/status` reports whether setup is still needed,
-`POST /api/setup/bootstrap` creates that first account (and refuses, `409`,
-once any account exists). `backend/app/security.py::PasswordIdentityProvider`
-then authenticates against that table on every login.
+On first run (no `users` row exists yet), the React app shows a setup wizard
+(`frontend/src/components/SetupWizard.tsx`) instead of the login screen — it
+creates the first account, always `role: "admin"`, and logs it in immediately.
+Backing endpoints: `GET /api/setup/status` reports whether setup is still
+needed (`frontend/src/App.tsx`'s boot sequence checks this before deciding
+whether to render the wizard, login, or the app), `POST /api/setup/bootstrap`
+creates that first account (and refuses, `409`, once any account exists).
+`backend/app/security.py::PasswordIdentityProvider` then authenticates against
+that table on every login.
 
 Creating *additional* local users beyond the first admin currently requires
 inserting directly into the `users` table (`INSERT ... password_hash = bcrypt

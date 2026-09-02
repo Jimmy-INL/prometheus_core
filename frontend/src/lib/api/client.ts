@@ -12,6 +12,7 @@ import type {
   ConfigResponse,
   ConversationHistoryResponse,
   SessionResponse,
+  SetupStatus,
   UploadDescriptor,
   User,
 } from "./types";
@@ -49,6 +50,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // --- setup (first-run wizard) ---
+  /** GET /api/setup/status — unauthenticated; true until the first admin exists. */
+  setupStatus(): Promise<SetupStatus> {
+    return request<SetupStatus>("/setup/status");
+  },
+
+  /** POST /api/setup/bootstrap — creates the first admin account and logs it in
+   * (sets the session cookie, same as login). Throws ApiError(409) if setup has
+   * already been completed. */
+  async bootstrap(username: string, password: string): Promise<User> {
+    const body = await request<{ user: User }>("/setup/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    return body.user;
+  },
+
   // --- auth ---
   async login(username: string, password: string): Promise<User> {
     const body = await request<{ user: User }>("/auth/login", {
