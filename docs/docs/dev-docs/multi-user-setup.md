@@ -58,6 +58,16 @@ active `SigningKey` row (private key Fernet-encrypted at rest,
 `backend/app/crypto.py`) over the env var below, which becomes a **bootstrap
 fallback** for a fresh deployment with no keys yet.
 
+Encrypting that private key (and any OIDC client secret, see below) at rest
+needs `ADMIN_DB_ENCRYPTION_KEY` set — `make up`/`make restart` generate one
+into `.env` automatically if it's blank (the `ensure-admin-encryption-key`
+Makefile target), so this is normally nothing to think about. Starting the
+stack any other way (e.g. `docker compose up` directly, or CI) needs it set
+by hand; see the comment above `ADMIN_DB_ENCRYPTION_KEY` in `.env.example`.
+Leaving it unset doesn't block local-password login — only signing-key
+generation and OIDC provider configuration need it, and both fail with an
+actionable error message (not a bare 500) if it's missing.
+
 - `POST /api/admin/signing-keys` generates a keypair without activating it.
 - `POST /api/admin/signing-keys/{id}/activate` makes it the one key that mints
   new tokens; whichever key was active before is deactivated but stays in the
