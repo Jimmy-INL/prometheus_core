@@ -32,6 +32,24 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     await engine.dispose()
 
 
+@pytest.fixture
+def wire_db_session(db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """Override the app's ``get_db_session`` dependency with the in-memory SQLite
+    ``db_session`` above, for the duration of one test -- for tests that exercise a
+    router through ``TestClient`` rather than the ORM layer directly."""
+    from app.db import get_db_session
+    from app.main import app
+
+    async def _override() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_db_session] = _override
+    try:
+        yield db_session
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+
+
 @pytest.fixture(autouse=True)
 def admin_db_encryption_key(monkeypatch):
     """Every test gets a valid Fernet key for app.crypto by default.

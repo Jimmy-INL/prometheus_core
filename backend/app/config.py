@@ -93,7 +93,6 @@ class Settings(BaseSettings):
     data: dict[str, Any] = read_config(CONFIG_PATH)
 
     # Content / suggestions
-    local_users: list[dict[str, str]] = data.get("local-users", [])
     workflow_suggestions: list[str] = data.get("workflow-suggestions", [])
     chat_suggestion_title: str = data.get("chat-suggestion-title", "")
     chat_intro: str = data.get("chat-intro", "")
@@ -124,7 +123,7 @@ class Settings(BaseSettings):
     )
 
     # Admin plane (local users, OIDC provider config, RS256 signing keys).
-    # See app/db.py. No config.yml equivalent -- infra URL, env-only.
+    # See app/db/__init__.py. No config.yml equivalent -- infra URL, env-only.
     admin_database_url: str = os.environ.get(
         "ADMIN_DATABASE_URL", "postgresql+asyncpg://admin:admin@admin-db:5432/admin"
     )

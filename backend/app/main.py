@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import artifacts, auth, chat, config, conversations, events, health, sessions, uploads
+from app.routers import artifacts, auth, chat, config, conversations, events, health, sessions, setup, uploads
 from app.services.events import EventBus
 from app.sessions import SessionStore
 
@@ -67,6 +67,7 @@ if settings.debug:
     )
 
 app.include_router(health.router)
+app.include_router(setup.router)
 app.include_router(auth.router)
 app.include_router(config.router)
 app.include_router(sessions.router)

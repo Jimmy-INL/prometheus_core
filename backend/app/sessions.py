@@ -18,7 +18,9 @@ workers/replicas this must move to Redis; until then a single process is assumed
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, cast
+
+from fastapi import Request
 
 
 @dataclass
@@ -61,3 +63,12 @@ class SessionStore:
 
     def __len__(self) -> int:
         return len(self._sessions)
+
+
+def get_store(request: Request) -> SessionStore:
+    """Look up the process-wide :class:`SessionStore` off app state.
+
+    Shared by every router that registers a session id on login (``routers/auth.py``,
+    ``routers/setup.py``) so there's one place that knows where it lives.
+    """
+    return cast(SessionStore, request.app.state.session_store)

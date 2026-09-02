@@ -108,19 +108,22 @@ individually.
 
 ### Local users
 
-Add users in `backend/app/config.yml`:
-```yaml
-local-users:
-  - username: "alice"
-    password: "replace-with-a-strong-password"
-    role: "admin"
-  - username: "bob"
-    password: "replace-with-another-strong-password"
-    role: "user"
-```
+Local accounts are no longer configured in `config.yml` — they live in a
+dedicated Postgres database (`admin-db`, separate from `litellm-db`; see
+`docker-compose.yml`'s `admin-db` service and `ADMIN_DATABASE_URL` /
+`ADMIN_DB_ENCRYPTION_KEY` in `.env.example`). Passwords are hashed with bcrypt
+(`backend/app/passwords.py`), never stored or compared in cleartext.
 
-Plain-text passwords are dev-only (`backend/app/security.py::PasswordIdentityProvider`
-compares with `hmac.compare_digest`; hashed-at-rest storage is a deferred follow-up).
+On first run (no `users` row exists yet), the backend serves a setup wizard
+that creates the first account — with `role: "admin"` — and logs it in
+immediately: `GET /api/setup/status` reports whether setup is still needed,
+`POST /api/setup/bootstrap` creates that first account (and refuses, `409`,
+once any account exists). `backend/app/security.py::PasswordIdentityProvider`
+then authenticates against that table on every login.
+
+Creating *additional* local users beyond the first admin currently requires
+inserting directly into the `users` table (`INSERT ... password_hash = bcrypt
+hash`) — an admin UI for user management is planned but not wired up yet.
 
 **Okta/OIDC is not wired up yet.** `security.py` models an `IdentityProvider`
 protocol with a provider registry (`register_provider()`/`get_provider()`) so a

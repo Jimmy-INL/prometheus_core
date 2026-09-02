@@ -12,16 +12,19 @@ carry the username (``sub``), ``role``, a per-login session id (``sid``), and an
 
 from __future__ import annotations
 
-import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Protocol, runtime_checkable
 
 import jwt
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Response, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.models import User as UserRow
+from app.passwords import verify_password
 
 # JWT signing algorithm. HS256 is symmetric — the same ``jwt_secret`` signs and
 # verifies, which matches the single-service deployment here.
@@ -67,7 +70,7 @@ class IdentityProvider(Protocol):
 
     name: str
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
+    async def authenticate(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
         """Return a :class:`User` on valid credentials, else ``None``."""
         ...
 
@@ -77,29 +80,26 @@ class IdentityProvider(Protocol):
 
 
 class PasswordIdentityProvider:
-    """Local-users password check (ported from ``auth_callback``).
+    """Local-users password check against the admin-plane ``users`` table.
 
-    Compares against ``settings.local_users`` with a constant-time
-    :func:`hmac.compare_digest` so the password check isn't timing-attackable (AU-3).
-    Passwords are still stored in cleartext in ``config.yml`` — a **dev-only**
-    mechanism carried over from Chainlit; production auth should go through a real
-    identity provider (see :func:`get_provider` / the OAuth seam). Hashed-at-rest
-    storage is a deferred follow-up (needs a hashing dependency + a config migration).
+    Previously compared against ``settings.local_users`` (plaintext, loaded once
+    from ``config.yml`` at process start). Local accounts now live in Postgres
+    (``app/db/models.py::User``, created via the first-run setup wizard or the
+    admin API), hashed with bcrypt (:func:`app.passwords.verify_password`, itself
+    timing-safe) — closing the AU-3 hashed-at-rest gap this used to defer.
     """
 
     name = "credentials"
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
-        for user in settings.local_users:
-            if user.get("username") == username and hmac.compare_digest(
-                str(user.get("password") or ""), str(password or "")
-            ):
-                return User(
-                    identifier=username,
-                    role=user.get("role", "user"),
-                    provider=self.name,
-                )
-        return None
+    async def authenticate(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
+        row = await db.scalar(select(UserRow).where(UserRow.provider == self.name, UserRow.username == username))
+        if row is None or not row.is_active or not row.password_hash:
+            return None
+        if not verify_password(password, row.password_hash):
+            return None
+        row.last_login_at = datetime.now(timezone.utc)
+        await db.commit()
+        return User(identifier=row.username, role=row.role, provider=self.name)
 
     def callback(self, provider_id: str, raw_user_data: dict[str, Any]) -> Optional[User]:
         raise NotImplementedError("Password provider has no redirect callback")
@@ -185,6 +185,25 @@ def verify_token(token: str) -> TokenClaims:
     """Decode and validate a JWT. Raises ``jwt.InvalidTokenError`` on any failure."""
     payload = jwt.decode(token, settings.jwt_secret, algorithms=[_JWT_ALG])
     return TokenClaims(**payload)
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    """Attach the signed session JWT as an httpOnly cookie.
+
+    Shared by every route that logs a user in (``routers/auth.py``'s ``/login``,
+    ``routers/setup.py``'s ``/bootstrap``). ``secure`` tracks ``debug`` (off locally
+    over http, on in prod behind nginx TLS); ``max_age`` matches the token TTL so the
+    browser drops the cookie in step with JWT expiry.
+    """
+    response.set_cookie(
+        key=settings.cookie_name,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        max_age=settings.token_ttl_seconds,
+        path="/",
+    )
 
 
 # --------------------------------------------------------------------------- #
