@@ -173,7 +173,7 @@ PREREQUISITE_TARGETS := \
 
 $(PREREQUISITE_TARGETS): check-prerequisites
 
-.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg clear-litellm-db help
+.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg clear-litellm-db clear-admin-users help
 
 FORCE:
 
@@ -276,6 +276,14 @@ clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	else \
 		printf "LiteLLM DB volume %s does not exist; nothing to remove.\n" "$(LITELLM_DB_VOLUME)"; \
 	fi
+
+clear-admin-users: ##@ Delete all rows from admin-db's users table (re-triggers the first-run setup wizard)
+	@if ! $(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) ps --status running --services 2>/dev/null | grep -qx admin-db; then \
+		printf "admin-db is not running; start the platform first ('make up') before running this target.\n"; \
+		exit 1; \
+	fi
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) exec -T admin-db psql -U admin -d admin -c "TRUNCATE TABLE users;"
+	@printf "Deleted all rows from admin-db's users table -- the platform will show the first-run setup wizard again.\n"
 
 down: ##@ Stop all services
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down
