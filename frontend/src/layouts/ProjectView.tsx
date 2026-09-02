@@ -3,7 +3,7 @@ import { LayoutDashboard, MessageSquare, FolderOpen, Bot, ShieldCheck } from "lu
 import { chatStore } from "@/lib/store/chat";
 import { useCurrentUser } from "@/lib/store/session";
 import { chatProfileName, useChatType } from "@/lib/useChatType";
-import { AdminUsers } from "../components/admin/AdminUsers";
+import { AdminSection } from "../components/admin/AdminSection";
 import { Chat } from "../components/Chat";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
@@ -19,9 +19,8 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 ];
 
 // Only shown to role: "admin" -- appended to TABS below, not part of the
-// always-visible set. Today this is just Users (Phase 2); Signing Keys and
-// Identity Providers land as more sub-sections of this same tab in later
-// phases, not as separate top-level tabs.
+// always-visible set. Sub-navigation between Users/Signing Keys/(Identity
+// Providers, Phase 4) lives inside AdminSection, not as separate top-level tabs.
 const ADMIN_TAB: { id: TabId; label: string; icon: React.ReactNode } = {
   id: "admin",
   label: "Admin",
@@ -108,7 +107,7 @@ export function ProjectView({ onLogout }: Props) {
               Agents coming soon
             </div>
           )}
-          {activeTab === "admin" && currentUser?.role === "admin" && <AdminUsers />}
+          {activeTab === "admin" && currentUser?.role === "admin" && <AdminSection />}
         </main>
 
         <aside

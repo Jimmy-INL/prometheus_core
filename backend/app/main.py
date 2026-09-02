@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
+    admin_keys,
     admin_users,
     artifacts,
     auth,
@@ -16,6 +17,7 @@ from app.routers import (
     conversations,
     events,
     health,
+    jwks,
     sessions,
     setup,
     uploads,
@@ -79,6 +81,7 @@ if settings.debug:
     )
 
 app.include_router(health.router)
+app.include_router(jwks.router)
 app.include_router(setup.router)
 app.include_router(auth.router)
 app.include_router(config.router)
@@ -89,3 +92,4 @@ app.include_router(uploads.router)
 app.include_router(artifacts.router)
 app.include_router(conversations.router)
 app.include_router(admin_users.router)
+app.include_router(admin_keys.router)

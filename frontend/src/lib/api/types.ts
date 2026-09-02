@@ -192,6 +192,17 @@ export interface AdminUserUpdate {
   email?: string;
 }
 
+// --- admin: signing keys -------------------------------------------------------
+
+export interface SigningKey {
+  id: string;
+  kid: string;
+  public_key_pem: string;
+  is_active: boolean;
+  created_at: string;
+  retired_at?: string | null;
+}
+
 export interface SessionResponse {
   conversation_id: string;
   profile: string;

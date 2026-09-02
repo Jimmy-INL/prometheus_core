@@ -78,3 +78,29 @@ def no_real_admin_db_migrations(monkeypatch):
     import app.main
 
     monkeypatch.setattr(app.main, "_run_admin_db_migrations", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def no_real_signing_key_db_lookup(monkeypatch):
+    """app.identity.mint_for_user() looks up admin-db's active signing key via its
+    own ad-hoc session (app.db.get_session_factory()), not through the
+    get_db_session dependency -- wire_db_session's override doesn't reach it.
+
+    Stub the lookup to "no active key" by default so every other test (chat,
+    uploads, anything that calls mint_for_user) never attempts a real network
+    connection to admin-db, and reset the module-level active-key cache
+    (app/signing_keys.py) so a value set by one test can't leak into the next.
+    Tests exercising the DB-first minting path (test_identity.py) override
+    ``app.identity._load_active_key_from_db`` themselves.
+    """
+    import app.identity as identity_mod
+    from app import signing_keys
+
+    signing_keys.invalidate_active_key_cache()
+
+    async def _no_active_key() -> None:
+        return None
+
+    monkeypatch.setattr(identity_mod, "_load_active_key_from_db", _no_active_key)
+    yield
+    signing_keys.invalidate_active_key_cache()

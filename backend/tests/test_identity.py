@@ -1,46 +1,63 @@
 """Unit tests for app.identity -- the backend's identity-minting helper (RS256-only).
 
-Covers only the backend-side wrapper (configured/unconfigured, mint failure
-degrades to None rather than raising). Full mint/verify round-trip coverage
-lives in prometheus_api's own test_identity.py.
+Covers the backend-side wrapper: env-var fallback (configured/unconfigured, mint
+failure degrades to None rather than raising) and the DB-first active-key path
+added in Phase 3 (app/signing_keys.py's cache, app/routers/admin_keys.py's
+generate/activate flow). Full mint/verify round-trip coverage against
+prometheus_api's own verifier lives in prometheus_api's own test_identity.py --
+the round-trip test below exists specifically to prove a DB-signed token is
+indistinguishable, from an agent's point of view, from an env-signed one.
+
+The autouse ``no_real_signing_key_db_lookup`` fixture (conftest.py) stubs
+``app.identity._load_active_key_from_db`` to "no active key" for every test in
+this file too, unless a test overrides it itself below.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from app import identity
+from app import identity, signing_keys
 
 
 @pytest.fixture(scope="module")
-def rsa_private_key_pem() -> str:
-    """One RSA private key (PEM) shared across tests in this module."""
+def rsa_keypair() -> tuple[str, str]:
+    """One RSA keypair (PEM, PEM) shared across tests in this module."""
     from prometheus_api.agent.identity_keygen import generate_keypair
 
-    private_pem, _ = generate_keypair(key_size=2048)
-    return private_pem
+    return generate_keypair(key_size=2048)
 
 
-def test_unconfigured_returns_none(monkeypatch):
+@pytest.fixture()
+def rsa_private_key_pem(rsa_keypair: tuple[str, str]) -> str:
+    return rsa_keypair[0]
+
+
+# --------------------------------------------------------------------------- #
+# Env-var fallback (no active DB key -- the autouse fixture ensures that)
+# --------------------------------------------------------------------------- #
+
+
+async def test_unconfigured_returns_none(monkeypatch):
     monkeypatch.delenv("USER_IDENTITY_PRIVATE_KEY", raising=False)
-    assert identity.mint_for_user("alice") is None
+    assert await identity.mint_for_user("alice") is None
 
 
-def test_empty_user_id_returns_none(monkeypatch, rsa_private_key_pem):
+async def test_empty_user_id_returns_none(monkeypatch, rsa_private_key_pem):
     monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", rsa_private_key_pem)
-    assert identity.mint_for_user("") is None
+    assert await identity.mint_for_user("") is None
 
 
-def test_configured_mints_a_token(monkeypatch, rsa_private_key_pem):
+async def test_configured_mints_a_token(monkeypatch, rsa_private_key_pem):
     monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", rsa_private_key_pem)
 
-    token = identity.mint_for_user("alice")
+    token = await identity.mint_for_user("alice")
     assert token is not None
     assert isinstance(token, str)
     assert token.count(".") == 2  # header.payload.signature
 
 
-def test_mint_failure_returns_none_not_raise(monkeypatch, rsa_private_key_pem):
+async def test_mint_failure_returns_none_not_raise(monkeypatch, rsa_private_key_pem):
     """Even when configured, a mint-time failure must degrade to None."""
     monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", rsa_private_key_pem)
 
@@ -51,4 +68,124 @@ def test_mint_failure_returns_none_not_raise(monkeypatch, rsa_private_key_pem):
 
     monkeypatch.setattr(upstream_identity, "mint_user_token", _boom)
 
-    assert identity.mint_for_user("alice") is None
+    assert await identity.mint_for_user("alice") is None
+
+
+# --------------------------------------------------------------------------- #
+# DB-first active key (Phase 3) -- takes priority over the env var
+# --------------------------------------------------------------------------- #
+
+
+def _stub_db_key(monkeypatch, kid: str, private_key_pem: str) -> None:
+    async def _load():
+        return kid, private_key_pem
+
+    monkeypatch.setattr(identity, "_load_active_key_from_db", _load)
+
+
+async def test_db_active_key_takes_priority_over_env(monkeypatch, rsa_keypair):
+    private_pem, public_pem = rsa_keypair
+    db_kid = signing_keys.compute_kid(public_pem)
+    _stub_db_key(monkeypatch, db_kid, private_pem)
+
+    # Env is *also* configured, with a different (never-used) key -- if the env
+    # path fired instead, minting still wouldn't fail, so this alone wouldn't
+    # prove DB-first; the kid/signature assertions below do.
+    from prometheus_api.agent.identity_keygen import generate_keypair
+
+    env_private_pem, _ = generate_keypair(key_size=2048)
+    monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", env_private_pem)
+
+    token = await identity.mint_for_user("alice")
+    assert token is not None
+
+    import jwt
+
+    header = jwt.get_unverified_header(token)
+    assert header["kid"] == db_kid
+    # Verifying with the DB key's public half must succeed...
+    claims = jwt.decode(
+        token, public_pem, algorithms=["RS256"], audience="prometheus-agents", issuer="prometheus-platform"
+    )
+    assert claims["sub"] == "alice"
+    # ...and verifying with the *env* key's public half must fail, proving the
+    # DB key signed it, not the env one.
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    env_public_pem = (
+        load_pem_private_key(env_private_pem.encode(), password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    with pytest.raises(jwt.InvalidSignatureError):
+        jwt.decode(
+            token,
+            env_public_pem,
+            algorithms=["RS256"],
+            audience="prometheus-agents",
+            issuer="prometheus-platform",
+        )
+
+
+async def test_db_minted_token_verifies_through_the_unchanged_agent_side_verifier(monkeypatch, rsa_keypair):
+    """The whole point of matching mint_user_token()'s claim shape: an agent
+    (prometheus_api.agent.identity.verify_user_token, untouched by Phase 3)
+    can't tell a DB-signed token from an env-signed one."""
+    private_pem, public_pem = rsa_keypair
+    kid = signing_keys.compute_kid(public_pem)
+    _stub_db_key(monkeypatch, kid, private_pem)
+    monkeypatch.setenv("USER_IDENTITY_PUBLIC_KEY", public_pem)
+    monkeypatch.delenv("USER_IDENTITY_PRIVATE_KEY", raising=False)
+
+    token = await identity.mint_for_user("bob")
+    assert token is not None
+
+    from prometheus_api.agent.identity import verify_user_token
+
+    verified = verify_user_token(token)
+    assert verified.user_id == "bob"
+
+
+async def test_db_lookup_failure_falls_back_to_env(monkeypatch, rsa_private_key_pem):
+    async def _boom():
+        raise RuntimeError("admin-db unreachable")
+
+    monkeypatch.setattr(identity, "_load_active_key_from_db", _boom)
+    monkeypatch.setenv("USER_IDENTITY_PRIVATE_KEY", rsa_private_key_pem)
+
+    token = await identity.mint_for_user("alice")
+    assert token is not None  # degraded to the env fallback, not None/raise
+
+
+async def test_active_key_is_cached_across_calls(monkeypatch, rsa_keypair):
+    private_pem, public_pem = rsa_keypair
+    kid = signing_keys.compute_kid(public_pem)
+    calls = []
+
+    async def _load():
+        calls.append(1)
+        return kid, private_pem
+
+    monkeypatch.setattr(identity, "_load_active_key_from_db", _load)
+
+    await identity.mint_for_user("alice")
+    await identity.mint_for_user("alice")
+    assert len(calls) == 1  # second call hit the cache, no second DB round-trip
+
+
+async def test_invalidating_the_cache_forces_a_reload(monkeypatch, rsa_keypair):
+    private_pem, public_pem = rsa_keypair
+    kid = signing_keys.compute_kid(public_pem)
+    calls = []
+
+    async def _load():
+        calls.append(1)
+        return kid, private_pem
+
+    monkeypatch.setattr(identity, "_load_active_key_from_db", _load)
+
+    await identity.mint_for_user("alice")
+    signing_keys.invalidate_active_key_cache()
+    await identity.mint_for_user("alice")
+    assert len(calls) == 2

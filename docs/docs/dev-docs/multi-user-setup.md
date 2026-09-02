@@ -40,10 +40,39 @@ Specialist agents verify the JWT independently
 **Two distinct JWTs, two distinct keys** — easy to conflate, so be precise:
 - `BACKEND_JWT_SECRET` (or its `CHAINLIT_AUTH_SECRET` fallback, HS256) signs the
   **browser session cookie** — backend-to-browser only, never leaves the backend.
-- `USER_IDENTITY_PRIVATE_KEY` (RS256, backend only) signs the **platform
-  identity JWT** — backend-to-agents, carried in `message.metadata["userToken"]`.
-  Every agent verifies with `USER_IDENTITY_PUBLIC_KEY` (or `JWKS_URL`), never
-  the private key — a compromised agent cannot forge tokens for other users.
+- The **platform identity JWT** — backend-to-agents, carried in
+  `message.metadata["userToken"]` — is signed RS256 with whichever key
+  `identity.mint_for_user()` resolves (see "Managing signing keys" below):
+  admin-db's active key if one exists, else `USER_IDENTITY_PRIVATE_KEY`. Every
+  agent verifies with `USER_IDENTITY_PUBLIC_KEY` or a `JWKS_URL`, never the
+  private key — a compromised agent cannot forge tokens for other users.
+
+### Managing signing keys via the admin UI (preferred)
+
+An admin can generate, activate, and retire RS256 keys from **Admin > Signing
+Keys** (`frontend/src/components/admin/AdminSigningKeys.tsx`) — no `.env` edit
+or container restart needed. Once any key has ever been activated, Postgres is
+authoritative: `backend/app/identity.py::mint_for_user()` prefers admin-db's
+active `SigningKey` row (private key Fernet-encrypted at rest,
+`backend/app/crypto.py`) over the env var below, which becomes a **bootstrap
+fallback** for a fresh deployment with no keys yet.
+
+- `POST /api/admin/signing-keys` generates a keypair without activating it.
+- `POST /api/admin/signing-keys/{id}/activate` makes it the one key that mints
+  new tokens; whichever key was active before is deactivated but stays in the
+  table, un-retired, until explicitly retired.
+- `POST /api/admin/signing-keys/{id}/retire` marks a key done (no longer
+  eligible for `/activate`) — but it keeps appearing in the JWKS below, so
+  tokens minted before a rotation stay verifiable until they naturally expire.
+  Refuses to retire the active key with no replacement (would silently fall
+  back to the env var, usually unconfigured).
+- **`GET /.well-known/jwks.json`** (unauthenticated, backend root — not under
+  `/api`) serves every key in the table, active or retired, as an RFC 7517
+  keyset. Point every agent's `JWKS_URL` here instead of distributing
+  `USER_IDENTITY_PUBLIC_KEY` by hand — including third-party agents, which
+  never need to see this backend's private key at all. All behind
+  `require_admin` except the JWKS endpoint itself, which is public by design
+  (it's public key material only).
 
 The platform mints its **own** internal identity JWT rather than forwarding the
 session cookie or any external IdP token. This means multi-user works
@@ -54,11 +83,14 @@ users only).
 
 ## Configuration
 
-### Generate a keypair
+### Generate a keypair (bootstrap fallback only)
 
-Signing is RS256 only — there is no shared-secret option. Generate a keypair with
-the tool that ships in `prometheus_api` (already installed in every agent
-container, including the backend):
+Prefer the admin UI above once the platform is running. This env-var path only
+matters before any key has ever been generated/activated there, or for a
+deployment that intentionally skips the admin UI for this. Signing is RS256
+only — there is no shared-secret option. Generate a keypair with the tool that
+ships in `prometheus_api` (already installed in every agent container,
+including the backend):
 
 ```bash
 prometheus-identity-keygen --out-dir ./keys

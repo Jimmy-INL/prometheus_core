@@ -101,7 +101,10 @@ def test_upload_passes_minted_user_token(monkeypatch):
 
     from app import identity
 
-    monkeypatch.setattr(identity, "mint_for_user", lambda user_id: f"token-for-{user_id}")
+    async def _mint(user_id: str) -> str:
+        return f"token-for-{user_id}"
+
+    monkeypatch.setattr(identity, "mint_for_user", _mint)
 
     captured: dict = {}
 

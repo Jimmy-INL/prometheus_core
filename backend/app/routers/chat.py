@@ -121,7 +121,7 @@ async def post_message(
     turn_id = str(uuid.uuid4())
     event_bus = _get_event_bus(request)
     on_status = _make_on_status(event_bus, claims.sid, turn_id)
-    user_token = identity.mint_for_user(claims.sub)
+    user_token = await identity.mint_for_user(claims.sub)
 
     try:
         response = await chat_service.handle_turn(

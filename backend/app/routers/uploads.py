@@ -102,7 +102,7 @@ async def post_upload(
             conversation_id=session.conversation_id,
             element_mime=file.content_type,
             size_bytes=size,
-            user_token=identity.mint_for_user(claims.sub),
+            user_token=await identity.mint_for_user(claims.sub),
         )
     except upload_service.UploadStagingError as exc:
         raise HTTPException(

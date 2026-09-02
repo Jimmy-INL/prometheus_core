@@ -16,6 +16,7 @@ import type {
   ConversationHistoryResponse,
   SessionResponse,
   SetupStatus,
+  SigningKey,
   UploadDescriptor,
   User,
 } from "./types";
@@ -152,5 +153,22 @@ export const api = {
 
   deleteAdminUser(userId: string): Promise<void> {
     return request<void>(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  },
+
+  // --- admin: signing keys (require_admin server-side; 403 for non-admins) ---
+  listSigningKeys(): Promise<SigningKey[]> {
+    return request<SigningKey[]>("/admin/signing-keys");
+  },
+
+  generateSigningKey(): Promise<SigningKey> {
+    return request<SigningKey>("/admin/signing-keys", { method: "POST" });
+  },
+
+  activateSigningKey(keyId: string): Promise<SigningKey> {
+    return request<SigningKey>(`/admin/signing-keys/${encodeURIComponent(keyId)}/activate`, { method: "POST" });
+  },
+
+  retireSigningKey(keyId: string): Promise<SigningKey> {
+    return request<SigningKey>(`/admin/signing-keys/${encodeURIComponent(keyId)}/retire`, { method: "POST" });
   },
 };
