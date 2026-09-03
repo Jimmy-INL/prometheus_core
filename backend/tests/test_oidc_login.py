@@ -164,6 +164,24 @@ async def test_login_404s_for_a_disabled_provider(monkeypatch, wire_db_session):
     assert client.get(f"/api/auth/login/{provider_id}", follow_redirects=False).status_code == 404
 
 
+async def test_login_surfaces_an_actionable_error_when_discovery_fails(monkeypatch, wire_db_session):
+    """Regression: a bad/unreachable issuer_url (typo, wrong path, network
+    issue) used to 500 with a bare, JSON-less body (app.oidc.OidcError
+    uncaught in GenericOidcProvider.login_redirect_url) -- unlike callback(),
+    which already caught it. Now it's a real, parseable detail message."""
+    provider_id = await _register_provider(wire_db_session, issuer_url="https://not-a-real-idp.invalid")
+    client = _client(monkeypatch)
+
+    async def _broken_discovery(issuer_url: str) -> dict:
+        raise oidc.OidcError(f"Could not fetch OIDC discovery document from {issuer_url!r}: connection refused")
+
+    monkeypatch.setattr(oidc, "fetch_discovery", _broken_discovery)
+
+    resp = client.get(f"/api/auth/login/{provider_id}", follow_redirects=False)
+    assert resp.status_code == 400
+    assert "not-a-real-idp.invalid" in resp.json()["detail"]
+
+
 # --------------------------------------------------------------------------- #
 # GET /api/auth/callback/{provider} -- happy path
 # --------------------------------------------------------------------------- #

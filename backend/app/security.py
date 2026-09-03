@@ -189,13 +189,16 @@ class GenericOidcProvider:
         from app import oidc
 
         provider = await self._row(db)
-        discovery = await oidc.fetch_discovery(provider.issuer_url)
-        state = secrets.token_urlsafe(24)
-        nonce = secrets.token_urlsafe(24)
-        redirect_uri = _callback_url(request, self.name)
-        auth_url = oidc.build_authorization_url(
-            discovery, provider, redirect_uri=redirect_uri, state=state, nonce=nonce
-        )
+        try:
+            discovery = await oidc.fetch_discovery(provider.issuer_url)
+            state = secrets.token_urlsafe(24)
+            nonce = secrets.token_urlsafe(24)
+            redirect_uri = _callback_url(request, self.name)
+            auth_url = oidc.build_authorization_url(
+                discovery, provider, redirect_uri=redirect_uri, state=state, nonce=nonce
+            )
+        except oidc.OidcError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
         now = datetime.now(timezone.utc)
         flow_claims = {
