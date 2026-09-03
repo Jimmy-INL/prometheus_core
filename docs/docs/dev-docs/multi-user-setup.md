@@ -146,12 +146,26 @@ prints by default) is the simplest to paste directly.
 ### `.env.example` / `docker-compose.yml` (already wired up)
 
 `USER_IDENTITY_PRIVATE_KEY` and `USER_IDENTITY_TTL` are set **only** on the
-`backend` service's own `environment:` block. `USER_IDENTITY_PUBLIC_KEY`,
+`backend` service's own `environment:` block. `JWKS_URL`, `USER_IDENTITY_PUBLIC_KEY`,
 `USER_IDENTITY_ISS`, `USER_IDENTITY_AUD`, `USER_IDENTITY_REQUIRED`, and
 `CREDENTIAL_BROKER` live in the root `x-common-env` anchor, shared by `backend`
-and every agent. Every per-agent `docker-compose.yml` (no shared anchor across
-separate compose files) carries the same four verification-side vars
-individually.
+and every root-defined service (`client-agent`). Every per-agent
+`docker-compose.yml` under `agents/*/` (no shared anchor across separate
+compose files) carries the same verification-side vars individually.
+
+`JWKS_URL` defaults to `http://backend:8000/.well-known/jwks.json` — the
+backend's own container name/port on `agent-network`, reachable from every
+agent without any configuration. This is what makes an admin-generated
+signing key (Admin > Signing Keys) verifiable by every agent immediately,
+with no `USER_IDENTITY_PUBLIC_KEY` set anywhere: `JWKS_URL`, when set, always
+takes priority over a static public key (`prometheus_api.agent.identity.verify_user_token`).
+Only override it for an agent that can't reach that internal URL — a
+third-party agent outside this docker network needs this platform's *public*
+JWKS URL instead (or a static public key), from the platform operator.
+
+`agents/debug-agents/*` (only included with `DEBUG_AGENTS=true`) predate this
+wiring and don't verify identity tokens at all yet — a known gap, not
+something this section's defaults reach.
 
 ### Local users
 

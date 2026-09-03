@@ -19,6 +19,13 @@ x-common-env: &common-env
   # mints (USER_IDENTITY_PRIVATE_KEY, set on the backend service below only);
   # every service here just verifies, so only the public key belongs in this
   # shared anchor. Generate a keypair with `prometheus-identity-keygen`.
+  #
+  # JWKS_URL defaults to the backend's own JWKS endpoint (reachable by every
+  # service on this network via its container name) -- this is what makes an
+  # admin-generated/rotated signing key (Admin > Signing Keys) verifiable
+  # without ever setting USER_IDENTITY_PUBLIC_KEY at all. Override only for an
+  # agent running outside this docker network (see .env.example).
+  JWKS_URL: ${JWKS_URL:-http://backend:8000/.well-known/jwks.json}
   USER_IDENTITY_PUBLIC_KEY: ${USER_IDENTITY_PUBLIC_KEY:-}
   USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
   USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
