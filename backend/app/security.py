@@ -152,8 +152,17 @@ _OIDC_FLOW_TTL_SECONDS = 300
 def _callback_url(request: Request, provider_id: str) -> str:
     """Must exactly match the ``redirect_uri`` sent at the start of the flow
     (login_redirect_url) and again during token exchange (oidc.exchange_code)
-    -- OAuth requires it to be byte-identical on every leg."""
-    return str(request.base_url).rstrip("/") + f"/api/auth/callback/{provider_id}"
+    -- OAuth requires it to be byte-identical on every leg, and it must match
+    what's registered with the identity provider.
+
+    ``settings.backend_public_url`` takes priority over ``request.base_url``
+    when set -- the request's own base URL reflects whatever host a reverse
+    proxy used to reach this container *internally* (e.g. a Vite dev server
+    or nginx proxying ``/api``), never the browser-facing origin the identity
+    provider redirects back to.
+    """
+    base = settings.backend_public_url or str(request.base_url).rstrip("/")
+    return f"{base}/api/auth/callback/{provider_id}"
 
 
 class GenericOidcProvider:

@@ -220,7 +220,15 @@ The full authorization-code flow (`app/security.py::GenericOidcProvider`,
   `state`/`nonce` — there is no server-side flow-state store, matching the
   rest of the app's single-replica, in-memory-everything-else design.
 - **Register this exact URL as the redirect URI with the provider**:
-  `<backend-public-url>/api/auth/callback/{provider_id}`.
+  `${BACKEND_PUBLIC_URL}/api/auth/callback/{provider_id}`. `BACKEND_PUBLIC_URL`
+  (`.env`) must be set to whatever origin the *browser* actually uses to
+  reach the platform (e.g. `http://localhost:5150` for the Vite dev server in
+  dev, or the public HTTPS domain in production) — left blank, the backend
+  falls back to introspecting the request it received
+  (`app/security.py::_callback_url`), which is wrong the moment anything
+  proxies `/api` requests to it: it sees its own internal host:port, not the
+  browser-facing origin, and the identity provider rejects the login with a
+  redirect_uri mismatch.
 - `GET /api/auth/callback/{provider_id}` — verifies `state` against the flow
   cookie, exchanges the code for tokens, verifies the `id_token`'s signature
   against the issuer's own JWKS (`jwt.PyJWKClient`, so key rotation on the

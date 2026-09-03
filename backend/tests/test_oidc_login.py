@@ -164,6 +164,31 @@ async def test_login_404s_for_a_disabled_provider(monkeypatch, wire_db_session):
     assert client.get(f"/api/auth/login/{provider_id}", follow_redirects=False).status_code == 404
 
 
+async def test_redirect_uri_uses_backend_public_url_when_set(monkeypatch, wire_db_session):
+    """Regression: request.base_url reflects whatever host a reverse proxy
+    (Vite dev server, nginx) used to reach this container *internally* -- not
+    the browser-facing origin the identity provider must redirect back to.
+    BACKEND_PUBLIC_URL, when set, must be used instead."""
+    from app import security
+
+    provider_id = await _register_provider(wire_db_session)
+    monkeypatch.setattr(security.settings, "backend_public_url", "http://localhost:5150")
+    client = _client(monkeypatch)
+
+    resp = client.get(f"/api/auth/login/{provider_id}", follow_redirects=False)
+    query = parse_qs(urlparse(resp.headers["location"]).query)
+    assert query["redirect_uri"][0] == f"http://localhost:5150/api/auth/callback/{provider_id}"
+
+
+async def test_redirect_uri_falls_back_to_request_base_url_when_unset(monkeypatch, wire_db_session):
+    provider_id = await _register_provider(wire_db_session)
+    client = _client(monkeypatch)
+
+    resp = client.get(f"/api/auth/login/{provider_id}", follow_redirects=False)
+    query = parse_qs(urlparse(resp.headers["location"]).query)
+    assert query["redirect_uri"][0] == f"http://testserver/api/auth/callback/{provider_id}"
+
+
 async def test_login_surfaces_an_actionable_error_when_discovery_fails(monkeypatch, wire_db_session):
     """Regression: a bad/unreachable issuer_url (typo, wrong path, network
     issue) used to 500 with a bare, JSON-less body (app.oidc.OidcError

@@ -202,6 +202,13 @@ services:
       # backend-only, never forwarded to agents.
       ADMIN_DATABASE_URL: ${ADMIN_DATABASE_URL:-postgresql+asyncpg://admin:${ADMIN_DB_PASSWORD}@admin-db:5432/admin}
       ADMIN_DB_ENCRYPTION_KEY: ${ADMIN_DB_ENCRYPTION_KEY:-}
+      # Base URL for the OIDC redirect_uri sent to identity providers -- must
+      # be the origin the BROWSER actually uses (e.g. the Vite dev server at
+      # http://localhost:5150, which proxies /api here; not this container's
+      # own internal host:port). Required once any OIDC provider is
+      # configured -- must exactly match that provider's registered redirect
+      # URI. See .env.example and docs/dev-docs/multi-user-setup.md.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
     volumes: *common-volumes
     depends_on:
       redis:
