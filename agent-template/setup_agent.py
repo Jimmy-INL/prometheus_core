@@ -19,7 +19,17 @@ import sys
 from pathlib import Path
 
 PLATFORM_ENV_PATH = Path(__file__).resolve().parent.parent / "prometheus_platform" / ".env"
-PLATFORM_SECRET_KEYS = ("AGENT_SECRET", "REDIS_PASSWORD", "LITELLM_MASTER_KEY")
+PLATFORM_SECRET_KEYS = (
+    "AGENT_SECRET",
+    "REDIS_PASSWORD",
+    "LITELLM_MASTER_KEY",
+    # Multi-user identity (RS256, verification-side only -- never the private
+    # key). ISS/AUD are copied too since a mismatch here silently fails
+    # verification even with a correct public key.
+    "USER_IDENTITY_PUBLIC_KEY",
+    "USER_IDENTITY_ISS",
+    "USER_IDENTITY_AUD",
+)
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_GITIGNORE_ENTRIES = (".env",)
 
@@ -250,7 +260,8 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
 
     create_env = confirm_action(
         f"\nFound '{PLATFORM_ENV_PATH}'. Create '{output_dir / '.env'}' with "
-        "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, and LITELLM_MASTER_KEY values? (yes/no)",
+        "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, and "
+        "USER_IDENTITY_* values? (yes/no)",
         "yes",
     )
     if not create_env:

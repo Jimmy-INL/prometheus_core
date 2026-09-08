@@ -140,6 +140,8 @@ These live in the [`prometheus_api`](https://github.inl.gov/genesis/prometheus_a
 | [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
 | [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
 | [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
+| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md) | Verifying which platform user is calling your agent, per-user credentials |
+| [Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS for third-party agents (this template) |
 
 ## Support
 

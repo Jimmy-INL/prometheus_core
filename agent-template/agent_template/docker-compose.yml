@@ -27,6 +27,19 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
+      # Multi-user identity (RS256 only). This agent only ever verifies who is
+      # calling it -- it never mints a token, so it never needs a private key.
+      # Set JWKS_URL (recommended) or USER_IDENTITY_PUBLIC_KEY, not both.
+      # Defaults to the platform backend's own JWKS endpoint, reachable by
+      # container name when joining the platform's Docker network (the
+      # default -- see EXTERNAL_AGENT_HOST above); override for external mode
+      # or a genuinely third-party deployment (see .env.example).
+      JWKS_URL: ${JWKS_URL:-http://backend:8000/.well-known/jwks.json}
+      USER_IDENTITY_PUBLIC_KEY: ${USER_IDENTITY_PUBLIC_KEY:-}
+      USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
+      USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
+      USER_IDENTITY_REQUIRED: ${USER_IDENTITY_REQUIRED:-true}
+
       # deeplynx environment
       DEEPLYNX_BASE_URL: ${DEEPLYNX_BASE_URL:-}
       DEEPLYNX_KEY: ${DEEPLYNX_KEY:-}
