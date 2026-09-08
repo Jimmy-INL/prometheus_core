@@ -220,10 +220,6 @@ class MyAgent(PrometheusAgent):
 
 See [MULTI_USER.md](./MULTI_USER.md) for the full reference.
 
-
-
-> > > > > > > 693155f (docs: add 0.10.0 migration guide for identity
-> > > > > > > verification)
 ## 0.9.0
 
 ### A2A SDK v1 Uses Protobuf Types and Strict Task Streams
