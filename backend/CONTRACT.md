@@ -327,7 +327,10 @@ confirm the id exists.
 `title` is the effective title: a user rename (`title_override`) wins over the
 client-agent's LLM-generated title (set once, from the `small` model, on the
 first turn — see `agents/client-agent/orchestrator/chat_flow.py`), which wins
-over the raw first query. Soft-deleted conversations are excluded.
+over the raw first query. Soft-deleted conversations are excluded. `pending`
+is true while a turn is actively running against that conversation right now
+(`agent:status:{id}.final is False`) — a conversation the caller isn't
+currently viewing may still have work in flight.
 
 ```json
 {
@@ -339,7 +342,8 @@ over the raw first query. Soft-deleted conversations are excluded.
       "query": "What is the corrosion rate of SS316 in seawater?",
       "status": "completed",
       "material_id": "SS316",
-      "timestamp": "2026-09-01T12:00:00Z"
+      "timestamp": "2026-09-01T12:00:00Z",
+      "pending": false
     }
   ]
 }

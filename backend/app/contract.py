@@ -401,6 +401,9 @@ class ConversationSummary(BaseModel):
     ``/history`` command); ``status`` is the client's inferred user-facing status.
     ``title`` is the effective title: a user rename wins over the client-agent's
     LLM-generated title, which wins over the raw first query (``query``).
+    ``pending`` is true while a turn is actively running against this
+    conversation (``agent:status:{id}.final is False``) — a conversation the
+    caller isn't currently viewing may still have work in flight.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -411,6 +414,7 @@ class ConversationSummary(BaseModel):
     status: str = "unknown"
     material_id: Optional[str] = None
     timestamp: str = ""
+    pending: bool = False
 
 
 class ConversationHistoryResponse(BaseModel):

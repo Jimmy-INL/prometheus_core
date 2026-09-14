@@ -8,7 +8,7 @@
  */
 
 import { useRef, useState } from "react";
-import { MoreVertical, Trash2, Pencil } from "lucide-react";
+import { MoreVertical, Trash2, Pencil, Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api/client";
 import type { ConversationSummary } from "@/lib/api/types";
 
@@ -92,12 +92,19 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
       }`}
     >
       <button
-        className="flex-1 min-w-0 text-left text-sm py-1.5 truncate"
+        className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-sm py-1.5"
         onClick={onSelect}
         disabled={busy}
-        title={conversation.title || conversation.query}
+        title={
+          conversation.pending
+            ? `${conversation.title || conversation.query} (response in progress)`
+            : conversation.title || conversation.query
+        }
       >
-        {title}
+        <span className="truncate">{title}</span>
+        {conversation.pending && (
+          <Loader2 size={12} className="shrink-0 animate-spin text-primary" aria-label="Response in progress" />
+        )}
       </button>
       <details ref={detailsRef} className="dropdown dropdown-end">
         <summary

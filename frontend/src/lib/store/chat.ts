@@ -365,18 +365,41 @@ function disconnect(): void {
 }
 
 async function post(body: ChatMessageRequest): Promise<void> {
+  // Captured before the await: if the user starts a new chat or resumes a
+  // different past conversation (chatStore.reset/loadConversation) while this
+  // turn is still in flight, `state.conversationId` changes out from under us.
+  // The response, when it lands, belongs to `conversationId` — not to whatever
+  // is now on screen — so every effect below is guarded against that. The
+  // backend applies the same guard on its side (see `services/chat.py`'s
+  // `stale` handling) for its own session-state mutations; this is the
+  // matching frontend half, for what gets rendered.
+  const conversationId = state.conversationId;
+  const isCurrent = () => state.conversationId === conversationId;
+
   set({ awaiting: true });
   try {
     const res = await api.sendMessage(body);
-    applyResponse(res);
+    if (isCurrent()) {
+      applyResponse(res);
+    } else {
+      // Not lost — it's safely persisted server-side and will show up if this
+      // conversation is reopened (see loadConversation) — just not rendered
+      // into whatever conversation is currently on screen. Still worth letting
+      // the history list know something changed (e.g. its status).
+      bumpHistory();
+    }
   } catch (err) {
-    const text =
-      err instanceof ApiError
-        ? `Error communicating with agent: ${err.message}`
-        : "Error communicating with agent.";
-    appendError(text);
+    if (isCurrent()) {
+      const text =
+        err instanceof ApiError
+          ? `Error communicating with agent: ${err.message}`
+          : "Error communicating with agent.";
+      appendError(text);
+    }
   } finally {
-    set({ awaiting: false });
+    if (isCurrent()) {
+      set({ awaiting: false });
+    }
   }
 }
 

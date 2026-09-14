@@ -160,6 +160,29 @@ class ConversationStateClient:
         except Exception:
             return False
 
+    def is_pending(self, conv_id: str) -> bool:
+        """Whether a turn is actively running against *conv_id* right now.
+
+        Reads ``agent:status:{id}`` — written by the client-agent's
+        ``runtime.store_status_update`` on every status update, with a
+        ``final`` flag (``False`` while a turn is in progress, ``True`` at
+        every terminal branch) and a 900s TTL. The TTL means a stalled or
+        crashed turn self-heals to "not pending" rather than showing pending
+        forever; no new write path is needed since the client-agent already
+        emits this for its own live-status SSE stream.
+        """
+        client = self.client
+        if client is None:
+            return False
+        try:
+            raw = client.get(f"agent:status:{conv_id}")
+            if not raw:
+                return False
+            data = json.loads(raw)
+            return not bool(data.get("final", True))
+        except Exception:
+            return False
+
     def set_hidden(self, conv_id: str, hidden: bool) -> bool:
         """Soft delete/undelete: hidden conversations drop out of ``recent`` but
         the underlying ``conversation:{id}`` document is left untouched."""
@@ -199,7 +222,8 @@ class ConversationStateClient:
         Soft-deleted conversations (``conv:meta:{id}.hidden``) are excluded.
         ``title`` is the effective title: a user rename (``title_override``)
         wins over the client-agent's LLM-generated ``title``, which wins over
-        the raw first query.
+        the raw first query. ``pending`` reflects whether a turn is actively
+        running against that conversation right now (see :meth:`is_pending`).
         """
         client = self.client
         if client is None:
@@ -238,6 +262,7 @@ class ConversationStateClient:
                     "status": self._infer_status(conv),
                     "material_id": conv.get("material_id"),
                     "timestamp": latest_entry.get("timestamp", ""),
+                    "pending": self.is_pending(conv_id),
                 })
             conversations.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
             return conversations[:limit]

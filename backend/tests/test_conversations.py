@@ -317,6 +317,69 @@ def test_get_history_title_precedence(monkeypatch):
     assert rows["no-title"]["title"] == "raw query 3"
 
 
+def test_is_pending_reflects_agent_status_final_flag(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    status = {
+        "agent:status:running": _json.dumps({"message": "Executing…", "final": False}),
+        "agent:status:done": _json.dumps({"message": "Response ready.", "final": True}),
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            return status.get(key)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert c.is_pending("running") is True
+    assert c.is_pending("done") is False
+    assert c.is_pending("never-started") is False  # no key at all -> not pending
+
+
+def test_get_history_marks_actively_running_conversations_pending(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    blobs = {
+        "conversation:running": {
+            "user_query": "still going",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:00Z"}],
+        },
+        "conversation:done": {
+            "user_query": "finished",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:01Z"}],
+        },
+    }
+    status = {"agent:status:running": _json.dumps({"message": "…", "final": False})}
+
+    class _FakeRedis:
+        """Serves both `conversation:{id}` and `agent:status:{id}` reads —
+        `is_pending` calls `.get()` on the same client the history scan uses."""
+
+        def keys(self, pattern):
+            return list(blobs.keys()) if pattern == "conversation:*" else []
+
+        def get(self, key):
+            if key.startswith("conversation:"):
+                conv_id = key.split(":", 1)[1]
+                return _json.dumps(blobs[conv_id]) if conv_id in blobs else None
+            return status.get(key)
+
+        def hgetall(self, key):
+            return {}
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    rows = {r["conversation_id"]: r for r in c.get_conversation_history(limit=20)}
+    assert rows["running"]["pending"] is True
+    assert rows["done"]["pending"] is False
+
+
 def test_get_transcript_normalizes_and_drops_orchestration_noise(monkeypatch):
     import json as _json
 
