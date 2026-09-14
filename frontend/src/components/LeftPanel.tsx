@@ -1,12 +1,16 @@
+import type { ReactNode } from "react";
 import { MessageSquarePlus, PanelLeft } from "lucide-react";
 
 interface Props {
   isOpen: boolean;
   onToggle: () => void;
   onNewChat: () => void;
+  /** Chat history, project list, etc. — kept as a slot so this stays a thin,
+   * prop-only presentational shell. */
+  children?: ReactNode;
 }
 
-export function LeftPanel({ isOpen, onToggle, onNewChat }: Props) {
+export function LeftPanel({ isOpen, onToggle, onNewChat, children }: Props) {
   return (
     <aside
       className={`${isOpen ? "w-64" : "w-14"} bg-base-200 border-r border-base-300 transition-[width] duration-200 flex flex-col overflow-hidden`}
@@ -34,11 +38,7 @@ export function LeftPanel({ isOpen, onToggle, onNewChat }: Props) {
           {isOpen && <span className="truncate">New chat</span>}
         </button>
       </div>
-      {isOpen && (
-        <div className="px-3 py-2 text-sm text-base-content/60">
-          {/* Chat history, project list, etc. go here */}
-        </div>
-      )}
+      {isOpen && <div className="flex-1 overflow-y-auto px-2 py-1">{children}</div>}
     </aside>
   );
 }

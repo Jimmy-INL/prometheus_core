@@ -311,6 +311,75 @@ correct `Content-Type` (task 07). Replaces the frontend's old
 `_render_pdf_artifact` / `_render_remote_file_artifact` / `_render_download_artifact`
 download paths.
 
-## `GET /api/conversations/recent`
+## Chat history
 
-Redis-backed history list (task 08).
+Redis-backed (task 08; chat-history feature). Every conversation lives in the
+client-agent's `conversation:{id}` document; a small backend-owned
+`conv:meta:{id}` hash carries user edits (rename, soft delete) so the
+client-agent's whole-document rewrite on every turn can never clobber them.
+Every per-conversation route below is scoped to the caller's own conversations
+(`user:convs:{user}`, checked via `ConversationStateClient.owns`) and returns
+**404** — not 403 — when the caller doesn't own the id, so a guess can't even
+confirm the id exists.
+
+### `GET /api/conversations/recent` → `ConversationHistoryResponse`
+
+`title` is the effective title: a user rename (`title_override`) wins over the
+client-agent's LLM-generated title (set once, from the `small` model, on the
+first turn — see `agents/client-agent/orchestrator/chat_flow.py`), which wins
+over the raw first query. Soft-deleted conversations are excluded.
+
+```json
+{
+  "available": true,
+  "conversations": [
+    {
+      "conversation_id": "c-8f2a…",
+      "title": "Corrosion rate of SS316 in seawater",
+      "query": "What is the corrosion rate of SS316 in seawater?",
+      "status": "completed",
+      "material_id": "SS316",
+      "timestamp": "2026-09-01T12:00:00Z"
+    }
+  ]
+}
+```
+
+### `GET /api/conversations/{id}` → `ConversationDetailResponse`
+
+A past conversation's normalized transcript (`conversation_history` filtered
+to `role: user|assistant` turns) plus its artifact catalog, shaped the same way
+a live turn's `artifacts` are.
+
+```json
+{
+  "conversation_id": "c-8f2a…",
+  "title": "Corrosion rate of SS316 in seawater",
+  "profile": "",
+  "auto_approve_steps": false,
+  "messages": [
+    { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…" },
+    { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…" }
+  ],
+  "artifacts": []
+}
+```
+
+### `POST /api/conversations/{id}/resume` → `ConversationDetailResponse`
+
+Rebinds the caller's session (`SessionState.conversation_id` + `artifacts`) to
+this conversation and returns the same detail shape as `GET /{id}` — so the
+frontend can render history and resume in one round-trip. The **next**
+`POST /api/chat/messages` continues this conversation rather than starting a
+fresh one.
+
+### `PATCH /api/conversations/{id}` → `ConversationSummary`
+
+Body: `{ "title": "New title" }` (rejects empty/whitespace-only with 422). Sets
+`conv:meta:{id}.title_override`.
+
+### `DELETE /api/conversations/{id}` → `204 No Content`
+
+Soft delete: sets `conv:meta:{id}.hidden`, which excludes the conversation from
+`recent`. The underlying `conversation:{id}` document (and its artifacts) are
+left untouched.

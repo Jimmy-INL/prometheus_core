@@ -1,6 +1,17 @@
-"""Redis-backed client for browsing persisted conversation state."""
+"""Redis-backed client for browsing and lightly editing persisted conversation state.
+
+The client-agent owns the ``conversation:{id}`` document (the full orchestration
+state, rewritten wholesale on every turn — see ``agents/client-agent/conversation_store.py``).
+This client never writes to it. User-driven edits (rename, soft delete) instead
+live on a small, backend-owned ``conv:meta:{id}`` hash: writing there can never be
+clobbered by the client-agent's next-turn overwrite, and the client-agent never
+needs to know these edits exist.
+"""
+
+from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
@@ -9,8 +20,12 @@ except ImportError:  # pragma: no cover - only when redis is absent
     redis = None  # type: ignore
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class ConversationStateClient:
-    """Read-only client for persisted conversation state."""
+    """Client for persisted conversation state: reads + small metadata writes."""
 
     def __init__(self, redis_url: str):
         self._redis_url = redis_url
@@ -34,6 +49,139 @@ class ConversationStateClient:
     def available(self) -> bool:
         return self.client is not None
 
+    # --------------------------------------------------------------------- #
+    # Ownership
+    # --------------------------------------------------------------------- #
+
+    def owns(self, user_id: str, conv_id: str) -> bool:
+        """Whether *conv_id* is in *user_id*'s conversation index.
+
+        Backs every per-conversation endpoint (fetch/rename/delete/resume) so
+        one user can never act on another's conversation. Fails closed (``False``)
+        on a missing client, empty ids, or a Redis error.
+        """
+        client = self.client
+        if client is None or not user_id or not conv_id:
+            return False
+        try:
+            return bool(client.sismember(f"user:convs:{user_id}", conv_id))
+        except Exception:
+            return False
+
+    # --------------------------------------------------------------------- #
+    # Raw conversation document + derived views
+    # --------------------------------------------------------------------- #
+
+    def get_conversation(self, conv_id: str) -> Optional[Dict[str, Any]]:
+        """Load the raw ``conversation:{id}`` document, or ``None``."""
+        client = self.client
+        if client is None:
+            return None
+        try:
+            data = client.get(f"conversation:{conv_id}")
+            return json.loads(data) if data else None
+        except Exception:
+            return None
+
+    def get_transcript(self, conv_id: str) -> List[Dict[str, Any]]:
+        """Normalized user/assistant turns from ``conversation_history``.
+
+        The stored history is an orchestration/evidence log — routing decisions,
+        tool results, and follow-up bookkeeping are mixed in with real chat
+        turns. This keeps only entries with a ``role`` of ``user``/``assistant``
+        and non-empty ``content``, in original order, as ``{role, content,
+        timestamp}``.
+        """
+        conv = self.get_conversation(conv_id)
+        if not conv:
+            return []
+        history = conv.get("conversation_history", []) or []
+        messages: List[Dict[str, Any]] = []
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            role = entry.get("role")
+            content = entry.get("content")
+            if role not in ("user", "assistant") or not content:
+                continue
+            messages.append({
+                "role": role,
+                "content": str(content),
+                "timestamp": entry.get("timestamp", ""),
+            })
+        return messages
+
+    def get_artifacts(self, conv_id: str) -> List[Dict[str, Any]]:
+        """Raw artifact catalog dicts for *conv_id* (best-effort; ``[]`` on any issue).
+
+        Reads the same Redis hash the client-agent's ``ArtifactRegistry`` writes
+        (``artifacts:conv:{id}:by_id``, ``ArtifactReference.to_dict()`` values), so
+        resume can rehydrate a session's artifact catalog without a round-trip
+        through the client-agent.
+        """
+        client = self.client
+        if client is None:
+            return []
+        try:
+            raw = client.hgetall(f"artifacts:conv:{conv_id}:by_id")
+        except Exception:
+            return []
+        artifacts: List[Dict[str, Any]] = []
+        for value in (raw or {}).values():
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(parsed, dict):
+                artifacts.append(parsed)
+        return artifacts
+
+    # --------------------------------------------------------------------- #
+    # Per-user metadata (title override / soft delete) — ``conv:meta:{id}``
+    # --------------------------------------------------------------------- #
+
+    def get_meta(self, conv_id: str) -> Dict[str, Any]:
+        client = self.client
+        if client is None:
+            return {}
+        try:
+            return dict(client.hgetall(f"conv:meta:{conv_id}") or {})
+        except Exception:
+            return {}
+
+    def set_title_override(self, conv_id: str, title: str) -> bool:
+        """User-chosen rename. Takes precedence over the LLM-generated title."""
+        client = self.client
+        if client is None:
+            return False
+        try:
+            client.hset(f"conv:meta:{conv_id}", "title_override", title)
+            return True
+        except Exception:
+            return False
+
+    def set_hidden(self, conv_id: str, hidden: bool) -> bool:
+        """Soft delete/undelete: hidden conversations drop out of ``recent`` but
+        the underlying ``conversation:{id}`` document is left untouched."""
+        client = self.client
+        if client is None:
+            return False
+        try:
+            if hidden:
+                client.hset(
+                    f"conv:meta:{conv_id}",
+                    mapping={"hidden": "1", "hidden_at": _utc_now_iso()},
+                )
+            else:
+                client.hdel(f"conv:meta:{conv_id}", "hidden", "hidden_at")
+            return True
+        except Exception:
+            return False
+
+    # --------------------------------------------------------------------- #
+    # Recent-conversations listing
+    # --------------------------------------------------------------------- #
+
     def get_conversation_history(
         self,
         limit: int = 20,
@@ -47,6 +195,11 @@ class ConversationStateClient:
         client-agent side). When *user_id* is absent, falls back to the global
         ``conversation:*`` scan — used only for conversations created before
         ownership tracking existed, or when identity is unconfigured.
+
+        Soft-deleted conversations (``conv:meta:{id}.hidden``) are excluded.
+        ``title`` is the effective title: a user rename (``title_override``)
+        wins over the client-agent's LLM-generated ``title``, which wins over
+        the raw first query.
         """
         client = self.client
         if client is None:
@@ -71,11 +224,17 @@ class ConversationStateClient:
                     continue
                 conv = json.loads(data)
                 conv_id = key.split(":", 1)[1] if ":" in key else key
+                meta = self.get_meta(conv_id)
+                if meta.get("hidden"):
+                    continue
                 history = conv.get("conversation_history", []) or []
                 latest_entry = history[-1] if history else {}
+                query = conv.get("user_query", "")
+                title = meta.get("title_override") or conv.get("title") or query
                 conversations.append({
                     "conversation_id": conv_id,
-                    "query": conv.get("user_query", ""),
+                    "title": title,
+                    "query": query,
                     "status": self._infer_status(conv),
                     "material_id": conv.get("material_id"),
                     "timestamp": latest_entry.get("timestamp", ""),

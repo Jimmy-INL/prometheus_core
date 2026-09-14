@@ -5,6 +5,7 @@ import { useCurrentUser } from "@/lib/store/session";
 import { chatProfileName, useChatType } from "@/lib/useChatType";
 import { AdminSection } from "../components/admin/AdminSection";
 import { Chat } from "../components/Chat";
+import { ChatHistory } from "../components/chat/ChatHistory";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Header } from "../components/Header";
 import { LeftPanel } from "../components/LeftPanel";
@@ -59,7 +60,9 @@ export function ProjectView({ onLogout }: Props) {
           isOpen={leftOpen}
           onToggle={() => setLeftOpen((v) => !v)}
           onNewChat={handleNewChat}
-        />
+        >
+          <ChatHistory />
+        </LeftPanel>
 
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Tab bar */}

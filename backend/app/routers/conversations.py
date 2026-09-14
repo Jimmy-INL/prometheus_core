@@ -1,26 +1,45 @@
-"""GET /api/conversations/recent — Redis-backed conversation history.
+"""Conversation history: list, fetch, rename, soft-delete, and resume.
 
-Replaces the Chainlit ``/history`` slash command (``_handle_conversation_history``,
-frontend/main.py:107): returns recent conversation summaries as JSON instead of a
-markdown ``cl.Message``. Slash-command parsing is now a frontend concern.
+``GET /api/conversations/recent`` replaces the Chainlit ``/history`` slash command
+(``_handle_conversation_history``, frontend/main.py:107): returns recent conversation
+summaries as JSON instead of a markdown ``cl.Message``. Slash-command parsing is now
+a frontend concern.
 
-``ConversationStateClient`` (app/conversation_state.py, lifted in task 03) uses the
-**synchronous** redis client, so its calls are offloaded to a worker thread with
-``asyncio.to_thread`` to keep the event loop free. When Redis is unreachable the
-endpoint degrades to ``{available: false, conversations: []}`` with a 200.
+The rest of this router is new (chat-history feature): ``GET /{id}`` fetches one
+past conversation's transcript, ``PATCH``/``DELETE`` let a user rename or soft-delete
+it, and ``POST /{id}/resume`` rebinds the caller's session to it so the next chat
+turn continues that conversation rather than starting a fresh one.
+
+``ConversationStateClient`` (app/conversation_state.py) uses the **synchronous**
+redis client, so every call is offloaded to a worker thread with
+``asyncio.to_thread`` to keep the event loop free. When Redis is unreachable,
+``recent`` degrades to ``{available: false, conversations: []}`` with a 200; the
+per-conversation endpoints 404 instead, since there's nothing to act on.
+
+Every per-conversation endpoint checks ownership (``user:convs:{user}`` via
+``ConversationStateClient.owns``) and returns **404** — not 403 — on a miss, so a
+guess at another user's conversation id can't even confirm the id exists.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status as http_status
 
 from app.config import settings
-from app.contract import ConversationHistoryResponse, ConversationSummary
+from app.contract import (
+    ConversationDetailResponse,
+    ConversationHistoryResponse,
+    ConversationRenameRequest,
+    ConversationSummary,
+)
 from app.conversation_state import ConversationStateClient
 from app.security import TokenClaims, current_claims
+from app.services.artifacts import shape_artifacts
+from app.sessions import SessionState, SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +60,10 @@ def _client() -> ConversationStateClient:
         inst = cls(settings.redis_url)
         _client_cache[cls] = inst
     return inst
+
+
+def _get_store(request: Request) -> SessionStore:
+    return cast(SessionStore, request.app.state.session_store)
 
 
 def _fetch_recent(limit: int, user_id: str) -> tuple[bool, list[dict]]:
@@ -66,3 +89,111 @@ async def get_recent_conversations(
         available=available,
         conversations=[ConversationSummary(**row) for row in rows],
     )
+
+
+def _build_detail(client: ConversationStateClient, conv_id: str) -> ConversationDetailResponse:
+    """Assemble the detail/resume response from the raw store (caller has already
+    checked ownership)."""
+    conv = client.get_conversation(conv_id) or {}
+    meta = client.get_meta(conv_id)
+    title = meta.get("title_override") or conv.get("title") or conv.get("user_query", "")
+    messages = client.get_transcript(conv_id)
+    raw_artifacts = client.get_artifacts(conv_id)
+    return ConversationDetailResponse(
+        conversation_id=conv_id,
+        title=title,
+        profile=str(conv.get("profile") or ""),
+        messages=[{"role": m["role"], "content": m["content"], "timestamp": m["timestamp"]} for m in messages],
+        artifacts=shape_artifacts(raw_artifacts),
+    )
+
+
+def _fetch_detail(conv_id: str, user_id: str) -> tuple[bool, Any]:
+    """Blocking ownership check + detail assembly, run in a worker thread.
+
+    Returns ``(found, detail_or_none)``: ``found`` is ``False`` when Redis is down,
+    the conversation doesn't exist, or it isn't owned by *user_id* — the caller maps
+    that uniformly to 404 so a non-owner can't distinguish "doesn't exist" from "not
+    yours".
+    """
+    client = _client()
+    if not client.available or not client.owns(user_id, conv_id):
+        return False, None
+    return True, _build_detail(client, conv_id)
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
+async def get_conversation_detail(
+    conversation_id: str,
+    claims: TokenClaims = Depends(current_claims),
+) -> ConversationDetailResponse:
+    found, detail = await asyncio.to_thread(_fetch_detail, conversation_id, claims.sub)
+    if not found:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return cast(ConversationDetailResponse, detail)
+
+
+def _rename(conv_id: str, user_id: str, title: str) -> bool:
+    client = _client()
+    if not client.available or not client.owns(user_id, conv_id):
+        return False
+    return client.set_title_override(conv_id, title)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationSummary)
+async def rename_conversation(
+    conversation_id: str,
+    body: ConversationRenameRequest,
+    claims: TokenClaims = Depends(current_claims),
+) -> ConversationSummary:
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Title must not be empty")
+    ok = await asyncio.to_thread(_rename, conversation_id, claims.sub, title)
+    if not ok:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return ConversationSummary(conversation_id=conversation_id, title=title)
+
+
+def _soft_delete(conv_id: str, user_id: str) -> bool:
+    client = _client()
+    if not client.available or not client.owns(user_id, conv_id):
+        return False
+    return client.set_hidden(conv_id, True)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: str,
+    claims: TokenClaims = Depends(current_claims),
+) -> None:
+    """Soft delete: hides the conversation from ``recent``. The underlying
+    ``conversation:{id}`` document (and its artifacts) are left intact."""
+    ok = await asyncio.to_thread(_soft_delete, conversation_id, claims.sub)
+    if not ok:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+
+@router.post("/conversations/{conversation_id}/resume", response_model=ConversationDetailResponse)
+async def resume_conversation(
+    conversation_id: str,
+    request: Request,
+    claims: TokenClaims = Depends(current_claims),
+) -> ConversationDetailResponse:
+    """Rebind the caller's session to a past conversation so the next chat turn
+    continues it. Returns its transcript + artifact catalog in the same call so
+    the frontend can render history and resume in one round-trip."""
+    found, detail = await asyncio.to_thread(_fetch_detail, conversation_id, claims.sub)
+    if not found:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    detail = cast(ConversationDetailResponse, detail)
+
+    store = _get_store(request)
+    session: SessionState = store.get_or_create(claims.sid)
+    session.conversation_id = conversation_id
+    session.artifacts = await asyncio.to_thread(_client().get_artifacts, conversation_id)
+    session.awaited_task_ids = set()
+    session.consecutive_needs_info = 0
+
+    detail.auto_approve_steps = settings.auto_approve_steps
+    return detail

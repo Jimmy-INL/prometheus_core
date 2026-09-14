@@ -272,6 +272,7 @@ export interface ConfigResponse {
 
 export interface ConversationSummary {
   conversation_id: string;
+  title: string;
   query: string;
   status: string;
   material_id?: string | null;
@@ -281,4 +282,19 @@ export interface ConversationSummary {
 export interface ConversationHistoryResponse {
   available: boolean;
   conversations: ConversationSummary[];
+}
+
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+export interface ConversationDetailResponse {
+  conversation_id: string;
+  title: string;
+  profile: string;
+  auto_approve_steps: boolean;
+  messages: ConversationMessage[];
+  artifacts: ArtifactMeta[];
 }
