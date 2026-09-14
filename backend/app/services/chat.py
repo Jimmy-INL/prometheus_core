@@ -260,12 +260,17 @@ async def handle_turn(
     uploaded_files: Optional[list[dict[str, Any]]] = None,
     auto_approve: bool = False,
     on_status: Optional[OnStatus] = None,
+    user_token: Optional[str] = None,
 ) -> ChatMessageResponse:
     """Run one non-blocking chat turn against the client-agent.
 
     Sends the request (streaming live status through ``on_status``) and maps the
     terminal ``ConversationResponse`` to a ``ChatMessageResponse``. Requires a
     resolved ``session.conversation_id`` (the router mints one on first use).
+
+    ``user_token`` is the platform JWT identifying the caller (see ``app.identity``);
+    it is forwarded to the client-agent, which verifies it and propagates it to
+    every downstream specialist agent call.
 
     Callers convert ``A2AClient.send`` failures into an ``error``-status response;
     this function does not swallow them (see ``routers/chat.py``).
@@ -283,6 +288,7 @@ async def handle_turn(
         workflow_id=workflow_id,
         uploaded_files=uploaded_files,
         on_status=on_status,
+        user_token=user_token,
     )
 
     # Restore interactive mesh rendering: convert any Exodus/STL artifact to VTP +

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
+import type { AuthProvider } from "@/lib/api/types";
+import { setCurrentUser } from "@/lib/store/session";
 
 interface Props {
   onSuccess: () => void;
@@ -10,12 +12,23 @@ export function Login({ onSuccess }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [providers, setProviders] = useState<AuthProvider[]>([]);
+
+  // Best-effort: an empty list just means no "sign in with ..." buttons show,
+  // never a hard error blocking the password form.
+  useEffect(() => {
+    api
+      .listAuthProviders()
+      .then(setProviders)
+      .catch(() => setProviders([]));
+  }, []);
 
   const handleSubmit = async () => {
     setLoading(true);
     setError("");
     try {
-      await api.login(username, password);
+      const user = await api.login(username, password);
+      setCurrentUser(user);
       onSuccess();
     } catch {
       setError("Invalid credentials");
@@ -79,8 +92,20 @@ export function Login({ onSuccess }: Props) {
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
-          {/* "Continue with Okta" is hidden until an OAuth provider is wired
-              (GET /api/auth/callback/{provider} currently returns 501). */}
+          {providers.length > 0 && (
+            <>
+              <div className="divider text-xs text-base-content/40">or</div>
+              {providers.map((provider) => (
+                <a
+                  key={provider.provider_id}
+                  className="btn btn-outline w-full"
+                  href={api.loginUrl(provider.provider_id)}
+                >
+                  Sign in with {provider.display_name}
+                </a>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>

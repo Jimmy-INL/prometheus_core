@@ -1,13 +1,47 @@
+import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import artifacts, auth, chat, config, conversations, events, health, sessions, uploads
+from app.crypto import EncryptionError
+from app.db import get_session_factory
+from app.routers import (
+    admin_keys,
+    admin_oidc,
+    admin_users,
+    artifacts,
+    auth,
+    chat,
+    config,
+    conversations,
+    events,
+    health,
+    jwks,
+    sessions,
+    setup,
+    uploads,
+)
+from app import security
 from app.services.events import EventBus
 from app.sessions import SessionStore
+
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
+
+
+def _run_admin_db_migrations() -> None:
+    """Apply pending Alembic migrations against admin-db. Synchronous (Alembic's
+    command API blocks); called via asyncio.to_thread from the lifespan below so
+    it doesn't block the event loop during startup."""
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(_ALEMBIC_INI))
+    command.upgrade(cfg, "head")
 
 
 @asynccontextmanager
@@ -22,6 +56,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "CHAINLIT_AUTH_SECRET (both are forwarded to the container in "
             "docker-compose.yml). Refusing to start with an empty signing key."
         )
+    # Bring admin-db (local users, OIDC provider config, signing keys) up to the
+    # latest schema before serving any request. A single-replica backend, so
+    # there's no concurrent-migration race to worry about; if this fails the
+    # app refuses to start rather than serving against a stale/missing schema.
+    await asyncio.to_thread(_run_admin_db_migrations)
+    # Every already-configured OIDC provider becomes resolvable via
+    # security.get_provider() before the first request -- routers/admin_oidc.py
+    # keeps this in sync afterward (create registers, delete unregisters; an
+    # update needs no registry change, see GenericOidcProvider's docstring).
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        await security.register_existing_oidc_providers(db)
     # In-memory session store — one per process, lost on restart (documented in
     # app/sessions.py).
     app.state.session_store = SessionStore()
@@ -46,7 +92,24 @@ if settings.debug:
         allow_headers=["*"],
     )
 
+
+@app.exception_handler(EncryptionError)
+async def _encryption_error_handler(request: Request, exc: EncryptionError) -> JSONResponse:
+    """ADMIN_DB_ENCRYPTION_KEY missing/invalid, or a row encrypted under a
+    since-rotated key (app/crypto.py) -- a deployment misconfiguration, not a
+    client error, but one an admin can act on immediately if the message
+    actually reaches them. Without this handler these routes' encrypt()/
+    decrypt() calls (admin_keys.py, admin_oidc.py) 500 with a bare,
+    JSON-less "Internal Server Error" body -- the frontend's ApiError can't
+    extract any detail from that, so this exact message is what shows up in
+    the UI instead of a dead end.
+    """
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
 app.include_router(health.router)
+app.include_router(jwks.router)
+app.include_router(setup.router)
 app.include_router(auth.router)
 app.include_router(config.router)
 app.include_router(sessions.router)
@@ -55,3 +118,6 @@ app.include_router(events.router)
 app.include_router(uploads.router)
 app.include_router(artifacts.router)
 app.include_router(conversations.router)
+app.include_router(admin_users.router)
+app.include_router(admin_keys.router)
+app.include_router(admin_oidc.router)

@@ -7,11 +7,20 @@
  */
 
 import type {
+  AdminUser,
+  AdminUserCreate,
+  AdminUserUpdate,
+  AuthProvider,
   ChatMessageRequest,
   ChatMessageResponse,
   ConfigResponse,
   ConversationHistoryResponse,
+  OidcProvider,
+  OidcProviderCreate,
+  OidcProviderUpdate,
   SessionResponse,
+  SetupStatus,
+  SigningKey,
   UploadDescriptor,
   User,
 } from "./types";
@@ -49,6 +58,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // --- setup (first-run wizard) ---
+  /** GET /api/setup/status — unauthenticated; true until the first admin exists. */
+  setupStatus(): Promise<SetupStatus> {
+    return request<SetupStatus>("/setup/status");
+  },
+
+  /** POST /api/setup/bootstrap — creates the first admin account and logs it in
+   * (sets the session cookie, same as login). Throws ApiError(409) if setup has
+   * already been completed. */
+  async bootstrap(username: string, password: string): Promise<User> {
+    const body = await request<{ user: User }>("/setup/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    return body.user;
+  },
+
   // --- auth ---
   async login(username: string, password: string): Promise<User> {
     const body = await request<{ user: User }>("/auth/login", {
@@ -66,6 +93,18 @@ export const api = {
   /** GET /api/auth/me — resolves to the user, or throws ApiError(401) if not authed. */
   me(): Promise<User> {
     return request<User>("/auth/me");
+  },
+
+  /** GET /api/auth/providers — public; enabled OIDC providers for <Login> to render. */
+  listAuthProviders(): Promise<AuthProvider[]> {
+    return request<AuthProvider[]>("/auth/providers");
+  },
+
+  /** URL for GET /api/auth/login/{provider_id} -- a full-page navigation
+   * (`window.location.href = ...`), never a fetch: it's a server redirect to
+   * the identity provider, not a JSON response. */
+  loginUrl(providerId: string): string {
+    return `${API_BASE}/auth/login/${encodeURIComponent(providerId)}`;
   },
 
   // --- config / session ---
@@ -105,5 +144,72 @@ export const api = {
   /** URL for an artifact's bytes; used directly as an <img>/<embed> src or fetch target. */
   artifactContentUrl(artifactId: string): string {
     return `${API_BASE}/artifacts/${encodeURIComponent(artifactId)}/content`;
+  },
+
+  // --- admin: users (require_admin server-side; 403 for non-admins) ---
+  listAdminUsers(): Promise<AdminUser[]> {
+    return request<AdminUser[]>("/admin/users");
+  },
+
+  createAdminUser(input: AdminUserCreate): Promise<AdminUser> {
+    return request<AdminUser>("/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAdminUser(userId: string, patch: AdminUserUpdate): Promise<AdminUser> {
+    return request<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  },
+
+  deleteAdminUser(userId: string): Promise<void> {
+    return request<void>(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  },
+
+  // --- admin: signing keys (require_admin server-side; 403 for non-admins) ---
+  listSigningKeys(): Promise<SigningKey[]> {
+    return request<SigningKey[]>("/admin/signing-keys");
+  },
+
+  generateSigningKey(): Promise<SigningKey> {
+    return request<SigningKey>("/admin/signing-keys", { method: "POST" });
+  },
+
+  activateSigningKey(keyId: string): Promise<SigningKey> {
+    return request<SigningKey>(`/admin/signing-keys/${encodeURIComponent(keyId)}/activate`, { method: "POST" });
+  },
+
+  retireSigningKey(keyId: string): Promise<SigningKey> {
+    return request<SigningKey>(`/admin/signing-keys/${encodeURIComponent(keyId)}/retire`, { method: "POST" });
+  },
+
+  // --- admin: OIDC identity providers (require_admin server-side; 403 for non-admins) ---
+  listOidcProviders(): Promise<OidcProvider[]> {
+    return request<OidcProvider[]>("/admin/oidc-providers");
+  },
+
+  createOidcProvider(input: OidcProviderCreate): Promise<OidcProvider> {
+    return request<OidcProvider>("/admin/oidc-providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateOidcProvider(id: string, patch: OidcProviderUpdate): Promise<OidcProvider> {
+    return request<OidcProvider>(`/admin/oidc-providers/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  },
+
+  deleteOidcProvider(id: string): Promise<void> {
+    return request<void>(`/admin/oidc-providers/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 };

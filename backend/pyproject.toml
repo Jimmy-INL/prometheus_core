@@ -17,6 +17,16 @@ dependencies = [
     # IO + filters only (no offscreen GL), but `import vtk` still links libGL, so the
     # image installs the GL/X client libs (see Dockerfile).
     "vtk>=9.3",
+    # Admin plane: local users, OIDC provider config, RS256 signing keys
+    # (app/db.py, app/db/models.py, app/routers/admin_*.py, app/routers/setup.py).
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "bcrypt>=4.0",
+    # Encrypts OIDC client secrets + private signing keys at rest in admin-db
+    # (Fernet, app/crypto.py). Also used by prometheus_api for RS256 -- pinning
+    # here too since the backend depends on it directly, not just transitively.
+    "cryptography>=42",
 ]
 
 [dependency-groups]
@@ -30,6 +40,9 @@ dev = [
     # comes preinstalled from the prometheus_api base image (--no-dev skips
     # this entry at image build time).
     "prometheus-api",
+    # In-memory async DB for admin-plane tests (app/db.py, tests/conftest.py) --
+    # tests never touch real Postgres; only Alembic/production use asyncpg.
+    "aiosqlite>=0.20",
 ]
 
 [tool.uv.sources]

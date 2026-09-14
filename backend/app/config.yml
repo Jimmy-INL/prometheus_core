@@ -9,13 +9,9 @@ workflow-suggestions:
   - "Do a comprehensive material analysis of SS347"
   - "Make an image with the word Success in red in it"
 
-local-users:
-  - username: "admin"
-    password: "lkjasdfih20chqsdijlkadscoasdijf0293hcskdlj"
-    role: "admin"
-  - username: "prometheus"
-    password: "prometheus"
-    role: "user"
+# Local users no longer come from this file -- they live in the admin-plane
+# Postgres database. On first run (no users row yet), the app serves a setup
+# wizard that creates the first admin account; see docs/docs/dev-docs/multi-user-setup.md.
 
 # A2A client-agent connection (overridden by env vars CLIENT_AGENT_URL, AGENT_SECRET, REDIS_URL)
 agent-url: "http://localhost:8001"

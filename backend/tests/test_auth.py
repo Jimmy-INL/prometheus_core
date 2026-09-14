@@ -1,6 +1,6 @@
 """Auth + hardening tests (remediation step 05).
 
-Covers logout revocation (AU-1), constant-time password check (AU-3), the
+Covers logout revocation (AU-1), the DB-backed password check (AU-3), the
 authenticated ``/api/config`` (AU-5), the identity-provider registry / OAuth seam
 (AU-6), and the non-wildcard dev CORS origins (AU-9).
 """
@@ -45,23 +45,69 @@ def test_logout_revokes_token_even_if_replayed(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# AU-3 — password check: correctness + constant-time compare
+# AU-3 — password check: correctness against the DB-backed users table
 # --------------------------------------------------------------------------- #
 
 
-def test_password_provider_authenticates_and_rejects(monkeypatch):
+async def test_password_provider_authenticates_and_rejects(db_session):
     from app import security
-    from app.config import settings
+    from app.db.models import User as UserRow
+    from app.passwords import hash_password
 
-    monkeypatch.setattr(
-        settings, "local_users", [{"username": "u", "password": "s3cret", "role": "admin"}], raising=False
-    )
+    db_session.add(UserRow(username="u", password_hash=hash_password("s3cret"), role="admin", provider="credentials"))
+    await db_session.commit()
+
     provider = security.PasswordIdentityProvider()
-    ok = provider.authenticate("u", "s3cret")
+    ok = await provider.authenticate("u", "s3cret", db_session)
     assert ok is not None and ok.role == "admin"
-    assert provider.authenticate("u", "wrong") is None  # wrong password
-    assert provider.authenticate("nope", "s3cret") is None  # unknown user
-    assert provider.authenticate("u", "") is None  # empty password never matches
+    assert await provider.authenticate("u", "wrong", db_session) is None  # wrong password
+    assert await provider.authenticate("nope", "s3cret", db_session) is None  # unknown user
+    assert await provider.authenticate("u", "", db_session) is None  # empty password never matches
+
+
+async def test_password_provider_rejects_inactive_user(db_session):
+    from app import security
+    from app.db.models import User as UserRow
+    from app.passwords import hash_password
+
+    db_session.add(
+        UserRow(
+            username="deactivated",
+            password_hash=hash_password("s3cret"),
+            role="user",
+            provider="credentials",
+            is_active=False,
+        )
+    )
+    await db_session.commit()
+
+    provider = security.PasswordIdentityProvider()
+    assert await provider.authenticate("deactivated", "s3cret", db_session) is None
+
+
+async def test_login_endpoint_authenticates_against_db(monkeypatch, wire_db_session):
+    """End-to-end: POST /api/auth/login against a real (DB-backed) provider."""
+    from app import security
+    from app.db.models import User as UserRow
+    from app.main import app
+    from app.passwords import hash_password
+    from app.sessions import SessionStore
+
+    monkeypatch.setattr(security.settings, "jwt_secret", "test-secret", raising=False)
+    wire_db_session.add(
+        UserRow(username="alice", password_hash=hash_password("s3cret"), role="admin", provider="credentials")
+    )
+    await wire_db_session.commit()
+    app.state.session_store = SessionStore()
+
+    client = TestClient(app)
+    resp = client.post("/api/auth/login", json={"username": "alice", "password": "s3cret"})
+    assert resp.status_code == 200
+    assert resp.json()["user"]["role"] == "admin"
+    assert resp.cookies.get("prometheus_session")  # session cookie was set
+
+    bad = client.post("/api/auth/login", json={"username": "alice", "password": "wrong"})
+    assert bad.status_code == 401
 
 
 # --------------------------------------------------------------------------- #

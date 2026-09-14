@@ -93,7 +93,6 @@ class Settings(BaseSettings):
     data: dict[str, Any] = read_config(CONFIG_PATH)
 
     # Content / suggestions
-    local_users: list[dict[str, str]] = data.get("local-users", [])
     workflow_suggestions: list[str] = data.get("workflow-suggestions", [])
     chat_suggestion_title: str = data.get("chat-suggestion-title", "")
     chat_intro: str = data.get("chat-intro", "")
@@ -122,6 +121,27 @@ class Settings(BaseSettings):
         os.environ.get("BACKEND_TOKEN_TTL_SECONDS", data.get("token-ttl-seconds", 86400)),
         "token-ttl-seconds",
     )
+
+    # Admin plane (local users, OIDC provider config, RS256 signing keys).
+    # See app/db/__init__.py. No config.yml equivalent -- infra URL, env-only.
+    admin_database_url: str = os.environ.get(
+        "ADMIN_DATABASE_URL", "postgresql+asyncpg://admin:admin@admin-db:5432/admin"
+    )
+    # Encrypts OidcProvider.client_secret and SigningKey.private_key at rest
+    # (Fernet). Required to actually store/read those tables -- see app/crypto.py.
+    admin_db_encryption_key: str = os.environ.get("ADMIN_DB_ENCRYPTION_KEY", "")
+
+    # Base URL for the OIDC redirect_uri sent to identity providers
+    # (app/security.py::_callback_url). request.base_url reflects whatever
+    # host a reverse proxy (Vite dev server, nginx) used to reach this
+    # container *internally* -- never the browser-facing origin -- so it
+    # can't be trusted for this (and blindly trusting a forwarded-host header
+    # here would be an open-redirect risk in an OAuth flow). Empty falls back
+    # to request.base_url, correct only when nothing proxies /api requests
+    # (e.g. hitting this backend directly on its own port with no frontend in
+    # front). Must exactly match what's registered as the redirect URI with
+    # every configured OIDC provider.
+    backend_public_url: str = os.environ.get("BACKEND_PUBLIC_URL", "").rstrip("/")
 
 
 settings = Settings()

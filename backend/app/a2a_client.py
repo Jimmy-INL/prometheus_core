@@ -43,6 +43,7 @@ class A2AClient:
         name: str,
         mime_type: str,
         conversation_id: str,
+        user_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Stream upload bytes to the client-agent and return a staged upload token."""
         path = Path(file_path)
@@ -56,6 +57,8 @@ class A2AClient:
             "mime_type": mime_type or "application/octet-stream",
             "conversation_id": conversation_id,
         }
+        if user_token:
+            params["user_token"] = user_token
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
@@ -89,6 +92,7 @@ class A2AClient:
         workflow_id: Optional[str] = None,
         uploaded_files: Optional[List[Dict]] = None,
         on_status: Optional[Callable[[str], Coroutine]] = None,
+        user_token: Optional[str] = None,
     ) -> ConversationResponse:
         """Send a message to the client-agent via A2A JSON-RPC streaming."""
         request_id = str(uuid.uuid4())
@@ -112,6 +116,12 @@ class A2AClient:
         if uploaded_files:
             payload["uploaded_files"] = uploaded_files
 
+        # Build message-level metadata.  The verified user token is carried
+        # here so agents can extract and validate the caller's identity.
+        message_metadata: Dict[str, Any] = {}
+        if user_token:
+            message_metadata["userToken"] = user_token
+
         # A2A JSON-RPC envelope
         message = {
             "jsonrpc": "2.0",
@@ -124,6 +134,7 @@ class A2AClient:
                     # contextId is the A2A-spec conversation scope; the a2a-sdk
                     # exposes it to the client-agent as RequestContext.context_id.
                     "contextId": conversation_id,
+                    "metadata": message_metadata,
                     "parts": [
                         {
                             "text": json.dumps(payload),

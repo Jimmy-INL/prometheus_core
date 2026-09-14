@@ -67,3 +67,44 @@ def test_lifespan_starts_with_jwt_secret(monkeypatch):
             return True
 
     assert asyncio.run(run()) is True
+
+
+# --------------------------------------------------------------------------- #
+# Phase 0 — lifespan applies admin-db migrations on startup
+# --------------------------------------------------------------------------- #
+
+
+def test_lifespan_runs_admin_db_migrations(monkeypatch):
+    """The autouse ``no_real_admin_db_migrations`` fixture (conftest.py) stubs this
+    out everywhere else so tests don't need a live Postgres -- this test overrides
+    that stub to confirm the lifespan actually wires the call up."""
+    from app import main as app_main  # avoid shadowing the module-level `app` FastAPI instance
+
+    monkeypatch.setattr(settings, "jwt_secret", "x" * 32, raising=False)
+    calls = []
+    monkeypatch.setattr(app_main, "_run_admin_db_migrations", lambda: calls.append(True))
+
+    async def run() -> None:
+        async with lifespan(app):
+            pass
+
+    asyncio.run(run())
+    assert calls == [True]
+
+
+def test_lifespan_fails_to_start_if_migrations_fail(monkeypatch):
+    from app import main as app_main  # avoid shadowing the module-level `app` FastAPI instance
+
+    monkeypatch.setattr(settings, "jwt_secret", "x" * 32, raising=False)
+
+    def _boom() -> None:
+        raise RuntimeError("could not connect to admin-db")
+
+    monkeypatch.setattr(app_main, "_run_admin_db_migrations", _boom)
+
+    async def run() -> None:
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="could not connect to admin-db"):
+        asyncio.run(run())

@@ -12,16 +12,21 @@ carry the username (``sub``), ``role``, a per-login session id (``sid``), and an
 
 from __future__ import annotations
 
-import hmac
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 import jwt
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.models import OidcProvider as OidcProviderRow
+from app.db.models import User as UserRow
+from app.passwords import verify_password
 
 # JWT signing algorithm. HS256 is symmetric — the same ``jwt_secret`` signs and
 # verifies, which matches the single-service deployment here.
@@ -59,49 +64,52 @@ class TokenClaims(BaseModel):
 class IdentityProvider(Protocol):
     """Pluggable auth backend.
 
-    ``authenticate`` handles credential-based login (password today); ``callback``
-    handles a redirect-based OAuth handshake (reserved — only the password provider
-    is implemented, so its ``callback`` raises). Modeling both now keeps the future
-    OAuth provider a drop-in.
+    ``authenticate`` handles credential-based login (password only -- OIDC
+    providers return ``None`` unconditionally, they have no password path).
+    ``callback`` completes a redirect-based OIDC handshake, given the inbound
+    callback ``Request`` (query params ``code``/``state``, and the
+    ``OIDC_FLOW_COOKIE`` set by the ``/login/{provider_id}`` redirect) --
+    raises on any failure (:class:`~fastapi.HTTPException` for a request-level
+    problem, ``NotImplementedError`` for a provider that has no redirect flow
+    at all, e.g. the password provider) rather than returning ``None``, since
+    a callback that reaches this far has committed to either resolving a user
+    or failing loudly.
     """
 
     name: str
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
+    async def authenticate(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
         """Return a :class:`User` on valid credentials, else ``None``."""
         ...
 
-    def callback(self, provider_id: str, raw_user_data: dict[str, Any]) -> Optional[User]:
-        """Complete a redirect-based (OAuth) handshake. Reserved."""
+    async def callback(self, request: Request, db: AsyncSession) -> User:
+        """Complete a redirect-based (OIDC) handshake and return the resolved user."""
         ...
 
 
 class PasswordIdentityProvider:
-    """Local-users password check (ported from ``auth_callback``).
+    """Local-users password check against the admin-plane ``users`` table.
 
-    Compares against ``settings.local_users`` with a constant-time
-    :func:`hmac.compare_digest` so the password check isn't timing-attackable (AU-3).
-    Passwords are still stored in cleartext in ``config.yml`` — a **dev-only**
-    mechanism carried over from Chainlit; production auth should go through a real
-    identity provider (see :func:`get_provider` / the OAuth seam). Hashed-at-rest
-    storage is a deferred follow-up (needs a hashing dependency + a config migration).
+    Previously compared against ``settings.local_users`` (plaintext, loaded once
+    from ``config.yml`` at process start). Local accounts now live in Postgres
+    (``app/db/models.py::User``, created via the first-run setup wizard or the
+    admin API), hashed with bcrypt (:func:`app.passwords.verify_password`, itself
+    timing-safe) — closing the AU-3 hashed-at-rest gap this used to defer.
     """
 
     name = "credentials"
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
-        for user in settings.local_users:
-            if user.get("username") == username and hmac.compare_digest(
-                str(user.get("password") or ""), str(password or "")
-            ):
-                return User(
-                    identifier=username,
-                    role=user.get("role", "user"),
-                    provider=self.name,
-                )
-        return None
+    async def authenticate(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
+        row = await db.scalar(select(UserRow).where(UserRow.provider == self.name, UserRow.username == username))
+        if row is None or not row.is_active or not row.password_hash:
+            return None
+        if not verify_password(password, row.password_hash):
+            return None
+        row.last_login_at = datetime.now(timezone.utc)
+        await db.commit()
+        return User(identifier=row.username, role=row.role, provider=self.name)
 
-    def callback(self, provider_id: str, raw_user_data: dict[str, Any]) -> Optional[User]:
+    async def callback(self, request: Request, db: AsyncSession) -> User:
         raise NotImplementedError("Password provider has no redirect callback")
 
 
@@ -119,9 +127,160 @@ def register_provider(provider: "IdentityProvider") -> None:
     _PROVIDERS[provider.name] = provider
 
 
+def unregister_provider(name: str) -> None:
+    """Remove a registered provider by its ``name``. Idempotent."""
+    _PROVIDERS.pop(name, None)
+
+
 def get_provider(name: str) -> Optional["IdentityProvider"]:
     """Return the identity provider for ``name``, or ``None`` if unregistered."""
     return _PROVIDERS.get(name)
+
+
+# --------------------------------------------------------------------------- #
+# Generic OIDC provider (Phase 4) -- authorization-code flow
+# --------------------------------------------------------------------------- #
+
+#: Short-lived cookie carrying this one login attempt's state/nonce, signed
+#: the same way as the session cookie (settings.jwt_secret) so it can't be
+#: forged -- there is deliberately no server-side flow-state store (matches
+#: the single-replica, in-memory-everything-else pattern used across the app).
+OIDC_FLOW_COOKIE = "oidc_flow"
+_OIDC_FLOW_TTL_SECONDS = 300
+
+
+def _callback_url(request: Request, provider_id: str) -> str:
+    """Must exactly match the ``redirect_uri`` sent at the start of the flow
+    (login_redirect_url) and again during token exchange (oidc.exchange_code)
+    -- OAuth requires it to be byte-identical on every leg, and it must match
+    what's registered with the identity provider.
+
+    ``settings.backend_public_url`` takes priority over ``request.base_url``
+    when set -- the request's own base URL reflects whatever host a reverse
+    proxy used to reach this container *internally* (e.g. a Vite dev server
+    or nginx proxying ``/api``), never the browser-facing origin the identity
+    provider redirects back to.
+    """
+    base = settings.backend_public_url or str(request.base_url).rstrip("/")
+    return f"{base}/api/auth/callback/{provider_id}"
+
+
+class GenericOidcProvider:
+    """Full authorization-code OIDC flow against an admin-configured issuer
+    (``app/db/models.py::OidcProvider`` -- this instance's ``name`` is that
+    row's ``provider_id``).
+
+    Config (issuer, client secret, scopes, ``is_enabled``, ``default_role``)
+    is read fresh from the DB on every call, never cached on this instance --
+    an admin edit (secret rotation, disabling, issuer change) takes effect on
+    the very next request. Only provider_id existing/not-existing needs a
+    registry update (see :func:`register_provider` / :func:`unregister_provider`,
+    called from ``routers/admin_oidc.py``'s create/delete).
+    """
+
+    def __init__(self, provider_id: str) -> None:
+        self.name = provider_id
+
+    async def authenticate(self, username: str, password: str, db: AsyncSession) -> Optional[User]:
+        return None  # OIDC providers have no password path
+
+    async def _row(self, db: AsyncSession) -> OidcProviderRow:
+        row = await db.scalar(select(OidcProviderRow).where(OidcProviderRow.provider_id == self.name))
+        if row is None or not row.is_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Identity provider '{self.name}' is not configured"
+            )
+        return row
+
+    async def login_redirect_url(self, request: Request, db: AsyncSession) -> tuple[str, str]:
+        """Return ``(authorization_url, flow_cookie_value)`` -- the caller
+        (``routers/auth.py``) sets the cookie and redirects the browser."""
+        from app import oidc
+
+        provider = await self._row(db)
+        try:
+            discovery = await oidc.fetch_discovery(provider.issuer_url)
+            state = secrets.token_urlsafe(24)
+            nonce = secrets.token_urlsafe(24)
+            redirect_uri = _callback_url(request, self.name)
+            auth_url = oidc.build_authorization_url(
+                discovery, provider, redirect_uri=redirect_uri, state=state, nonce=nonce
+            )
+        except oidc.OidcError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        now = datetime.now(timezone.utc)
+        flow_claims = {
+            "provider_id": self.name,
+            "state": state,
+            "nonce": nonce,
+            "iat": now,
+            "exp": now + timedelta(seconds=_OIDC_FLOW_TTL_SECONDS),
+        }
+        flow_cookie = jwt.encode(flow_claims, settings.jwt_secret, algorithm=_JWT_ALG)
+        return auth_url, flow_cookie
+
+    async def callback(self, request: Request, db: AsyncSession) -> User:
+        from app import oidc
+
+        provider = await self._row(db)
+
+        error = request.query_params.get("error")
+        if error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=f"Identity provider returned an error: {error}"
+            )
+
+        flow_cookie = request.cookies.get(OIDC_FLOW_COOKIE)
+        if not flow_cookie:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Login flow expired or was not started through this backend",
+            )
+        try:
+            flow = jwt.decode(flow_cookie, settings.jwt_secret, algorithms=[_JWT_ALG])
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Login flow expired or is invalid"
+            ) from exc
+        if flow.get("provider_id") != self.name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Login flow provider mismatch")
+
+        code = request.query_params.get("code")
+        state = request.query_params.get("state")
+        if not code or not state or state != flow.get("state"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or missing state/code")
+
+        redirect_uri = _callback_url(request, self.name)
+        try:
+            discovery = await oidc.fetch_discovery(provider.issuer_url)
+            tokens = await oidc.exchange_code(discovery, provider, code=code, redirect_uri=redirect_uri)
+            id_token = tokens.get("id_token")
+            if not id_token:
+                raise oidc.OidcError("Identity provider did not return an id_token")
+            claims = oidc.verify_id_token(discovery, provider, id_token, expected_nonce=flow.get("nonce", ""))
+            external_subject = claims.get("sub")
+            if not external_subject:
+                raise oidc.OidcError("id_token is missing a 'sub' claim")
+            row = await oidc.upsert_user(db, provider, external_subject, claims)
+        except oidc.OidcError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        return User(identifier=row.username, role=row.role, provider=row.provider)
+
+
+async def register_existing_oidc_providers(db: AsyncSession) -> None:
+    """Register every already-configured ``OidcProvider`` row so
+    :func:`get_provider` resolves them from the very first request.
+
+    Called once at startup (``app/main.py``'s lifespan, after migrations).
+    ``routers/admin_oidc.py`` keeps the registry in sync afterward for
+    create/delete; an update needs no registry change since
+    :class:`GenericOidcProvider` re-reads its row fresh on every call.
+    """
+    rows = (await db.scalars(select(OidcProviderRow))).all()
+    for row in rows:
+        register_provider(GenericOidcProvider(row.provider_id))
 
 
 # --------------------------------------------------------------------------- #
@@ -187,6 +346,25 @@ def verify_token(token: str) -> TokenClaims:
     return TokenClaims(**payload)
 
 
+def set_session_cookie(response: Response, token: str) -> None:
+    """Attach the signed session JWT as an httpOnly cookie.
+
+    Shared by every route that logs a user in (``routers/auth.py``'s ``/login``,
+    ``routers/setup.py``'s ``/bootstrap``). ``secure`` tracks ``debug`` (off locally
+    over http, on in prod behind nginx TLS); ``max_age`` matches the token TTL so the
+    browser drops the cookie in step with JWT expiry.
+    """
+    response.set_cookie(
+        key=settings.cookie_name,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        max_age=settings.token_ttl_seconds,
+        path="/",
+    )
+
+
 # --------------------------------------------------------------------------- #
 # FastAPI dependencies
 # --------------------------------------------------------------------------- #
@@ -212,3 +390,16 @@ def current_claims(session_cookie: Optional[str] = Cookie(default=None, alias=se
 def current_user(claims: TokenClaims = Depends(current_claims)) -> User:
     """Dependency: the authenticated :class:`User` derived from the cookie."""
     return User(identifier=claims.sub, role=claims.role, provider=claims.provider)
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    """Dependency: like :func:`current_user`, but 403s unless ``role == "admin"``.
+
+    Guards the admin API (``routers/admin_users.py`` and friends). The role comes
+    from the session JWT, minted at login from the ``users`` table -- a role change
+    via the admin API takes effect on that user's *next* login, not retroactively on
+    an already-issued token (same staleness window as the JWT's other claims).
+    """
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return user

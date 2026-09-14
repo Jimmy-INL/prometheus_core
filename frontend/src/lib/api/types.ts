@@ -159,6 +159,91 @@ export interface User {
   provider: string;
 }
 
+export interface SetupStatus {
+  needs_setup: boolean;
+}
+
+export interface AuthProvider {
+  provider_id: string;
+  display_name: string;
+}
+
+// --- admin: users -------------------------------------------------------------
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: string;
+  provider: string;
+  external_subject?: string | null;
+  email?: string | null;
+  display_name?: string | null;
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AdminUserCreate {
+  username: string;
+  password: string;
+  role: string;
+}
+
+export interface AdminUserUpdate {
+  role?: string;
+  password?: string;
+  is_active?: boolean;
+  display_name?: string;
+  email?: string;
+}
+
+// --- admin: signing keys -------------------------------------------------------
+
+export interface SigningKey {
+  id: string;
+  kid: string;
+  public_key_pem: string;
+  is_active: boolean;
+  created_at: string;
+  retired_at?: string | null;
+}
+
+// --- admin: OIDC identity providers --------------------------------------------
+
+export interface OidcProvider {
+  id: string;
+  provider_id: string;
+  display_name: string;
+  issuer_url: string;
+  client_id: string;
+  scopes: string;
+  default_role: string;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OidcProviderCreate {
+  provider_id: string;
+  display_name: string;
+  issuer_url: string;
+  client_id: string;
+  client_secret: string;
+  scopes: string;
+  default_role: string;
+  is_enabled: boolean;
+}
+
+export interface OidcProviderUpdate {
+  display_name?: string;
+  issuer_url?: string;
+  client_id?: string;
+  client_secret?: string;
+  scopes?: string;
+  default_role?: string;
+  is_enabled?: boolean;
+}
+
 export interface SessionResponse {
   conversation_id: string;
   profile: string;

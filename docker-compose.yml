@@ -14,6 +14,26 @@ x-common-env: &common-env
   DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
   DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
   PROMETHEUS_MAX_UPLOAD_BYTES: ${PROMETHEUS_MAX_UPLOAD_BYTES:-104857600}
+  # Multi-user identity plane (RS256 only -- see docs/dev-docs/multi-user-setup.md
+  # and prometheus_api/docs/agent/IDENTITY_KEY_MANAGEMENT.md). Only the backend
+  # mints (USER_IDENTITY_PRIVATE_KEY, set on the backend service below only);
+  # every service here just verifies, so only the public key belongs in this
+  # shared anchor. Generate a keypair with `prometheus-identity-keygen`.
+  #
+  # JWKS_URL defaults to the backend's own JWKS endpoint (reachable by every
+  # service on this network via its container name) -- this is what makes an
+  # admin-generated/rotated signing key (Admin > Signing Keys) verifiable
+  # without ever setting USER_IDENTITY_PUBLIC_KEY at all. Override only for an
+  # agent running outside this docker network (see .env.example).
+  JWKS_URL: ${JWKS_URL:-http://backend:8000/.well-known/jwks.json}
+  USER_IDENTITY_PUBLIC_KEY: ${USER_IDENTITY_PUBLIC_KEY:-}
+  USER_IDENTITY_ISS: ${USER_IDENTITY_ISS:-prometheus-platform}
+  USER_IDENTITY_AUD: ${USER_IDENTITY_AUD:-prometheus-agents}
+  USER_IDENTITY_REQUIRED: ${USER_IDENTITY_REQUIRED:-true}
+  # Multi-user credential plane: per-user JIT credentials for third-party
+  # resources (DeepLynx, SLURM). "env" (default) preserves today's global
+  # credential behavior; "vault" activates per-user Vault policies.
+  CREDENTIAL_BROKER: ${CREDENTIAL_BROKER:-env}
 
 x-common-volumes: &common-volumes
   - ./shared:/app/shared
@@ -31,6 +51,7 @@ networks:
 volumes:
   valkey-data:
   litellm-db-data:
+  admin-db-data:
 
 services:
 
@@ -48,6 +69,28 @@ services:
       - agent-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL — persistent store for the backend's admin plane (local users,
+  # OIDC provider config, RS256 signing keys). Deliberately separate from
+  # litellm-db: different lifecycle/ownership -- `make clear-litellm-db` must
+  # never touch admin data, and vice versa.
+  admin-db:
+    image: postgres:16-alpine
+    container_name: admin-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${ADMIN_DB_PASSWORD}
+      POSTGRES_DB: admin
+    volumes:
+      - admin-db-data:/var/lib/postgresql/data
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -144,14 +187,36 @@ services:
       # Session-cookie signing secret. BACKEND_JWT_SECRET takes precedence;
       # CHAINLIT_AUTH_SECRET is the documented fallback (see backend/app/config.py),
       # so it must be forwarded into the container or login fails with an empty key.
+      # Distinct from the USER_IDENTITY_* vars below -- this signs the browser
+      # session cookie, not the platform identity JWT agents verify.
       BACKEND_JWT_SECRET: ${BACKEND_JWT_SECRET:-}
       CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET:-}
+      # Multi-user identity plane: only the backend mints, so only the backend
+      # gets the private key. USER_IDENTITY_TTL (minted-token lifetime) is
+      # likewise a minting-only concern -- agents never need it. Once an admin
+      # generates a key through the admin UI, the DB-stored key takes
+      # precedence over this env var -- see backend/app/identity.py.
+      USER_IDENTITY_PRIVATE_KEY: ${USER_IDENTITY_PRIVATE_KEY:-}
+      USER_IDENTITY_TTL: ${USER_IDENTITY_TTL:-7200}
+      # Admin plane (local users, OIDC provider config, signing keys) --
+      # backend-only, never forwarded to agents.
+      ADMIN_DATABASE_URL: ${ADMIN_DATABASE_URL:-postgresql+asyncpg://admin:${ADMIN_DB_PASSWORD}@admin-db:5432/admin}
+      ADMIN_DB_ENCRYPTION_KEY: ${ADMIN_DB_ENCRYPTION_KEY:-}
+      # Base URL for the OIDC redirect_uri sent to identity providers -- must
+      # be the origin the BROWSER actually uses (e.g. the Vite dev server at
+      # http://localhost:5150, which proxies /api here; not this container's
+      # own internal host:port). Required once any OIDC provider is
+      # configured -- must exactly match that provider's registered redirect
+      # URI. See .env.example and docs/dev-docs/multi-user-setup.md.
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
     volumes: *common-volumes
     depends_on:
       redis:
         condition: service_started
       client-agent:
         condition: service_started
+      admin-db:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend-dev:

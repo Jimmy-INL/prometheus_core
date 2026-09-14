@@ -19,7 +19,7 @@ COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
 
 # Override this to pin a specific prometheus_api base image.
-PROMETHEUS_API_BASE_IMAGE_HASH ?= 0465517
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 23c9454
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include
@@ -173,7 +173,7 @@ PREREQUISITE_TARGETS := \
 
 $(PREREQUISITE_TARGETS): check-prerequisites
 
-.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg clear-litellm-db help
+.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg ensure-admin-encryption-key clear-litellm-db clear-admin-users help
 
 FORCE:
 
@@ -230,40 +230,55 @@ test-system: ##@ Test the user experience on an already-running platform (start 
 ##@
 
 up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
-up: generate
-	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
+up: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
+up: generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d
 
 up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
-up-fg: generate
-	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
+up-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
+up-fg: generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build
 
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
-restart: generate
-	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
+restart: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
+restart: generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d
 
 restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
-restart-fg: generate
-	$(MAKE) --no-print-directory CLEAR_COMPOSE_FILES="$(COMPOSE_FILES) $(PROFILE_FLAGS)" clear-litellm-db
+restart-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
+restart-fg: generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
-	$(MAKE) --no-print-directory clear-litellm-db
+ng-up: ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d
 
 ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
-	$(MAKE) --no-print-directory clear-litellm-db
+ng-up-fg: ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build
 
 ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
-	$(MAKE) --no-print-directory clear-litellm-db
+ng-restart: ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up -d
 
 ng-restart-fg: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating (foreground).
-	$(MAKE) --no-print-directory clear-litellm-db
+ng-restart-fg: ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up
+
+ensure-admin-encryption-key: ##@ Generate ADMIN_DB_ENCRYPTION_KEY in .env if not already set
+	@if [ ! -f .env ]; then \
+		exit 0; \
+	fi; \
+	if grep -qE '^ADMIN_DB_ENCRYPTION_KEY=.+' .env; then \
+		exit 0; \
+	fi; \
+	key=$$(openssl rand -base64 32 | tr '+/' '-_'); \
+	if grep -qE '^ADMIN_DB_ENCRYPTION_KEY=' .env; then \
+		sed -i.bak "s|^ADMIN_DB_ENCRYPTION_KEY=.*|ADMIN_DB_ENCRYPTION_KEY=$$key|" .env && rm -f .env.bak; \
+	else \
+		printf "\nADMIN_DB_ENCRYPTION_KEY=%s\n" "$$key" >> .env; \
+	fi; \
+	printf "Generated ADMIN_DB_ENCRYPTION_KEY in .env (admin-db secrets-at-rest encryption).\n"
 
 clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	$(COMPOSE) $(CLEAR_COMPOSE_FILES) down --remove-orphans
@@ -276,6 +291,14 @@ clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	else \
 		printf "LiteLLM DB volume %s does not exist; nothing to remove.\n" "$(LITELLM_DB_VOLUME)"; \
 	fi
+
+clear-admin-users: ##@ Delete all rows from admin-db's users table (re-triggers the first-run setup wizard)
+	@if ! $(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) ps --status running --services 2>/dev/null | grep -qx admin-db; then \
+		printf "admin-db is not running; start the platform first ('make up') before running this target.\n"; \
+		exit 1; \
+	fi
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) exec -T admin-db psql -U admin -d admin -c "TRUNCATE TABLE users;"
+	@printf "Deleted all rows from admin-db's users table -- the platform will show the first-run setup wizard again.\n"
 
 down: ##@ Stop all services
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down
