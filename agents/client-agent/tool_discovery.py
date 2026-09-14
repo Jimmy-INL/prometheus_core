@@ -69,35 +69,6 @@ def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
-# Host aliases that only resolve from inside a container. When the client-agent
-# runs on the host (hybrid dev: infra in Docker, agents on the host), a
-# specialist that registered with EXTERNAL_AGENT_URL=http://host.docker.internal:PORT
-# is reachable by the Dockerized LiteLLM proxy for A2A routing, but its direct
-# well-known card URL uses the same alias -- which the host cannot resolve
-# (ENOTFOUND). Routing still works (it goes through the registry), but
-# direct-card discovery silently fails and the orchestrator falls back to
-# LiteLLM's lossy card, which drops non-standard per-skill `inputSchema`.
-# Without the schema the planner invents wrong parameter names and the
-# specialist rejects the call. Rewrite the alias to localhost for the
-# direct-card fetch only when this process cannot resolve it (i.e. we are on
-# the host, not in a container). No-op in full-Docker mode and for non-alias URLs.
-_DOCKER_HOST_ALIASES = ("host.docker.internal", "gateway.docker.internal")
-
-
-def _host_reachable_direct_url(url: str) -> str:
-    normalized = _normalize_url(url)
-    if not normalized:
-        return normalized
-    for alias in _DOCKER_HOST_ALIASES:
-        if alias in normalized:
-            try:
-                _socket.getaddrinfo(alias, None)
-                return normalized  # resolvable here (in-container): leave as-is
-            except OSError:
-                return normalized.replace(alias, "localhost")
-    return normalized
-
-
 def is_self_agent(agent_id: str, agent_url: str) -> bool:
     """Return True when a discovered agent record points to this orchestrator.
 
@@ -149,7 +120,7 @@ async def get_agent_card(agent_id: str, direct_url: Optional[str] = None) -> Dic
     response drops non-standard per-skill metadata such as `inputSchema`.
     Falls back to LiteLLM and finally to the discovery summary payload.
     """
-    normalized_direct_url = _host_reachable_direct_url(direct_url or "")
+    normalized_direct_url = _normalize_url(direct_url or "")
     if normalized_direct_url:
         for path in ("/api/agent-card", "/.well-known/agent-card.json", "/.well-known/agent.json"):
             try:
