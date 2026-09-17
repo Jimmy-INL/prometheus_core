@@ -1,10 +1,10 @@
 /**
- * Chat-history list rendered in `LeftPanel`'s sidebar, under "New chat".
+ * Chat-history list rendered in `LeftPanel`'s sidebar.
  *
  * Fetches `GET /api/conversations/recent` (already user-scoped server-side —
  * see `backend/app/routers/conversations.py`) and re-fetches whenever
  * `historyVersion` changes (a turn completed, a new chat started, or a past
- * one was opened — see `lib/store/chat.ts`). Degrades to nothing rendered
+ * one was opened — see `lib/store/chat.ts`). Degrades to the header alone
  * when Redis is unavailable, matching the endpoint's graceful-degrade shape.
  *
  * `historyVersion` only bumps for events on the *currently open* conversation,
@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { chatStore, useChatState } from "@/lib/store/chat";
 import type { ConversationSummary } from "@/lib/api/types";
@@ -24,7 +25,11 @@ import { ChatHistoryItem } from "./ChatHistoryItem";
 
 const PENDING_POLL_MS = 8000;
 
-export function ChatHistory() {
+interface Props {
+  onNewChat: () => void;
+}
+
+export function ChatHistory({ onNewChat }: Props) {
   const { conversationId, historyVersion } = useChatState();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -38,9 +43,10 @@ export function ChatHistory() {
       .finally(() => setLoaded(true));
   }, []);
 
+  // `historyVersion` is a dependency purely to trigger a refetch on every
+  // history-affecting event; its value is never read here.
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch on every history-affecting event
   }, [historyVersion, refresh]);
 
   const anyPending = conversations.some((c) => c.pending);
@@ -52,27 +58,39 @@ export function ChatHistory() {
     };
   }, [anyPending, refresh]);
 
-  if (!loaded || conversations.length === 0) return null;
-
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      <div className="px-2 pb-1 text-xs font-medium uppercase text-base-content/40">Recent chats</div>
-      {conversations.map((c) => (
-        <ChatHistoryItem
-          key={c.conversation_id}
-          conversation={c}
-          active={c.conversation_id === conversationId}
-          onSelect={() => void chatStore.loadConversation(c.conversation_id)}
-          onRenamed={(title) =>
-            setConversations((prev) =>
-              prev.map((it) => (it.conversation_id === c.conversation_id ? { ...it, title } : it)),
-            )
-          }
-          onDeleted={() =>
-            setConversations((prev) => prev.filter((it) => it.conversation_id !== c.conversation_id))
-          }
-        />
-      ))}
+    <div className="flex flex-col gap-2 pb-3">
+      <p className="m-0 px-1 text-[11px] font-semibold text-base-content/60">Chat History</p>
+      <button
+        onClick={onNewChat}
+        className="flex items-center gap-1.5 px-1 text-xs text-base-content/60 transition-colors hover:text-base-content cursor-pointer"
+      >
+        <Plus size={12} />
+        New Chat
+      </button>
+
+      {loaded && conversations.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {conversations.map((c) => (
+            <ChatHistoryItem
+              key={c.conversation_id}
+              conversation={c}
+              active={c.conversation_id === conversationId}
+              onSelect={() => void chatStore.loadConversation(c.conversation_id)}
+              onRenamed={(title) =>
+                setConversations((prev) =>
+                  prev.map((it) => (it.conversation_id === c.conversation_id ? { ...it, title } : it)),
+                )
+              }
+              onDeleted={() =>
+                setConversations((prev) =>
+                  prev.filter((it) => it.conversation_id !== c.conversation_id),
+                )
+              }
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
