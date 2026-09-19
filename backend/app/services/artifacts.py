@@ -98,6 +98,7 @@ _FILE_MIMETYPES = {
     "application/x-step",
     "application/step+xml",
     "application/step+zip",
+    "application/x-ipynb+json",
 }
 
 # Extension → hint (UPLOAD_EXTENSIONS across plugins + the download list in
@@ -124,6 +125,7 @@ _EXTENSION_HINTS: dict[str, RenderHint] = {
     ".zip": "file",
     ".tar": "file",
     ".gz": "file",
+    ".ipynb": "file",
     ".xlsx": "file",
 }
 

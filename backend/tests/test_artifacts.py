@@ -52,6 +52,8 @@ from app.services.artifacts import (
         ({"mime_type": "text/markdown"}, "report"),  # A-1: rendered inline, not downloaded
         ({"mime_type": "text/plain"}, "report"),  # A-1: old app rendered plain text inline too
         ({"mime_type": "model/step"}, "file"),  # CAD → downloadable file
+        ({"mime_type": "application/x-ipynb+json"}, "file"),  # notebook → downloadable file
+        ({"name": "analysis.ipynb"}, "file"),  # notebook extension fallback
         ({"uri": "deeplynx://x/items/1", "name": "model.ifc"}, "ifc"),  # extension fallback
         ({"name": "report.pdf"}, "pdf"),
         ({"name": "notes.md"}, "report"),  # A-1: markdown extension fallback

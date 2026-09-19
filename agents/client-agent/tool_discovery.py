@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from langchain_core.tools import StructuredTool
@@ -212,6 +212,19 @@ def create_input_schema_from_skill(skill: Dict) -> type[BaseModel]:
             field_type = bool
         else:
             field_type = str
+
+        # Propagate an `enum` constraint into the tool schema as a Literal so the
+        # planner LLM is restricted to valid values. Without this the field
+        # degrades to a bare type and the planner can invent a plausible-but-
+        # invalid value (e.g. mode="forward_sampling" when the only allowed value
+        # is "toy_polynomial"), which the specialist then rejects.
+        enum_values = prop_schema.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            try:
+                field_type = Literal[tuple(enum_values)]  # type: ignore[valid-type]
+            except TypeError:
+                # Unhashable enum members (rare): leave the base type in place.
+                pass
 
         # Build field metadata once. For optional fields we must provide the default
         # directly to Field(...); mutating FieldInfo.default later does not reliably
