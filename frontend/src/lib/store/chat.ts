@@ -30,6 +30,8 @@ import type {
   TaskProgressEvent,
   UploadDescriptor,
 } from "@/lib/api/types";
+import { artifactsByAssistantTurn } from "./transcriptArtifacts";
+import { readOpenConversationId, saveOpenConversationId } from "./openConversation";
 
 // --- item model -------------------------------------------------------------
 
@@ -96,7 +98,18 @@ export interface ChatState {
    * a completed turn, a switch to another conversation) — components rendering
    * the history list re-fetch when this changes. */
   historyVersion: number;
+  /** Health of the `/api/events` SSE stream. `"reconnecting"` is benign —
+   * `EventSource` retries by itself. `"lost"` is not: it means `readyState`
+   * reached `CLOSED`, which only happens on a non-2xx response and is never
+   * retried, so live updates have stopped for good until something reconnects. */
+  connection: ConnectionState;
+  /** Set when the stream died *and* a `/api/auth/me` probe confirmed the session
+   * is gone. Watched by `useAuthLost()` so the UI can prompt for re-login
+   * instead of sitting there silently receiving nothing. */
+  authLost: boolean;
 }
+
+export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
 
 const initialState: ChatState = {
   ready: false,
@@ -106,6 +119,8 @@ const initialState: ChatState = {
   config: null,
   autoApprove: false,
   historyVersion: 0,
+  connection: "idle",
+  authLost: false,
 };
 
 let state: ChatState = initialState;
@@ -118,6 +133,11 @@ function emit(): void {
 }
 function set(patch: Partial<ChatState>): void {
   state = { ...state, ...patch };
+  // Mirror every conversation-id change into per-tab storage, so a page reload
+  // (see `bootstrap()`) resumes where it left off. Hooked here rather than at
+  // each of the three call sites (bootstrap / reset / loadConversation) so a
+  // future fourth one cannot forget it.
+  if ("conversationId" in patch) saveOpenConversationId(patch.conversationId ?? null);
   emit();
 }
 function setItems(update: (items: ChatItem[]) => ChatItem[]): void {
@@ -155,23 +175,14 @@ function assistantFrom(res: ChatMessageResponse, text: string): AssistantItem {
   };
 }
 
-/** Map a resumed conversation's normalized transcript to renderable items.
- * Artifacts aren't correlated per-turn server-side, so the whole catalog is
- * attached to the last assistant turn (best-effort — matches what a live
- * completed-turn response would have shown at the time). */
+/** Map a resumed conversation's normalized transcript to renderable items. */
 function itemsFromTranscript(messages: ConversationMessage[], artifacts: ArtifactMeta[]): ChatItem[] {
-  const items: ChatItem[] = messages.map((m) =>
+  const buckets = artifactsByAssistantTurn(messages, artifacts);
+  return messages.map((m, i) =>
     m.role === "user"
       ? { id: nextId("user"), kind: "user", text: m.content }
-      : assistantItem(m.content),
+      : assistantItem(m.content, buckets[i]),
   );
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    if (items[i].kind === "assistant") {
-      (items[i] as AssistantItem).artifacts = artifacts;
-      break;
-    }
-  }
-  return items;
 }
 
 /** Mark the in-flight turn's ToolStep done (leaves its progress trace collapsed). */
@@ -337,13 +348,55 @@ function onTaskDone(e: TaskDoneEvent): void {
 
 // --- actions ----------------------------------------------------------------
 
+/** Rebind the server session to `conversationId` and replay its transcript.
+ * Shared by `loadConversation()` (sidebar click) and `bootstrap()` (recovering
+ * the open conversation after a reload) so the two cannot drift apart. */
+async function applyResume(conversationId: string): Promise<void> {
+  const detail = await api.resumeConversation(conversationId);
+  set({
+    conversationId: detail.conversation_id,
+    autoApprove: detail.auto_approve_steps,
+    items: itemsFromTranscript(detail.messages, detail.artifacts),
+  });
+}
+
+let bootstrapping = false;
+
 async function bootstrap(profile?: string): Promise<void> {
+  // The run-once guard lives here rather than in a React ref on purpose. A Fast
+  // Refresh re-executes this module (resetting `state`, so `ready` goes back to
+  // false) but does *not* reset a component ref — so a ref guard stayed `true`
+  // while `ready` was false, and the UI wedged on an empty transcript with
+  // nothing in the console. Guard and guarded state are re-initialised together
+  // here, so that cannot happen. See RELOAD.md cause 4.
+  if (bootstrapping || state.ready) return;
+  bootstrapping = true;
   try {
     const config = await api.getConfig();
+    set({ config });
+
+    // A reload used to drop the user into an empty new chat with the previous
+    // conversation orphaned in Valkey. If this tab had one open, resume it.
+    const saved = readOpenConversationId();
+    if (saved) {
+      try {
+        await applyResume(saved);
+        set({ ready: true });
+        return;
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 404) throw err;
+        // 404 is definitive: soft-deleted, not ours, or evicted from Valkey.
+        // Drop the id and start clean. Any other failure (network, 5xx) is
+        // transient, so it propagates to the outer catch instead — that keeps
+        // the saved id for the next attempt rather than silently forking a new
+        // conversation and abandoning the old one on a momentary blip.
+        saveOpenConversationId(null);
+      }
+    }
+
     const session = await api.createSession(profile);
     set({
       ready: true,
-      config,
       conversationId: session.conversation_id,
       autoApprove: session.auto_approve_steps,
     });
@@ -351,17 +404,51 @@ async function bootstrap(profile?: string): Promise<void> {
     // Surface a bootstrap failure but still let the UI render (empty).
     set({ ready: true });
     appendError(err instanceof Error ? err.message : "Failed to start session.");
+  } finally {
+    bootstrapping = false;
+  }
+}
+
+/** React to an `/api/events` error. See `EventStreamHandlers.onError` for why
+ * `closed` is the whole question. */
+async function onStreamError({ closed }: { closed: boolean }): Promise<void> {
+  if (!closed) {
+    set({ connection: "reconnecting" });
+    return;
+  }
+  set({ connection: "lost" });
+  // A closed stream is usually an expired session cookie (the TTL is 24h, so a
+  // tab left open overnight hits it), but it can also be a 502 from a
+  // restarting backend. Probe before declaring the session dead: bouncing
+  // someone to Login over a momentary proxy failure is the bug that made this
+  // whole area feel flaky in the first place.
+  try {
+    await api.me();
+    appendError("Live updates stopped. Reload the page to reconnect.");
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      set({ authLost: true });
+    } else {
+      appendError("Live updates stopped — the server is unreachable. Reload the page to reconnect.");
+    }
   }
 }
 
 function connect(): void {
   if (closeStream) return;
-  closeStream = openEventStream({ onStatus, onTaskProgress, onTaskDone });
+  closeStream = openEventStream({
+    onStatus,
+    onTaskProgress,
+    onTaskDone,
+    onOpen: () => set({ connection: "open" }),
+    onError: (info) => void onStreamError(info),
+  });
 }
 
 function disconnect(): void {
   closeStream?.();
   closeStream = null;
+  set({ connection: "idle" });
 }
 
 async function post(body: ChatMessageRequest): Promise<void> {
@@ -468,12 +555,7 @@ async function loadConversation(conversationId: string): Promise<void> {
   awaitedTaskIds.clear();
   set({ items: [], awaiting: false });
   try {
-    const detail = await api.resumeConversation(conversationId);
-    set({
-      conversationId: detail.conversation_id,
-      autoApprove: detail.auto_approve_steps,
-      items: itemsFromTranscript(detail.messages, detail.artifacts),
-    });
+    await applyResume(conversationId);
   } catch (err) {
     appendError(err instanceof Error ? err.message : "Failed to open conversation.");
   }
@@ -491,10 +573,23 @@ export const chatStore = {
   decidePlan,
   stop,
   reset,
-  /** Test/escape hatch: reset in-memory state (not used by the app). */
-  _clear(): void {
+  /** Auth expired mid-session: tear the stream down and let the UI fall back to
+   * Login, but **keep** the remembered conversation id so signing back in
+   * resumes the same conversation instead of opening an empty one. */
+  suspendForReauth(): void {
+    disconnect();
+    bootstrapping = false;
+    set({ ready: false, authLost: false, awaiting: false });
+  },
+  /** Drop every trace of the signed-in user's chat: close the stream, forget
+   * awaited tasks and the remembered conversation id, and reset state. Called
+   * on logout (App.tsx), so the next user in this tab cannot inherit the
+   * previous one's open conversation. */
+  clear(): void {
     disconnect();
     awaitedTaskIds.clear();
+    saveOpenConversationId(null);
+    bootstrapping = false;
     state = initialState;
     emit();
   },
@@ -515,4 +610,11 @@ function getSnapshot(): ChatState {
 /** Subscribe a component to the whole chat state. */
 export function useChatState(): ChatState {
   return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/** Narrow subscription for App.tsx. Deliberately not `useChatState().authLost`:
+ * App renders the entire tree, and the full state changes on every streamed
+ * status update. Returning a boolean keeps re-renders to the transition itself. */
+export function useAuthLost(): boolean {
+  return useSyncExternalStore(subscribe, () => state.authLost);
 }

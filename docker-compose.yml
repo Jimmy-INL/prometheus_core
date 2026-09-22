@@ -52,6 +52,10 @@ volumes:
   valkey-data:
   litellm-db-data:
   admin-db-data:
+  # Converted Exodus/STL -> VTP datasets, content-hash keyed. Not a cache of
+  # convenience: without a volume it lands in the container's /tmp and every
+  # backend restart silently re-converts every mesh a user reopens.
+  mesh-cache:
 
 services:
 
@@ -184,13 +188,11 @@ services:
     environment:
       <<: *common-env
       CLIENT_AGENT_URL: ${CLIENT_AGENT_URL:-http://client-agent:8000}
-      # Session-cookie signing secret. BACKEND_JWT_SECRET takes precedence;
-      # CHAINLIT_AUTH_SECRET is the documented fallback (see backend/app/config.py),
-      # so it must be forwarded into the container or login fails with an empty key.
+      # Session-cookie signing secret. Must be forwarded into the container and
+      # non-empty or the backend refuses to start (backend/app/main.py).
       # Distinct from the USER_IDENTITY_* vars below -- this signs the browser
       # session cookie, not the platform identity JWT agents verify.
       BACKEND_JWT_SECRET: ${BACKEND_JWT_SECRET:-}
-      CHAINLIT_AUTH_SECRET: ${CHAINLIT_AUTH_SECRET:-}
       # Multi-user identity plane: only the backend mints, so only the backend
       # gets the private key. USER_IDENTITY_TTL (minted-token lifetime) is
       # likewise a minting-only concern -- agents never need it. Once an admin
@@ -209,7 +211,39 @@ services:
       # configured -- must exactly match that provider's registered redirect
       # URI. See .env.example and docs/dev-docs/multi-user-setup.md.
       BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
-    volumes: *common-volumes
+      # Mesh (Exodus/STL -> VTP) conversion. The cache must sit on the named
+      # volume mounted below, not in the container's /tmp. PROMETHEUS_MESH_WORKERS
+      # is the VTK subprocess-pool size *per web worker*: with BACKEND_WORKERS=N
+      # the peak child count is N x this, which is what BACKEND_MEM_LIMIT has to
+      # cover. See backend/app/services/mesh/service.py.
+      PROMETHEUS_MESH_CACHE_DIR: /var/cache/prometheus-mesh
+      PROMETHEUS_MESH_WORKERS: ${PROMETHEUS_MESH_WORKERS:-2}
+      PROMETHEUS_MESH_TIMEOUT_SECONDS: ${PROMETHEUS_MESH_TIMEOUT_SECONDS:-120}
+      # uvicorn worker count (backend/docker-entrypoint.sh). >1 is valid now --
+      # session state, the SSE event bus and session revocation all live in Valkey,
+      # and migrations run once from the entrypoint rather than once per worker --
+      # but the default stays 1: raising it is a deliberate operational decision,
+      # and it multiplies the VTK child count above.
+      BACKEND_WORKERS: ${BACKEND_WORKERS:-1}
+    # Written out rather than using *common-volumes: YAML has no merge key for
+    # sequences, so an anchored list cannot be extended. Keep ./shared in sync
+    # with the x-common-volumes anchor above.
+    volumes:
+      - ./shared:/app/shared
+      - mesh-cache:/var/cache/prometheus-mesh
+    # VTK conversion happens in child processes inside this container, so their
+    # memory counts against this cgroup. The limit is what turns "a pathological
+    # mesh ate the host" into one OOM-killed child that degrades a single
+    # artifact (BrokenProcessPool, handled in mesh/service.py).
+    mem_limit: ${BACKEND_MEM_LIMIT:-4g}
+    # Without this, `restart: unless-stopped` silently papers over a backend that
+    # boots but cannot serve -- the container shows "Up" either way.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     depends_on:
       redis:
         condition: service_started
@@ -233,7 +267,6 @@ services:
     networks:
       - agent-network
     environment:
-      VITE_CHAINLIT_SERVER: http://chainlit-frontend:8500
       # backend is a sibling container on agent-network. Proxy /api to it by
       # service name + internal port (8000), NOT the host-mapped 8600 — inside this
       # container localhost:8600 is its own loopback and refuses the connection.
@@ -242,9 +275,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    # depends_on:
-    #   chainlit-frontend:
-    #     condition: service_started
     restart: unless-stopped
 
   frontend-prod:

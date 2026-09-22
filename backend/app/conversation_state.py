@@ -91,6 +91,13 @@ class ConversationStateClient:
         turns. This keeps only entries with a ``role`` of ``user``/``assistant``
         and non-empty ``content``, in original order, as ``{role, content,
         timestamp}``.
+
+        Consecutive entries with the same role *and* identical content collapse to
+        one. The client-agent logs each answer twice — once as
+        ``type: agent_response_<tool>`` and again as ``type: final_report``, with the
+        same ``content`` — so without this every restored assistant turn would appear
+        duplicated. Only *adjacent* repeats are dropped, so a genuinely repeated
+        answer later in the conversation still shows up.
         """
         conv = self.get_conversation(conv_id)
         if not conv:
@@ -104,9 +111,12 @@ class ConversationStateClient:
             content = entry.get("content")
             if role not in ("user", "assistant") or not content:
                 continue
+            text = str(content)
+            if messages and messages[-1]["role"] == role and messages[-1]["content"] == text:
+                continue
             messages.append({
                 "role": role,
-                "content": str(content),
+                "content": text,
                 "timestamp": entry.get("timestamp", ""),
             })
         return messages

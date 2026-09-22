@@ -8,7 +8,7 @@ import { FollowupForm } from "./chat/FollowupForm";
 import { WelcomeScreen } from "./chat/WelcomeScreen";
 import { Markdown } from "./Markdown";
 import { ElementList } from "./ElementRenderer";
-import { artifactsToElements } from "@/lib/chainlit/artifactAdapter";
+import { artifactsToElements } from "@/lib/elements/artifactAdapter";
 
 // ---------------------------------------------------------------------------
 // Sub-components

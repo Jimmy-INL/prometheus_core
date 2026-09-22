@@ -2,8 +2,8 @@
 
 For every artifact the classifier routes to the ``"mesh"`` render hint, this resolves
 the raw Exodus/STL bytes (reusing :func:`app.uri_resolver.resolve_to_local_path`),
-converts them to ``.vtp`` timesteps + a manifest off the event loop (thread pool,
-content-hash cached), and sets ``json_body`` to the exact prop shape
+converts them to ``.vtp`` timesteps + a manifest off the event loop (in a *subprocess*
+pool, content-hash cached), and sets ``json_body`` to the exact prop shape
 ``frontend/src/viewers/mesh/MeshViewerElement.tsx`` reads. The ``.vtp`` files are served
 by ``GET /api/artifacts/mesh/{dataset_id}/{filename}`` (see ``routers/artifacts.py``),
 so ``baseUrl`` points there.
@@ -12,18 +12,28 @@ On any failure the artifact's ``json_body`` is left unset (``None``) so the fron
 adapter cleanly degrades to a file download — restoring rendering must never break a turn.
 
 IMPORTANT: the VTK-dependent converter modules are imported lazily inside
-:func:`_convert_sync` (which runs in the thread pool), so importing this module — as
+:func:`_convert_sync` (which runs in a worker subprocess), so importing this module — as
 ``routers/artifacts.py`` and ``services/chat.py`` both do — never pulls in ``vtk``. The
-offline backend test suite has no VTK installed.
+offline backend test suite has no VTK installed, and with the conversion out-of-process
+the web process never imports VTK at all.
+
+WHY A SUBPROCESS AND NOT A THREAD: VTK is a large C++ library reached through Python
+bindings. A segfault or an OOM kill inside it takes down the whole interpreter — which,
+with a thread pool, is the web process, dropping every in-flight conversation on the
+floor (the most plausible source of the unexplained restarts in ``RELOAD.md`` §3). In a
+child process the same crash costs exactly one artifact: :func:`_enrich_one` catches it
+and the frontend adapter degrades that artifact to a file download.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import multiprocessing
 import shutil
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -50,16 +60,74 @@ _STL_MIMES = {
     "model/x.stl-ascii",
 }
 
-# Dedicated thread pool for CPU-bound VTK work — 2 workers to bound memory on large
-# meshes (mirrors the old components/mesh_view.py::_vtk_executor).
-_vtk_executor: Optional[ThreadPoolExecutor] = None
+# Dedicated *process* pool for CPU-bound VTK work. Built lazily so importing this
+# module (which routers/artifacts.py and services/chat.py both do at startup) costs
+# nothing, and dropped whenever a child dies so the next call rebuilds it.
+#
+# All access happens from the event-loop thread (every caller is a coroutine and none
+# of the accessors await), so the bare global needs no lock.
+_vtk_executor: Optional[ProcessPoolExecutor] = None
 
 
-def _executor() -> ThreadPoolExecutor:
+def _executor() -> ProcessPoolExecutor:
     global _vtk_executor
     if _vtk_executor is None:
-        _vtk_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mesh-vtk-")
+        # "spawn", never "fork": forking a live asyncio server — with its selector,
+        # its httpx/redis connection pools and its threads — into a child that then
+        # loads VTK is undefined behaviour. spawn starts a clean interpreter that
+        # imports only what _convert_sync needs.
+        #
+        # max_tasks_per_child=1 retires each worker after one conversion. VTK does
+        # not reliably release memory between datasets, so a long-lived worker
+        # ratchets upward until it hits the container limit; a fresh process per
+        # conversion bounds that at one mesh. The cost is one spawn + VTK import
+        # (order of a second) per conversion, paid only when the content-hash cache
+        # misses. Requires Python >= 3.11; the image is 3.13.
+        _vtk_executor = ProcessPoolExecutor(
+            max_workers=settings.mesh_workers,
+            mp_context=multiprocessing.get_context("spawn"),
+            max_tasks_per_child=1,
+        )
     return _vtk_executor
+
+
+def _discard_executor(*, kill_children: bool) -> None:
+    """Drop the current pool so the next :func:`_executor` call builds a fresh one.
+
+    A :class:`BrokenProcessPool` poisons the executor for *every* subsequent submit,
+    not just the one whose child died, so the pool cannot be reused after a crash —
+    it has to be replaced.
+
+    ``kill_children`` is for the timeout path. ``shutdown(cancel_futures=True)``
+    cancels work that has not started yet but cannot interrupt a call already running
+    in a child, so a wedged VTK conversion would keep burning a core indefinitely.
+    Terminating the worker processes is the only way to stop it. That is also why a
+    timeout may abort a *different* conversion that happened to be running
+    concurrently: it degrades down the same "no mesh data" path as any other failure.
+    """
+    global _vtk_executor
+    executor, _vtk_executor = _vtk_executor, None
+    if executor is None:
+        return
+    if kill_children:
+        # `_processes` is private, so guard it: on a CPython that renames it we still
+        # get the cancel-pending-work half below, just not the hard kill.
+        for proc in list((getattr(executor, "_processes", None) or {}).values()):
+            try:
+                if proc.is_alive():
+                    proc.kill()
+            except Exception:  # pragma: no cover - best-effort teardown
+                logger.debug("mesh: could not kill worker %r", proc, exc_info=True)
+    executor.shutdown(wait=False, cancel_futures=True)
+
+
+def shutdown_mesh_executor() -> None:
+    """Tear the pool down on app shutdown (called from the ``main.py`` lifespan).
+
+    Without this, spawned workers outlive the server on a graceful stop and the
+    container lingers until Docker's kill timeout expires.
+    """
+    _discard_executor(kill_children=True)
 
 
 def mesh_cache_root() -> Path:
@@ -112,10 +180,14 @@ def _build_json_body(dataset_id: str, manifest: dict, metadata: dict, title: str
 
 
 def _convert_sync(local_path: Path, cache_root: Path, name: str, uri: str, mime: str) -> tuple[str, dict, dict]:
-    """Convert a resolved mesh file to a cached VTP set. Runs in the thread pool.
+    """Convert a resolved mesh file to a cached VTP set. Runs in a worker subprocess.
 
     Returns ``(dataset_id, manifest, metadata)``. VTK is imported lazily here so the
     module import graph stays vtk-free.
+
+    Every argument (``str``, ``Path``) and the whole return value are picklable, which
+    is what lets this run out-of-process unchanged. The only channel back to the parent
+    besides that tuple is the cache directory on disk, which both sides address by path.
     """
     import json
 
@@ -140,6 +212,57 @@ def _convert_sync(local_path: Path, cache_root: Path, name: str, uri: str, mime:
     return result.dataset_id, manifest, result.metadata
 
 
+async def _convert_offloop(
+    local_path: Path,
+    cache_root: Path,
+    name: str,
+    uri: str,
+    mime: str,
+    *,
+    ident: str,
+) -> Optional[tuple[str, dict, dict]]:
+    """Run :func:`_convert_sync` in the VTK subprocess pool, bounded by a timeout.
+
+    Returns ``None`` (having logged) when the conversion could not be completed, which
+    the caller turns into an un-enriched artifact. This is the whole "run VTK without
+    risking the web process" concern in one place; :func:`_enrich_one` above it only
+    resolves the source and stamps the result.
+
+    The two failures worth naming:
+
+    * :class:`BrokenProcessPool` — the worker died (VTK segfault, or the kernel
+      OOM-killed it). With the old thread pool this was an interpreter-level crash that
+      took every live conversation with it. The pool is poisoned for all later submits,
+      so it is dropped and the next call builds a fresh one.
+    * timeout — a wedged conversion cannot be cancelled cooperatively, so the workers
+      are killed. See :func:`_discard_executor` for why that can also abort a
+      concurrent conversion.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_executor(), _convert_sync, local_path, cache_root, name, uri, mime),
+            timeout=settings.mesh_timeout_seconds,
+        )
+    except BrokenProcessPool:
+        logger.warning(
+            "mesh: conversion worker died for artifact %s (%s); rebuilding the pool",
+            ident,
+            name or uri,
+        )
+        _discard_executor(kill_children=False)
+        return None
+    except asyncio.TimeoutError:
+        logger.warning(
+            "mesh: conversion exceeded %ss for artifact %s (%s); killing the pool",
+            settings.mesh_timeout_seconds,
+            ident,
+            name or uri,
+        )
+        _discard_executor(kill_children=True)
+        return None
+
+
 async def _enrich_one(artifact: dict[str, Any], uri: str, cache_root: Path) -> Optional[dict[str, Any]]:
     """Resolve + convert one mesh artifact into its ``json_body``, or ``None`` on failure."""
     ident = artifact_identity(artifact)
@@ -154,10 +277,10 @@ async def _enrich_one(artifact: dict[str, Any], uri: str, cache_root: Path) -> O
         if local_path is None or not local_path.exists():
             logger.warning("mesh: could not resolve %r for artifact %s", uri, ident)
             return None
-        loop = asyncio.get_running_loop()
-        dataset_id, manifest, metadata = await loop.run_in_executor(
-            _executor(), _convert_sync, local_path, cache_root, name, uri, mime
-        )
+        converted = await _convert_offloop(local_path, cache_root, name, uri, mime, ident=ident)
+        if converted is None:
+            return None
+        dataset_id, manifest, metadata = converted
     finally:
         # For file:// sources resolve_to_local_path returns the original path (outside
         # download_dir), so this only cleans up http(s)/deeplynx downloads.
@@ -166,19 +289,18 @@ async def _enrich_one(artifact: dict[str, Any], uri: str, cache_root: Path) -> O
     return _build_json_body(dataset_id, manifest, metadata, name or "Mesh Viewer")
 
 
-async def enrich_mesh_artifacts(response: "ConversationResponse") -> None:
-    """Populate ``json_body`` for every mesh artifact on ``response``, in place.
+async def enrich_mesh_artifact_dicts(artifacts: list[dict[str, Any]]) -> None:
+    """Populate ``json_body`` for every mesh artifact in *artifacts*, in place.
 
-    Enriches across the union of ``new_artifacts`` (shaped for the wire) and
-    ``artifacts`` (the persisted catalog), deduped by identity so each dataset is
-    converted once; the content-hash cache also makes any repeat (e.g. history
-    re-render) free. Failures are swallowed — the artifact keeps ``json_body: None``.
+    The list-based core shared by the live turn (:func:`enrich_mesh_artifacts`, which
+    unions a response's ``new_artifacts`` + ``artifacts``) and conversation resume
+    (``routers/conversations.py``, which passes the persisted catalog straight from
+    Redis). Entries are deduped by identity so each dataset is converted once, and the
+    content-hash cache makes any repeat — notably re-rendering a past conversation whose
+    meshes were already converted live — free. Failures are swallowed: the artifact
+    keeps ``json_body: None`` and the frontend adapter degrades to a file download.
     """
-    all_artifacts: list[dict[str, Any]] = [
-        a
-        for a in (list(getattr(response, "new_artifacts", None) or []) + list(getattr(response, "artifacts", None) or []))
-        if isinstance(a, dict)
-    ]
+    all_artifacts: list[dict[str, Any]] = [a for a in artifacts if isinstance(a, dict)]
     if not all_artifacts:
         return
 
@@ -217,3 +339,15 @@ async def enrich_mesh_artifacts(response: "ConversationResponse") -> None:
         body = bodies.get(artifact_identity(artifact))
         if body is not None:
             artifact["json_body"] = body
+
+
+async def enrich_mesh_artifacts(response: "ConversationResponse") -> None:
+    """Enrich the mesh artifacts carried by a live turn's *response*, in place.
+
+    Thin wrapper over :func:`enrich_mesh_artifact_dicts`: unions ``new_artifacts``
+    (shaped for the wire) and ``artifacts`` (the persisted catalog) — both point at the
+    same dicts for a shared artifact, so stamping either is enough.
+    """
+    await enrich_mesh_artifact_dicts(
+        list(getattr(response, "new_artifacts", None) or []) + list(getattr(response, "artifacts", None) or [])
+    )

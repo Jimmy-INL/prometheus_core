@@ -33,13 +33,15 @@ from app.config import settings
 from app.contract import (
     ConversationDetailResponse,
     ConversationHistoryResponse,
+    ConversationMessage,
     ConversationRenameRequest,
     ConversationSummary,
 )
 from app.conversation_state import ConversationStateClient
 from app.security import TokenClaims, current_claims
 from app.services.artifacts import shape_artifacts
-from app.sessions import SessionState, SessionStore
+from app.services.mesh.service import enrich_mesh_artifact_dicts
+from app.sessions import SessionState, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +62,6 @@ def _client() -> ConversationStateClient:
         inst = cls(settings.redis_url)
         _client_cache[cls] = inst
     return inst
-
-
-def _get_store(request: Request) -> SessionStore:
-    return cast(SessionStore, request.app.state.session_store)
 
 
 def _fetch_recent(limit: int, user_id: str) -> tuple[bool, list[dict]]:
@@ -91,35 +89,61 @@ async def get_recent_conversations(
     )
 
 
-def _build_detail(client: ConversationStateClient, conv_id: str) -> ConversationDetailResponse:
-    """Assemble the detail/resume response from the raw store (caller has already
-    checked ownership)."""
-    conv = client.get_conversation(conv_id) or {}
-    meta = client.get_meta(conv_id)
-    title = meta.get("title_override") or conv.get("title") or conv.get("user_query", "")
-    messages = client.get_transcript(conv_id)
-    raw_artifacts = client.get_artifacts(conv_id)
-    return ConversationDetailResponse(
-        conversation_id=conv_id,
-        title=title,
-        profile=str(conv.get("profile") or ""),
-        messages=[{"role": m["role"], "content": m["content"], "timestamp": m["timestamp"]} for m in messages],
-        artifacts=shape_artifacts(raw_artifacts),
-    )
+def _fetch_detail_parts(conv_id: str, user_id: str) -> tuple[bool, dict[str, Any] | None]:
+    """Blocking ownership check + raw store reads, run in a worker thread.
 
-
-def _fetch_detail(conv_id: str, user_id: str) -> tuple[bool, Any]:
-    """Blocking ownership check + detail assembly, run in a worker thread.
-
-    Returns ``(found, detail_or_none)``: ``found`` is ``False`` when Redis is down,
+    Returns ``(found, parts_or_none)``: ``found`` is ``False`` when Redis is down,
     the conversation doesn't exist, or it isn't owned by *user_id* — the caller maps
     that uniformly to 404 so a non-owner can't distinguish "doesn't exist" from "not
     yours".
+
+    Stops at the *raw* artifact dicts rather than returning a finished response,
+    because mesh enrichment (:func:`_load_detail`) is async and must run on the event
+    loop, not in this thread.
     """
     client = _client()
     if not client.available or not client.owns(user_id, conv_id):
         return False, None
-    return True, _build_detail(client, conv_id)
+    conv = client.get_conversation(conv_id) or {}
+    meta = client.get_meta(conv_id)
+    return True, {
+        "title": meta.get("title_override") or conv.get("title") or conv.get("user_query", ""),
+        "profile": str(conv.get("profile") or ""),
+        "messages": client.get_transcript(conv_id),
+        "raw_artifacts": client.get_artifacts(conv_id),
+    }
+
+
+async def _load_detail(conv_id: str, user_id: str) -> tuple[bool, Any, list[dict[str, Any]]]:
+    """Assemble the detail/resume response, enriching mesh artifacts on the way.
+
+    Returns ``(found, detail_or_none, raw_artifacts)``. The raw catalog is handed back
+    so ``resume`` can seed ``session.artifacts`` from it instead of re-reading Redis.
+
+    The mesh pass is what makes restored conversations mount the interactive
+    MeshViewer: the frontend adapter only builds a viewer element when a mesh
+    artifact's ``json_body`` carries the VTP manifest, and the persisted catalog has
+    ``json_body: None`` (the live turn's manifest is computed on the fly and never
+    written back). Without this the whole restored transcript degrades to download
+    cards. Enrichment is content-hash cached, so a conversation whose meshes were
+    already converted live costs a cache hit.
+    """
+    found, parts = await asyncio.to_thread(_fetch_detail_parts, conv_id, user_id)
+    if not found or parts is None:
+        return False, None, []
+
+    raw_artifacts = cast(list[dict[str, Any]], parts["raw_artifacts"])
+    await enrich_mesh_artifact_dicts(raw_artifacts)
+
+    messages = cast(list[dict[str, Any]], parts["messages"])
+    detail = ConversationDetailResponse(
+        conversation_id=conv_id,
+        title=cast(str, parts["title"]),
+        profile=cast(str, parts["profile"]),
+        messages=[ConversationMessage(**m) for m in messages],
+        artifacts=shape_artifacts(raw_artifacts),
+    )
+    return True, detail, raw_artifacts
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
@@ -127,7 +151,7 @@ async def get_conversation_detail(
     conversation_id: str,
     claims: TokenClaims = Depends(current_claims),
 ) -> ConversationDetailResponse:
-    found, detail = await asyncio.to_thread(_fetch_detail, conversation_id, claims.sub)
+    found, detail, _ = await _load_detail(conversation_id, claims.sub)
     if not found:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return cast(ConversationDetailResponse, detail)
@@ -183,17 +207,31 @@ async def resume_conversation(
     """Rebind the caller's session to a past conversation so the next chat turn
     continues it. Returns its transcript + artifact catalog in the same call so
     the frontend can render history and resume in one round-trip."""
-    found, detail = await asyncio.to_thread(_fetch_detail, conversation_id, claims.sub)
+    found, detail, raw_artifacts = await _load_detail(conversation_id, claims.sub)
     if not found:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     detail = cast(ConversationDetailResponse, detail)
 
-    store = _get_store(request)
-    session: SessionState = store.get_or_create(claims.sid)
-    session.conversation_id = conversation_id
-    session.artifacts = await asyncio.to_thread(_client().get_artifacts, conversation_id)
-    session.awaited_task_ids = set()
-    session.consecutive_needs_info = 0
+    store = get_store(request)
+    session: SessionState = await store.get_or_create(claims.sid)
+    # Resuming the conversation the session is already on (the reload path) keeps the
+    # awaited-task set, so a task backgrounded before the reload still streams its
+    # `task_progress` / `task_done` into the resumed session -- the ids now live in
+    # Valkey rather than in a process-local SessionState, which is what RELOAD.md
+    # Tier 2.2 deferred to Tier 4. Switching to a *different* conversation still
+    # clears it: those ids only resolve against the conversation that produced them
+    # (see SessionStore.reset). Either way the history sidebar marks a conversation
+    # pending while `agent:status:{id}` is live, and the result lands in the transcript.
+    #
+    # ``raw_artifacts`` is the catalog _load_detail already read (and mesh-enriched);
+    # seeding it here avoids re-reading Redis, and the content proxy resolves
+    # artifact ids out of this list.
+    await store.reset(
+        claims.sid,
+        conversation_id,
+        artifacts=raw_artifacts,
+        keep_awaited=session.conversation_id == conversation_id,
+    )
 
     detail.auto_approve_steps = settings.auto_approve_steps
     return detail

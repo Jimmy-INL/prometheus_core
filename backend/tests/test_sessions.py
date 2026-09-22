@@ -7,14 +7,10 @@ def _authed(monkeypatch, *, sid: str = "sid-session") -> TestClient:
     from app import security
     from app.config import settings
     from app.main import app
-    from app.sessions import SessionStore
 
     monkeypatch.setattr(settings, "jwt_secret", "test-secret", raising=False)
     monkeypatch.setattr(security.settings, "jwt_secret", "test-secret", raising=False)
 
-    store = SessionStore()
-    store.get_or_create(sid)
-    app.state.session_store = store
     token = security.issue_token(security.User(identifier="alice"), sid=sid)
     client = TestClient(app)
     client.cookies.set(settings.cookie_name, token)

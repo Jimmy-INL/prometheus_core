@@ -43,12 +43,8 @@ def get_max_upload_bytes(data: dict[str, Any]) -> int:
 
 
 def _jwt_secret(data: dict[str, Any]) -> str:
-    # Prefer a dedicated secret, then reuse Chainlit's, then the config file value.
-    return (
-        os.environ.get("BACKEND_JWT_SECRET")
-        or os.environ.get("CHAINLIT_AUTH_SECRET")
-        or data.get("jwt-secret", "")
-    )
+    # Prefer the env secret, then the config file value.
+    return os.environ.get("BACKEND_JWT_SECRET") or data.get("jwt-secret", "")
 
 
 def _dev_cors_origins() -> list[str]:
@@ -89,6 +85,34 @@ def _redis_url(data: dict[str, Any]) -> str:
     return url
 
 
+def _cookie_secure(data: dict) -> bool:
+    """Whether to mark auth cookies ``Secure``, derived from the browser-facing scheme.
+
+    This used to be ``not settings.debug``, which is wrong for the default dev
+    setup: ``debug`` is ``false`` in ``config.yml`` while ``BACKEND_PUBLIC_URL`` is
+    ``http://localhost:5150``, so the cookie went out marked ``Secure`` over plain
+    http. Chrome and Firefox special-case ``http://localhost`` and keep it anyway;
+    **Safari does not**, and no browser keeps it for ``http://<LAN-IP>:5150``. The
+    cookie is then dropped silently, every ``/api`` call 401s, and the UI bounces to
+    Login with nothing to explain it.
+
+    ``BACKEND_COOKIE_SECURE`` / ``cookie-secure`` wins if set (needed when the
+    browser-facing scheme is https but this process cannot know it -- e.g. TLS
+    terminated by an ingress that does not set ``BACKEND_PUBLIC_URL``). Otherwise
+    the scheme of ``BACKEND_PUBLIC_URL`` decides. With no public URL configured
+    there is nothing to derive from, so the old ``not debug`` behaviour stands.
+    """
+    raw = os.environ.get("BACKEND_COOKIE_SECURE", data.get("cookie-secure"))
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    public = os.environ.get("BACKEND_PUBLIC_URL", "").strip().lower()
+    if public.startswith("https://"):
+        return True
+    if public.startswith("http://"):
+        return False
+    return not bool(data.get("debug", False))
+
+
 class Settings(BaseSettings):
     data: dict[str, Any] = read_config(CONFIG_PATH)
 
@@ -106,8 +130,23 @@ class Settings(BaseSettings):
     max_upload_bytes: int = get_max_upload_bytes(data)
 
     # Mesh (Exodus/STL) → VTP conversion cache root (empty = <tempdir>/prometheus-mesh).
-    # Overridden by env PROMETHEUS_MESH_CACHE_DIR.
+    # Overridden by env PROMETHEUS_MESH_CACHE_DIR. Should point at a persistent volume:
+    # the cache is content-hash keyed, so anything it keeps is a conversion never repeated.
     mesh_cache_dir: str = os.environ.get("PROMETHEUS_MESH_CACHE_DIR", data.get("mesh-cache-dir", ""))
+    # Size of the VTK conversion subprocess pool (app/services/mesh/service.py).
+    # NOTE FOR OPERATORS: this is *per web worker*. Running uvicorn with --workers N
+    # gives N × mesh_workers VTK children at peak, so size the container memory limit
+    # against that product, not against this number alone.
+    mesh_workers: int = _positive_int(
+        os.environ.get("PROMETHEUS_MESH_WORKERS", data.get("mesh-workers", 2)),
+        "mesh-workers",
+    )
+    # Wall-clock budget for one Exodus/STL → VTP conversion. On expiry the pool is
+    # killed and the artifact degrades to a file download; see _discard_executor.
+    mesh_timeout_seconds: int = _positive_int(
+        os.environ.get("PROMETHEUS_MESH_TIMEOUT_SECONDS", data.get("mesh-timeout-seconds", 120)),
+        "mesh-timeout-seconds",
+    )
 
     # Behavior
     debug: bool = data.get("debug", False)
@@ -117,6 +156,8 @@ class Settings(BaseSettings):
     # Auth / session
     jwt_secret: str = _jwt_secret(data)
     cookie_name: str = os.environ.get("BACKEND_COOKIE_NAME", data.get("cookie-name", "prometheus_session"))
+    # See _cookie_secure: gated on the browser-facing scheme, not on `debug`.
+    cookie_secure: bool = _cookie_secure(data)
     token_ttl_seconds: int = _positive_int(
         os.environ.get("BACKEND_TOKEN_TTL_SECONDS", data.get("token-ttl-seconds", 86400)),
         "token-ttl-seconds",

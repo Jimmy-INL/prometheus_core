@@ -29,7 +29,7 @@ from app.contract import ChatMessageResponse, ChatStatus, UploadDescriptor
 from app.contract import normalize_followup_questions as _normalize_followup_questions
 from app.services.artifacts import shape_artifacts
 from app.services.mesh.service import enrich_mesh_artifacts
-from app.sessions import SessionState
+from app.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +101,12 @@ def _map_plan_ready(
     )
 
 
-def _map_final(
+async def _map_final(
     response: ConversationResponse,
     turn_id: str,
     status: ChatStatus,
-    session: SessionState,
+    store: SessionStore,
+    sid: str,
     *,
     stale: bool = False,
 ) -> ChatMessageResponse:
@@ -142,7 +143,7 @@ def _map_final(
     # Truthy, not ``is not None`` (T-7): an ``artifacts=[]`` turn must not wipe the
     # accumulated catalog that later ``GET /api/artifacts/{id}/content`` calls resolve.
     if response.artifacts and not stale:
-        session.artifacts = response.artifacts
+        await store.set_artifacts(sid, response.artifacts)
 
     shaped = shape_artifacts(new_artifacts)
     text = _coerce_final_text(response, len(shaped)) or None
@@ -168,17 +169,18 @@ def _map_final(
     )
 
 
-def _map_backgrounded(
+async def _map_backgrounded(
     response: ConversationResponse,
     turn_id: str,
-    session: SessionState,
+    store: SessionStore,
+    sid: str,
     *,
     stale: bool = False,
 ) -> ChatMessageResponse:
     """Backgrounded branch (ports ``_handle_backgrounded`` registration only).
 
-    Reads ``task_id`` from ``message_metadata`` and adds it to the session's
-    ``awaited_task_ids`` so the SSE Redis subscriber (task 05) knows which root
+    Reads ``task_id`` from ``message_metadata`` and registers it on the session
+    (``session:{sid}:awaited``) so the SSE Redis subscriber (task 05) knows which root
     tasks this user is waiting on. The **fast-finish snapshot guard** — checking
     ``node_snapshot`` for a task that finished before the subscriber saw it — moves
     to the events service (task 05), which owns the Redis lifecycle.
@@ -190,7 +192,7 @@ def _map_backgrounded(
     metadata = response.message_metadata or {}
     task_id = metadata.get("task_id")
     if task_id and not stale:
-        session.awaited_task_ids.add(str(task_id))
+        await store.await_task(sid, str(task_id))
 
     return ChatMessageResponse(
         turn_id=turn_id,
@@ -204,10 +206,11 @@ def _map_backgrounded(
     )
 
 
-def map_response(
+async def map_response(
     response: ConversationResponse,
     turn_id: str,
-    session: SessionState,
+    store: SessionStore,
+    sid: str,
     *,
     auto_approve: bool,
     stale: bool = False,
@@ -235,11 +238,10 @@ def map_response(
     # own follow-up depth.
     if not stale:
         if status != "needs_info":
-            session.consecutive_needs_info = 0
+            await store.reset_needs_info(sid)
         elif status == "needs_info":
-            session.consecutive_needs_info += 1
-            if session.consecutive_needs_info > _MAX_CONSECUTIVE_NEEDS_INFO:
-                session.consecutive_needs_info = 0
+            if await store.bump_needs_info(sid) > _MAX_CONSECUTIVE_NEEDS_INFO:
+                await store.reset_needs_info(sid)
                 return ChatMessageResponse(
                     turn_id=turn_id,
                     status=ChatStatus.ANSWER,
@@ -251,9 +253,9 @@ def map_response(
     if status == "plan_ready":
         return _map_plan_ready(response, turn_id, auto_approve=auto_approve)
     if status in ("completed", "answer", "recommendation"):
-        return _map_final(response, turn_id, ChatStatus(status), session, stale=stale)
+        return await _map_final(response, turn_id, ChatStatus(status), store, sid, stale=stale)
     if status == "backgrounded":
-        return _map_backgrounded(response, turn_id, session, stale=stale)
+        return await _map_backgrounded(response, turn_id, store, sid, stale=stale)
     if status == "executing":
         return ChatMessageResponse(
             turn_id=turn_id,
@@ -278,7 +280,8 @@ def map_response(
 
 async def handle_turn(
     client: A2AClient,
-    session: SessionState,
+    store: SessionStore,
+    sid: str,
     *,
     turn_id: str,
     query: str,
@@ -294,8 +297,8 @@ async def handle_turn(
     """Run one non-blocking chat turn against the client-agent.
 
     Sends the request (streaming live status through ``on_status``) and maps the
-    terminal ``ConversationResponse`` to a ``ChatMessageResponse``. Requires a
-    resolved ``session.conversation_id`` (the router mints one on first use).
+    terminal ``ConversationResponse`` to a ``ChatMessageResponse``. Requires the session
+    to already have a ``conversation_id`` (the router mints one on first use).
 
     ``user_token`` is the platform JWT identifying the caller (see ``app.identity``);
     it is forwarded to the client-agent, which verifies it and propagates it to
@@ -304,13 +307,14 @@ async def handle_turn(
     Callers convert ``A2AClient.send`` failures into an ``error``-status response;
     this function does not swallow them (see ``routers/chat.py``).
     """
+    session = await store.get_or_create(sid)
     if not session.conversation_id:
         raise ValueError("session has no conversation_id; create a session first")
 
-    # Captured before the await: if the caller starts a "New chat" or resumes a
+    # Read before the await: if the caller starts a "New chat" or resumes a
     # different past conversation (chat-history's loadConversation) while this
-    # turn is in flight, ``session.conversation_id`` changes out from under us —
-    # but the outgoing request must still target the conversation this turn was
+    # turn is in flight, the session's stored conversation id changes out from under
+    # us — but the outgoing request must still target the conversation this turn was
     # actually for, and the response mapping below must know whether that has
     # since happened (see ``stale`` on ``map_response``).
     conversation_id = session.conversation_id
@@ -335,8 +339,11 @@ async def handle_turn(
     # downgrade), so it can't break the turn.
     await enrich_mesh_artifacts(response)
 
-    stale = session.conversation_id != conversation_id
-    return map_response(response, turn_id, session, auto_approve=auto_approve, stale=stale)
+    # Re-read rather than trusting the snapshot: the rebind we are testing for happens
+    # in a different request, and under ``--workers N`` possibly a different process.
+    current = await store.get_or_create(sid)
+    stale = current.conversation_id != conversation_id
+    return await map_response(response, turn_id, store, sid, auto_approve=auto_approve, stale=stale)
 
 
 def upload_descriptors_to_dicts(

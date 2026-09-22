@@ -131,21 +131,21 @@ def test_download_payload_none_when_nothing_inline():
 # --------------------------------------------------------------------------- #
 
 
-def _authed_client(monkeypatch, artifacts=None) -> TestClient:
-    """TestClient with a valid cookie and a seeded session artifact catalog."""
+async def _authed_client(monkeypatch, session_store, artifacts=None) -> TestClient:
+    """TestClient with a valid cookie and a seeded session artifact catalog.
+
+    ``session_store`` is the Valkey-backed store conftest already installed on
+    ``app.state``, so seeding is a write rather than an assignment: ``SessionState``
+    is a frozen snapshot.
+    """
     from app import security
     from app.config import settings
     from app.main import app
-    from app.sessions import SessionStore
 
     monkeypatch.setattr(settings, "jwt_secret", "test-secret", raising=False)
     monkeypatch.setattr(security.settings, "jwt_secret", "test-secret", raising=False)
 
-    store = SessionStore()
-    session = store.get_or_create("sid-artifact")
-    session.conversation_id = "c1"
-    session.artifacts = artifacts or []
-    app.state.session_store = store
+    await session_store.reset("sid-artifact", "c1", artifacts=artifacts or [])
 
     token = security.issue_token(security.User(identifier="alice"), sid="sid-artifact")
     client = TestClient(app)
@@ -155,23 +155,22 @@ def _authed_client(monkeypatch, artifacts=None) -> TestClient:
 
 def test_content_requires_auth():
     from app.main import app
-    from app.sessions import SessionStore
 
-    app.state.session_store = SessionStore()
     client = TestClient(app)
     resp = client.get("/api/artifacts/a1/content")
     assert resp.status_code == 401
 
 
-def test_content_404_when_not_in_catalog(monkeypatch):
-    client = _authed_client(monkeypatch, artifacts=[{"artifact_id": "other"}])
+async def test_content_404_when_not_in_catalog(monkeypatch, session_store):
+    client = await _authed_client(monkeypatch, session_store, artifacts=[{"artifact_id": "other"}])
     resp = client.get("/api/artifacts/missing/content")
     assert resp.status_code == 404
 
 
-def test_content_streams_inline_json_body(monkeypatch):
-    client = _authed_client(
+async def test_content_streams_inline_json_body(monkeypatch, session_store):
+    client = await _authed_client(
         monkeypatch,
+        session_store,
         artifacts=[{"artifact_id": "a1", "name": "result", "json_body": {"answer": 42}}],
     )
     resp = client.get("/api/artifacts/a1/content")
@@ -181,11 +180,12 @@ def test_content_streams_inline_json_body(monkeypatch):
     assert 'filename="result.json"' in resp.headers["content-disposition"]
 
 
-def test_content_streams_file_uri(monkeypatch, tmp_path):
+async def test_content_streams_file_uri(monkeypatch, session_store, tmp_path):
     f = tmp_path / "doc.pdf"
     f.write_bytes(b"%PDF-1.4 fake")
-    client = _authed_client(
+    client = await _authed_client(
         monkeypatch,
+        session_store,
         artifacts=[{"artifact_id": "a1", "name": "doc.pdf", "mime_type": "application/pdf", "uri": f"file://{f}"}],
     )
     resp = client.get("/api/artifacts/a1/content")
@@ -194,21 +194,22 @@ def test_content_streams_file_uri(monkeypatch, tmp_path):
     assert resp.content == b"%PDF-1.4 fake"
 
 
-def test_content_502_when_resolve_fails(monkeypatch):
+async def test_content_502_when_resolve_fails(monkeypatch, session_store):
     async def _fail(uri, *, cache_dir, artifact=None, artifact_id=None):
         return None
 
     monkeypatch.setattr(uri_resolver, "resolve_to_local_path", _fail)
-    client = _authed_client(
+    client = await _authed_client(
         monkeypatch,
+        session_store,
         artifacts=[{"artifact_id": "a1", "name": "x", "uri": "deeplynx://org/items/1"}],
     )
     resp = client.get("/api/artifacts/a1/content")
     assert resp.status_code == 502
 
 
-def test_content_404_when_in_catalog_but_no_content(monkeypatch):
-    client = _authed_client(monkeypatch, artifacts=[{"artifact_id": "a1", "name": "empty"}])
+async def test_content_404_when_in_catalog_but_no_content(monkeypatch, session_store):
+    client = await _authed_client(monkeypatch, session_store, artifacts=[{"artifact_id": "a1", "name": "empty"}])
     resp = client.get("/api/artifacts/a1/content")
     assert resp.status_code == 404
 
@@ -227,9 +228,9 @@ def test_artifact_identity_is_stable_distinct_and_prefers_explicit():
     assert artifact_identity({"artifact_id": "explicit", "name": "x"}) == "explicit"
 
 
-def test_content_fetches_idless_inline_artifact(monkeypatch):
+async def test_content_fetches_idless_inline_artifact(monkeypatch, session_store):
     art = {"name": "notes", "json_body": {"k": "v"}}  # no artifact_id/id
-    client = _authed_client(monkeypatch, artifacts=[art])
+    client = await _authed_client(monkeypatch, session_store, artifacts=[art])
     resp = client.get(f"/api/artifacts/{artifact_identity(art)}/content")
     assert resp.status_code == 200
     assert resp.json() == {"k": "v"}
@@ -240,11 +241,12 @@ def test_content_fetches_idless_inline_artifact(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_content_disposition_is_attachment_for_download(monkeypatch, tmp_path):
+async def test_content_disposition_is_attachment_for_download(monkeypatch, session_store, tmp_path):
     f = tmp_path / "logs.zip"
     f.write_bytes(b"PK\x03\x04zip")
-    client = _authed_client(
+    client = await _authed_client(
         monkeypatch,
+        session_store,
         artifacts=[{"artifact_id": "a1", "name": "logs.zip", "mime_type": "application/zip", "uri": f"file://{f}"}],
     )
     resp = client.get("/api/artifacts/a1/content")
@@ -252,9 +254,9 @@ def test_content_disposition_is_attachment_for_download(monkeypatch, tmp_path):
     assert resp.headers["content-disposition"].startswith("attachment;")
 
 
-def test_content_disposition_escapes_dangerous_filename(monkeypatch):
+async def test_content_disposition_escapes_dangerous_filename(monkeypatch, session_store):
     art = {"artifact_id": "a1", "name": 'ev"il\nname', "json_body": {"k": 1}}
-    client = _authed_client(monkeypatch, artifacts=[art])
+    client = await _authed_client(monkeypatch, session_store, artifacts=[art])
     cd = client.get("/api/artifacts/a1/content").headers["content-disposition"]
     assert "\n" not in cd and "\r" not in cd  # no header injection
     # quote + newline stripped from the ascii name (.json appended for the inline body)

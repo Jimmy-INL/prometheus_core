@@ -8,7 +8,11 @@ installed (the container), never breaking the offline suite.
 """
 
 import json
+import pickle
 import types
+from concurrent import futures
+from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -101,11 +105,11 @@ async def test_enrich_populates_mesh_json_body(monkeypatch, tmp_path):
 
     calls = []
 
-    def _fake_convert(local_path, cache_root, name, uri, mime):
+    async def _fake_convert(local_path, cache_root, name, uri, mime, *, ident):
         calls.append((name, mime))
         return "dsAAA", _manifest(point=["temperature"]), {"num_timesteps": 1, "time_values": [0.0]}
 
-    monkeypatch.setattr(service, "_convert_sync", _fake_convert)
+    monkeypatch.setattr(service, "_convert_offloop", _fake_convert)
 
     art = {"artifact_id": "m1", "name": "mesh.exo", "mime_type": "application/x-exodus", "uri": "file:///x/mesh.exo"}
     response = types.SimpleNamespace(new_artifacts=[art], artifacts=[art])
@@ -123,11 +127,10 @@ async def test_enrich_applies_body_to_all_objects_sharing_identity(monkeypatch, 
     # new_artifacts and the persisted catalog can be distinct dict objects for the same
     # artifact; both must end up carrying the manifest.
     _stub_resolver(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        service,
-        "_convert_sync",
-        lambda *a: ("ds1", _manifest(), {"num_timesteps": 1, "time_values": [0.0]}),
-    )
+    async def _fake_convert(*a, **kw):
+        return "ds1", _manifest(), {"num_timesteps": 1, "time_values": [0.0]}
+
+    monkeypatch.setattr(service, "_convert_offloop", _fake_convert)
 
     new_obj = {"artifact_id": "same", "name": "a.exo", "mime_type": "application/x-exodus", "uri": "file:///a.exo"}
     cat_obj = {"artifact_id": "same", "name": "a.exo", "mime_type": "application/x-exodus", "uri": "file:///a.exo"}
@@ -142,10 +145,10 @@ async def test_enrich_applies_body_to_all_objects_sharing_identity(monkeypatch, 
 async def test_enrich_leaves_non_mesh_untouched(monkeypatch, tmp_path):
     _stub_resolver(monkeypatch, tmp_path)
 
-    def _boom(*a):
+    async def _boom(*a, **kw):
         raise AssertionError("conversion must not run for a non-mesh artifact")
 
-    monkeypatch.setattr(service, "_convert_sync", _boom)
+    monkeypatch.setattr(service, "_convert_offloop", _boom)
 
     art = {"artifact_id": "p1", "name": "report.pdf", "mime_type": "application/pdf", "uri": "file:///r.pdf"}
     response = types.SimpleNamespace(new_artifacts=[art], artifacts=[art])
@@ -158,10 +161,10 @@ async def test_enrich_leaves_non_mesh_untouched(monkeypatch, tmp_path):
 async def test_enrich_downgrades_gracefully_on_conversion_failure(monkeypatch, tmp_path):
     _stub_resolver(monkeypatch, tmp_path)
 
-    def _fail(*a):
+    async def _fail(*a, **kw):
         raise RuntimeError("vtk blew up")
 
-    monkeypatch.setattr(service, "_convert_sync", _fail)
+    monkeypatch.setattr(service, "_convert_offloop", _fail)
 
     art = {"artifact_id": "m2", "name": "mesh.exo", "mime_type": "application/x-exodus", "uri": "file:///x.exo"}
     response = types.SimpleNamespace(new_artifacts=[art], artifacts=[art])
@@ -172,10 +175,10 @@ async def test_enrich_downgrades_gracefully_on_conversion_failure(monkeypatch, t
 
 
 async def test_enrich_skips_mesh_without_uri(monkeypatch):
-    def _boom(*a):
+    async def _boom(*a, **kw):
         raise AssertionError("conversion must not run without a resolvable uri")
 
-    monkeypatch.setattr(service, "_convert_sync", _boom)
+    monkeypatch.setattr(service, "_convert_offloop", _boom)
 
     art = {"artifact_id": "m3", "name": "mesh.exo", "mime_type": "application/x-exodus"}  # no uri
     response = types.SimpleNamespace(new_artifacts=[art], artifacts=[art])
@@ -183,6 +186,92 @@ async def test_enrich_skips_mesh_without_uri(monkeypatch):
     await service.enrich_mesh_artifacts(response)
 
     assert art.get("json_body") is None
+
+
+# --------------------------------------------------------------------------- #
+# _convert_offloop — subprocess-pool crash + timeout containment
+# --------------------------------------------------------------------------- #
+
+
+class _FakeProc:
+    """Stand-in for a ProcessPoolExecutor worker process."""
+
+    def __init__(self) -> None:
+        self.killed = False
+
+    def is_alive(self) -> bool:
+        return not self.killed
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+class _FakeExecutor:
+    """Minimal executor: `run_in_executor` only needs `.submit()` returning a Future.
+
+    `_processes` mirrors ProcessPoolExecutor's private worker map, which
+    `_discard_executor(kill_children=True)` reaches into to stop a wedged conversion.
+    """
+
+    def __init__(self, future: futures.Future) -> None:
+        self._future = future
+        self._processes = {1: _FakeProc()}
+        self.shutdown_calls: list[dict] = []
+
+    def submit(self, fn, *args):
+        return self._future
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        self.shutdown_calls.append({"wait": wait, "cancel_futures": cancel_futures})
+
+
+async def test_convert_offloop_survives_a_dead_worker(monkeypatch, tmp_path):
+    """A child segfault/OOM must cost one artifact, not the web process."""
+    future: futures.Future = futures.Future()
+    future.set_running_or_notify_cancel()
+    future.set_exception(BrokenProcessPool("worker died"))
+    fake = _FakeExecutor(future)
+    monkeypatch.setattr(service, "_vtk_executor", fake)
+
+    result = await service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m1")
+
+    assert result is None  # degrades, does not raise
+    # The pool is poisoned for every later submit, so it must be replaced, not reused.
+    assert service._vtk_executor is None
+    assert fake.shutdown_calls == [{"wait": False, "cancel_futures": True}]
+    # A dead worker needs no killing; only the timeout path does that.
+    assert fake._processes[1].killed is False
+
+
+async def test_convert_offloop_times_out_and_kills_the_pool(monkeypatch, tmp_path):
+    """A wedged conversion can't be cancelled cooperatively, so the workers are killed."""
+    fake = _FakeExecutor(futures.Future())  # never completes
+    monkeypatch.setattr(service, "_vtk_executor", fake)
+    monkeypatch.setattr(service.settings, "mesh_timeout_seconds", 0.05, raising=False)
+
+    result = await service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m2")
+
+    assert result is None
+    assert service._vtk_executor is None
+    assert fake._processes[1].killed is True
+    assert fake.shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+def test_shutdown_mesh_executor_is_a_noop_when_unused(monkeypatch):
+    """The lifespan calls this unconditionally; a server that converted nothing has no pool."""
+    monkeypatch.setattr(service, "_vtk_executor", None)
+    service.shutdown_mesh_executor()  # must not raise
+    assert service._vtk_executor is None
+
+
+def test_convert_sync_crosses_the_process_boundary():
+    """Guard the contract the process pool depends on: the callable is picklable by
+    reference and every argument survives a pickle round-trip. A future refactor that
+    closes `_convert_sync` over something unpicklable would otherwise only fail at
+    runtime, inside a submit, as a degraded artifact."""
+    assert pickle.loads(pickle.dumps(service._convert_sync)) is service._convert_sync
+    args = (Path("/tmp/mesh.exo"), Path("/var/cache/prometheus-mesh"), "mesh.exo", "file:///mesh.exo", "")
+    assert pickle.loads(pickle.dumps(args)) == args
 
 
 # --------------------------------------------------------------------------- #
@@ -195,13 +284,11 @@ def _authed_client(monkeypatch, tmp_path) -> TestClient:
     from app import security
     from app.config import settings
     from app.main import app
-    from app.sessions import SessionStore
 
     monkeypatch.setattr(settings, "jwt_secret", "test-secret", raising=False)
     monkeypatch.setattr(security.settings, "jwt_secret", "test-secret", raising=False)
     monkeypatch.setattr(settings, "mesh_cache_dir", str(tmp_path), raising=False)
 
-    app.state.session_store = SessionStore()
     token = security.issue_token(security.User(identifier="alice"), sid="sid-mesh")
     client = TestClient(app)
     client.cookies.set(settings.cookie_name, token)
@@ -211,10 +298,8 @@ def _authed_client(monkeypatch, tmp_path) -> TestClient:
 def test_mesh_route_requires_auth(tmp_path, monkeypatch):
     from app.config import settings
     from app.main import app
-    from app.sessions import SessionStore
 
     monkeypatch.setattr(settings, "mesh_cache_dir", str(tmp_path), raising=False)
-    app.state.session_store = SessionStore()
     client = TestClient(app)
     assert client.get("/api/artifacts/mesh/ds1/surface_t0000.vtp").status_code == 401
 

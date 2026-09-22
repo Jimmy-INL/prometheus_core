@@ -92,9 +92,9 @@ class SelectOption(BaseModel):
 
 
 class FormField(BaseModel):
-    """A single DynamicForm field.
+    """A single follow-up form field.
 
-    Matches the props consumed by ``frontend/src/viewers/DynamicFormElement.tsx``
+    Matches the props consumed by ``frontend/src/components/chat/FollowupForm.tsx``
     and the normalized shape produced by ``normalize_followup_questions`` below
     (ported from ``message_handler._handle_needs_info``).
     """

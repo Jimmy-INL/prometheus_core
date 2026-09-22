@@ -39,6 +39,20 @@ def test_named_volumes_declared(compose_data):
     volumes = compose_data.get("volumes", {})
     assert "litellm-db-data" in volumes
     assert "valkey-data" in volumes
+    assert "mesh-cache" in volumes
+
+
+def test_mesh_cache_volume(compose_data):
+    """Converted VTP timesteps must survive a backend restart.
+
+    The cache is content-hash keyed, so a container-local /tmp meant every restart
+    re-ran the (expensive, VTK-heavy) Exodus conversion for artifacts it had already
+    converted. PROMETHEUS_MESH_CACHE_DIR has to agree with the mount point.
+    """
+    backend = compose_data["services"]["backend"]
+    volumes = _get_volumes(backend)
+    assert any("mesh-cache:/var/cache/prometheus-mesh" in v for v in volumes)
+    assert backend["environment"]["PROMETHEUS_MESH_CACHE_DIR"] == "/var/cache/prometheus-mesh"
 
 
 def test_postgres_data_volume(compose_data):

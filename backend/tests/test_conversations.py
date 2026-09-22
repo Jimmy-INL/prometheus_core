@@ -40,12 +40,10 @@ def _authed_client(monkeypatch) -> TestClient:
     from app import security
     from app.config import settings
     from app.main import app
-    from app.sessions import SessionStore
 
     monkeypatch.setattr(settings, "jwt_secret", "test-secret", raising=False)
     monkeypatch.setattr(security.settings, "jwt_secret", "test-secret", raising=False)
 
-    app.state.session_store = SessionStore()
     token = security.issue_token(security.User(identifier="alice"), sid="sid-conv")
     client = TestClient(app)
     client.cookies.set(settings.cookie_name, token)
@@ -54,9 +52,7 @@ def _authed_client(monkeypatch) -> TestClient:
 
 def test_recent_requires_auth():
     from app.main import app
-    from app.sessions import SessionStore
 
-    app.state.session_store = SessionStore()
     client = TestClient(app)
     resp = client.get("/api/conversations/recent")
     assert resp.status_code == 401
@@ -364,9 +360,10 @@ def test_get_history_marks_actively_running_conversations_pending(monkeypatch):
             return list(blobs.keys()) if pattern == "conversation:*" else []
 
         def get(self, key):
+            # `blobs` is keyed by the full "conversation:{id}" key, matching what
+            # the history scan passes here -- not by the bare id.
             if key.startswith("conversation:"):
-                conv_id = key.split(":", 1)[1]
-                return _json.dumps(blobs[conv_id]) if conv_id in blobs else None
+                return _json.dumps(blobs[key]) if key in blobs else None
             return status.get(key)
 
         def hgetall(self, key):
@@ -406,6 +403,39 @@ def test_get_transcript_normalizes_and_drops_orchestration_noise(monkeypatch):
     assert messages == [
         {"role": "user", "content": "hello", "timestamp": "t1"},
         {"role": "assistant", "content": "hi there", "timestamp": "t2"},
+    ]
+
+
+def test_get_transcript_collapses_the_duplicate_final_report_turn(monkeypatch):
+    """The client-agent logs each answer twice (``agent_response_*`` then
+    ``final_report``) with identical content; the transcript must show it once."""
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    conv = {
+        "conversation_history": [
+            {"role": "user", "content": "mesh it", "timestamp": "t1"},
+            {"role": "assistant", "content": "done", "type": "agent_response_meshing", "timestamp": "t2"},
+            {"role": "assistant", "content": "done", "type": "final_report", "timestamp": "t3"},
+            {"role": "user", "content": "again", "timestamp": "t4"},
+            # Same content as an earlier turn but NOT adjacent -> kept.
+            {"role": "assistant", "content": "done", "type": "final_report", "timestamp": "t5"},
+        ],
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            return _json.dumps(conv)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert c.get_transcript("c1") == [
+        {"role": "user", "content": "mesh it", "timestamp": "t1"},
+        {"role": "assistant", "content": "done", "timestamp": "t2"},
+        {"role": "user", "content": "again", "timestamp": "t4"},
+        {"role": "assistant", "content": "done", "timestamp": "t5"},
     ]
 
 
@@ -514,9 +544,7 @@ def test_resume_requires_ownership(monkeypatch):
     assert resp.status_code == 404
 
 
-def test_resume_rebinds_session_and_returns_transcript(monkeypatch):
-    from app.main import app
-
+async def test_resume_rebinds_session_and_returns_transcript(monkeypatch, session_store):
     conv = {
         "user_query": "hello",
         "conversation_history": [
@@ -533,6 +561,64 @@ def test_resume_rebinds_session_and_returns_transcript(monkeypatch):
     assert body["conversation_id"] == "c1"
     assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
 
-    session = app.state.session_store.get("sid-conv")
+    session = await session_store.get("sid-conv")
     assert session is not None
     assert session.conversation_id == "c1"
+
+
+def test_detail_mesh_enriches_json_body_so_viewers_restore(monkeypatch):
+    """Resume must run the same mesh pass the live turn does.
+
+    The persisted catalog stores ``json_body: None`` for an Exodus/STL artifact; the
+    frontend adapter only mounts the MeshViewer when ``json_body`` carries the VTP
+    manifest, so without enrichment a restored conversation degrades to download cards.
+    """
+    mesh_artifact = {
+        "artifact_id": "a1",
+        "name": "block.e",
+        "mime_type": "application/x-exodus",
+        "uri": "file:///tmp/block.e",
+        "json_body": None,
+    }
+
+    fake = _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [dict(mesh_artifact)], raising=False)
+
+    async def _fake_enrich(artifacts):
+        for artifact in artifacts:
+            artifact["json_body"] = {"datasetId": "d1", "baseUrl": "/api/artifacts/mesh/d1", "manifest": {}}
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _fake_enrich)
+
+    client = _authed_client(monkeypatch)
+    body = client.get("/api/conversations/c1").json()
+
+    (artifact,) = body["artifacts"]
+    assert artifact["render_hint"] == "mesh"
+    assert artifact["json_body"]["baseUrl"] == "/api/artifacts/mesh/d1"
+
+
+async def test_resume_seeds_session_artifacts_with_the_enriched_catalog(monkeypatch, session_store):
+    """``session.artifacts`` (what the content proxy resolves against) must be the
+    catalog resume already read, not a second Redis round-trip."""
+    fake = _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [{"artifact_id": "a1", "name": "n"}], raising=False)
+
+    calls: list[list[dict]] = []
+
+    async def _fake_enrich(artifacts):
+        calls.append(artifacts)
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _fake_enrich)
+
+    client = _authed_client(monkeypatch)
+
+    assert client.post("/api/conversations/c1/resume").status_code == 200
+    session = await session_store.get_or_create("sid-conv")
+    assert session.conversation_id == "c1"
+    assert [a["artifact_id"] for a in session.artifacts] == ["a1"]
+    # The catalog seeded into the session is the very list the mesh pass stamped -- it
+    # round-trips through Valkey as JSON now, so the check is equality rather than
+    # identity. Equality is the property that matters: a second Redis round-trip would
+    # have returned the *unenriched* rows.
+    assert calls and calls[0] == session.artifacts
