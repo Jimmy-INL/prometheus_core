@@ -23,6 +23,7 @@ import type {
   ChatMessageRequest,
   ChatMessageResponse,
   ConfigResponse,
+  ConversationMessage,
   FormField,
   StatusEvent,
   TaskDoneEvent,
@@ -91,6 +92,10 @@ export interface ChatState {
   conversationId: string | null;
   config: ConfigResponse | null;
   autoApprove: boolean;
+  /** Bumped whenever the conversation list may have changed (new/renamed title,
+   * a completed turn, a switch to another conversation) — components rendering
+   * the history list re-fetch when this changes. */
+  historyVersion: number;
 }
 
 const initialState: ChatState = {
@@ -100,6 +105,7 @@ const initialState: ChatState = {
   conversationId: null,
   config: null,
   autoApprove: false,
+  historyVersion: 0,
 };
 
 let state: ChatState = initialState;
@@ -124,17 +130,48 @@ function nextId(prefix: string): string {
   return `${prefix}-${idCounter}`;
 }
 
+function bumpHistory(): void {
+  set({ historyVersion: state.historyVersion + 1 });
+}
+
 // --- response → items reducer ----------------------------------------------
 
-function assistantFrom(res: ChatMessageResponse, text: string): AssistantItem {
+function assistantItem(text: string, artifacts: ArtifactMeta[] = []): AssistantItem {
   return {
     id: nextId("assistant"),
     kind: "assistant",
     text,
-    artifacts: res.artifacts ?? [],
+    artifacts,
+    recommendedMaterials: [],
+    followUpSuggestions: [],
+  };
+}
+
+function assistantFrom(res: ChatMessageResponse, text: string): AssistantItem {
+  return {
+    ...assistantItem(text, res.artifacts ?? []),
     recommendedMaterials: res.recommended_materials ?? [],
     followUpSuggestions: res.follow_up_suggestions ?? [],
   };
+}
+
+/** Map a resumed conversation's normalized transcript to renderable items.
+ * Artifacts aren't correlated per-turn server-side, so the whole catalog is
+ * attached to the last assistant turn (best-effort — matches what a live
+ * completed-turn response would have shown at the time). */
+function itemsFromTranscript(messages: ConversationMessage[], artifacts: ArtifactMeta[]): ChatItem[] {
+  const items: ChatItem[] = messages.map((m) =>
+    m.role === "user"
+      ? { id: nextId("user"), kind: "user", text: m.content }
+      : assistantItem(m.content),
+  );
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (items[i].kind === "assistant") {
+      (items[i] as AssistantItem).artifacts = artifacts;
+      break;
+    }
+  }
+  return items;
 }
 
 /** Mark the in-flight turn's ToolStep done (leaves its progress trace collapsed). */
@@ -149,6 +186,9 @@ function finalizeTurnProgress(turnId: string): void {
 /** Append the item(s) a terminal ChatMessageResponse maps to. */
 function applyResponse(res: ChatMessageResponse): void {
   finalizeTurnProgress(res.turn_id);
+  // A completed turn may have just gotten this conversation its first LLM
+  // title, or changed its inferred status — let the history list re-fetch.
+  bumpHistory();
 
   switch (res.status) {
     case "answer":
@@ -325,18 +365,41 @@ function disconnect(): void {
 }
 
 async function post(body: ChatMessageRequest): Promise<void> {
+  // Captured before the await: if the user starts a new chat or resumes a
+  // different past conversation (chatStore.reset/loadConversation) while this
+  // turn is still in flight, `state.conversationId` changes out from under us.
+  // The response, when it lands, belongs to `conversationId` — not to whatever
+  // is now on screen — so every effect below is guarded against that. The
+  // backend applies the same guard on its side (see `services/chat.py`'s
+  // `stale` handling) for its own session-state mutations; this is the
+  // matching frontend half, for what gets rendered.
+  const conversationId = state.conversationId;
+  const isCurrent = () => state.conversationId === conversationId;
+
   set({ awaiting: true });
   try {
     const res = await api.sendMessage(body);
-    applyResponse(res);
+    if (isCurrent()) {
+      applyResponse(res);
+    } else {
+      // Not lost — it's safely persisted server-side and will show up if this
+      // conversation is reopened (see loadConversation) — just not rendered
+      // into whatever conversation is currently on screen. Still worth letting
+      // the history list know something changed (e.g. its status).
+      bumpHistory();
+    }
   } catch (err) {
-    const text =
-      err instanceof ApiError
-        ? `Error communicating with agent: ${err.message}`
-        : "Error communicating with agent.";
-    appendError(text);
+    if (isCurrent()) {
+      const text =
+        err instanceof ApiError
+          ? `Error communicating with agent: ${err.message}`
+          : "Error communicating with agent.";
+      appendError(text);
+    }
   } finally {
-    set({ awaiting: false });
+    if (isCurrent()) {
+      set({ awaiting: false });
+    }
   }
 }
 
@@ -395,6 +458,27 @@ async function reset(profile?: string): Promise<void> {
     appendError(err instanceof Error ? err.message : "Failed to start a new conversation.");
   }
   connect();
+  bumpHistory();
+}
+
+/** Reopen a past conversation: rebinds the session server-side (so the next
+ * turn continues it) and replays its transcript. Mirrors `reset()`'s shape. */
+async function loadConversation(conversationId: string): Promise<void> {
+  disconnect();
+  awaitedTaskIds.clear();
+  set({ items: [], awaiting: false });
+  try {
+    const detail = await api.resumeConversation(conversationId);
+    set({
+      conversationId: detail.conversation_id,
+      autoApprove: detail.auto_approve_steps,
+      items: itemsFromTranscript(detail.messages, detail.artifacts),
+    });
+  } catch (err) {
+    appendError(err instanceof Error ? err.message : "Failed to open conversation.");
+  }
+  connect();
+  bumpHistory();
 }
 
 export const chatStore = {
@@ -402,6 +486,7 @@ export const chatStore = {
   connect,
   disconnect,
   sendTurn,
+  loadConversation,
   submitFollowup,
   decidePlan,
   stop,

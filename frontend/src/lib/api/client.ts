@@ -14,7 +14,9 @@ import type {
   ChatMessageRequest,
   ChatMessageResponse,
   ConfigResponse,
+  ConversationDetailResponse,
   ConversationHistoryResponse,
+  ConversationSummary,
   OidcProvider,
   OidcProviderCreate,
   OidcProviderUpdate,
@@ -139,6 +141,29 @@ export const api = {
   // --- history ---
   getRecentConversations(limit = 20): Promise<ConversationHistoryResponse> {
     return request<ConversationHistoryResponse>(`/conversations/recent?limit=${limit}`);
+  },
+
+  /** Rebind the session to a past conversation; the next chat turn continues it. */
+  resumeConversation(conversationId: string): Promise<ConversationDetailResponse> {
+    return request<ConversationDetailResponse>(
+      `/conversations/${encodeURIComponent(conversationId)}/resume`,
+      { method: "POST" },
+    );
+  },
+
+  renameConversation(conversationId: string, title: string): Promise<ConversationSummary> {
+    return request<ConversationSummary>(`/conversations/${encodeURIComponent(conversationId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+  },
+
+  /** Soft delete: the conversation drops out of `getRecentConversations`. */
+  deleteConversation(conversationId: string): Promise<void> {
+    return request<void>(`/conversations/${encodeURIComponent(conversationId)}`, {
+      method: "DELETE",
+    });
   },
 
   /** URL for an artifact's bytes; used directly as an <img>/<embed> src or fetch target. */

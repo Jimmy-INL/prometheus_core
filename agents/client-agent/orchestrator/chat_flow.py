@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,40 @@ from .models import AgentState, ConversationRequest, ConversationResponse
 from .parameter_extraction import ParameterExtractionError
 from .parameters import order_skills_for_workflow
 from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
+
+logger = logging.getLogger(__name__)
+
+_TITLE_MAX_CHARS = 60
+
+
+async def _maybe_generate_title(state: AgentState, conv_id: str) -> None:
+    """Best-effort short title for a new conversation, via the ``small`` LLM flavor.
+
+    Runs once per conversation (skipped once ``state["title"]`` is set — carried
+    forward on every later turn by the caller). Chat history (frontend sidebar)
+    is the only consumer; a failure here must never fail the turn, so every
+    error is swallowed and logged, leaving the title unset (the backend falls
+    back to the raw first query for display in that case).
+    """
+    if state.get("title"):
+        return
+    query = str(state.get("user_query") or "").strip()
+    if not query:
+        return
+    try:
+        async with runtime.create_llm() as llm:
+            response = await llm.small(
+                "Write a short title (max 6 words, no quotes or trailing "
+                "punctuation) summarizing the topic of this user message, for "
+                f"a chat history list:\n\n{query}",
+                max_tokens=32,
+                temperature=0,
+            )
+        title = " ".join(response.text.strip().strip("\"'").splitlines()).strip()
+        if title:
+            state["title"] = title[:_TITLE_MAX_CHARS]
+    except Exception as exc:
+        logger.warning("Title generation failed for conversation %s: %s", conv_id, exc)
 
 
 def _workflow_slash_selection(query: Optional[str]) -> Optional[Dict[str, str]]:
@@ -536,7 +571,9 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
         "question": None,
         "tool_results": {},
         "final_report": None,
+        "title": existing_state.get("title") if isinstance(existing_state, dict) else None,
     }
+    await _maybe_generate_title(state, conv_id)
 
     if isinstance(request.followup_answers, dict) and request.followup_answers:
         merged_context = dict(state.get("context", {}) or {})

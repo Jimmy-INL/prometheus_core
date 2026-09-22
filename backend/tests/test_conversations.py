@@ -223,3 +223,316 @@ def test_get_history_falls_back_to_global_scan_without_user_id(monkeypatch):
 
     rows = c.get_conversation_history(limit=20)
     assert [r["conversation_id"] for r in rows] == ["a"]
+
+
+# --------------------------------------------------------------------------- #
+# Chat history: ownership, soft delete, title precedence (ConversationStateClient)
+# --------------------------------------------------------------------------- #
+
+
+def test_owns_checks_the_user_index(monkeypatch):
+    from app.conversation_state import ConversationStateClient
+
+    class _FakeRedis:
+        def sismember(self, key, member):
+            assert key == "user:convs:alice"
+            return member == "c1"
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert c.owns("alice", "c1") is True
+    assert c.owns("alice", "c2") is False
+
+
+def test_get_history_excludes_soft_deleted_conversations(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    blobs = {
+        "conversation:visible": {"user_query": "keep", "conversation_history": [{"timestamp": "2026-08-01T00:00:00Z"}]},
+        "conversation:hidden": {"user_query": "gone", "conversation_history": [{"timestamp": "2026-08-02T00:00:00Z"}]},
+    }
+    meta = {"conv:meta:hidden": {"hidden": "1", "hidden_at": "2026-08-03T00:00:00Z"}}
+
+    class _FakeRedis:
+        def keys(self, pattern):
+            return list(blobs.keys())
+
+        def get(self, key):
+            return _json.dumps(blobs[key])
+
+        def hgetall(self, key):
+            return meta.get(key, {})
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    rows = c.get_conversation_history(limit=20)
+    assert [r["conversation_id"] for r in rows] == ["visible"]
+
+
+def test_get_history_title_precedence(monkeypatch):
+    """A user rename wins over the client-agent's LLM title, which wins over the
+    raw first query."""
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    blobs = {
+        "conversation:renamed": {
+            "user_query": "raw query",
+            "title": "llm title",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:00Z"}],
+        },
+        "conversation:llm-only": {
+            "user_query": "raw query 2",
+            "title": "llm title 2",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:01Z"}],
+        },
+        "conversation:no-title": {
+            "user_query": "raw query 3",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:02Z"}],
+        },
+    }
+    meta = {"conv:meta:renamed": {"title_override": "my rename"}}
+
+    class _FakeRedis:
+        def keys(self, pattern):
+            return list(blobs.keys())
+
+        def get(self, key):
+            return _json.dumps(blobs[key])
+
+        def hgetall(self, key):
+            return meta.get(key, {})
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    rows = {r["conversation_id"]: r for r in c.get_conversation_history(limit=20)}
+    assert rows["renamed"]["title"] == "my rename"
+    assert rows["llm-only"]["title"] == "llm title 2"
+    assert rows["no-title"]["title"] == "raw query 3"
+
+
+def test_is_pending_reflects_agent_status_final_flag(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    status = {
+        "agent:status:running": _json.dumps({"message": "Executing…", "final": False}),
+        "agent:status:done": _json.dumps({"message": "Response ready.", "final": True}),
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            return status.get(key)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert c.is_pending("running") is True
+    assert c.is_pending("done") is False
+    assert c.is_pending("never-started") is False  # no key at all -> not pending
+
+
+def test_get_history_marks_actively_running_conversations_pending(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    blobs = {
+        "conversation:running": {
+            "user_query": "still going",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:00Z"}],
+        },
+        "conversation:done": {
+            "user_query": "finished",
+            "conversation_history": [{"timestamp": "2026-08-01T00:00:01Z"}],
+        },
+    }
+    status = {"agent:status:running": _json.dumps({"message": "…", "final": False})}
+
+    class _FakeRedis:
+        """Serves both `conversation:{id}` and `agent:status:{id}` reads —
+        `is_pending` calls `.get()` on the same client the history scan uses."""
+
+        def keys(self, pattern):
+            return list(blobs.keys()) if pattern == "conversation:*" else []
+
+        def get(self, key):
+            if key.startswith("conversation:"):
+                conv_id = key.split(":", 1)[1]
+                return _json.dumps(blobs[conv_id]) if conv_id in blobs else None
+            return status.get(key)
+
+        def hgetall(self, key):
+            return {}
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    rows = {r["conversation_id"]: r for r in c.get_conversation_history(limit=20)}
+    assert rows["running"]["pending"] is True
+    assert rows["done"]["pending"] is False
+
+
+def test_get_transcript_normalizes_and_drops_orchestration_noise(monkeypatch):
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    conv = {
+        "conversation_history": [
+            {"role": "user", "content": "hello", "timestamp": "t1"},
+            {"routing_decision": {"primary_skill": "corrosion"}},  # no role -> dropped
+            {"role": "assistant", "content": "hi there", "timestamp": "t2"},
+            {"role": "assistant", "content": "", "timestamp": "t3"},  # empty -> dropped
+        ],
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            assert key == "conversation:c1"
+            return _json.dumps(conv)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    messages = c.get_transcript("c1")
+    assert messages == [
+        {"role": "user", "content": "hello", "timestamp": "t1"},
+        {"role": "assistant", "content": "hi there", "timestamp": "t2"},
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# GET /{id}, PATCH /{id}, DELETE /{id}, POST /{id}/resume
+# --------------------------------------------------------------------------- #
+
+
+class _FakeDetailClient:
+    """Stand-in for ConversationStateClient backing the per-conversation endpoints."""
+
+    def __init__(self, *, conversations: dict, owners: dict):
+        self._conversations = conversations
+        self._owners = owners
+        self._meta: dict = {}
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def owns(self, user_id: str, conv_id: str) -> bool:
+        return self._owners.get(conv_id) == user_id
+
+    def get_conversation(self, conv_id: str):
+        return self._conversations.get(conv_id)
+
+    def get_meta(self, conv_id: str) -> dict:
+        return self._meta.get(conv_id, {})
+
+    def set_title_override(self, conv_id: str, title: str) -> bool:
+        self._meta.setdefault(conv_id, {})["title_override"] = title
+        return True
+
+    def set_hidden(self, conv_id: str, hidden: bool) -> bool:
+        self._meta.setdefault(conv_id, {})["hidden"] = "1" if hidden else None
+        return True
+
+    def get_transcript(self, conv_id: str) -> list[dict]:
+        conv = self._conversations.get(conv_id) or {}
+        history = conv.get("conversation_history", []) or []
+        return [
+            {"role": e["role"], "content": e["content"], "timestamp": e.get("timestamp", "")}
+            for e in history
+            if isinstance(e, dict) and e.get("role") in ("user", "assistant") and e.get("content")
+        ]
+
+    def get_artifacts(self, conv_id: str) -> list[dict]:
+        return []
+
+
+def _detail_client(monkeypatch, *, conversations: dict, owners: dict) -> _FakeDetailClient:
+    fake = _FakeDetailClient(conversations=conversations, owners=owners)
+    monkeypatch.setattr(conversations_router, "ConversationStateClient", lambda _url: fake)
+    return fake
+
+
+def test_rename_requires_ownership(monkeypatch):
+    _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "bob"})
+    client = _authed_client(monkeypatch)  # issues a token for "alice"
+
+    resp = client.patch("/api/conversations/c1", json={"title": "New title"})
+    assert resp.status_code == 404
+
+
+def test_rename_sets_title_override(monkeypatch):
+    fake = _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.patch("/api/conversations/c1", json={"title": "New title"})
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "New title"
+    assert fake.get_meta("c1")["title_override"] == "New title"
+
+
+def test_rename_rejects_empty_title(monkeypatch):
+    _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.patch("/api/conversations/c1", json={"title": "   "})
+    assert resp.status_code == 422
+
+
+def test_delete_requires_ownership(monkeypatch):
+    _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "bob"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.delete("/api/conversations/c1")
+    assert resp.status_code == 404
+
+
+def test_delete_soft_hides_without_touching_the_conversation_document(monkeypatch):
+    fake = _detail_client(monkeypatch, conversations={"c1": {"user_query": "hi"}}, owners={"c1": "alice"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.delete("/api/conversations/c1")
+    assert resp.status_code == 204
+    assert fake.get_meta("c1")["hidden"] == "1"
+    assert fake.get_conversation("c1") == {"user_query": "hi"}  # untouched
+
+
+def test_resume_requires_ownership(monkeypatch):
+    _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "bob"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.post("/api/conversations/c1/resume")
+    assert resp.status_code == 404
+
+
+def test_resume_rebinds_session_and_returns_transcript(monkeypatch):
+    from app.main import app
+
+    conv = {
+        "user_query": "hello",
+        "conversation_history": [
+            {"role": "user", "content": "hello", "timestamp": "t1"},
+            {"role": "assistant", "content": "hi there", "timestamp": "t2"},
+        ],
+    }
+    _detail_client(monkeypatch, conversations={"c1": conv}, owners={"c1": "alice"})
+    client = _authed_client(monkeypatch)
+
+    resp = client.post("/api/conversations/c1/resume")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["conversation_id"] == "c1"
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+
+    session = app.state.session_store.get("sid-conv")
+    assert session is not None
+    assert session.conversation_id == "c1"

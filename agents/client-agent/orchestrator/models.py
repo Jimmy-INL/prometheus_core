@@ -21,6 +21,9 @@ class AgentState(TypedDict):
     conversation_history: List[Dict]
     prior_capability_params: Dict[str, Dict[str, Any]]
 
+    # Short LLM-generated title for chat history (set once, on the first turn).
+    title: Optional[str]
+
     # Dynamic routing decision
     routing_decision: Optional[Dict[str, Any]]  # Full RoutingDecision.to_dict()
 

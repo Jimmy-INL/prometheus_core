@@ -131,6 +131,52 @@ def test_map_backgrounded_registers_awaited_task():
 
 
 # --------------------------------------------------------------------------- #
+# stale — a turn whose session has since moved to a different conversation
+# (chat-history "New chat"/resume while a turn is in flight) must not mutate
+# session state for the conversation the session now points at.
+# --------------------------------------------------------------------------- #
+
+
+def test_map_final_skips_session_mutation_when_stale():
+    session = _session()
+    response = _resp(
+        status="completed",
+        report="done",
+        artifacts=[{"artifact_id": "a1", "name": "full"}],
+    )
+
+    mapped = chat_service.map_response(response, "t1", session, auto_approve=False, stale=True)
+
+    # A response is still produced (the original HTTP request needs one)...
+    assert mapped.status == ChatStatus.COMPLETED.value
+    # ...but the session's artifact catalog — which belongs to whatever
+    # conversation the session is *currently* bound to — is untouched.
+    assert session.artifacts == []
+
+
+def test_map_backgrounded_skips_registration_when_stale():
+    session = _session()
+    response = _resp(status="backgrounded", message_metadata={"task_id": "task-42"})
+
+    chat_service.map_response(response, "t1", session, auto_approve=False, stale=True)
+
+    assert session.awaited_task_ids == set()
+
+
+def test_map_needs_info_depth_cap_not_applied_when_stale():
+    session = _session()
+    session.consecutive_needs_info = 5
+    ni = _resp(status="needs_info", message="m", followup_questions=[])
+
+    mapped = chat_service.map_response(ni, "t", session, auto_approve=False, stale=True)
+
+    # Still a needs_info response, not the "too many followups" fallback...
+    assert mapped.status == ChatStatus.NEEDS_INFO.value
+    # ...and the counter for the conversation the session now points at is untouched.
+    assert session.consecutive_needs_info == 5
+
+
+# --------------------------------------------------------------------------- #
 # T-8 — one authoritative text field per terminal status (no double-render)
 # --------------------------------------------------------------------------- #
 
@@ -281,6 +327,51 @@ async def test_handle_turn_requires_conversation_id():
     client = _StubClient(_resp(status="answer"))
     with pytest.raises(ValueError):
         await chat_service.handle_turn(client, session, turn_id="t", query="q")  # type: ignore[arg-type]
+
+
+class _ConversationSwitchingStubClient:
+    """Simulates a chat-history "New chat"/resume rebinding the session's
+    ``conversation_id`` while a turn is still in flight — the exact race
+    ``handle_turn``'s ``stale`` computation guards against."""
+
+    def __init__(self, response: ConversationResponse, session: SessionState, new_conversation_id: str):
+        self._response = response
+        self._session = session
+        self._new_conversation_id = new_conversation_id
+        self.sent: dict = {}
+
+    async def send(self, **kwargs):
+        self.sent = kwargs
+        # The outgoing request must have already captured the ORIGINAL conversation_id
+        # before this "rebind" happens (asserted by the caller against .sent).
+        self._session.conversation_id = self._new_conversation_id
+        return self._response
+
+
+async def test_handle_turn_sends_original_conversation_but_skips_stale_mutation():
+    session = _session()  # conversation_id == "c1"
+    response = _resp(
+        status="completed",
+        report="done for c1",
+        artifacts=[{"artifact_id": "a1", "name": "c1-catalog"}],
+    )
+    client = _ConversationSwitchingStubClient(response, session, new_conversation_id="c2")
+
+    mapped = await chat_service.handle_turn(
+        client,  # type: ignore[arg-type]
+        session,
+        turn_id="t1",
+        query="hello",
+    )
+
+    # The A2A request still targeted the conversation this turn was actually for...
+    assert client.sent["conversation_id"] == "c1"
+    # ...the caller still gets a normal response back...
+    assert mapped.status == ChatStatus.COMPLETED.value
+    # ...but the session (now bound to "c2") did not get c1's artifact catalog stomped
+    # onto it.
+    assert session.conversation_id == "c2"
+    assert session.artifacts == []
 
 
 def test_upload_descriptors_to_dicts_roundtrip():

@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Square, ChevronDown, ChevronRight, Wrench, Paperclip, X, FileText, Loader2, AlertCircle } from "lucide-react";
-import { chatIntro as fallbackIntro, chatSuggestionTitle as fallbackSuggestionTitle, workflowSuggestions as fallbackSuggestions } from "../config";
-import { useChatType } from "@/lib/useChatType";
 import { api } from "@/lib/api/client";
 import { chatStore, useChatState } from "@/lib/store/chat";
 import type { ChatItem, NeedsInfoItem, PlanItem, ToolItem } from "@/lib/store/chat";
 import type { UploadDescriptor } from "@/lib/api/types";
 import { FollowupForm } from "./chat/FollowupForm";
+import { WelcomeScreen } from "./chat/WelcomeScreen";
 import { Markdown } from "./Markdown";
 import { ElementList } from "./ElementRenderer";
 import { artifactsToElements } from "@/lib/chainlit/artifactAdapter";
@@ -106,36 +105,6 @@ function PlanCard({
       ) : item.decided ? (
         <p className="text-xs text-base-content/60">Plan {item.decided}.</p>
       ) : null}
-    </div>
-  );
-}
-
-function WelcomeScreen({ onSelect }: { onSelect: (text: string) => void }) {
-  const [chatType] = useChatType();
-  const { config } = useChatState();
-  const showSuggestions = chatType === "Beginner";
-  const intro = config?.chat_intro || fallbackIntro;
-  const suggestionTitle = config?.chat_suggestion_title || fallbackSuggestionTitle;
-  const suggestions = config?.workflow_suggestions?.length ? config.workflow_suggestions : fallbackSuggestions;
-  return (
-    <div className="flex flex-col items-center justify-center flex-1 px-6 gap-8">
-      <div className="text-center space-y-2">
-        <h1>{intro}</h1>
-        {showSuggestions && <p className="text-base-content">{suggestionTitle}</p>}
-      </div>
-      {showSuggestions && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              className="card text-left px-4 py-3 bg-base-200 hover:bg-base-300 transition-colors cursor-pointer"
-              onClick={() => onSelect(suggestion)}
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

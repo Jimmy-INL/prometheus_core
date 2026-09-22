@@ -399,15 +399,22 @@ class ConversationSummary(BaseModel):
     Mirrors the dict shape produced by
     ``ConversationStateClient.get_conversation_history`` (ported from the Chainlit
     ``/history`` command); ``status`` is the client's inferred user-facing status.
+    ``title`` is the effective title: a user rename wins over the client-agent's
+    LLM-generated title, which wins over the raw first query (``query``).
+    ``pending`` is true while a turn is actively running against this
+    conversation (``agent:status:{id}.final is False``) — a conversation the
+    caller isn't currently viewing may still have work in flight.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     conversation_id: str
+    title: str = ""
     query: str = ""
     status: str = "unknown"
     material_id: Optional[str] = None
     timestamp: str = ""
+    pending: bool = False
 
 
 class ConversationHistoryResponse(BaseModel):
@@ -420,3 +427,39 @@ class ConversationHistoryResponse(BaseModel):
 
     available: bool = False
     conversations: list[ConversationSummary] = Field(default_factory=list)
+
+
+class ConversationMessage(BaseModel):
+    """One normalized chat turn, as returned by the conversation-detail/resume
+    endpoints. Distinct from the richer live ``ChatMessageResponse``: this is a
+    display-only replay of a past turn, not a re-playable turn result."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    role: Literal["user", "assistant"]
+    content: str = ""
+    timestamp: str = ""
+
+
+class ConversationDetailResponse(BaseModel):
+    """Returned by ``GET /api/conversations/{id}`` and ``POST
+    /api/conversations/{id}/resume`` — a past conversation's transcript plus
+    enough session-bootstrap info for the frontend to resume it.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    conversation_id: str
+    title: str = ""
+    profile: str = ""
+    auto_approve_steps: bool = False
+    messages: list[ConversationMessage] = Field(default_factory=list)
+    artifacts: list[ArtifactMeta] = Field(default_factory=list)
+
+
+class ConversationRenameRequest(BaseModel):
+    """Body for ``PATCH /api/conversations/{id}``."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    title: str
