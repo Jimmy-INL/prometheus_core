@@ -324,7 +324,12 @@ class SummarizerAgent(PrometheusAgent):
 
 If you must use the **synchronous** Anthropic SDK (install `anthropic`; see Step 5),
 offload the blocking call to a worker thread with `asyncio.to_thread` so the loop
-stays free:
+stays free.
+
+This path bypasses `self.llm_client`, so `LLM_CONFIG_PROFILE` does not apply and you
+name the model yourself. `MODEL_NAME` below is then *your* variable, not one the
+template provides — add it to your `docker-compose.yml` environment block and `.env`
+under "your own agent-specific variables", or the `os.getenv` default is all you get:
 
 ```python
 import asyncio

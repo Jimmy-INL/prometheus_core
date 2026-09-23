@@ -47,8 +47,30 @@ services:
       DEEPLYNX_ORG_ID: ${DEEPLYNX_ORG_ID:-}
       DEEPLYNX_PROJECT_ID: ${DEEPLYNX_PROJECT_ID:-}
 
-      # Add your own agent-specific variables here (and in .env):
+      # LLM configuration. The profile maps the semantic flavors the agent asks
+      # for in code onto concrete provider models; `registry` (the default)
+      # routes inference through the platform's LiteLLM proxy. Provider keys are
+      # only read by the profile that references them. There is deliberately no
+      # MODEL_NAME here -- picking the model is the agent's job, not the
+      # deployment's.
+      LLM_CONFIG_PROFILE: ${LLM_CONFIG_PROFILE:-registry}
+      LLM_CONFIG_FILE: ${LLM_CONFIG_FILE:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      MODEL_NAME: ${MODEL_NAME:-claude-sonnet-5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AMSC_I2_API_KEY: ${AMSC_I2_API_KEY:-}
+
+      # Optional runtime tuning. Forwarded as empty when unset; prometheus_api
+      # treats empty as "use the default", so the defaults are defined in one
+      # place only (there and not here). See .env.example for what each does.
+      CREDENTIAL_BROKER: ${CREDENTIAL_BROKER:-}
+      REGISTRY_MAX_RETRIES: ${REGISTRY_MAX_RETRIES:-}
+      PROMETHEUS_TASK_STORE: ${PROMETHEUS_TASK_STORE:-}
+      AGENT_CONTEXT_TTL_SECONDS: ${AGENT_CONTEXT_TTL_SECONDS:-}
+      ARTIFACT_REGISTRY_TTL_SECONDS: ${ARTIFACT_REGISTRY_TTL_SECONDS:-}
+      TASK_STORE_TTL_SECONDS: ${TASK_STORE_TTL_SECONDS:-}
+      USER_WORKER_MAX: ${USER_WORKER_MAX:-}
+      USER_WORKER_IDLE_TTL: ${USER_WORKER_IDLE_TTL:-}
+
+      # Add your own agent-specific variables here (and in .env):
       PYTHONDONTWRITEBYTECODE: 1
     restart: unless-stopped

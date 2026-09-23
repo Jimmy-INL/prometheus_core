@@ -29,6 +29,10 @@ PLATFORM_SECRET_KEYS = (
     "USER_IDENTITY_PUBLIC_KEY",
     "USER_IDENTITY_ISS",
     "USER_IDENTITY_AUD",
+    # Not a secret, but copied for the same reason as ISS/AUD: a scaffolded
+    # agent should inherit the platform's inference routing rather than
+    # silently defaulting to `registry` when the platform uses something else.
+    "LLM_CONFIG_PROFILE",
 )
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_GITIGNORE_ENTRIES = (".env",)
@@ -260,8 +264,8 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
 
     create_env = confirm_action(
         f"\nFound '{PLATFORM_ENV_PATH}'. Create '{output_dir / '.env'}' with "
-        "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, and "
-        "USER_IDENTITY_* values? (yes/no)",
+        "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, "
+        "LLM_CONFIG_PROFILE, and USER_IDENTITY_* values? (yes/no)",
         "yes",
     )
     if not create_env:
