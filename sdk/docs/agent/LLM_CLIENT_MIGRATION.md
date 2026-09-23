@@ -82,7 +82,7 @@ and endpoints in the profile source before building a deployment image, or
 copy a profile and select it with `LLM_CONFIG_FILE`:
 
 ```bash
-cp "$(python -c 'from prometheus_api.llm_configs import get_llm_config_path; print(get_llm_config_path("openai"))')" llm_config.yaml
+cp llm_config.example.yaml llm_config.yaml
 export LLM_CONFIG_FILE=./llm_config.yaml
 ```
 

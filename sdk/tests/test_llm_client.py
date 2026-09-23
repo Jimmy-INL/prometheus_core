@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -220,6 +221,22 @@ def test_fallback_yaml_parsing_resolves_env_refs(monkeypatch, tmp_path):
     assert sorted(models) == ["default", "embedding", "large", "medium", "small"]
     assert models["default"].provider_model == "openai/default-model"
     assert models["default"].litellm_params["api_key"] == "env-secret"
+
+
+def test_local_development_example_config_parses():
+    """The tracked local-development template must stay parseable and complete.
+
+    This is the only client-side guard that the example YAML keeps the full
+    six-flavor contract, including `vision`. Without it the template rots silently.
+    """
+    config_path = Path(__file__).resolve().parents[1] / "llm_config.example.yaml"
+    config = LLMConfig(config_file=config_path)
+
+    models = config.load_fallback_models()
+
+    assert sorted(models) == ["default", "embedding", "large", "medium", "small", "vision"]
+    assert models["default"].provider_model
+    assert models["embedding"].provider_model
 
 
 def test_default_alias_is_fixed():

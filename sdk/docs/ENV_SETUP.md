@@ -171,11 +171,11 @@ Agents should use `self.llm_client(context)` so `app_name` inherits the agent
 name. Additional tags can be set when constructing `LLMConfig`, creating the
 client, or calling `chat(..., trace_tags={...})`; protected tags always win.
 
-To customize a profile without modifying the installed package, copy an
-installed profile and point `LLM_CONFIG_FILE` at the copy:
+To customize a profile without modifying the installed package, copy the
+tracked example:
 
 ```bash
-cp "$(python -c 'from prometheus_api.llm_configs import get_llm_config_path; print(get_llm_config_path("openai"))')" llm_config.yaml
+cp llm_config.example.yaml llm_config.yaml
 export LLM_CONFIG_FILE=./llm_config.yaml
 ```
 
@@ -229,8 +229,8 @@ backend is contacted.
 
 ### Custom LiteLLM YAML
 
-Any installed profile in `prometheus_api/llm_configs/` works as a starting
-template. The minimal shape is:
+The repository includes a fully commented local development template at
+`llm_config.example.yaml`. The minimal shape is:
 
 ```yaml
 model_list:
