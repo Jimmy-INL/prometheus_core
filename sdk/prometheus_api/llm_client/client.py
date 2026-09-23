@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any, Literal, Mapping, cast
 
 import httpx
@@ -14,6 +15,14 @@ from .exceptions import LLMAliasError, LLMClientError
 from .models import ChatResponse, EmbeddingResponse
 from .normalization import ChatInput, EmbeddingInput, normalize_embedding_input, normalize_messages
 from .security import extract_llm_api_key_from_a2a_context, redact_secrets
+from .tools import (
+    ToolCall,
+    ToolDefinition,
+    _get,
+    parse_finish_reason,
+    parse_tool_calls,
+    tool_schemas,
+)
 
 logger = logging.getLogger("prometheus_api.llm_client")
 
@@ -30,12 +39,6 @@ def _missing_alias_error(alias: str, aliases: list[str]) -> LLMAliasError:
         f"LLM alias {alias!r} is not available. Available aliases: {available}.\n"
         "Configure it in LiteLLM or the selected LLM config file."
     )
-
-
-def _get(value: Any, key: str, default: Any = None) -> Any:
-    if isinstance(value, Mapping):
-        return value.get(key, default)
-    return getattr(value, key, default)
 
 
 def _plain_dict(value: Any) -> dict[str, Any] | None:
@@ -153,6 +156,56 @@ class _ClientMixin:
             params["api_key"] = self.config.api_key
         return params
 
+    def _prepare_chat_kwargs(
+        self,
+        call_kwargs: dict[str, Any],
+        *,
+        tools: Sequence[ToolDefinition | Mapping[str, Any]] | None,
+        tool_choice: str | Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Validate and shape per-call chat kwargs before they reach a backend."""
+        if call_kwargs.get("stream"):
+            raise LLMClientError(
+                "Streaming is not supported by prometheus_api.llm_client. "
+                "Remove stream=True; see specs/006 out-of-scope notes."
+            )
+        prepared = dict(call_kwargs)
+        if tools is not None:
+            prepared["tools"] = tool_schemas(tools)
+        if tool_choice is not None:
+            prepared["tool_choice"] = tool_choice
+        return prepared
+
+    def _build_chat_response(
+        self,
+        *,
+        raw: Any,
+        alias: str,
+        provider_model: str,
+    ) -> ChatResponse:
+        """Build the normalized chat response from either backend payload shape."""
+        return ChatResponse(
+            text=_chat_text(raw),
+            model_alias=alias,
+            provider_model=_provider_model(raw, provider_model),
+            usage=_usage(raw),
+            raw=raw,
+            tool_calls=parse_tool_calls(raw),
+            finish_reason=parse_finish_reason(raw),
+        )
+
+    @staticmethod
+    def _tool_names(call_kwargs: Mapping[str, Any]) -> list[str] | None:
+        """Extract developer-authored tool names from prepared kwargs for logging."""
+        tools = call_kwargs.get("tools")
+        if not isinstance(tools, Sequence) or isinstance(tools, (str, bytes)):
+            return None
+        names: list[str] = []
+        for schema in tools:
+            function = _get(schema, "function", {}) or {}
+            names.append(str(_get(function, "name", "") or ""))
+        return names
+
     def _backend_base_url(
         self,
         *,
@@ -211,20 +264,42 @@ class _ClientMixin:
                 "path": mode,
                 "client": client_kind,
             },
-            inputs={"messages": messages},
+            inputs=self._chat_trace_inputs(messages, call_kwargs),
         )
+
+    @staticmethod
+    def _chat_trace_inputs(
+        messages: list[dict[str, Any]],
+        call_kwargs: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Build span inputs, adding tool names only when tools were supplied."""
+        inputs: dict[str, Any] = {"messages": messages}
+        tool_names = _ClientMixin._tool_names(call_kwargs)
+        if tool_names is not None:
+            inputs["tools"] = tool_names
+        return inputs
 
     def _set_chat_trace_outputs(self, span: Any | None, response: ChatResponse) -> None:
         if span is None:
             return
-        span.set_outputs(
-            {
-                "text": response.text,
-                "model_alias": response.model_alias,
-                "provider_model": response.provider_model,
-                "usage": response.usage,
-            }
-        )
+        outputs: dict[str, Any] = {
+            "text": response.text,
+            "model_alias": response.model_alias,
+            "provider_model": response.provider_model,
+            "usage": response.usage,
+        }
+        if response.tool_calls:
+            outputs["finish_reason"] = response.finish_reason
+            # Traces persist remotely and arguments are model-authored, so redact them.
+            outputs["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": redact_secrets(call.arguments),
+                }
+                for call in response.tool_calls
+            ]
+        span.set_outputs(outputs)
 
     def _log_chat_request(
         self,
@@ -232,6 +307,8 @@ class _ClientMixin:
         alias: str,
         mode: _Mode,
         messages: list[dict[str, Any]],
+        tool_names: list[str] | None = None,
+        tool_choice: Any = None,
     ) -> None:
         if not logger.isEnabledFor(logging.DEBUG):
             return
@@ -241,6 +318,11 @@ class _ClientMixin:
             "message_count": len(messages),
             "roles": [str(message.get("role", "")) for message in messages],
         }
+        if tool_names is not None:
+            payload["tool_count"] = len(tool_names)
+            payload["tool_names"] = tool_names
+        if tool_choice is not None:
+            payload["tool_choice"] = redact_secrets(tool_choice)
         if self.config.debug_log_messages:
             payload["messages"] = redact_secrets(messages)
         logger.debug("LLM chat request: %s", payload)
@@ -272,20 +354,28 @@ class _ClientMixin:
         provider_model: str | None,
         usage: dict[str, Any] | None,
         latency_seconds: float,
+        tool_calls: tuple[ToolCall, ...] = (),
+        finish_reason: str | None = None,
     ) -> None:
         if not logger.isEnabledFor(logging.DEBUG):
             return
-        logger.debug(
-            "LLM %s response: %s",
-            operation,
-            {
-                "alias": alias,
-                "path": mode,
-                "provider_model": provider_model,
-                "usage": usage,
-                "latency_seconds": round(latency_seconds, 6),
-            },
-        )
+        payload: dict[str, Any] = {
+            "alias": alias,
+            "path": mode,
+            "provider_model": provider_model,
+            "usage": usage,
+            "latency_seconds": round(latency_seconds, 6),
+        }
+        if finish_reason is not None:
+            payload["finish_reason"] = finish_reason
+        if tool_calls:
+            payload["tool_call_count"] = len(tool_calls)
+            payload["tool_call_names"] = [call.name for call in tool_calls]
+            if self.config.debug_log_messages:
+                payload["tool_call_arguments"] = redact_secrets(
+                    [call.arguments for call in tool_calls]
+                )
+        logger.debug("LLM %s response: %s", operation, payload)
 
 
 class LLMClient(_ClientMixin):
@@ -345,14 +435,25 @@ class LLMClient(_ClientMixin):
         text_or_messages: ChatInput,
         model: str | None = None,
         trace_tags: Mapping[str, Any] | None = None,
+        *,
+        tools: Sequence[ToolDefinition | Mapping[str, Any]] | None = None,
+        tool_choice: str | Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
+        kwargs = self._prepare_chat_kwargs(kwargs, tools=tools, tool_choice=tool_choice)
+        tool_names = self._tool_names(kwargs)
         alias = str(model or "default")
         messages = normalize_messages(text_or_messages)
         start = time.perf_counter()
         mode, provider_model, fallback_model = self._select_model(alias)
-        self._log_chat_request(alias=alias, mode=mode, messages=messages)
+        self._log_chat_request(
+            alias=alias,
+            mode=mode,
+            messages=messages,
+            tool_names=tool_names,
+            tool_choice=tool_choice,
+        )
 
         try:
             with self._chat_trace_context(
@@ -369,17 +470,19 @@ class LLMClient(_ClientMixin):
                     raw = self._proxy_chat(alias, messages, kwargs)
                 else:
                     raw = self._fallback_chat(fallback_model, messages, kwargs)
-                response = ChatResponse(
-                    text=_chat_text(raw),
-                    model_alias=alias,
-                    provider_model=_provider_model(raw, provider_model),
-                    usage=_usage(raw),
-                    raw=raw,
+                response = self._build_chat_response(
+                    raw=raw, alias=alias, provider_model=provider_model
                 )
                 self._set_chat_trace_outputs(span, response)
         except _ProxyUnavailableError:
             mode, provider_model, fallback_model = self._select_fallback(alias)
-            self._log_chat_request(alias=alias, mode=mode, messages=messages)
+            self._log_chat_request(
+                alias=alias,
+                mode=mode,
+                messages=messages,
+                tool_names=tool_names,
+                tool_choice=tool_choice,
+            )
             with self._chat_trace_context(
                 alias=alias,
                 mode=mode,
@@ -391,12 +494,8 @@ class LLMClient(_ClientMixin):
                 client_kind="sync",
             ) as span:
                 raw = self._fallback_chat(fallback_model, messages, kwargs)
-                response = ChatResponse(
-                    text=_chat_text(raw),
-                    model_alias=alias,
-                    provider_model=_provider_model(raw, provider_model),
-                    usage=_usage(raw),
-                    raw=raw,
+                response = self._build_chat_response(
+                    raw=raw, alias=alias, provider_model=provider_model
                 )
                 self._set_chat_trace_outputs(span, response)
 
@@ -407,6 +506,8 @@ class LLMClient(_ClientMixin):
             provider_model=response.provider_model,
             usage=response.usage,
             latency_seconds=time.perf_counter() - start,
+            tool_calls=response.tool_calls,
+            finish_reason=response.finish_reason,
         )
         return response
 
@@ -621,14 +722,25 @@ class AsyncLLMClient(_ClientMixin):
         text_or_messages: ChatInput,
         model: str | None = None,
         trace_tags: Mapping[str, Any] | None = None,
+        *,
+        tools: Sequence[ToolDefinition | Mapping[str, Any]] | None = None,
+        tool_choice: str | Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Run a chat-completion call."""
+        kwargs = self._prepare_chat_kwargs(kwargs, tools=tools, tool_choice=tool_choice)
+        tool_names = self._tool_names(kwargs)
         alias = str(model or "default")
         messages = normalize_messages(text_or_messages)
         start = time.perf_counter()
         mode, provider_model, fallback_model = await self._select_model(alias)
-        self._log_chat_request(alias=alias, mode=mode, messages=messages)
+        self._log_chat_request(
+            alias=alias,
+            mode=mode,
+            messages=messages,
+            tool_names=tool_names,
+            tool_choice=tool_choice,
+        )
 
         try:
             with self._chat_trace_context(
@@ -645,17 +757,19 @@ class AsyncLLMClient(_ClientMixin):
                     raw = await self._proxy_chat(alias, messages, kwargs)
                 else:
                     raw = await self._fallback_chat(fallback_model, messages, kwargs)
-                response = ChatResponse(
-                    text=_chat_text(raw),
-                    model_alias=alias,
-                    provider_model=_provider_model(raw, provider_model),
-                    usage=_usage(raw),
-                    raw=raw,
+                response = self._build_chat_response(
+                    raw=raw, alias=alias, provider_model=provider_model
                 )
                 self._set_chat_trace_outputs(span, response)
         except _ProxyUnavailableError:
             mode, provider_model, fallback_model = self._select_fallback(alias)
-            self._log_chat_request(alias=alias, mode=mode, messages=messages)
+            self._log_chat_request(
+                alias=alias,
+                mode=mode,
+                messages=messages,
+                tool_names=tool_names,
+                tool_choice=tool_choice,
+            )
             with self._chat_trace_context(
                 alias=alias,
                 mode=mode,
@@ -667,12 +781,8 @@ class AsyncLLMClient(_ClientMixin):
                 client_kind="async",
             ) as span:
                 raw = await self._fallback_chat(fallback_model, messages, kwargs)
-                response = ChatResponse(
-                    text=_chat_text(raw),
-                    model_alias=alias,
-                    provider_model=_provider_model(raw, provider_model),
-                    usage=_usage(raw),
-                    raw=raw,
+                response = self._build_chat_response(
+                    raw=raw, alias=alias, provider_model=provider_model
                 )
                 self._set_chat_trace_outputs(span, response)
 
@@ -683,6 +793,8 @@ class AsyncLLMClient(_ClientMixin):
             provider_model=response.provider_model,
             usage=response.usage,
             latency_seconds=time.perf_counter() - start,
+            tool_calls=response.tool_calls,
+            finish_reason=response.finish_reason,
         )
         return response
 

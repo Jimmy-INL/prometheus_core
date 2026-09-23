@@ -171,20 +171,66 @@ Agents should use `self.llm_client(context)` so `app_name` inherits the agent
 name. Additional tags can be set when constructing `LLMConfig`, creating the
 client, or calling `chat(..., trace_tags={...})`; protected tags always win.
 
-To customize a profile without modifying the installed package, copy the
-tracked example:
+To customize a profile without modifying the installed package, copy an
+installed profile and point `LLM_CONFIG_FILE` at the copy:
 
 ```bash
-cp llm_config.example.yaml llm_config.yaml
+cp "$(python -c 'from prometheus_api.llm_configs import get_llm_config_path; print(get_llm_config_path("openai"))')" llm_config.yaml
+export LLM_CONFIG_FILE=./llm_config.yaml
 ```
 
 `llm_config.yaml` is gitignored so developers can edit provider models for their own
 machine without committing local configuration.
 
+### Tool Calling
+
+Tool calling needs **no configuration and adds no environment variables**. It is a
+per-call capability of any chat alias rather than a flavor, so there is no `tools`
+alias to configure and the six-flavor contract is unchanged. Pick a flavor for the
+cost and capability you want, then pass tools to that call:
+
+```python
+from prometheus_api.llm_client import (
+    LLMClient,
+    ToolDefinition,
+    assistant_message,
+    tool_result_message,
+)
+
+lookup = ToolDefinition.from_pydantic("lookup_material", LookupArgs, description="Look up a material")
+
+with LLMClient() as llm:
+    response = llm.medium("What is the density of iron?", tools=[lookup], tool_choice="auto")
+
+    for call in response.tool_calls:
+        print(call.name, call.arguments)
+```
+
+A turn that only requests tools has no message content, so `response.text` is `""`.
+Use `response.tool_calls` and `response.finish_reason` as the signal. To continue the
+conversation, replay the turn and answer each call:
+
+```python
+    history = [
+        {"role": "user", "content": "What is the density of iron?"},
+        assistant_message(response),
+        *(tool_result_message(call, run_tool(call)) for call in response.tool_calls),
+    ]
+    final = llm.medium(history, tools=[lookup])
+```
+
+When MLflow tracing is enabled, spans record supplied tool **names** (not full JSON
+schemas) as inputs, and tool calls as outputs with their arguments passed through
+`redact_secrets(...)`. Tool-call arguments are model-authored, so debug logs withhold
+them unless `LLM_DEBUG_LOG_MESSAGES=true`, and redact them even then.
+
+Streaming is not supported. Passing `stream=True` raises `LLMClientError` before any
+backend is contacted.
+
 ### Custom LiteLLM YAML
 
-The repository includes a fully commented local development template at
-`llm_config.example.yaml`. The minimal shape is:
+Any installed profile in `prometheus_api/llm_configs/` works as a starting
+template. The minimal shape is:
 
 ```yaml
 model_list:

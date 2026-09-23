@@ -31,6 +31,9 @@ uv run pytest --cov=prometheus_api --cov-report=html
 | `test_connection.py` | Connection configuration | unit |
 | `test_env_config.py` | Environment variable loading | unit |
 | `test_filesystem.py` | `deeplynx://` fsspec behavior | unit |
+| `test_llm_client.py` | LLM config, aliases, chat/embedding paths, tracing, redaction | unit |
+| `test_llm_configs.py` | Installed LLM YAML profiles and the flavor contract | unit |
+| `test_llm_tools.py` | LLM tool-call parsing, definitions, and forced tool calls | unit |
 | `test_models.py` | Pydantic models | unit |
 | `test_sync_async_parity.py` | Sync/async resource payload and parsing parity | unit |
 | `test_tags.py` | Tag endpoint behavior | unit |

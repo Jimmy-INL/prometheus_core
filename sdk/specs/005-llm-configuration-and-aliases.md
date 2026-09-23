@@ -1,7 +1,7 @@
 # 005 — LLM configuration and aliases
 
 status: implemented
-sources: README.md, docs/ENV_SETUP.md, llm_config.example.yaml, prometheus_api/llm_configs/, prometheus_api/llm_client/config.py, prometheus_api/llm_client/client.py, prometheus_api/llm_client/exceptions.py, tests/test_llm_client.py, tests/test_llm_configs.py
+sources: README.md, docs/ENV_SETUP.md, prometheus_api/llm_configs/, prometheus_api/llm_client/config.py, prometheus_api/llm_client/client.py, prometheus_api/llm_client/exceptions.py, tests/test_llm_client.py, tests/test_llm_configs.py
 depends-on: none
 
 ## Purpose
@@ -52,6 +52,7 @@ Let applications select LLM models through stable aliases while using an explici
 ## Out of scope / Non-goals
 - Agent code chooses only semantic flavors. This package does not choose deployment-specific provider model names beyond reading the selected profile.
 - This spec does not require proxy aliases to match fallback aliases.
+- Tool calling is a per-call chat capability, not a model flavor. This spec does not define a `tools` alias and the six-flavor contract in REQ-005-16 is unchanged. See 014.
 
 ## Open questions
 - Error cases for malformed fallback YAML are enforced in code but not all have direct regression tests.

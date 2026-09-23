@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`prometheus-api` is a Python 3.12+ package shipping two cooperating components against a DeepLynx storage backend:
+`prometheus-api` is a Python 3.12+ package shipping three cooperating components against a DeepLynx storage backend:
 
 1. **`prometheus_api.storage_client`** — Pydantic-typed sync (`StorageClient`) and async (`AsyncStorageClient`) HTTP clients for items, files (incl. chunked uploads), relationships, search, tags, timeseries. Also registers a `deeplynx://` fsspec filesystem (`DeepLynxFileSystem`) via the `fsspec.specs` entry point.
 2. **`prometheus_api.agent`** — `PrometheusAgent` base class for A2A-protocol agents (built on `a2a-sdk` + Starlette/uvicorn). Subclasses override `async _execute(params, context, event_queue)` and the base handles agent-card loading, bearer-token auth, registry registration, status/artifact emission, and per-`contextId` state persistence.
+3. **`prometheus_api.llm_client`** — provider-agnostic sync (`LLMClient`) and async (`AsyncLLMClient`) chat/embedding clients over LiteLLM. Agent code selects a *semantic flavor* (`default`, `small`, `medium`, `large`, `vision`, `embedding`); deployments map flavors to provider models in the installed YAML profiles under `llm_configs/`. Also owns tool calling (`llm_client/tools.py`), secret redaction, A2A `llm_api_key` extraction, and opt-in MLflow tracing.
 
 `prometheus_api.contract` (package top level, importable with only pydantic — no agent runtime) holds the canonical frontend ↔ client-agent wire contract (`ConversationRequest`, `ConversationResponse`, `ConversationStatus`) — the JSON payload exchanged in A2A text parts. The Prometheus platform's frontend and client-agent must import these models rather than redefining them; change them here and the change propagates to both sides. They are also re-exported from `prometheus_api.agent`.
 
@@ -82,6 +83,18 @@ Subclasses override `async _execute(self, params, context: RequestContext, event
 
 The agent module also re-exports common A2A types (`RequestContext`, `EventQueue`, `TaskState`, `TaskStatus`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`, `Artifact`, `TextPart`) from `prometheus_api.agent`, so subclasses normally don't need to import directly from `a2a.*`.
 
+### LLM client layout
+
+`LLMClient` (sync) and `AsyncLLMClient` (async) are **two fully independent implementations** in `llm_client/client.py`. Spec 006 requires they stay aligned for alias selection, fallback behavior, request payloads, response fields, and logging — so shared behavior belongs on `_ClientMixin`, not duplicated in both. `ChatResponse` is built only through `_ClientMixin._build_chat_response`; do not construct it inline (there are four call sites and they must not drift). `tests/test_llm_client.py::test_sync_and_async_chat_signatures_match` guards the signatures.
+
+Two dispatch paths hide behind one API. When the selected YAML has a reachable `proxy_url`, chat POSTs to `{proxy_url}/v1/chat/completions` and the response is a **plain dict**. Otherwise (or when the proxy raises a request-level error) it calls the LiteLLM SDK and the response is a **`ModelResponse` object**. Every response accessor must therefore tolerate both shapes — use `_get` from `llm_client/tools.py` rather than subscripting.
+
+Flavors are deployment configuration and live in YAML; per-call capabilities live in `chat()` kwargs. **Tool calling is per-call, not a flavor** — do not add a seventh alias. `chat()` takes keyword-only `tools` and `tool_choice`; `ToolDefinition` values are converted to OpenAI function schemas while plain mapping schemas pass through untouched, so hand-built tool dicts keep a byte-identical payload. Read tool calls off `ChatResponse.tool_calls` / `.finish_reason` (a pure tool-call turn has `text == ""`), replay a turn with `assistant_message(...)` + `tool_result_message(...)`, and gate strictness with `require_tool_calls(...)`. `finish_reason` is observability, **not** a loop terminator — some providers return `"stop"` alongside tool calls, so a multi-turn loop terminates on `not response.tool_calls` and must bound its turns (spec 014 Constraints). Parsing is deliberately lenient so `chat()` never raises on model-authored output.
+
+`llm_client/tools.py` MUST NOT import `llm_client/client.py` at runtime (the client imports it, so the reverse would cycle); use a `TYPE_CHECKING` guard. New tool errors subclass `LLMClientError`, not `LLMAliasError` — note those two live in unrelated exception trees (`RuntimeError` vs `ValueError`).
+
+Streaming is not supported: a truthy `stream` raises `LLMClientError` before any backend is contacted.
+
 Streaming (`message/stream`) is opt-in: set `"capabilities": {"streaming": true}` in the agent's `agent_card.json`. Bearer-token auth via `BearerTokenMiddleware` is enforced when `AGENT_SECRET` is set; setting `AGENT_SECRET_REQUIRED=false` is a development-only escape hatch.
 
 Artifact metadata produced by helpers always carries `conversation_id`, `producer_agent_id` (normalized: lowercased, spaces → hyphens), and `created_at` (UTC ISO). When adding new helper paths that emit artifacts, route through `_build_artifact_metadata` to preserve this envelope.
@@ -90,6 +103,10 @@ Artifact metadata produced by helpers always carries `conversation_id`, `produce
 - `test_*.py` files at the top level of `tests/` are unit tests.
 - `test_integration.py` requires a `.env` with valid `DEEPLYNX_KEY`/`SECRET`/`ORG_ID`/`PROJECT_ID` and optionally `DEEPLYNX_DATA_SOURCE_ID` (without it, code that creates records will hit "DataSource with id 0 not found").
 - `make test-install` builds a wheel, installs it into a clean venv, and smoke-tests the imports. Use this rather than ad-hoc shell scripts.
+
+### Specs (spec-driven development)
+
+`specs/` is the SDD contract, with `specs/000-index.md` as the entry point and one numbered file per capability. Requirement and behavior bullets use front-loaded stable IDs (`REQ-NNN-XX:`, `BEH-NNN-XX:`). When you change public behavior, update the owning spec in the same change: amend requirements in place, never renumber or reuse IDs, and mark inferred-but-untested requirements `⚠ untested`. Authoring rules are in `docs/SDD_SPEC_AUTHORING.md`; test traceability rules are in `docs/SDD_TESTING_STANDARD.md`. LLM specs are 005 (config/aliases), 006 (chat/embeddings), 007 (security/tracing), and 014 (tool calling).
 
 ## Conventions
 

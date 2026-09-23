@@ -18,13 +18,17 @@ Keep LLM usage safe for agents and operators by redacting secrets, accepting tra
 - REQ-007-08: MLflow MUST NOT be imported or configured when `ENABLE_MLFLOW_TRACING` is false.
 - REQ-007-09: When tracing is enabled, setup MUST load `.env`, import MLflow, set `MLFLOW_EXPERIMENT_NAME` when present, enable `mlflow.litellm.autolog()`, and run setup only once.
 - REQ-007-10: `enable_amsc_x_api_key()` MUST inject `AMSC_I2_API_KEY` as `X-Api-Key` into MLflow REST calls and warn when the env var is absent.
-- REQ-007-11: Chat tracing MUST create spans named `llm_client.chat`, record model alias/provider/path/client attributes, record messages as inputs, and set normalized response data as outputs.
+- REQ-007-11: Chat tracing MUST create spans named `llm_client.chat`, record model alias/provider/path/client attributes, record messages as inputs, record supplied tool names as inputs when tools are provided, set normalized response data as outputs, and add `tool_calls` and `finish_reason` to outputs only when the response contains tool calls.
 - REQ-007-12: Trace tags `app_name`, `base_url`, and `model` MUST be protected and override caller-supplied tags.
+- REQ-007-13: Tool-call arguments recorded in MLflow span outputs MUST pass through `redact_secrets(...)`, and full tool JSON schemas MUST NOT be recorded as span inputs.
+- REQ-007-14: Debug logging for tool-calling chat MUST include tool names, tool count, tool-call count, and `finish_reason` while withholding model-authored tool-call arguments unless `debug_log_messages` is enabled, in which case they MUST be redacted.
 
 ## Behavior
 - BEH-007-01: GIVEN visible text containing `llm_api_key` and a structured DataPart key WHEN an A2A client is created THEN only the structured key is used.
 - BEH-007-02: GIVEN debug logging without opt-in message logging WHEN a prompt contains sensitive content THEN logs include counts/roles but not prompt text.
 - BEH-007-03: GIVEN tracing with caller tags that conflict with protected tags WHEN chat runs THEN protected `app_name`, `base_url`, and `model` values win.
+- BEH-007-04: GIVEN tracing enabled and a tool-call response whose arguments contain an `api_key` value WHEN chat returns THEN span outputs include the tool call with redacted arguments.
+- BEH-007-05: GIVEN tracing enabled and a response without tool calls WHEN chat returns THEN span outputs contain only `text`, `model_alias`, `provider_model`, and `usage`.
 
 ## Interfaces
 - `redact_secrets(value: Any) -> Any`
@@ -46,5 +50,5 @@ Keep LLM usage safe for agents and operators by redacting secrets, accepting tra
 - This package does not provide a persistent credential store for A2A-provided LLM keys.
 
 ## Open questions
-- Redaction is pattern-based and may miss provider-specific secret field names that do not contain the configured fragments.
+- Redaction is pattern-based and may miss provider-specific secret field names that do not contain the configured fragments, including model-authored tool-call argument values that contain whitespace.
 - Tracing support depends on the installed MLflow version exposing `mlflow.litellm` and `mlflow.entities.SpanType`.

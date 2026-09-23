@@ -7,3 +7,7 @@ class LLMClientError(RuntimeError):
 
 class LLMAliasError(ValueError):
     """Raised when a configured model alias is unavailable."""
+
+
+class LLMToolCallError(LLMClientError):
+    """Raised when an LLM tool-call response does not satisfy the caller's contract."""

@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, optional MLflow chat tracing, response models, and secret redaction. `llm_configs/` contains the installed registry and provider YAML profiles; every provider profile must keep the `default`, `small`, `medium`, `large`, `vision`, and `embedding` flavor contract. Keep sync and async storage resources aligned when changing endpoint behavior.
+`prometheus_api/` contains the package source. `storage_client/` implements the DeepLynx sync and async clients, resource handlers, shared Pydantic models, filesystem integration, and utilities. `agent/` contains A2A agent base classes, middleware, artifact helpers, status event helpers, registry registration helpers, debug route helpers, and context state handling. `llm_client/` contains provider-agnostic LiteLLM sync and async chat/embedding clients, config parsing, input normalization, tool-calling primitives (`tools.py`), optional MLflow chat tracing, response models, and secret redaction. `llm_configs/` contains the installed registry and provider YAML profiles; every provider profile must keep the `default`, `small`, `medium`, `large`, `vision`, and `embedding` flavor contract. Keep sync and async storage resources aligned when changing endpoint behavior.
 
-`specs/` contains the spec-driven-development contract for implemented capabilities, with `specs/000-index.md` as the entry point and one numbered file per capability. Requirement and behavior bullets use front-loaded IDs such as `REQ-001-01:` and `BEH-001-01:`. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked local-development fallback template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
+`specs/` contains the spec-driven-development contract for implemented capabilities, with `specs/000-index.md` as the entry point and one numbered file per capability. Requirement and behavior bullets use front-loaded IDs such as `REQ-001-01:` and `BEH-001-01:`. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. The installed profiles in `prometheus_api/llm_configs/` are the templates for local development; copy one and select it with `LLM_CONFIG_FILE`. Developer-specific copies such as `llm_config.yaml` must stay untracked.
 The agent framework targets A2A SDK and Protocol v1. Use protobuf-native
 `a2a.types`: SCREAMING_SNAKE_CASE enums, unified `Part` fields, and
 `MessageToDict`/`ParseDict` for JSON conversion. Task streams must enqueue the
@@ -18,7 +18,7 @@ authentication, and lifecycle behavior stay aligned.
 shape fallbacks. Preserve exact ProtoJSON `TASK_STATE_*` values in accumulated
 statuses and reject invalid state spellings instead of normalizing them.
 
-`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`. `llm_config.example.yaml` is the tracked custom local-development template, including optional LiteLLM `api_base` examples; developer-specific copies such as `llm_config.yaml` must stay untracked.
+`tests/` contains pytest tests named `test_*.py`; integration coverage is concentrated in `tests/test_integration.py`. `examples/` has runnable usage examples and is excluded from ruff and mypy checks. `docs/` contains longer guides; update it when public behavior changes. `docs/agent/LLM_CLIENT_MIGRATION.md` guides people and AI coding assistants through replacing vendor-specific LLM utilities with `llm_client`.
 
 ## Build, Test, and Development Commands
 
@@ -63,6 +63,15 @@ LLM agents choose semantic flavors in code; deployments map those flavors to
 provider models in YAML. `LLM_CONFIG_FILE` overrides `LLM_CONFIG_PROFILE`, and
 an unset selector uses the installed `registry` profile. Do not reintroduce a
 configurable default model alias.
+
+Tool calling is a per-call chat capability, not a flavor: do not add a seventh
+YAML alias for it. Pass `tools` and `tool_choice` as keyword arguments to
+`chat(...)` and read results from `ChatResponse.tool_calls` and
+`ChatResponse.finish_reason` rather than reaching into `ChatResponse.raw`. Build
+`ChatResponse` only through `_ClientMixin._build_chat_response` so the four
+construction sites cannot drift. Keep `llm_client/tools.py` free of runtime
+imports from `llm_client/client.py`, and subclass new tool errors from
+`LLMClientError` rather than `LLMAliasError`.
 
 Keep task status event construction in `agent/events.py` and route public helper methods through those helpers instead of duplicating `TaskStatusUpdateEvent` boilerplate.
 

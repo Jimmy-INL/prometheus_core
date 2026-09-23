@@ -13,7 +13,7 @@ Test coverage and `⚠ untested` handling should follow
 - Storage resource classes own endpoint contracts for items, tags, search, files, relationships, and timeseries data.
 - `DeepLynxFileSystem` exposes DeepLynx file records as an `fsspec` `deeplynx://` filesystem.
 - `prometheus_api.llm_client` routes chat and embedding calls through installed [LiteLLM](../docs/DEPENDENCIES.md#litellm) YAML profiles for a registry proxy or direct providers.
-- LLM normalization, secret redaction, [A2A](../docs/DEPENDENCIES.md#agent2agent-a2a) credential extraction, and optional [MLflow](../docs/DEPENDENCIES.md#mlflow) tracing sit behind provider-agnostic response models.
+- LLM normalization, secret redaction, [A2A](../docs/DEPENDENCIES.md#agent2agent-a2a) credential extraction, tool-call parsing, and optional [MLflow](../docs/DEPENDENCIES.md#mlflow) tracing sit behind provider-agnostic response models.
 - `prometheus_api.agent` lets specialist agents subclass `PrometheusAgent` while the base handles A2A execution, app wiring, auth, and registry registration.
 - Agent helpers emit status updates, input-required messages, worker-thread progress, and native A2A artifacts.
 - `prometheus_api.contract` and `prometheus_api.a2a_stream` define dependency-light frontend/client-agent payload and stream handling.
@@ -36,13 +36,15 @@ Test coverage and `⚠ untested` handling should follow
 | 011 | A2A conversation contract and streams | implemented | Frontend/client-agent payload models plus NDJSON/SSE stream accumulation. |
 | 012 | Redis-backed state and degradation | implemented | Shared Redis client creation and Redis-backed A2A task storage with memory fallback. |
 | 013 | Package distribution and developer commands | implemented | Package metadata, version export, Makefile quality gates, install smoke tests, and container build contract. |
+| 014 | LLM tool calling | implemented | Tool-call parsing, tool definitions, replayable tool history, and forced single-call tool selection. |
 
 ## Interface Ownership
 
 Each public interface should be claimed by exactly one spec:
 
 - Storage exports and resources: 001-004.
-- LLM exports: 005-007.
+- LLM chat, embedding, configuration, security, and tracing exports: 005-007.
+- LLM tool-calling exports (`llm_client/tools.py`, tool exceptions, `ChatResponse.tool_calls`): 014.
 - Agent exports and routes: 008-010, 012.
 - Top-level contract, stream helpers, and Redis helpers: 011-012.
 - Package metadata, Makefile commands, and container packaging: 013.
