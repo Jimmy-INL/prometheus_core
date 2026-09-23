@@ -127,6 +127,7 @@ async def test_enrich_applies_body_to_all_objects_sharing_identity(monkeypatch, 
     # new_artifacts and the persisted catalog can be distinct dict objects for the same
     # artifact; both must end up carrying the manifest.
     _stub_resolver(monkeypatch, tmp_path)
+
     async def _fake_convert(*a, **kw):
         return "ds1", _manifest(), {"num_timesteps": 1, "time_values": [0.0]}
 

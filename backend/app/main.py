@@ -29,6 +29,7 @@ from app.services.events import EventBus
 from app.services.mesh.service import shutdown_mesh_executor
 from app.sessions import SessionStore
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Fail fast on a misconfigured deploy: without a signing secret, issue_token
@@ -37,9 +38,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # so this never trips in the test suite.)
     if not settings.jwt_secret:
         raise RuntimeError(
-            "jwt_secret is not configured: set BACKEND_JWT_SECRET (forwarded to "
-            "the container in docker-compose.yml). Refusing to start with an "
-            "empty signing key."
+            "jwt_secret is not configured: set BACKEND_JWT_SECRET in .env "
+            "(forwarded to the container in docker-compose.yml). If this deploy "
+            "predates the Chainlit excision, copy the value from the retired "
+            "CHAINLIT_AUTH_SECRET -- it is no longer accepted as a fallback. "
+            "Refusing to start with an empty signing key."
         )
     # Schema migrations are NOT run here. `alembic upgrade head` is a deploy step,
     # executed once by docker-entrypoint.sh before uvicorn starts -- running it in
