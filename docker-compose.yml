@@ -35,9 +35,6 @@ x-common-env: &common-env
   # credential behavior; "vault" activates per-user Vault policies.
   CREDENTIAL_BROKER: ${CREDENTIAL_BROKER:-env}
 
-x-common-volumes: &common-volumes
-  - ./shared:/app/shared
-
 x-build-args: &prometheus-api-build-args
   PROMETHEUS_API_BASE_IMAGE_HASH: ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
   HTTP_PROXY: ${HTTP_PROXY:-}
@@ -164,7 +161,6 @@ services:
       INL_HPC_API_KEY: ${INL_HPC_API_KEY:-}
       INL_LITELLM_API_KEY: ${INL_LITELLM_API_KEY:-}
       AMSC_I2_API_KEY: ${AMSC_I2_API_KEY:-}
-    volumes: *common-volumes
     depends_on:
       litellm:
         condition: service_healthy
@@ -225,11 +221,7 @@ services:
       # but the default stays 1: raising it is a deliberate operational decision,
       # and it multiplies the VTK child count above.
       BACKEND_WORKERS: ${BACKEND_WORKERS:-1}
-    # Written out rather than using *common-volumes: YAML has no merge key for
-    # sequences, so an anchored list cannot be extended. Keep ./shared in sync
-    # with the x-common-volumes anchor above.
     volumes:
-      - ./shared:/app/shared
       - mesh-cache:/var/cache/prometheus-mesh
     # VTK conversion happens in child processes inside this container, so their
     # memory counts against this cgroup. The limit is what turns "a pathological
