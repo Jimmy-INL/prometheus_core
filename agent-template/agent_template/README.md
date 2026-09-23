@@ -4,7 +4,7 @@ TEMPLATE_DESCRIPTION
 
 A Prometheus specialist agent that speaks the Agent-to-Agent (A2A) protocol. The
 platform's orchestrator discovers it, routes user requests to it, and renders its
-responses in the Chainlit UI.
+responses in the Prometheus web UI.
 
 ## Files
 

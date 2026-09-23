@@ -71,3 +71,23 @@ def test_select_platform_env_values_includes_identity_verification_keys(tmp_path
     assert selected["USER_IDENTITY_AUD"] == "prometheus-agents"
     assert "USER_IDENTITY_PRIVATE_KEY" not in selected
     assert selected["DEEPLYNX_ORG_ID"] == "42"
+
+
+def test_select_platform_env_values_includes_llm_config_profile(tmp_path):
+    """The platform's inference routing must carry over to a scaffolded agent.
+
+    prometheus_api defaults an unset LLM_CONFIG_PROFILE to `registry`, so a
+    generated agent that didn't inherit this would silently route through the
+    LiteLLM proxy even on a platform configured for a different profile. The
+    template deliberately ships no MODEL_NAME -- the profile maps the semantic
+    flavors the agent asks for in code onto concrete models."""
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text(
+        "AGENT_SECRET=shared-secret\nLLM_CONFIG_PROFILE=inl_hpc\nMODEL_NAME=should-not-matter\n",
+        encoding="utf-8",
+    )
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert selected["LLM_CONFIG_PROFILE"] == "inl_hpc"
+    assert "MODEL_NAME" not in selected

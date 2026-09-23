@@ -8,16 +8,16 @@ This tutorial walks you through building a specialist agent for the Prometheus m
 
 ## What you are building
 
-A Prometheus agent is a small HTTP service that speaks the [A2A protocol](https://google.github.io/A2A/). The platform's orchestrator discovers it, routes user requests to it, and displays its responses in the Chainlit chat UI.
+A Prometheus agent is a small HTTP service that speaks the [A2A protocol](https://google.github.io/A2A/). The platform's orchestrator discovers it, routes user requests to it, and displays its responses in the Prometheus web UI.
 
 ```
-User → Chainlit UI → Orchestrator (client-agent)
-                          │
-                          │  A2A JSON-RPC over HTTP
-                          ▼
-                     Your Agent  ←─── LiteLLM (LLM calls)
-                          │
-                          └── Redis (state, artifact catalog)
+User → Prometheus UI → Orchestrator (client-agent)
+                            │
+                            │  A2A JSON-RPC over HTTP
+                            ▼
+                       Your Agent  ←─── LiteLLM (LLM calls)
+                            │
+                            └── Redis (state, artifact catalog)
 ```
 
 Every agent starts from a small project template:
@@ -324,7 +324,12 @@ class SummarizerAgent(PrometheusAgent):
 
 If you must use the **synchronous** Anthropic SDK (install `anthropic`; see Step 5),
 offload the blocking call to a worker thread with `asyncio.to_thread` so the loop
-stays free:
+stays free.
+
+This path bypasses `self.llm_client`, so `LLM_CONFIG_PROFILE` does not apply and you
+name the model yourself. `MODEL_NAME` below is then *your* variable, not one the
+template provides — add it to your `docker-compose.yml` environment block and `.env`
+under "your own agent-specific variables", or the `os.getenv` default is all you get:
 
 ```python
 import asyncio

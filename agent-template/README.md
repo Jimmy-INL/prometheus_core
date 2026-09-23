@@ -3,7 +3,7 @@
 A template for building specialist agents for the [Prometheus](https://github.inl.gov/genesis/prometheus_platform)
 multi-agent platform. Agents speak the Agent-to-Agent (A2A) protocol; the
 platform's orchestrator discovers them, routes user requests to them, and renders
-their responses in the Chainlit UI.
+their responses in the Prometheus web UI.
 
 This repository gives you two things:
 
