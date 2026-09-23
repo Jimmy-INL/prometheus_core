@@ -8,16 +8,16 @@ This tutorial walks you through building a specialist agent for the Prometheus m
 
 ## What you are building
 
-A Prometheus agent is a small HTTP service that speaks the [A2A protocol](https://google.github.io/A2A/). The platform's orchestrator discovers it, routes user requests to it, and displays its responses in the Chainlit chat UI.
+A Prometheus agent is a small HTTP service that speaks the [A2A protocol](https://google.github.io/A2A/). The platform's orchestrator discovers it, routes user requests to it, and displays its responses in the Prometheus web UI.
 
 ```
-User → Chainlit UI → Orchestrator (client-agent)
-                          │
-                          │  A2A JSON-RPC over HTTP
-                          ▼
-                     Your Agent  ←─── LiteLLM (LLM calls)
-                          │
-                          └── Redis (state, artifact catalog)
+User → Prometheus UI → Orchestrator (client-agent)
+                            │
+                            │  A2A JSON-RPC over HTTP
+                            ▼
+                       Your Agent  ←─── LiteLLM (LLM calls)
+                            │
+                            └── Redis (state, artifact catalog)
 ```
 
 Every agent starts from a small project template:
