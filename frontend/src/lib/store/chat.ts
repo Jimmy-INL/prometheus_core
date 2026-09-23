@@ -92,6 +92,14 @@ export interface ChatState {
   items: ChatItem[];
   awaiting: boolean;
   conversationId: string | null;
+  /** The conversation id of a resume that is still in flight, else `null`.
+   *
+   * Distinguishes "this conversation is empty" from "we are still fetching it":
+   * `loadConversation()` clears `items` before awaiting, so without this the UI
+   * could only see an empty transcript and showed the welcome screen — chips and
+   * all — for the whole multi-second round trip. It doubles as `applyResume()`'s
+   * staleness guard, so two overlapping resumes cannot fight over `items`. */
+  resumingConversationId: string | null;
   config: ConfigResponse | null;
   autoApprove: boolean;
   /** Bumped whenever the conversation list may have changed (new/renamed title,
@@ -116,6 +124,7 @@ const initialState: ChatState = {
   items: [],
   awaiting: false,
   conversationId: null,
+  resumingConversationId: null,
   config: null,
   autoApprove: false,
   historyVersion: 0,
@@ -352,12 +361,23 @@ function onTaskDone(e: TaskDoneEvent): void {
  * Shared by `loadConversation()` (sidebar click) and `bootstrap()` (recovering
  * the open conversation after a reload) so the two cannot drift apart. */
 async function applyResume(conversationId: string): Promise<void> {
-  const detail = await api.resumeConversation(conversationId);
-  set({
-    conversationId: detail.conversation_id,
-    autoApprove: detail.auto_approve_steps,
-    items: itemsFromTranscript(detail.messages, detail.artifacts),
-  });
+  // Same staleness discipline as `post()`: a resume that has been superseded by a
+  // newer one must not apply its transcript, and must not clear the newer one's
+  // spinner. The in-flight id *is* the generation marker, so there is no separate
+  // counter to keep in sync.
+  const isCurrent = () => state.resumingConversationId === conversationId;
+  set({ resumingConversationId: conversationId });
+  try {
+    const detail = await api.resumeConversation(conversationId);
+    if (!isCurrent()) return;
+    set({
+      conversationId: detail.conversation_id,
+      autoApprove: detail.auto_approve_steps,
+      items: itemsFromTranscript(detail.messages, detail.artifacts),
+    });
+  } finally {
+    if (isCurrent()) set({ resumingConversationId: null });
+  }
 }
 
 let bootstrapping = false;
@@ -557,8 +577,14 @@ async function loadConversation(conversationId: string): Promise<void> {
   try {
     await applyResume(conversationId);
   } catch (err) {
+    // A resume that lost the race must stay silent: appending its error would drop
+    // a message from an abandoned conversation into the one now being loaded.
+    if (state.resumingConversationId !== null) return;
     appendError(err instanceof Error ? err.message : "Failed to open conversation.");
   }
+  // Whichever resume is still in flight owns the tail — reconnecting and bumping the
+  // history list here would fire once per click during rapid switching.
+  if (state.resumingConversationId !== null) return;
   connect();
   bumpHistory();
 }
@@ -579,7 +605,7 @@ export const chatStore = {
   suspendForReauth(): void {
     disconnect();
     bootstrapping = false;
-    set({ ready: false, authLost: false, awaiting: false });
+    set({ ready: false, authLost: false, awaiting: false, resumingConversationId: null });
   },
   /** Drop every trace of the signed-in user's chat: close the stream, forget
    * awaited tasks and the remembered conversation id, and reset state. Called
