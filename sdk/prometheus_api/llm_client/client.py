@@ -11,7 +11,7 @@ from typing import Any, Literal, Mapping, cast
 import httpx
 
 from .config import FallbackModelConfig, LLMConfig
-from .exceptions import LLMAliasError, LLMClientError
+from .exceptions import LLMAliasError, LLMClientError, LLMToolCallError
 from .models import ChatResponse, EmbeddingResponse
 from .normalization import ChatInput, EmbeddingInput, normalize_embedding_input, normalize_messages
 from .security import extract_llm_api_key_from_a2a_context, redact_secrets
@@ -170,8 +170,12 @@ class _ClientMixin:
                 "Remove stream=True; see specs/006 out-of-scope notes."
             )
         prepared = dict(call_kwargs)
-        if tools is not None:
-            prepared["tools"] = tool_schemas(tools)
+        # An empty tools list is treated like no tools: backends 400 on `"tools": []`.
+        schemas = tool_schemas(tools) if tools is not None else []
+        if tool_choice is not None and not schemas:
+            raise LLMToolCallError("tool_choice requires at least one tool in tools")
+        if schemas:
+            prepared["tools"] = schemas
         if tool_choice is not None:
             prepared["tool_choice"] = tool_choice
         return prepared
@@ -287,9 +291,10 @@ class _ClientMixin:
             "model_alias": response.model_alias,
             "provider_model": response.provider_model,
             "usage": response.usage,
+            # Always emitted so truncation (`"length"`) is visible on ordinary chat too.
+            "finish_reason": response.finish_reason,
         }
         if response.tool_calls:
-            outputs["finish_reason"] = response.finish_reason
             # Traces persist remotely and arguments are model-authored, so redact them.
             outputs["tool_calls"] = [
                 {

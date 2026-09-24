@@ -366,7 +366,7 @@ KB per span.
 | `docs/agent/LLM_CLIENT_MIGRATION.md` | New "Tool Calling" section with before/after: hand-rolled `_get`/`_parse_arguments` → `response.tool_calls`; placeholder content → `assistant_message(response)`; hand-wrapped `model_json_schema()` → `ToolDefinition.from_pydantic`. Add "do not `print()` tool dispatch" to Logging And Security. |
 | `examples/llm_tool_calling_usage.py` | New. Two tools via `ToolDefinition.from_pydantic`, a manual parse-and-reply turn using `assistant_message` + `tool_result_message`, and a `require_tool_calls` error path. Follow `examples/llm_client_usage.py`'s shape; `examples/` is ruff/mypy-excluded. |
 
-Then `make bump-minor` → **0.10.0** (new public exports plus a relaxed validator is a minor), and
+Then `make bump-minor` → **0.11.0** (new public exports plus a relaxed validator is a minor), and
 flip `specs/014` status `draft` → `implemented`.
 
 No dependency change: `litellm>=1.80,<2` ([pyproject.toml:27](../../pyproject.toml#L27)) already covers

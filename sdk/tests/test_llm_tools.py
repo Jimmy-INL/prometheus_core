@@ -471,6 +471,49 @@ def test_tool_call_exposes_the_documented_fields_and_is_frozen():
         call.name = "other"  # type: ignore[misc]
 
 
+def test_tool_calls_are_hashable():
+    """REQ-014-01: ToolCall hashes despite its dict-valued arguments field."""
+    calls = parse_tool_calls(_proxy_raw(tool_calls=[_proxy_call(), _proxy_call()]))
+
+    assert len(set(calls)) == 1
+    assert {calls[0]: "cached"}[calls[1]] == "cached"
+
+
+@pytest.mark.parametrize("tool_calls", [5, "not-a-list", {"a": 1}, b"bytes"])
+def test_parse_tool_calls_ignores_non_list_tool_calls(tool_calls):
+    """REQ-014-02: a non-list tool_calls value yields no calls and never raises."""
+    assert parse_tool_calls(_proxy_raw(tool_calls=tool_calls)) == ()
+
+
+@pytest.mark.parametrize("result", ["", "   "])
+def test_tool_result_message_substitutes_placeholder_for_blank_results(result):
+    """REQ-014-06: a blank result gets placeholder text so replay does not fail."""
+    message = tool_result_message("call_1", result)
+
+    assert message["content"] == "(empty result)"
+    assert normalize_messages([message]) == [message]
+
+
+def test_assistant_message_matches_across_proxy_and_object_shapes():
+    """REQ-014-05: null fields are stripped from both backend shapes alike."""
+    proxy = _proxy_raw(tool_calls=[_proxy_call()])
+    proxy["choices"][0]["message"].update({"function_call": None, "refusal": None})
+    obj = _object_raw(tool_calls=[_proxy_call()])
+
+    from_proxy = assistant_message(_response(proxy))
+    from_object = assistant_message(_response(obj))
+
+    assert from_proxy == from_object
+    assert "refusal" not in from_proxy
+
+
+def test_normalize_messages_accepts_mixed_case_assistant_role():
+    """REQ-006-15: the assistant tool-call exemption matches role case-insensitively."""
+    message = {"role": "Assistant", "tool_calls": [_proxy_call()]}
+
+    assert normalize_messages([message])[0]["content"] is None
+
+
 def test_chat_response_still_accepts_the_original_five_arguments():
     """REQ-006-16: appended fields default, so existing downstream construction works."""
     positional = ChatResponse("answer", "medium", "resolved-medium", {"total_tokens": 4}, {})

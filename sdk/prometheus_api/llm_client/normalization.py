@@ -42,7 +42,7 @@ def normalize_messages(value: ChatInput) -> list[ChatMessage]:
         # An assistant turn that only requests tools carries no content. Permitting it
         # here is what lets callers replay a tool-call turn into history without
         # inventing placeholder text.
-        allow_empty_content = role == "assistant" and _has_tool_calls(normalized)
+        allow_empty_content = role.lower() == "assistant" and _has_tool_calls(normalized)
 
         content = normalized.get("content")
         blank_content = content is None or (isinstance(content, str) and not content.strip())

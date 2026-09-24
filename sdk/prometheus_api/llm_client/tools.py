@@ -43,6 +43,12 @@ class ToolCall:
     arguments_error: str | None = None
     raw: Any = None
 
+    def __hash__(self) -> int:
+        # The generated hash would hash the ``arguments`` dict and raise TypeError, so hash
+        # a canonical encoding instead. ``raw`` is provider-shaped and may be unhashable.
+        encoded = json.dumps(self.arguments, sort_keys=True, default=str)
+        return hash((self.id, self.name, encoded, self.arguments_error))
+
 
 @dataclass(frozen=True)
 class ToolDefinition:
@@ -96,8 +102,10 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
+    # Drop null fields on both branches so a proxy dict and a LiteLLM object for the same
+    # logical message produce the same replayable shape.
     if isinstance(value, Mapping):
-        return dict(value)
+        return {key: item for key, item in value.items() if item is not None}
     for attribute in ("model_dump", "dict"):
         dumper = getattr(value, attribute, None)
         if callable(dumper):
@@ -111,9 +119,13 @@ def _unwrap(value: Any) -> Any:
     return value.raw if isinstance(value, ChatResponse) else value
 
 
+def _is_list_like(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes))
+
+
 def _first_choice(value: Any) -> Any:
     choices = _get(_unwrap(value), "choices", []) or []
-    if not isinstance(choices, Sequence) or isinstance(choices, (str, bytes)) or not choices:
+    if not _is_list_like(choices) or not choices:
         return None
     return choices[0]
 
@@ -155,8 +167,12 @@ def parse_tool_calls(value: ChatResponse | Any) -> tuple[ToolCall, ...]:
     if message is None:
         return ()
 
+    entries = _get(message, "tool_calls", []) or []
+    if not _is_list_like(entries):
+        return ()
+
     calls: list[ToolCall] = []
-    for entry in _get(message, "tool_calls", []) or []:
+    for entry in entries:
         function = _get(entry, "function", {}) or {}
         arguments, arguments_error = _decode_arguments(_get(function, "arguments", "{}"))
         calls.append(
@@ -205,10 +221,19 @@ def assistant_message(response: ChatResponse) -> dict[str, Any]:
     return normalized
 
 
+EMPTY_TOOL_RESULT = "(empty result)"
+
+
 def tool_result_message(call: ToolCall | str, result: Any) -> dict[str, Any]:
-    """Build the ``role: "tool"`` reply that answers one tool call."""
+    """Build the ``role: "tool"`` reply that answers one tool call.
+
+    A blank string result is replaced with :data:`EMPTY_TOOL_RESULT`, because chat
+    normalization and several providers reject empty message content.
+    """
     call_id = call.id if isinstance(call, ToolCall) else str(call or "").strip()
     content = result if isinstance(result, str) else json.dumps(result, default=str)
+    if not content.strip():
+        content = EMPTY_TOOL_RESULT
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 

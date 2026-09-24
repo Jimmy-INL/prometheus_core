@@ -23,6 +23,7 @@ from prometheus_api.llm_client import (
     LLMClient,
     LLMClientError,
     LLMConfig,
+    LLMToolCallError,
     ToolDefinition,
     normalize_embedding_input,
     normalize_messages,
@@ -494,6 +495,7 @@ def test_mlflow_tracing_sync_chat_records_span_and_protected_tags(monkeypatch, t
         "model_alias": "default",
         "provider_model": "resolved-default",
         "usage": {"total_tokens": 7},
+        "finish_reason": None,
     }
 
 
@@ -900,6 +902,34 @@ def _tool_handler(posted, alias="medium", payload=None):
     return handler
 
 
+def test_empty_tools_list_is_omitted_from_the_payload():
+    """REQ-006-17: tools=[] behaves like tools=None instead of sending "tools": []."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    client.medium("look up iron", tools=[])
+
+    assert "tools" not in posted[0]
+    assert "tool_choice" not in posted[0]
+
+
+@pytest.mark.parametrize("tools", [None, []])
+def test_tool_choice_without_tools_is_rejected_before_dispatch(tools):
+    """REQ-006-17: tool_choice with no tools raises client-side, not as a backend 400."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    with pytest.raises(LLMToolCallError, match="tool_choice requires"):
+        client.medium("look up iron", tools=tools, tool_choice="auto")
+    assert posted == []
+
+
 def test_sync_chat_populates_tool_calls_from_proxy_dict():
     """REQ-014-02, BEH-014-01: a pure tool-call turn has empty text but a full signal."""
     posted: list[dict] = []
@@ -1161,7 +1191,7 @@ def test_trace_outputs_include_redacted_tool_calls(monkeypatch):
 
 
 def test_trace_outputs_omit_tool_keys_without_tool_calls(monkeypatch):
-    """REQ-007-11, BEH-007-05: text-only traces keep their original output shape."""
+    """REQ-007-11, BEH-007-05: text-only traces add finish_reason but no tool keys."""
     state = _install_fake_mlflow(monkeypatch)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1169,7 +1199,10 @@ def test_trace_outputs_omit_tool_keys_without_tool_calls(monkeypatch):
             return _proxy_response(request, _proxy_models("medium"))
         return _proxy_response(
             request,
-            {"model": "resolved-medium", "choices": [{"message": {"content": "plain answer"}}]},
+            {
+                "model": "resolved-medium",
+                "choices": [{"message": {"content": "plain answer"}, "finish_reason": "length"}],
+            },
         )
 
     client = LLMClient(
@@ -1179,7 +1212,9 @@ def test_trace_outputs_omit_tool_keys_without_tool_calls(monkeypatch):
 
     client.medium("hello")
 
-    assert set(state.spans[0].outputs) == {"text", "model_alias", "provider_model", "usage"}
+    outputs = state.spans[0].outputs
+    assert set(outputs) == {"text", "model_alias", "provider_model", "usage", "finish_reason"}
+    assert outputs["finish_reason"] == "length"
     assert set(state.spans[0].inputs) == {"messages"}
 
 

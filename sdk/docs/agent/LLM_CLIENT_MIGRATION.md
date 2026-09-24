@@ -335,6 +335,11 @@ Two behavior notes when migrating:
 - **Parsing is lenient; the gate is explicit.** `chat(...)` never raises on model-authored
   output: malformed arguments arrive as `arguments == {}` with `arguments_error` set. If
   your old code raised in that case, call `require_tool_calls(...)` to keep raising.
+- **`tools=[]` means no tools; `tool_choice` needs tools.** An empty `tools` list is
+  omitted from the request, and passing `tool_choice` without at least one tool raises
+  `LLMToolCallError` before any backend is contacted.
+- **Empty tool results get placeholder text.** `tool_result_message(call, "")` sends
+  `"(empty result)"`, since empty message content is rejected on replay.
 - **Do not `print()` tool dispatch.** Log through `logging.getLogger("prometheus_api.llm_client")`
   so tool data honors the redaction rules rather than landing in worker stdout.
 
