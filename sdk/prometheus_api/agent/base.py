@@ -28,6 +28,16 @@ import yaml
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
+
+from .identity import (
+    IdentityError,
+    UserIdentity,
+    USER_TOKEN_METADATA_KEY,
+    identity_scope,
+    get_current_identity,
+    mint_user_token,
+    verify_user_token,
+)
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
@@ -214,21 +224,29 @@ class PrometheusAgentExecutor(AgentExecutor):
             # A2A v1 task streams must begin with the Task before any updates.
             await tracked_queue.enqueue_event(build_initial_task(context))
 
-            # Extract parameters from the message
-            params = self._extract_params(context)
+            # Verify the caller's user identity (from message.metadata["userToken"]).
+            # Wraps the entire execution in an identity_scope so that subclass
+            # _execute() code can call current_user_id() at any point.
+            # When USER_IDENTITY_REQUIRED=false (dev / smoke-test), fall back to
+            # a synthetic "local" identity rather than rejecting the request.
+            identity = self._extract_identity(context)
 
-            # Send "working" status
-            await emit_status_update(
-                context=context,
-                event_queue=tracked_queue,
-                state=TaskState.TASK_STATE_WORKING,
-                final=False,
-            )
+            with identity_scope(identity):
+                # Extract parameters from the message (injects params["user_id"])
+                params = self._extract_params(context)
 
-            # Perform the main analysis (implemented by subclass), with a
-            # background keepalive so streaming connections do not time out
-            # during long gaps between substantive status updates.
-            result = await self._execute_with_heartbeat(params, context, tracked_queue)
+                # Send "working" status
+                await emit_status_update(
+                    context=context,
+                    event_queue=tracked_queue,
+                    state=TaskState.TASK_STATE_WORKING,
+                    final=False,
+                )
+
+                # Perform the main analysis (implemented by subclass), with a
+                # background keepalive so streaming connections do not time out
+                # during long gaps between substantive status updates.
+                result = await self._execute_with_heartbeat(params, context, tracked_queue)
 
             # Agent can fully control finalization for advanced/streaming use cases.
             # If it already emitted a final status, skip automatic completion events.
@@ -248,6 +266,18 @@ class PrometheusAgentExecutor(AgentExecutor):
 
             logger.info(f"{self.agent_name} execution completed successfully")
 
+        except IdentityError as e:
+            # Identity failures are always terminal — fail the task with the reason.
+            logger.warning("Identity verification failed for %s: %s", self.agent_name, e)
+            if not tracked_queue or not tracked_queue.seen_final_status:
+                await emit_status_update(
+                    context=context,
+                    event_queue=tracked_queue or event_queue,
+                    state=TaskState.TASK_STATE_FAILED,
+                    final=True,
+                    message=f"Identity verification failed: {e}",
+                )
+            raise
         except Exception as e:
             logger.error(f"Error during execution: {str(e)}", exc_info=True)
             # Avoid sending contradictory terminal states if the agent already finalized.
@@ -338,6 +368,65 @@ class PrometheusAgentExecutor(AgentExecutor):
         except asyncio.CancelledError:
             raise
 
+    def _extract_identity(self, context: RequestContext) -> UserIdentity:
+        """Extract and verify the caller's user identity from A2A message metadata.
+
+        Reads ``message.metadata["userToken"]`` and verifies the platform JWT.
+        When ``USER_IDENTITY_REQUIRED=false`` (dev / smoke-test mode) and the
+        token is absent or invalid, falls back to a synthetic ``"local"`` identity
+        so single-user and CI smoke-test deployments keep working.
+
+        This method is called at the top of :meth:`execute` before
+        :meth:`_extract_params`, so the verified ``user_id`` is available for
+        the entire lifetime of the request.
+
+        Raises:
+            IdentityError: When the token is present but invalid, or when it
+                is absent and ``USER_IDENTITY_REQUIRED=true`` (the default).
+        """
+        required_raw = os.getenv("USER_IDENTITY_REQUIRED", "true").strip().lower()
+        identity_required = required_raw not in ("false", "0", "no")
+
+        raw_token: Optional[str] = None
+        message = getattr(context, "message", None)
+        if message:
+            metadata = MessageToDict(message.metadata)
+            raw_token = metadata.get(USER_TOKEN_METADATA_KEY)
+            if isinstance(raw_token, str):
+                raw_token = raw_token.strip() or None
+
+        if raw_token:
+            # Always verify when a token is present — even in non-required mode.
+            return verify_user_token(raw_token)
+
+        if identity_required:
+            raise IdentityError(
+                f"No {USER_TOKEN_METADATA_KEY!r} found in message metadata and "
+                "USER_IDENTITY_REQUIRED=true"
+            )
+
+        # Non-required mode (dev/smoke-test): synthesise a "local" identity.
+        logger.debug(
+            "USER_IDENTITY_REQUIRED=false and no userToken — using synthetic 'local' identity"
+        )
+        return UserIdentity(user_id="local", claims={}, raw_token="")
+
+    def identity_metadata(self) -> Dict[str, str]:
+        """Return message metadata carrying the current request's user token.
+
+        Use this when building outbound A2A requests to downstream agents so
+        the verified identity propagates through the call chain::
+
+            metadata = self.identity_metadata()
+            # merge into the outbound A2A message.metadata dict
+
+        Returns an empty dict when no identity is bound (e.g. during startup).
+        """
+        identity = get_current_identity()
+        if identity is None or not identity.raw_token:
+            return {}
+        return {USER_TOKEN_METADATA_KEY: identity.raw_token}
+
     def _extract_params(self, context: RequestContext) -> Dict[str, Any]:
         """
         Extract parameters from the A2A message context.
@@ -347,7 +436,9 @@ class PrometheusAgentExecutor(AgentExecutor):
 
         Returns:
             Dict of extracted parameters. Always includes ``skill_id`` when
-            the caller placed a ``skillId`` key in the message metadata.
+            the caller placed a ``skillId`` key in the message metadata, and
+            ``user_id`` when a verified identity is bound (see
+            :meth:`_extract_identity`).
 
         Raises:
             ValueError: If message format is invalid
@@ -376,6 +467,14 @@ class PrometheusAgentExecutor(AgentExecutor):
             skill_id = message_metadata.get("skillId")
             if skill_id and "skill_id" not in params:
                 params["skill_id"] = str(skill_id)
+
+        # Inject the verified user_id (set by _extract_identity via identity_scope).
+        # Subclass _execute() implementations can read params["user_id"] without
+        # touching the a2a RequestContext directly.
+        from .identity import current_user_id as _current_user_id
+        uid = _current_user_id()
+        if uid is not None and "user_id" not in params:
+            params["user_id"] = uid
 
         logger.info("Extracted parameter keys: %s", sorted(params.keys()))
         return params
@@ -496,7 +595,23 @@ class PrometheusAgent:
             agent = MyAgent(agent_name="My Agent")
             agent.run()
         ```
+
+    Per-user process isolation
+    --------------------------
+    Set ``requires_user_isolation = True`` on a subclass to opt into
+    credential-level process isolation.  When set, every ``_execute`` call is
+    routed through :class:`~prometheus_api.agent.worker_pool.UserWorkerPool`
+    so that each user's live credentials are confined to a dedicated OS process.
+
+    This flag is ``False`` by default because most agents do not hold long-lived
+    per-user secrets.  Enable it on agents that call :meth:`get_credential` and
+    hold credentials across async operations.
     """
+
+    #: Set to ``True`` on subclasses that fetch per-user credentials and need
+    #: OS-process-level isolation.  Controlled by ``USER_WORKER_IDLE_TTL`` and
+    #: ``USER_WORKER_MAX`` env vars (see :mod:`prometheus_api.agent.worker_pool`).
+    requires_user_isolation: bool = False
 
     @staticmethod
     def registry_url() -> str:
@@ -1340,6 +1455,76 @@ class PrometheusAgent:
             "This is where your agent's core logic should be implemented."
         )
 
+    # ------------------------------------------------------------------
+    # Identity helpers (available to subclass _execute implementations)
+    # ------------------------------------------------------------------
+
+    async def get_credential(
+        self,
+        resource: str,
+        scope: Optional[dict] = None,
+    ):
+        """Fetch a just-in-time credential for the current user and *resource*.
+
+        This is the primary way agent ``_execute`` implementations access
+        per-user secrets for third-party systems (DeepLynx, SLURM, etc.).
+        Credentials are never cached — call this per-operation.
+
+        Args:
+            resource: Logical resource name (e.g. ``"deeplynx"``, ``"slurm"``).
+            scope: Optional extra parameters forwarded to the broker
+                (e.g. ``{"org_id": "...", "project_id": "..."}``.
+
+        Returns:
+            A :class:`~prometheus_api.credentials.Credential` with ``resource``
+            and ``value`` fields.  The ``value`` dict structure is
+            resource-specific.
+
+        Raises:
+            RuntimeError: When called outside an identity scope (no current user).
+            CredentialError: On authentication failure or policy denial.
+        """
+        from prometheus_api.credentials import get_broker, CredentialRequest
+
+        identity = get_current_identity()
+        if identity is None:
+            raise RuntimeError(
+                "get_credential() called outside an identity scope — "
+                "no current user_id is available"
+            )
+        req = CredentialRequest(
+            user_id=identity.user_id,
+            resource=resource,
+            scope=scope or {},
+        )
+        broker = get_broker()
+        return await broker.get_credential(req, user_token=identity.raw_token)
+
+    @staticmethod
+    def current_user_id() -> Optional[str]:
+        """Return the verified user_id for the current request, or ``None``.
+
+        This delegates to the request-scoped ``ContextVar`` set by
+        :meth:`PrometheusAgentExecutor._extract_identity` before ``_execute``
+        is called.  Always returns ``None`` outside an active request context.
+        """
+        return get_current_identity().user_id if get_current_identity() else None
+
+    def identity_metadata(self) -> Dict[str, str]:
+        """Return A2A message metadata carrying the current user token.
+
+        Use when building outbound A2A requests to downstream agents::
+
+            metadata = self.identity_metadata()
+            # merge into the outbound message.metadata dict
+
+        Returns an empty dict when no identity is bound.
+        """
+        identity = get_current_identity()
+        if identity is None or not identity.raw_token:
+            return {}
+        return {USER_TOKEN_METADATA_KEY: identity.raw_token}
+
     async def send_status_update(
         self,
         context: RequestContext,
@@ -1890,6 +2075,25 @@ class PrometheusAgent:
             """Serve the canonical v1 card at the former discovery path."""
             return JSONResponse(MessageToDict(agent_card))
 
+        async def jwks_endpoint(request):
+            """Serve the platform's public key(s) as a JSON Web Key Set.
+
+            Third-party agents fetch this endpoint to obtain the RSA public key
+            for verifying platform-minted user tokens.  Returns an empty keyset
+            when no key is configured.
+
+            This endpoint is intentionally unauthenticated — it is public
+            metadata, like the agent card.  Fingerprint the keys you receive
+            before trusting them in production; the JWKS URL itself should be
+            served over TLS.
+            """
+            from .identity import get_jwks_document
+            return JSONResponse(get_jwks_document())
+
+        app.router.routes.insert(
+            0,
+            Route("/.well-known/jwks.json", jwks_endpoint, methods=["GET"]),
+        )
         app.router.routes.insert(
             0,
             Route("/.well-known/agent.json", legacy_agent_card, methods=["GET"]),

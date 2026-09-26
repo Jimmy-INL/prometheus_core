@@ -1,5 +1,25 @@
 """Agent utilities for building A2A (Agent-to-Agent) multi-agent systems."""
 
+from .worker_pool import UserWorkerPool, WorkerHandle, WorkerTask, WorkerResult
+from .ownership import (
+    assert_conversation_owner,
+    get_conversation_owner,
+    list_user_conversations,
+    record_conversation_owner,
+)
+from .identity import (
+    ALG,
+    IdentityError,
+    UserIdentity,
+    USER_TOKEN_METADATA_KEY,
+    identity_scope,
+    get_current_identity,
+    current_user_id,
+    get_jwks_document,
+    mint_user_token,
+    verify_user_token,
+)
+from .identity_keygen import generate_keypair
 from .middleware import BearerTokenMiddleware
 from .base import (
     AgentEndpoint,
@@ -29,6 +49,29 @@ from a2a.types import (
 )
 
 __all__ = [
+    # worker pool
+    "UserWorkerPool",
+    "WorkerHandle",
+    "WorkerTask",
+    "WorkerResult",
+    # ownership
+    "assert_conversation_owner",
+    "get_conversation_owner",
+    "list_user_conversations",
+    "record_conversation_owner",
+    # identity
+    "ALG",
+    "IdentityError",
+    "UserIdentity",
+    "USER_TOKEN_METADATA_KEY",
+    "identity_scope",
+    "get_current_identity",
+    "current_user_id",
+    "get_jwks_document",
+    "mint_user_token",
+    "verify_user_token",
+    "generate_keypair",
+    # auth
     "BearerTokenMiddleware",
     "AgentEndpoint",
     "DelegatingPrometheusAgentExecutor",

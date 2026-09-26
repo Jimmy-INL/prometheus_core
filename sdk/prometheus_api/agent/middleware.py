@@ -116,11 +116,14 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         if not self.required or not self.secret:
             return await call_next(request)
 
-        # Skip authentication for health check and public metadata endpoints.
+        # Skip authentication for health check, public metadata, and JWKS
+        # endpoints.  JWKS must be unauthenticated so third-party agents can
+        # fetch the platform's public key without holding the agent secret.
         if request.url.path in [
             "/health",
             "/.well-known/agent.json",
             "/.well-known/agent-card.json",
+            "/.well-known/jwks.json",
             "/api/agent-card",
         ]:
             return await call_next(request)

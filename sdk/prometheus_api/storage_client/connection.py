@@ -212,3 +212,79 @@ class ConnectionConfig(BaseModel):
             base_url=base_url,
             **kwargs,
         )
+
+    @classmethod
+    def from_credential(
+        cls,
+        credential,
+        *,
+        organization_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+        base_url: Optional[str] = None,
+    ) -> "ConnectionConfig":
+        """Build a :class:`ConnectionConfig` from a broker-issued credential.
+
+        The *credential* is a :class:`~prometheus_api.credentials.Credential`
+        returned by the credential broker for the ``"deeplynx"`` resource.
+        Its ``value`` dict is expected to contain the keys that match the
+        parameters of :meth:`from_env`.
+
+        Org/project/base_url fall back to environment variables when not
+        supplied in the credential value or as explicit arguments, so
+        callers can override at any level.
+
+        Args:
+            credential: A broker-issued DeepLynx credential.
+            organization_id: Override; takes precedence over ``credential.value``
+                and env.
+            project_id: Override; takes precedence over ``credential.value`` and env.
+            base_url: Override; takes precedence over ``credential.value`` and env.
+
+        Returns:
+            A fully-populated :class:`ConnectionConfig`.
+        """
+        import os as _os
+        value = dict(getattr(credential, "value", {}) or {})
+
+        # Resolve org/project: explicit arg > credential value > env var.
+        def _resolve_int(explicit, cred_key, env_key) -> Optional[int]:
+            if explicit is not None:
+                return int(explicit)
+            from_cred = value.get(cred_key)
+            if from_cred is not None:
+                return int(from_cred)
+            from_env = _os.getenv(env_key, "").strip()
+            return int(from_env) if from_env else None
+
+        org_id = _resolve_int(organization_id, "org_id", "DEEPLYNX_ORG_ID")
+        proj_id = _resolve_int(project_id, "project_id", "DEEPLYNX_PROJECT_ID")
+
+        if org_id is None:
+            raise ValueError(
+                "organization_id must be provided via argument, credential value "
+                "(org_id), or DEEPLYNX_ORG_ID environment variable"
+            )
+        if proj_id is None:
+            raise ValueError(
+                "project_id must be provided via argument, credential value "
+                "(project_id), or DEEPLYNX_PROJECT_ID environment variable"
+            )
+
+        # Build the ConnectionConfig directly to avoid double-passing kwargs.
+        resolved_base_url = (
+            base_url
+            or value.get("base_url")
+            or _os.getenv("DEEPLYNX_BASE_URL", "https://deeplynx.inl.gov/api/v1").strip()
+        )
+        ds_id_raw = _os.getenv("DEEPLYNX_DATA_SOURCE_ID", "").strip()
+        data_source_id = int(ds_id_raw) if ds_id_raw else None
+
+        return cls(
+            organization_id=org_id,
+            project_id=proj_id,
+            data_source_id=data_source_id,
+            api_key=value.get("key") or None,
+            api_secret=value.get("secret") or None,
+            jwt_token=value.get("jwt_token") or None,
+            base_url=resolved_base_url,
+        )
