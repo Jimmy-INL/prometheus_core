@@ -16,6 +16,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
 from .exceptions import LLMToolCallError
 from .models import ChatResponse
 
@@ -78,7 +80,7 @@ class ToolDefinition:
     def from_pydantic(
         cls,
         name: str,
-        model: type,
+        model: type[BaseModel],
         *,
         description: str = "",
     ) -> ToolDefinition:
@@ -86,17 +88,14 @@ class ToolDefinition:
         return cls(name=name, description=description, parameters=_model_json_schema(model))
 
 
-def _model_json_schema(model: type) -> dict[str, Any]:
-    for attribute in ("model_json_schema", "schema"):
-        builder = getattr(model, attribute, None)
-        if callable(builder):
-            schema = builder()
-            if isinstance(schema, Mapping):
-                return dict(schema)
-    raise LLMToolCallError(
-        f"{getattr(model, '__name__', model)!r} does not expose a JSON schema; "
-        "pass a Pydantic model or build ToolDefinition.parameters directly"
-    )
+def _model_json_schema(model: type[BaseModel]) -> dict[str, Any]:
+    # mypy rejects a non-model at the call site; this guards untyped callers.
+    if not (isinstance(model, type) and issubclass(model, BaseModel)):
+        raise LLMToolCallError(
+            f"{getattr(model, '__name__', model)!r} does not expose a JSON schema; "
+            "pass a Pydantic model or build ToolDefinition.parameters directly"
+        )
+    return model.model_json_schema()
 
 
 def _get(value: Any, key: str, default: Any = None) -> Any:

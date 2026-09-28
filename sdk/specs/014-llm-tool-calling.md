@@ -37,7 +37,7 @@ shape-tolerant tool-call parsers against `ChatResponse.raw`.
 - `ToolCall(id: str, name: str, arguments: dict[str, Any], arguments_error: str | None = None, raw: Any = None)`
 - `ToolDefinition(name: str, description: str = "", parameters: dict[str, Any] = ...)`
 - `ToolDefinition.as_schema() -> dict[str, Any]`
-- `ToolDefinition.from_pydantic(name: str, model: type, *, description: str = "") -> ToolDefinition`
+- `ToolDefinition.from_pydantic(name: str, model: type[BaseModel], *, description: str = "") -> ToolDefinition`
 - `tool_schemas(definitions: Iterable[ToolDefinition | Mapping[str, Any]]) -> list[dict[str, Any]]`
 - `parse_tool_calls(value: ChatResponse | Any) -> tuple[ToolCall, ...]`
 - `parse_finish_reason(value: ChatResponse | Any) -> str | None`

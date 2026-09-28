@@ -83,6 +83,10 @@ Subclasses override `async _execute(self, params, context: RequestContext, event
 
 The agent module also re-exports common A2A types (`RequestContext`, `EventQueue`, `TaskState`, `TaskStatus`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`, `Artifact`, `TextPart`) from `prometheus_api.agent`, so subclasses normally don't need to import directly from `a2a.*`.
 
+Streaming (`message/stream`) is opt-in: set `"capabilities": {"streaming": true}` in the agent's `agent_card.json`. Bearer-token auth via `BearerTokenMiddleware` is enforced when `AGENT_SECRET` is set; setting `AGENT_SECRET_REQUIRED=false` is a development-only escape hatch.
+
+Artifact metadata produced by helpers always carries `conversation_id`, `producer_agent_id` (normalized: lowercased, spaces → hyphens), and `created_at` (UTC ISO). When adding new helper paths that emit artifacts, route through `_build_artifact_metadata` to preserve this envelope.
+
 ### LLM client layout
 
 `LLMClient` (sync) and `AsyncLLMClient` (async) are **two fully independent implementations** in `llm_client/client.py`. Spec 006 requires they stay aligned for alias selection, fallback behavior, request payloads, response fields, and logging — so shared behavior belongs on `_ClientMixin`, not duplicated in both. `ChatResponse` is built only through `_ClientMixin._build_chat_response`; do not construct it inline (there are four call sites and they must not drift). `tests/test_llm_client.py::test_sync_and_async_chat_signatures_match` guards the signatures.
@@ -94,10 +98,6 @@ Flavors are deployment configuration and live in YAML; per-call capabilities liv
 `llm_client/tools.py` MUST NOT import `llm_client/client.py` at runtime (the client imports it, so the reverse would cycle); use a `TYPE_CHECKING` guard. New tool errors subclass `LLMClientError`, not `LLMAliasError` — note those two live in unrelated exception trees (`RuntimeError` vs `ValueError`).
 
 Streaming is not supported: a truthy `stream` raises `LLMClientError` before any backend is contacted.
-
-Streaming (`message/stream`) is opt-in: set `"capabilities": {"streaming": true}` in the agent's `agent_card.json`. Bearer-token auth via `BearerTokenMiddleware` is enforced when `AGENT_SECRET` is set; setting `AGENT_SECRET_REQUIRED=false` is a development-only escape hatch.
-
-Artifact metadata produced by helpers always carries `conversation_id`, `producer_agent_id` (normalized: lowercased, spaces → hyphens), and `created_at` (UTC ISO). When adding new helper paths that emit artifacts, route through `_build_artifact_metadata` to preserve this envelope.
 
 ### Tests
 - `test_*.py` files at the top level of `tests/` are unit tests.
