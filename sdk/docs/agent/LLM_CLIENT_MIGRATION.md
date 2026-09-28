@@ -330,7 +330,7 @@ Existing hand-built schema dictionaries keep working unchanged — `tools` accep
 `ToolDefinition` values and raw OpenAI function mappings, and mappings pass through with
 a byte-identical payload.
 
-Two behavior notes when migrating:
+Behavior notes when migrating:
 
 - **Parsing is lenient; the gate is explicit.** `chat(...)` never raises on model-authored
   output: malformed arguments arrive as `arguments == {}` with `arguments_error` set. If
@@ -387,11 +387,11 @@ for turn in range(1, MAX_TOOL_TURNS + 1):
 raise RuntimeError(f"No final answer within {MAX_TOOL_TURNS} turns")
 ```
 
-Report a malformed-argument call (`call.arguments_error`), an unknown tool name, or
-a dispatch exception back to the model as the tool message content and continue --
-the model gets a recovery turn, so raising throws away a conversation that could
-still succeed. Skip dispatch when `arguments_error` is set. A runnable version of
-all of this is in `examples/llm_tool_calling_usage.py`.
+Skip dispatch when `call.arguments_error` is set. Send that error, an unknown tool
+name, or a dispatch exception back to the model as the tool message content, and
+continue the loop. The model gets a recovery turn; a raise discards a conversation
+that could still succeed. A runnable version of all of this is in
+`examples/llm_tool_calling_usage.py`.
 
 ## Logging And Security
 

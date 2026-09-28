@@ -10,8 +10,10 @@ under the relevant version heading with migration steps and a minimal code examp
 
 `LLMClient.chat(...)` and `AsyncLLMClient.chat(...)` now accept keyword-only `tools`
 and `tool_choice`, and `ChatResponse` exposes decoded `tool_calls` and `finish_reason`.
-This is additive; existing chat calls are unchanged. Agents that hand-rolled tool-call
-parsing against `ChatResponse.raw` should migrate to the package helpers.
+Existing chat calls keep working, with two exceptions: `tool_choice` without tools raises
+`LLMToolCallError`, and a truthy `stream` raises `LLMClientError`. Both raise before any
+backend is contacted. Agents that hand-rolled tool-call parsing against `ChatResponse.raw`
+should migrate to the package helpers.
 
 Migration steps:
 
@@ -19,8 +21,9 @@ Migration steps:
    client migration guide to replace local parsers with `response.tool_calls`,
    `assistant_message(...)`, `tool_result_message(...)`, and `require_tool_calls(...)`.
 2. Terminate multi-turn loops on `not response.tool_calls`, never on
-   `finish_reason == "stop"`, and bound the number of turns.
-3. Do not pass `tool_choice` without tools; it now raises `LLMToolCallError`.
+   `finish_reason == "stop"`.
+3. Bound the number of turns in every multi-turn loop.
+4. Do not pass `tool_choice` without tools; it now raises `LLMToolCallError`.
 
 ```python
 async with self.llm_client(context) as llm:

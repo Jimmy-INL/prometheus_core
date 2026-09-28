@@ -207,8 +207,8 @@ with LLMClient() as llm:
 ```
 
 A turn that only requests tools has no message content, so `response.text` is `""`.
-Use `response.tool_calls` and `response.finish_reason` as the signal. To continue the
-conversation, replay the turn and answer each call:
+Use `response.tool_calls` as the signal; `response.finish_reason` is for observability only.
+To continue the conversation, replay the turn and answer each call:
 
 ```python
     history = [
