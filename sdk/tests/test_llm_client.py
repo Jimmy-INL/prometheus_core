@@ -1163,9 +1163,11 @@ def test_sync_and_async_chat_signatures_match():
     """Spec 006 parity constraint: the two clients must not drift."""
     import inspect
 
-    assert set(inspect.signature(LLMClient.chat).parameters) == set(
-        inspect.signature(AsyncLLMClient.chat).parameters
-    )
+    sync_params = inspect.signature(LLMClient.chat).parameters.values()
+    async_params = inspect.signature(AsyncLLMClient.chat).parameters.values()
+    assert [(p.name, p.kind, p.default) for p in sync_params] == [
+        (p.name, p.kind, p.default) for p in async_params
+    ]
 
 
 def test_trace_outputs_include_redacted_tool_calls(monkeypatch):
