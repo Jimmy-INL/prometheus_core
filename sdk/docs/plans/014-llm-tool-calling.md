@@ -419,7 +419,7 @@ LiteLLM-object are each covered in both sync and async.
 ## Verification
 
 ```bash
-cd /Users/biggbs/projects/c500-prometheus-platform/prometheus_api
+# Run from the prometheus_api repository root.
 
 # Baseline — confirm exactly one pre-existing failure before Phase 0
 uv run pytest tests/test_llm_client.py tests/test_llm_configs.py -v
