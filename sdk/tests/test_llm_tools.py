@@ -161,10 +161,12 @@ def test_parse_tool_calls_returns_empty_without_tool_calls(raw):
 def test_parse_tool_calls_decodes_json_string_and_mapping_arguments():
     """REQ-014-03: arguments may arrive as a JSON string or as an already-decoded mapping."""
     from_string = parse_tool_calls(_proxy_raw(tool_calls=[_proxy_call(arguments='{"a": 1}')]))
-    from_mapping = parse_tool_calls(_proxy_raw(tool_calls=[_proxy_call(arguments={"a": 1})]))
+    mapping = {"a": 1}
+    from_mapping = parse_tool_calls(_proxy_raw(tool_calls=[_proxy_call(arguments=mapping)]))
 
     assert from_string[0].arguments == {"a": 1}
     assert from_mapping[0].arguments == {"a": 1}
+    assert from_mapping[0].arguments is not mapping
     assert from_string[0].arguments_error is None
     assert from_mapping[0].arguments_error is None
 
@@ -269,6 +271,8 @@ def test_tool_result_message_json_encodes_non_string_results():
         "tool_call_id": "call_9",
         "content": '{"density": 7.87}',
     }
+    fallback = tool_result_message("call_9", {"value": SimpleNamespace(a=1)})
+    assert fallback["content"] == '{"value": "namespace(a=1)"}'
 
 
 def test_tool_result_message_accepts_a_call_id_string_and_passes_strings_through():
@@ -467,7 +471,9 @@ def test_tool_call_exposes_the_documented_fields_and_is_frozen():
     assert (call.id, call.name, call.arguments) == ("call_1", "lookup", {"query": "iron"})
     assert call.arguments_error is None
     assert call.raw == entry
-    with pytest.raises(Exception):
+    from dataclasses import FrozenInstanceError
+
+    with pytest.raises(FrozenInstanceError):
         call.name = "other"  # type: ignore[misc]
 
 
