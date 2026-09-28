@@ -145,7 +145,10 @@ def example_answer_tool_calls(llm: LLMClient) -> None:
         history.append(tool_result_message(call, result))
 
     final = llm.medium(history, tools=TOOLS)
-    print(f"  final answer: {final.text}")
+    if final.tool_calls:
+        print(f"  model requested more tools: {[call.name for call in final.tool_calls]}")
+    else:
+        print(f"  final answer: {final.text}")
 
 
 def example_bounded_tool_loop(llm: LLMClient) -> None:
