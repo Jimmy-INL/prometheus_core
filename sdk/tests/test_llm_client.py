@@ -1016,6 +1016,7 @@ async def test_async_chat_populates_tool_calls_from_litellm_object(monkeypatch, 
         ]
 
     async def fake_acompletion(**kwargs):
+        assert kwargs["tools"][0]["function"]["name"] == "lookup"
         return SimpleNamespace(
             model="anthropic/large-model",
             choices=[SimpleNamespace(message=_Message(), finish_reason="tool_calls")],
