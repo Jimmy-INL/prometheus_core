@@ -966,6 +966,7 @@ async def test_async_chat_populates_tool_calls_from_proxy_dict():
     assert response.text == ""
     assert response.finish_reason == "tool_calls"
     assert response.tool_calls[0].arguments == {"query": "iron"}
+    assert posted[0]["tools"][0]["function"]["name"] == "lookup"
 
 
 def test_sync_chat_populates_tool_calls_from_litellm_object(monkeypatch, tmp_path):
