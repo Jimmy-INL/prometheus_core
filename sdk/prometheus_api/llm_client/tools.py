@@ -58,6 +58,11 @@ class ToolDefinition:
     description: str = ""
     parameters: dict[str, Any] = field(default_factory=_empty_parameters)
 
+    def __hash__(self) -> int:
+        # The generated hash would hash the ``parameters`` dict and raise TypeError.
+        encoded = json.dumps(self.parameters, sort_keys=True, default=str)
+        return hash((self.name, self.description, encoded))
+
     def as_schema(self) -> dict[str, Any]:
         """Return this definition as an OpenAI-style function schema."""
         return {
