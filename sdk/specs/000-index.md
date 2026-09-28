@@ -44,7 +44,7 @@ Each public interface should be claimed by exactly one spec:
 
 - Storage exports and resources: 001-004.
 - LLM chat, embedding, configuration, security, and tracing exports: 005-007.
-- LLM tool-calling exports (`llm_client/tools.py`, tool exceptions, `ChatResponse.tool_calls`): 014.
+- LLM tool-calling exports (`llm_client/tools.py` and `LLMToolCallError`): 014.
 - Agent exports and routes: 008-010, 012.
 - Top-level contract, stream helpers, and Redis helpers: 011-012.
 - Package metadata, Makefile commands, and container packaging: 013.
