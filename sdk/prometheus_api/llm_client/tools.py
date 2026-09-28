@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from .exceptions import LLMToolCallError
 from .models import ChatResponse
 
-if TYPE_CHECKING:  # pragma: no cover - typing only, keeps the import cycle open
+if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a runtime import cycle
     from .client import AsyncLLMClient, LLMClient
     from .normalization import ChatInput
 
