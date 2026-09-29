@@ -1,5 +1,7 @@
 # Add first-class LLM tool calling to `prometheus-api`
 
+> Historical implementation plan, kept for reference. It predates the review changes in this pull request; `specs/014-llm-tool-calling.md` and the code are authoritative where they differ.
+
 ## Context
 
 You were right: **LLM tool calling is not supported.** More precisely, it is *unspecified and
