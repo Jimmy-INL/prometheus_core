@@ -25,9 +25,10 @@ export function ProjectView({ onLogout }: Props) {
   const [chatType] = useChatType();
   const currentUser = useCurrentUser();
 
-  // New chat: fresh conversation_id + cleared transcript via the store (which
-  // returns Home to its idle welcome). No full page reload.
+  // New chat: switch to Home, then a fresh conversation_id + cleared transcript
+  // via the store (which returns Home to its idle welcome). No full page reload.
   const handleNewChat = () => {
+    setActiveNav("home");
     void chatStore.reset(chatProfileName(chatType));
   };
 
@@ -41,7 +42,10 @@ export function ProjectView({ onLogout }: Props) {
           onNavSelect={setActiveNav}
           onNewChat={handleNewChat}
         >
-          <ChatHistory onNewChat={handleNewChat} />
+          <ChatHistory
+            onNewChat={handleNewChat}
+            onOpenConversation={() => setActiveNav("home")}
+          />
         </LeftPanel>
 
         <div className="flex flex-1 flex-col overflow-hidden">
