@@ -1269,7 +1269,9 @@ def test_tools_module_has_no_runtime_dependency_on_the_client_module():
     import ast
     from pathlib import Path as _Path
 
-    source = _Path("prometheus_api/llm_client/tools.py").read_text(encoding="utf-8")
+    from prometheus_api.llm_client import tools as tools_module
+
+    source = _Path(tools_module.__file__).read_text(encoding="utf-8")
 
     def runtime_modules(node, guarded=False):
         found: list[str] = []
@@ -1277,12 +1279,16 @@ def test_tools_module_has_no_runtime_dependency_on_the_client_module():
             child_guarded = guarded
             if isinstance(child, ast.If) and "TYPE_CHECKING" in ast.unparse(child.test):
                 child_guarded = True
-            if isinstance(child, ast.ImportFrom) and not child_guarded and child.module:
-                found.append(child.module)
+            if isinstance(child, ast.ImportFrom) and not child_guarded:
+                base = child.module or ""
+                found.append(base)
+                found.extend(f"{base}.{alias.name}" for alias in child.names)
+            elif isinstance(child, ast.Import) and not child_guarded:
+                found.extend(alias.name for alias in child.names)
             found.extend(runtime_modules(child, child_guarded))
         return found
 
-    assert not [module for module in runtime_modules(ast.parse(source)) if "client" in module]
+    assert not [m for m in runtime_modules(ast.parse(source)) if m.rsplit(".", 1)[-1] == "client"]
 
 
 def test_llm_client_exports_tool_symbols():
