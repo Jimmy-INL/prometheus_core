@@ -5,6 +5,35 @@ changes. When a base-agent change requires downstream agent updates, add a short
 section here under the relevant version heading with migration steps and a
 minimal code example.
 
+## 0.13.0
+
+### Use the Built-in LLM Tool-Calling Helpers
+
+`LLMClient.chat(...)` and `AsyncLLMClient.chat(...)` now accept keyword-only `tools`
+and `tool_choice`, and `ChatResponse` exposes decoded `tool_calls` and `finish_reason`.
+Existing chat calls keep working, with two exceptions: `tool_choice` without tools raises
+`LLMToolCallError`, and a truthy `stream` raises `LLMClientError`. Both raise before any
+backend is contacted. Agents that hand-rolled tool-call parsing against `ChatResponse.raw`
+should migrate to the package helpers.
+
+Migration steps:
+
+1. Follow the [Tool Calling](LLM_CLIENT_MIGRATION.md#tool-calling) section of the LLM
+   client migration guide to replace local parsers with `response.tool_calls`,
+   `assistant_message(...)`, `tool_result_message(...)`, and `require_tool_calls(...)`.
+2. Terminate multi-turn loops on `not response.tool_calls`, never on
+   `finish_reason == "stop"`.
+3. Bound the number of turns in every multi-turn loop.
+4. Do not pass `tool_choice` without tools; it now raises `LLMToolCallError`.
+
+```python
+async with self.llm_client(context) as llm:
+    response = await llm.medium(history, tools=TOOLS, tool_choice="auto")
+    history.append(assistant_message(response))
+    for call in response.tool_calls:
+        history.append(tool_result_message(call, run_tool(call)))
+```
+
 ## 0.12.1
 
 ### Platform Backend Is Now the Recommended JWKS Host

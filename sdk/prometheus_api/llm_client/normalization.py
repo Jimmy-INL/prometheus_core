@@ -9,6 +9,12 @@ ChatInput = str | list[dict[str, Any]]
 EmbeddingInput = str | list[str]
 
 
+def _has_tool_calls(message: ChatMessage) -> bool:
+    """Report whether a message carries at least one OpenAI-style tool call."""
+    tool_calls = message.get("tool_calls")
+    return isinstance(tool_calls, (list, tuple)) and bool(tool_calls)
+
+
 def normalize_messages(value: ChatInput) -> list[ChatMessage]:
     """Normalize a raw prompt or OpenAI-style messages into a message list."""
     if isinstance(value, str):
@@ -26,17 +32,33 @@ def normalize_messages(value: ChatInput) -> list[ChatMessage]:
     for index, message in enumerate(value):
         if not isinstance(message, dict):
             raise TypeError(f"LLM message at index {index} must be a dictionary")
-        if "role" not in message or "content" not in message:
+        if "role" not in message:
             raise ValueError(f"LLM message at index {index} must include role and content")
         role = str(message.get("role", "")).strip()
         if not role:
             raise ValueError(f"LLM message at index {index} role cannot be empty")
-        content = message.get("content")
-        if content is None:
+
+        normalized = dict(message)
+        # An assistant turn that only requests tools carries no content. Permitting it
+        # here is what lets callers replay a tool-call turn into history without
+        # inventing placeholder text.
+        allow_empty_content = role.lower() == "assistant" and _has_tool_calls(normalized)
+
+        content = normalized.get("content")
+        blank_content = content is None or (isinstance(content, str) and not content.strip())
+
+        if allow_empty_content:
+            # Collapse absent, null, and whitespace-only content to an explicit null so a
+            # replayed tool-call turn has one shape on the wire.
+            if blank_content:
+                normalized["content"] = None
+        elif "content" not in normalized:
+            raise ValueError(f"LLM message at index {index} must include role and content")
+        elif content is None:
             raise ValueError(f"LLM message at index {index} content cannot be None")
-        if isinstance(content, str) and not content.strip():
+        elif isinstance(content, str) and not content.strip():
             raise ValueError(f"LLM message at index {index} content cannot be empty")
-        messages.append(dict(message))
+        messages.append(normalized)
     return messages
 
 

@@ -8,7 +8,7 @@ A Python toolkit for building data-driven applications with storage operations a
 |-----------|-------------|---------------|
 | **StorageClient** | Full-featured client for storage operations with sync/async APIs | [Guide](docs/storage-client/GUIDE.md) \| [Quick Start](docs/storage-client/QUICK_START.md) |
 | **PrometheusAgent** | Base class for building A2A-enabled agents with minimal boilerplate | [Guide](docs/agent/GUIDE.md) \| [Quick Start](docs/agent/QUICK_START.md) \| [Multi-User](docs/agent/MULTI_USER.md) |
-| **LLMClient** | Provider-agnostic LiteLLM chat and embedding client with sync/async APIs | [Environment Setup](docs/ENV_SETUP.md#llmclient-configuration) |
+| **LLMClient** | Provider-agnostic LiteLLM chat, embedding, and tool-calling client with sync/async APIs | [Environment Setup](docs/ENV_SETUP.md#llmclient-configuration) |
 
 ## Installation
 
@@ -170,6 +170,7 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 ### LLMClient
 - Sync and async chat calls with generic aliases (`default`, `small`, `medium`, `large`, `vision`)
 - Embeddings through the `embedding` alias
+- Tool calling on any chat alias: typed `ToolCall` / `ToolDefinition`, replayable tool history, and forced single-tool calls
 - Installed LiteLLM profiles for registry, INL HPC, AMSc, Anthropic, and OpenAI inference
 - Optional MLflow tracing for sync and async chat calls
 - Prompt-safe debug logging with opt-in redacted content logging
@@ -184,6 +185,7 @@ See the `examples/` directory for working code:
 - `bulk_operations.py` - Bulk operations
 - `agent_patterns.py` - PrometheusAgent status, artifacts, input requests, and stateful resume
 - `llm_client_usage.py` - Provider-agnostic LLMClient chat and embedding calls
+- `llm_tool_calling_usage.py` - LLM tool calling: definitions, parsing, and replaying tool results
 - `llm_agent_usage.py` - PrometheusAgent using AsyncLLMClient from A2A context
 - `env_config_usage.py` - Loading `ConnectionConfig` from `.env`
 - `list_datasources.py` - Print available DeepLynx data source IDs for your project

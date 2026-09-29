@@ -310,6 +310,89 @@ except LLMAliasError as exc:
 Avoid catching broad provider exceptions from old SDKs after migration. The
 provider should be hidden behind LiteLLM and `LLMClient`.
 
+## Tool Calling
+
+If you hand-rolled a tool-call parser against `ChatResponse.raw`, delete it. The package
+now owns the shape-tolerant parsing that proxy dicts and LiteLLM objects both require.
+
+| Replace | With |
+| --- | --- |
+| a local `_get` / `_as_dict` / `_parse_arguments` trio | `response.tool_calls` (already decoded) |
+| `json.loads(call["function"]["arguments"])` | `call.arguments`, with `call.arguments_error` when the model sent invalid JSON |
+| reading `raw["choices"][0]["finish_reason"]` | `response.finish_reason` |
+| `content = response.text or "Tool calls requested."` | `assistant_message(response)` — it keeps `content` as `None` |
+| building a `{"role": "tool", ...}` dict by hand | `tool_result_message(call, result)` |
+| `if len(calls) != 1: raise ...` | `require_tool_calls(response, expected=[...], count=1)` |
+| wrapping `Model.model_json_schema()` in a function envelope | `ToolDefinition.from_pydantic(name, Model)` |
+| `tools=[schema]` and hoping for one call | `call_tool(client, prompt, tool=definition)`, which forces the tool choice |
+
+Existing hand-built schema dictionaries keep working unchanged — `tools` accepts both
+`ToolDefinition` values and raw OpenAI function mappings, and mappings pass through with
+a byte-identical payload.
+
+Behavior notes when migrating:
+
+- **Parsing is lenient; the gate is explicit.** `chat(...)` never raises on model-authored
+  output: malformed arguments arrive as `arguments == {}` with `arguments_error` set. If
+  your old code raised in that case, call `require_tool_calls(...)` to keep raising.
+- **`tools=[]` means no tools; `tool_choice` needs tools.** An empty `tools` list is
+  omitted from the request, and passing `tool_choice` without at least one tool raises
+  `LLMToolCallError` before any backend is contacted.
+- **Empty tool results get placeholder text.** `tool_result_message(call, "")` sends
+  `"(empty result)"`, since empty message content is rejected on replay.
+- **Do not `print()` tool dispatch.** Log through `logging.getLogger("prometheus_api.llm_client")`
+  so tool data honors the redaction rules rather than landing in worker stdout.
+
+### Multi-turn Tool Loops
+
+The package deliberately does not ship a tool-execution loop: termination is
+application policy. It does define two rules that any loop you write must follow,
+and both have been violated in practice.
+
+**1. Terminate on the absence of tool calls, never on `finish_reason`.**
+
+```python
+# WRONG - silently discards tool calls
+done = finish_reason == "stop" or not tool_calls
+
+# RIGHT
+done = not response.tool_calls
+```
+
+Some providers return `finish_reason == "stop"` *alongside* tool calls. The wrong
+form treats that turn as final, so the tools the model asked for are never
+dispatched and the caller gets truncated history with no error. `finish_reason` is
+reported for observability, not control flow.
+
+**2. Bound the turns.** Every turn is a billed request with growing context, so
+`while True:` has no cost ceiling. Use an explicit budget and treat exhaustion as a
+real outcome rather than returning partial history that looks finished.
+
+The canonical shape:
+
+```python
+MAX_TOOL_TURNS = 8
+
+history = [{"role": "user", "content": question}]
+for turn in range(1, MAX_TOOL_TURNS + 1):
+    response = llm.medium(history, tools=TOOLS, tool_choice="auto")
+
+    if not response.tool_calls:          # the only terminator
+        return response.text
+
+    history.append(assistant_message(response))
+    for call in response.tool_calls:
+        history.append(tool_result_message(call, run_tool(call)))
+
+raise RuntimeError(f"No final answer within {MAX_TOOL_TURNS} turns")
+```
+
+Skip dispatch when `call.arguments_error` is set. Send that error, an unknown tool
+name, or a dispatch exception back to the model as the tool message content, and
+continue the loop. The model gets a recovery turn; a raise discards a conversation
+that could still succeed. A runnable version of all of this is in
+`examples/llm_tool_calling_usage.py`.
+
 ## Logging And Security
 
 Use the package logger:

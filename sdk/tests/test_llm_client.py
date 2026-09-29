@@ -21,7 +21,10 @@ from prometheus_api.llm_client import (
     EmbeddingResponse,
     LLMAliasError,
     LLMClient,
+    LLMClientError,
     LLMConfig,
+    LLMToolCallError,
+    ToolDefinition,
     normalize_embedding_input,
     normalize_messages,
     redact_secrets,
@@ -222,6 +225,11 @@ def test_fallback_yaml_parsing_resolves_env_refs(monkeypatch, tmp_path):
 
 
 def test_local_development_example_config_parses():
+    """The tracked local-development template must stay parseable and complete.
+
+    This is the only client-side guard that the example YAML keeps the full
+    six-flavor contract, including `vision`. Without it the template rots silently.
+    """
     config_path = Path(__file__).resolve().parents[1] / "llm_config.example.yaml"
     config = LLMConfig(config_file=config_path)
 
@@ -311,11 +319,45 @@ def test_normalize_raw_string_and_message_list():
         ([{"role": "", "content": "hello"}], ValueError),
         ([{"role": "user", "content": ""}], ValueError),
         ({"role": "user", "content": "hello"}, TypeError),
+        # REQ-006-15 relaxes content only for assistant turns that carry tool calls.
+        ([{"content": "hello"}], ValueError),
+        ([{"role": "assistant", "content": None}], ValueError),
+        ([{"role": "assistant", "content": None, "tool_calls": []}], ValueError),
+        ([{"role": "assistant", "tool_calls": []}], ValueError),
+        ([{"role": "tool", "content": None, "tool_calls": [{"id": "call_1"}]}], ValueError),
+        ([{"role": "user", "content": None, "tool_calls": [{"id": "call_1"}]}], ValueError),
     ],
 )
 def test_normalize_messages_rejects_invalid_inputs(value, expected_error):
     with pytest.raises(expected_error):
         normalize_messages(value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("content", [None, "", "   "])
+def test_normalize_messages_accepts_assistant_tool_call_turns(content):
+    """REQ-006-15, BEH-006-04: a tool-call turn replays without placeholder content."""
+    tool_calls = [{"id": "call_1", "function": {"name": "lookup", "arguments": "{}"}}]
+
+    normalized = normalize_messages(
+        [
+            {"role": "user", "content": "look up iron"},
+            {"role": "assistant", "content": content, "tool_calls": tool_calls},
+            {"role": "tool", "tool_call_id": "call_1", "content": "7.87"},
+        ]
+    )
+
+    assert [message["role"] for message in normalized] == ["user", "assistant", "tool"]
+    assert normalized[1]["content"] is None
+    assert normalized[1]["tool_calls"] == tool_calls
+
+
+def test_normalize_messages_fills_absent_content_for_tool_call_turns():
+    """REQ-006-15: an absent content key becomes an explicit null."""
+    normalized = normalize_messages(
+        [{"role": "assistant", "tool_calls": [{"id": "call_1", "function": {"name": "x"}}]}]
+    )
+
+    assert normalized[0]["content"] is None
 
 
 def test_normalize_embedding_input():
@@ -453,6 +495,7 @@ def test_mlflow_tracing_sync_chat_records_span_and_protected_tags(monkeypatch, t
         "model_alias": "default",
         "provider_model": "resolved-default",
         "usage": {"total_tokens": 7},
+        "finish_reason": None,
     }
 
 
@@ -826,3 +869,445 @@ def test_a2a_api_key_is_sent_as_proxy_bearer_token():
     client("hello")
 
     assert observed_headers == ["Bearer structured-key", "Bearer structured-key"]
+
+
+def _tool_call_payload(call_id="call_1", name="lookup", arguments='{"query": "iron"}'):
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+def _tool_chat_payload(*, content=None, finish_reason="tool_calls", tool_calls=None):
+    return {
+        "model": "resolved-medium",
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": tool_calls if tool_calls is not None else [_tool_call_payload()],
+                },
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": {"total_tokens": 11},
+    }
+
+
+def _tool_handler(posted, alias="medium", payload=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return _proxy_response(request, _proxy_models(alias))
+        posted.append(json.loads(request.content))
+        return _proxy_response(request, payload if payload is not None else _tool_chat_payload())
+
+    return handler
+
+
+def test_empty_tools_list_is_omitted_from_the_payload():
+    """REQ-006-17: tools=[] behaves like tools=None instead of sending "tools": []."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    client.medium("look up iron", tools=[])
+
+    assert "tools" not in posted[0]
+    assert "tool_choice" not in posted[0]
+
+
+@pytest.mark.parametrize("tools", [None, []])
+def test_tool_choice_without_tools_is_rejected_before_dispatch(tools):
+    """REQ-006-17: tool_choice with no tools raises client-side, not as a backend 400."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    with pytest.raises(LLMToolCallError, match="tool_choice requires"):
+        client.medium("look up iron", tools=tools, tool_choice="auto")
+    assert posted == []
+
+
+def test_sync_chat_populates_tool_calls_from_proxy_dict():
+    """REQ-014-02, BEH-014-01: a pure tool-call turn has empty text but a full signal."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    response = client.medium("look up iron", tools=[ToolDefinition(name="lookup")])
+
+    assert response.text == ""
+    assert response.finish_reason == "tool_calls"
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].name == "lookup"
+    assert response.tool_calls[0].arguments == {"query": "iron"}
+
+
+async def test_async_chat_populates_tool_calls_from_proxy_dict():
+    """REQ-014-02, REQ-006-17: the async client returns the same normalized tool calls."""
+    posted: list[dict] = []
+    handler = _tool_handler(posted)
+
+    async def async_handler(request: httpx.Request) -> httpx.Response:
+        return handler(request)
+
+    client = AsyncLLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(async_handler)),
+    )
+
+    response = await client.medium("look up iron", tools=[ToolDefinition(name="lookup")])
+    await client.aclose()
+
+    assert response.text == ""
+    assert response.finish_reason == "tool_calls"
+    assert response.tool_calls[0].arguments == {"query": "iron"}
+    assert posted[0]["tools"][0]["function"]["name"] == "lookup"
+
+
+def test_sync_chat_populates_tool_calls_from_litellm_object(monkeypatch, tmp_path):
+    """REQ-014-02: the LiteLLM SDK object shape parses like the proxy dict shape."""
+
+    class _Message:
+        role = "assistant"
+        content = None
+        tool_calls = [
+            SimpleNamespace(
+                id="call_7",
+                function=SimpleNamespace(name="lookup", arguments='{"query": "steel"}'),
+            )
+        ]
+
+    def fake_completion(**kwargs):
+        assert kwargs["tools"][0]["function"]["name"] == "lookup"
+        return SimpleNamespace(
+            model="anthropic/large-model",
+            choices=[SimpleNamespace(message=_Message(), finish_reason="tool_calls")],
+            usage=None,
+        )
+
+    import litellm
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    client = LLMClient(config=LLMConfig(config_file=_fallback_yaml(tmp_path)))
+
+    response = client.large("look up steel", tools=[ToolDefinition(name="lookup")])
+
+    assert response.finish_reason == "tool_calls"
+    assert response.tool_calls[0].id == "call_7"
+    assert response.tool_calls[0].arguments == {"query": "steel"}
+
+
+async def test_async_chat_populates_tool_calls_from_litellm_object(monkeypatch, tmp_path):
+    """REQ-014-02: async fallback parity, with arguments supplied as a mapping."""
+
+    class _Message:
+        role = "assistant"
+        content = None
+        tool_calls = [
+            SimpleNamespace(
+                id="call_8",
+                function=SimpleNamespace(name="lookup", arguments={"query": "copper"}),
+            )
+        ]
+
+    async def fake_acompletion(**kwargs):
+        assert kwargs["tools"][0]["function"]["name"] == "lookup"
+        return SimpleNamespace(
+            model="anthropic/large-model",
+            choices=[SimpleNamespace(message=_Message(), finish_reason="tool_calls")],
+            usage=None,
+        )
+
+    import litellm
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    client = AsyncLLMClient(config=LLMConfig(config_file=_fallback_yaml(tmp_path)))
+
+    response = await client.large("look up copper", tools=[ToolDefinition(name="lookup")])
+    await client.aclose()
+
+    assert response.tool_calls[0].id == "call_8"
+    assert response.tool_calls[0].arguments == {"query": "copper"}
+
+
+def test_chat_forwards_tools_and_tool_choice_to_the_proxy_payload():
+    """REQ-006-17: tools and tool_choice reach the OpenAI-compatible request body."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    client.medium(
+        "look up iron",
+        tools=[ToolDefinition(name="lookup", description="Look up a material")],
+        tool_choice="auto",
+    )
+
+    assert posted[0]["model"] == "medium"
+    assert posted[0]["tool_choice"] == "auto"
+    assert posted[0]["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look up a material",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+
+def test_chat_passes_hand_built_tool_schemas_through_unchanged():
+    """REQ-006-17, REQ-014-09: existing callers keep a byte-identical wire payload."""
+    posted: list[dict] = []
+    handbuilt = {
+        "type": "function",
+        "function": {"name": "create_wall", "parameters": {"type": "object"}},
+    }
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    client.medium("build a wall", tools=[handbuilt], tool_choice="auto")
+
+    assert posted[0]["tools"] == [handbuilt]
+
+
+def test_chat_forwards_tools_to_litellm_fallback_kwargs(monkeypatch, tmp_path):
+    """REQ-006-17: the LiteLLM SDK path receives the same converted schemas."""
+    calls: list[dict] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return {"model": "openai/medium-model", "choices": [{"message": {"content": "ok"}}]}
+
+    import litellm
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    client = LLMClient(config=LLMConfig(config_file=_fallback_yaml(tmp_path)))
+
+    client.medium("look up iron", tools=[ToolDefinition(name="lookup")], tool_choice="auto")
+
+    assert calls[0]["tool_choice"] == "auto"
+    assert calls[0]["tools"][0]["function"]["name"] == "lookup"
+
+
+def test_flavor_methods_forward_the_tools_keyword():
+    """REQ-006-17: tools binds through the flavor helpers without extra plumbing."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted, "large"))),
+    )
+
+    client.large("look up iron", tools=[ToolDefinition(name="lookup")], temperature=0)
+
+    assert posted[0]["model"] == "large"
+    assert posted[0]["temperature"] == 0
+    assert posted[0]["tools"][0]["function"]["name"] == "lookup"
+
+
+def test_chat_omits_tool_keys_when_no_tools_are_supplied():
+    """REQ-006-17: a plain chat request is unchanged by the new parameters."""
+    posted: list[dict] = []
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(_tool_handler(posted))),
+    )
+
+    client.medium("hello")
+
+    assert "tools" not in posted[0]
+    assert "tool_choice" not in posted[0]
+
+
+def test_sync_chat_rejects_streaming_before_contacting_a_backend():
+    """REQ-006-18, BEH-006-05: stream=True raises instead of silently returning nothing."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a streaming call")
+
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LLMClientError, match="Streaming is not supported"):
+        client.medium("hello", stream=True)
+
+
+async def test_async_chat_rejects_streaming_before_contacting_a_backend():
+    """REQ-006-18: the async client rejects streaming identically."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a streaming call")
+
+    client = AsyncLLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LLMClientError, match="Streaming is not supported"):
+        await client.medium("hello", stream=True)
+    await client.aclose()
+
+
+def test_sync_and_async_chat_signatures_match():
+    """Spec 006 parity constraint: the two clients must not drift."""
+    import inspect
+
+    sync_params = inspect.signature(LLMClient.chat).parameters.values()
+    async_params = inspect.signature(AsyncLLMClient.chat).parameters.values()
+    assert [(p.name, p.kind, p.default) for p in sync_params] == [
+        (p.name, p.kind, p.default) for p in async_params
+    ]
+
+
+def test_trace_outputs_include_redacted_tool_calls(monkeypatch):
+    """REQ-007-13, BEH-007-04: model-authored arguments are redacted before they persist."""
+    state = _install_fake_mlflow(monkeypatch)
+    posted: list[dict] = []
+    payload = _tool_chat_payload(tool_calls=[_tool_call_payload(arguments='{"api_key": "abc123"}')])
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy", enable_mlflow_tracing=True),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(_tool_handler(posted, payload=payload))
+        ),
+    )
+
+    client.medium("look up iron", tools=[ToolDefinition(name="lookup")])
+
+    outputs = state.spans[0].outputs
+    assert outputs["finish_reason"] == "tool_calls"
+    assert outputs["tool_calls"] == [
+        {"id": "call_1", "name": "lookup", "arguments": {"api_key": "[REDACTED]"}}
+    ]
+    # REQ-007-13: span inputs carry tool names only, never full JSON schemas.
+    assert state.spans[0].inputs["tools"] == ["lookup"]
+    assert "parameters" not in json.dumps(state.spans[0].inputs)
+
+
+def test_trace_outputs_omit_tool_keys_without_tool_calls(monkeypatch):
+    """REQ-007-11, BEH-007-05: text-only traces add finish_reason but no tool keys."""
+    state = _install_fake_mlflow(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return _proxy_response(request, _proxy_models("medium"))
+        return _proxy_response(
+            request,
+            {
+                "model": "resolved-medium",
+                "choices": [{"message": {"content": "plain answer"}, "finish_reason": "length"}],
+            },
+        )
+
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy", enable_mlflow_tracing=True),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    client.medium("hello")
+
+    outputs = state.spans[0].outputs
+    assert set(outputs) == {"text", "model_alias", "provider_model", "usage", "finish_reason"}
+    assert outputs["finish_reason"] == "length"
+    assert set(state.spans[0].inputs) == {"messages"}
+
+
+def test_debug_logging_omits_tool_arguments_by_default(caplog):
+    """REQ-007-14: developer-authored tool names log; model-authored arguments do not."""
+    posted: list[dict] = []
+    payload = _tool_chat_payload(
+        tool_calls=[_tool_call_payload(arguments='{"query": "top-secret-material"}')]
+    )
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy"),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(_tool_handler(posted, payload=payload))
+        ),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="prometheus_api.llm_client"):
+        client.medium("look up iron", tools=[ToolDefinition(name="lookup")], tool_choice="auto")
+
+    assert "top-secret-material" not in caplog.text
+    assert "'tool_names': ['lookup']" in caplog.text
+    assert "'tool_count': 1" in caplog.text
+    assert "'tool_call_count': 1" in caplog.text
+    assert "'finish_reason': 'tool_calls'" in caplog.text
+
+
+def test_opt_in_debug_logging_redacts_tool_arguments(caplog):
+    """REQ-007-14: opting in still redacts secrets inside tool-call arguments."""
+    posted: list[dict] = []
+    payload = _tool_chat_payload(tool_calls=[_tool_call_payload(arguments='{"api_key": "abc123"}')])
+    client = LLMClient(
+        config=LLMConfig(proxy_url="http://proxy", debug_log_messages=True),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(_tool_handler(posted, payload=payload))
+        ),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="prometheus_api.llm_client"):
+        client.medium("look up iron", tools=[ToolDefinition(name="lookup")])
+
+    assert "tool_call_arguments" in caplog.text
+    assert "abc123" not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+
+def test_tools_module_has_no_runtime_dependency_on_the_client_module():
+    """REQ-014-12: tools.py must stay importable without the client, avoiding a cycle."""
+    import ast
+    from pathlib import Path as _Path
+
+    from prometheus_api.llm_client import tools as tools_module
+
+    source = _Path(tools_module.__file__).read_text(encoding="utf-8")
+
+    def runtime_modules(node, guarded=False):
+        found: list[str] = []
+        for child in ast.iter_child_nodes(node):
+            child_guarded = guarded
+            if isinstance(child, ast.If) and "TYPE_CHECKING" in ast.unparse(child.test):
+                child_guarded = True
+            if isinstance(child, ast.ImportFrom) and not child_guarded:
+                base = child.module or ""
+                found.append(base)
+                found.extend(f"{base}.{alias.name}" for alias in child.names)
+            elif isinstance(child, ast.Import) and not child_guarded:
+                found.extend(alias.name for alias in child.names)
+            found.extend(runtime_modules(child, child_guarded))
+        return found
+
+    assert not [m for m in runtime_modules(ast.parse(source)) if m.rsplit(".", 1)[-1] == "client"]
+
+
+def test_llm_client_exports_tool_symbols():
+    """REQ-014-11: the tool-calling surface is importable from the package root."""
+    import prometheus_api.llm_client as package
+
+    expected = {
+        "ToolCall",
+        "ToolDefinition",
+        "LLMToolCallError",
+        "parse_tool_calls",
+        "parse_finish_reason",
+        "assistant_message",
+        "tool_result_message",
+        "require_tool_calls",
+        "tool_schemas",
+        "call_tool",
+        "acall_tool",
+    }
+
+    assert expected <= set(package.__all__)
+    assert all(hasattr(package, name) for name in expected)

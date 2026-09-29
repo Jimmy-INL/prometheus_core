@@ -176,10 +176,56 @@ tracked example:
 
 ```bash
 cp llm_config.example.yaml llm_config.yaml
+export LLM_CONFIG_FILE=./llm_config.yaml
 ```
 
 `llm_config.yaml` is gitignored so developers can edit provider models for their own
 machine without committing local configuration.
+
+### Tool Calling
+
+Tool calling needs **no configuration and adds no environment variables**. It is a
+per-call capability of any chat alias rather than a flavor, so there is no `tools`
+alias to configure and the six-flavor contract is unchanged. Pick a flavor for the
+cost and capability you want, then pass tools to that call:
+
+```python
+from prometheus_api.llm_client import (
+    LLMClient,
+    ToolDefinition,
+    assistant_message,
+    tool_result_message,
+)
+
+lookup = ToolDefinition.from_pydantic("lookup_material", LookupArgs, description="Look up a material")
+
+with LLMClient() as llm:
+    response = llm.medium("What is the density of iron?", tools=[lookup], tool_choice="auto")
+
+    for call in response.tool_calls:
+        print(call.name, call.arguments)
+```
+
+A turn that only requests tools has no message content, so `response.text` is `""`.
+Use `response.tool_calls` as the signal; `response.finish_reason` is for observability only.
+To continue the conversation, replay the turn and answer each call:
+
+```python
+    history = [
+        {"role": "user", "content": "What is the density of iron?"},
+        assistant_message(response),
+        *(tool_result_message(call, run_tool(call)) for call in response.tool_calls),
+    ]
+    final = llm.medium(history, tools=[lookup])
+```
+
+When MLflow tracing is enabled, spans record supplied tool **names** (not full JSON
+schemas) as inputs, and tool calls as outputs with their arguments passed through
+`redact_secrets(...)`. Tool-call arguments are model-authored, so debug logs withhold
+them unless `LLM_DEBUG_LOG_MESSAGES=true`, and redact them even then.
+
+Streaming is not supported. Passing `stream=True` raises `LLMClientError` before any
+backend is contacted.
 
 ### Custom LiteLLM YAML
 
