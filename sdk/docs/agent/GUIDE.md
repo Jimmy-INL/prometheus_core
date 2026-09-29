@@ -1081,8 +1081,40 @@ and `file://` artifacts are validated against allowed local roots.
 
 ---
 
+## Multi-User Identity and Credentials
+
+From `_execute`, the verified user identity and per-user credentials are available
+without any additional setup beyond setting `USER_IDENTITY_PUBLIC_KEY` (this agent
+verifies) and, on the platform backend only, `USER_IDENTITY_PRIVATE_KEY` (it mints).
+Generate a keypair with `prometheus-identity-keygen` (ships in this package):
+
+```python
+async def _execute(self, params, context, event_queue):
+    user_id = params["user_id"]                  # verified; never spoofable
+    cred = await self.get_credential("deeplynx") # JIT per-user credential
+    config = ConnectionConfig.from_credential(cred)
+    ...
+```
+
+For credential-touching agents that hold secrets across multiple `await` calls,
+opt into process isolation:
+
+```python
+class MyAgent(PrometheusAgent):
+    requires_user_isolation = True
+    ...
+```
+
+See [MULTI_USER.md](./MULTI_USER.md) for the full reference: identity JWT flow,
+credential broker backends (env/Vault/bespoke), per-user worker pool, and
+conversation ownership.
+
+---
+
 ## See Also
 
 - [`examples/agent_patterns.py`](../../examples/agent_patterns.py) — full reference agent demonstrating all patterns
 - [`docs/ENV_SETUP.md`](../ENV_SETUP.md) — environment variable details
 - [`docs/agent/QUICK_START.md`](./QUICK_START.md) — condensed getting-started version
+- [`docs/agent/MULTI_USER.md`](./MULTI_USER.md) — multi-user identity, credentials, and isolation
+- [`docs/agent/IDENTITY_KEY_MANAGEMENT.md`](./IDENTITY_KEY_MANAGEMENT.md) — RS256 key generation, key distribution per service, third-party agent integration

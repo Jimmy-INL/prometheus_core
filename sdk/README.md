@@ -7,7 +7,7 @@ A Python toolkit for building data-driven applications with storage operations a
 | Component | Description | Documentation |
 |-----------|-------------|---------------|
 | **StorageClient** | Full-featured client for storage operations with sync/async APIs | [Guide](docs/storage-client/GUIDE.md) \| [Quick Start](docs/storage-client/QUICK_START.md) |
-| **PrometheusAgent** | Base class for building A2A-enabled agents with minimal boilerplate | [Guide](docs/agent/GUIDE.md) \| [Quick Start](docs/agent/QUICK_START.md) |
+| **PrometheusAgent** | Base class for building A2A-enabled agents with minimal boilerplate | [Guide](docs/agent/GUIDE.md) \| [Quick Start](docs/agent/QUICK_START.md) \| [Multi-User](docs/agent/MULTI_USER.md) |
 | **LLMClient** | Provider-agnostic LiteLLM chat, embedding, and tool-calling client with sync/async APIs | [Environment Setup](docs/ENV_SETUP.md#llmclient-configuration) |
 
 ## Installation
