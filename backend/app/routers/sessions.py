@@ -27,9 +27,12 @@ _VALID_PROFILES = {p.name for p in CHAT_PROFILES}
 
 
 class CreateSessionBody(BaseModel):
-    """Optional body for ``POST /api/sessions`` — the selected chat profile."""
+    """Optional body for ``POST /api/sessions`` — the selected chat profile, plus the
+    ``bind_seq`` that orders this rebind against in-flight resumes (see
+    ``ConversationResumeRequest``)."""
 
     profile: Optional[str] = None
+    bind_seq: Optional[int] = None
 
 
 @router.post("/sessions", response_model=SessionResponse)
@@ -63,7 +66,8 @@ async def create_session(
     # artifact catalog and the awaited-task set -- a new conversation starts with
     # neither. ``SessionState`` is a frozen snapshot, so this is the only way to
     # write; assigning to ``state`` would raise rather than silently do nothing.
-    await store.reset(claims.sid, conversation_id, profile=profile)
+    # ``bind_seq`` keeps a slower, older resume from rebinding over this afterwards.
+    await store.reset(claims.sid, conversation_id, profile=profile, bind_seq=body.bind_seq if body else None)
 
     suggestions = settings.workflow_suggestions if profile == BEGINNER_PROFILE else []
 

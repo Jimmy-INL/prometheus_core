@@ -25,7 +25,7 @@ from app.config import settings
 from app.contract import UploadDescriptor
 from app.security import TokenClaims, current_claims
 from app.services import uploads as upload_service
-from app.sessions import SessionState, get_store
+from app.sessions import get_store
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,12 @@ async def post_upload(
     claims: TokenClaims = Depends(current_claims),
 ) -> UploadDescriptor:
     store = get_store(request)
-    session: SessionState = await store.get_or_create(claims.sid)
 
     # Uploads attach to a conversation; mint one if a file arrives before the first
-    # POST /api/sessions (mirrors the tolerance in routers/chat.py).
-    conversation_id = session.conversation_id
-    if not conversation_id:
-        conversation_id = str(uuid.uuid4())
-        await store.set_conversation(claims.sid, conversation_id)
+    # POST /api/sessions (mirrors the tolerance in routers/chat.py). Atomic, because the
+    # frontend uploads every selected file in parallel: a read-then-write here let each
+    # request mint its own id and stage its file under a different conversation.
+    conversation_id = await store.ensure_conversation(claims.sid, str(uuid.uuid4()))
 
     name = file.filename or "upload"
 

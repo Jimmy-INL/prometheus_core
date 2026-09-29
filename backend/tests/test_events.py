@@ -31,7 +31,7 @@ async def _seed(store, sid: str = SID, *, conversation_id: str = "c1", awaited=(
     """Put a session in the store with ``awaited`` background tasks registered."""
     await store.reset(sid, conversation_id)
     for task_id in awaited:
-        await store.await_task(sid, task_id)
+        await store.await_task(sid, task_id, conversation_id=conversation_id)
 
 
 async def _drain(queue: "asyncio.Queue", n: int) -> list:
@@ -127,6 +127,84 @@ async def test_bus_delivers_one_copy_per_queue_with_two_relays(fake_redis, valke
 
     assert (await asyncio.wait_for(qa.get(), 2.0)).message == "once"
     assert (await asyncio.wait_for(qb.get(), 2.0)).message == "once"
+    await _settle()
+    assert qa.empty() and qb.empty()
+
+    await bus_a.unregister(SID, qa)
+    await bus_b.unregister(SID, qb)
+
+
+async def test_concurrent_first_registers_share_one_relay(event_bus):
+    """Two tabs connecting at once must not both subscribe and orphan a relay.
+
+    Without the register lock each saw no relay, both awaited ``SUBSCRIBE``, and the
+    second overwrote the first — whose subscription kept running and delivered every
+    event a second time.
+    """
+    q1, q2 = await asyncio.gather(event_bus.register(SID), event_bus.register(SID))
+
+    assert len(event_bus._relays) == 1
+    await event_bus.publish(SID, StatusEvent(turn_id="t", message="once"))
+    assert (await asyncio.wait_for(q1.get(), 2.0)).message == "once"
+    assert (await asyncio.wait_for(q2.get(), 2.0)).message == "once"
+    await _settle()
+    assert q1.empty() and q2.empty()
+
+    await event_bus.unregister(SID, q1)
+    await event_bus.unregister(SID, q2)
+    assert SID not in event_bus._relays
+
+
+async def test_dead_relay_closes_its_streams_and_forgets_the_sid(event_bus):
+    """A relay whose ``listen()`` dies must end its streams, not leave them silent."""
+    q1 = await event_bus.register(SID)
+    q2 = await event_bus.register(SID)
+    relay = event_bus._relays[SID]
+
+    async def broken_listen():
+        raise ConnectionError("valkey went away")
+        yield  # pragma: no cover - makes this an async generator
+
+    relay.task.cancel()
+    await asyncio.gather(relay.task, return_exceptions=True)
+    relay.pubsub.listen = broken_listen
+    await event_bus._drain(SID, relay)
+
+    assert await asyncio.wait_for(q1.get(), 2.0) is None
+    assert await asyncio.wait_for(q2.get(), 2.0) is None
+    assert SID not in event_bus._relays
+    assert SID not in event_bus._subscribers
+
+    # A reconnecting tab subscribes afresh and receives events again.
+    q3 = await event_bus.register(SID)
+    await event_bus.publish(SID, StatusEvent(turn_id="t", message="back"))
+    assert (await asyncio.wait_for(q3.get(), 2.0)).message == "back"
+    await event_bus.unregister(SID, q3)
+
+
+async def test_progress_is_delivered_locally_not_published(monkeypatch, fake_redis, valkey_server, session_store):
+    """Each worker with a tab runs its own task subscriber, so progress must stay local.
+
+    Publishing it handed every tab one copy of each line per worker.
+    """
+    from fakeredis.aioredis import FakeRedis
+
+    bus_a = EventBus(fake_redis)
+    bus_b = EventBus(FakeRedis(server=valkey_server, decode_responses=True))
+    qa = await bus_a.register(SID)
+    qb = await bus_b.register(SID)
+    await _seed(session_store, awaited=["root-1"])
+    _patch_task_events(
+        monkeypatch,
+        events_seq=[{"task_id": "root-1", "root_task_id": "root-1", "state": "running", "message": "step 1"}],
+    )
+
+    # Both workers' subscribers see the same task event, as in production.
+    await run_task_subscriber(bus_a, session_store, SID, fake_redis)
+    await run_task_subscriber(bus_b, session_store, SID, fake_redis)
+
+    assert [e.message for e in await _drain(qa, 1)] == ["step 1"]
+    assert [e.message for e in await _drain(qb, 1)] == ["step 1"]
     await _settle()
     assert qa.empty() and qb.empty()
 
@@ -334,7 +412,7 @@ async def test_announce_restores_id_on_fetch_failure(
 
     with pytest.raises(RuntimeError):
         await events_service._announce_completion(
-            event_bus, session_store, SID, fake_redis, "task-1", "completed", auto_approve=False
+            event_bus, session_store, SID, fake_redis, "task-1", "completed", conversation_id="c1", auto_approve=False
         )
     # The id is put back so a reconnecting subscriber's guard can retry (not lost).
     assert await session_store.is_awaiting(SID, "task-1")

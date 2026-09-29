@@ -35,13 +35,13 @@ async def test_needs_info_counter_increments_across_workers(session_store, valke
     worker_b = SessionStore(_other_worker(valkey_server))
 
     await session_store.reset("sid-mw", "c1")
-    assert await session_store.bump_needs_info("sid-mw") == 1
-    assert await worker_b.bump_needs_info("sid-mw") == 2
-    assert await session_store.bump_needs_info("sid-mw") == 3
+    assert await session_store.bump_needs_info("sid-mw", conversation_id="c1") == 1
+    assert await worker_b.bump_needs_info("sid-mw", conversation_id="c1") == 2
+    assert await session_store.bump_needs_info("sid-mw", conversation_id="c1") == 3
 
     # Both workers read the same total, and a reset on one clears it for the other.
     assert (await worker_b.get_or_create("sid-mw")).consecutive_needs_info == 3
-    await worker_b.reset_needs_info("sid-mw")
+    await worker_b.reset_needs_info("sid-mw", conversation_id="c1")
     assert (await session_store.get_or_create("sid-mw")).consecutive_needs_info == 0
 
 
@@ -52,7 +52,7 @@ async def test_conversation_binding_is_visible_to_the_other_worker(session_store
     worker_b = SessionStore(_other_worker(valkey_server))
 
     await session_store.reset("sid-mw", "c1")
-    await session_store.set_artifacts("sid-mw", [{"artifact_id": "a1"}])
+    await session_store.set_artifacts("sid-mw", [{"artifact_id": "a1"}], conversation_id="c1")
 
     snapshot = await worker_b.get("sid-mw")
     assert snapshot is not None

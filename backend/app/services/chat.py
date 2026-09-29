@@ -108,7 +108,7 @@ async def _map_final(
     store: SessionStore,
     sid: str,
     *,
-    stale: bool = False,
+    conversation_id: str,
 ) -> ChatMessageResponse:
     """Terminal branch (ports ``_handle_final_response``, minus rendering).
 
@@ -120,14 +120,12 @@ async def _map_final(
     - Pulls ``follow_up_suggestions`` from ``message_metadata``.
     - Shapes artifacts via task 07's metadata builder (no rendering).
 
-    ``stale`` is ``True`` when the session has been rebound to a different
-    conversation (a "New chat" or a chat-history resume) since this turn was
-    sent — see :func:`handle_turn`. The session-mutating write below is skipped
-    in that case, so a late-arriving response for an abandoned conversation
-    can't stomp the catalog for whatever conversation the session now points
-    at; the returned :class:`ChatMessageResponse` is still produced normally
-    since the caller (the original HTTP request) still needs *some* response,
-    even though the frontend will discard it as stale on its side too.
+    The catalog write is guarded on ``conversation_id`` (see :func:`map_response`), so
+    a late-arriving response for an abandoned conversation can't stomp the catalog of
+    whatever conversation the session now points at. The returned
+    :class:`ChatMessageResponse` is still produced normally since the caller (the
+    original HTTP request) still needs *some* response, even though the frontend will
+    discard it as stale on its side too.
     """
     metadata = response.message_metadata or {}
     is_slash_command = bool(metadata.get("slash_command"))
@@ -142,8 +140,8 @@ async def _map_final(
     # Persist the full conversation catalog for later content fetches (task 07).
     # Truthy, not ``is not None`` (T-7): an ``artifacts=[]`` turn must not wipe the
     # accumulated catalog that later ``GET /api/artifacts/{id}/content`` calls resolve.
-    if response.artifacts and not stale:
-        await store.set_artifacts(sid, response.artifacts)
+    if response.artifacts:
+        await store.set_artifacts(sid, response.artifacts, conversation_id=conversation_id)
 
     shaped = shape_artifacts(new_artifacts)
     text = _coerce_final_text(response, len(shaped)) or None
@@ -175,7 +173,7 @@ async def _map_backgrounded(
     store: SessionStore,
     sid: str,
     *,
-    stale: bool = False,
+    conversation_id: str,
 ) -> ChatMessageResponse:
     """Backgrounded branch (ports ``_handle_backgrounded`` registration only).
 
@@ -185,14 +183,14 @@ async def _map_backgrounded(
     ``node_snapshot`` for a task that finished before the subscriber saw it — moves
     to the events service (task 05), which owns the Redis lifecycle.
 
-    Skipped when ``stale`` (see :func:`_map_final`): registering a task under a
-    session that has since moved to a different conversation would make that
-    *other* conversation's session wait on a task it never started.
+    Guarded on ``conversation_id`` like every write here: registering a task under a
+    session that has since moved to a different conversation would make that *other*
+    conversation's session wait on a task it never started.
     """
     metadata = response.message_metadata or {}
     task_id = metadata.get("task_id")
-    if task_id and not stale:
-        await store.await_task(sid, str(task_id))
+    if task_id:
+        await store.await_task(sid, str(task_id), conversation_id=conversation_id)
 
     return ChatMessageResponse(
         turn_id=turn_id,
@@ -212,8 +210,8 @@ async def map_response(
     store: SessionStore,
     sid: str,
     *,
+    conversation_id: str,
     auto_approve: bool,
-    stale: bool = False,
 ) -> ChatMessageResponse:
     """Map a terminal ``ConversationResponse`` to our wire ``ChatMessageResponse``.
 
@@ -222,40 +220,41 @@ async def map_response(
     as a plain ``ChatStatus.EXECUTING`` message; any unknown status collapses to
     ``ANSWER`` carrying the best-available text (the Chainlit ``else`` fallthrough).
 
-    ``stale`` (see :func:`handle_turn`) means the session has since moved on to a
-    different conversation than the one this response is for — every session
-    mutation below is skipped in that case, though a response is still returned
-    (the caller's HTTP request still needs one; the frontend discards it as
-    stale independently — see ``lib/store/chat.ts``'s ``post()``).
+    ``conversation_id`` is the conversation this response is *for* — the one the turn
+    was sent to, which is not necessarily the one the session is bound to by now (a
+    "New chat" or resume may have landed mid-turn, on any worker). Every session write
+    below is conditional on the session still being bound to it, checked atomically in
+    Valkey (see ``SessionStore._guarded``), so a stale response mutates nothing; a
+    response is still returned (the caller's HTTP request still needs one; the frontend
+    discards it as stale independently — see ``lib/store/chat.ts``'s ``post()``).
     """
     status = response.status  # str, because ConversationResponse uses use_enum_values
 
     # Follow-up depth cap (T-2): count consecutive needs_info turns; reset on anything
     # else. Beyond the cap, stop looping and return a plain message so a misbehaving
-    # agent that keeps asking can't trap the conversation indefinitely. Skipped when
-    # stale: this counter belongs to whichever conversation the session is *currently*
-    # bound to, and a stale turn's status has nothing to do with that conversation's
-    # own follow-up depth.
-    if not stale:
-        if status != "needs_info":
-            await store.reset_needs_info(sid)
-        elif status == "needs_info":
-            if await store.bump_needs_info(sid) > _MAX_CONSECUTIVE_NEEDS_INFO:
-                await store.reset_needs_info(sid)
-                return ChatMessageResponse(
-                    turn_id=turn_id,
-                    status=ChatStatus.ANSWER,
-                    response_text=_TOO_MANY_FOLLOWUPS_MESSAGE,
-                )
+    # agent that keeps asking can't trap the conversation indefinitely. The counter is
+    # ``conversation_id``'s: once the session has moved on, bump returns ``None`` and
+    # no cap applies — a stale turn has nothing to do with the new conversation's depth.
+    if status != "needs_info":
+        await store.reset_needs_info(sid, conversation_id=conversation_id)
+    else:
+        count = await store.bump_needs_info(sid, conversation_id=conversation_id)
+        if count is not None and count > _MAX_CONSECUTIVE_NEEDS_INFO:
+            await store.reset_needs_info(sid, conversation_id=conversation_id)
+            return ChatMessageResponse(
+                turn_id=turn_id,
+                status=ChatStatus.ANSWER,
+                response_text=_TOO_MANY_FOLLOWUPS_MESSAGE,
+            )
 
     if status == "needs_info":
         return _map_needs_info(response, turn_id)
     if status == "plan_ready":
         return _map_plan_ready(response, turn_id, auto_approve=auto_approve)
     if status in ("completed", "answer", "recommendation"):
-        return await _map_final(response, turn_id, ChatStatus(status), store, sid, stale=stale)
+        return await _map_final(response, turn_id, ChatStatus(status), store, sid, conversation_id=conversation_id)
     if status == "backgrounded":
-        return await _map_backgrounded(response, turn_id, store, sid, stale=stale)
+        return await _map_backgrounded(response, turn_id, store, sid, conversation_id=conversation_id)
     if status == "executing":
         return ChatMessageResponse(
             turn_id=turn_id,
@@ -315,8 +314,8 @@ async def handle_turn(
     # different past conversation (chat-history's loadConversation) while this
     # turn is in flight, the session's stored conversation id changes out from under
     # us — but the outgoing request must still target the conversation this turn was
-    # actually for, and the response mapping below must know whether that has
-    # since happened (see ``stale`` on ``map_response``).
+    # actually for, and the response mapping below writes only if the session is still
+    # on it (see ``conversation_id`` on ``map_response``).
     conversation_id = session.conversation_id
 
     response = await client.send(
@@ -339,11 +338,7 @@ async def handle_turn(
     # downgrade), so it can't break the turn.
     await enrich_mesh_artifacts(response)
 
-    # Re-read rather than trusting the snapshot: the rebind we are testing for happens
-    # in a different request, and under ``--workers N`` possibly a different process.
-    current = await store.get_or_create(sid)
-    stale = current.conversation_id != conversation_id
-    return await map_response(response, turn_id, store, sid, auto_approve=auto_approve, stale=stale)
+    return await map_response(response, turn_id, store, sid, conversation_id=conversation_id, auto_approve=auto_approve)
 
 
 def upload_descriptors_to_dicts(

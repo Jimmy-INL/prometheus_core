@@ -137,6 +137,20 @@ const listeners = new Set<() => void>();
 const awaitedTaskIds = new Set<string>();
 let closeStream: (() => void) | null = null;
 
+/** Ordering for session rebinds (new chat, resume). Every rebind takes the next
+ * value and sends it as `bind_seq`; the server ignores a rebind whose seq is not
+ * newer than the last one it applied, so a slow request cannot rebind over a
+ * newer click. The same value is the client's staleness marker: a rebind is
+ * current while `seq === lastBindSeq`. `Date.now()` rather than a plain counter so
+ * that two tabs sharing one session still order by wall clock, and a reload does
+ * not restart below the seq the server already stored. */
+let lastBindSeq = 0;
+function nextBindSeq(): number {
+  lastBindSeq = Math.max(lastBindSeq + 1, Date.now());
+  return lastBindSeq;
+}
+const isLatestBind = (seq: number): boolean => seq === lastBindSeq;
+
 function emit(): void {
   for (const l of listeners) l();
 }
@@ -360,23 +374,22 @@ function onTaskDone(e: TaskDoneEvent): void {
 /** Rebind the server session to `conversationId` and replay its transcript.
  * Shared by `loadConversation()` (sidebar click) and `bootstrap()` (recovering
  * the open conversation after a reload) so the two cannot drift apart. */
-async function applyResume(conversationId: string): Promise<void> {
-  // Same staleness discipline as `post()`: a resume that has been superseded by a
-  // newer one must not apply its transcript, and must not clear the newer one's
-  // spinner. The in-flight id *is* the generation marker, so there is no separate
-  // counter to keep in sync.
-  const isCurrent = () => state.resumingConversationId === conversationId;
+async function applyResume(conversationId: string, seq: number): Promise<void> {
+  // Same staleness discipline as `post()`: a resume superseded by a newer rebind
+  // (another resume, or a New chat) must not apply its transcript, and must not
+  // clear the newer one's spinner. The server applies the same ordering to the
+  // session binding itself via `bind_seq`.
   set({ resumingConversationId: conversationId });
   try {
-    const detail = await api.resumeConversation(conversationId);
-    if (!isCurrent()) return;
+    const detail = await api.resumeConversation(conversationId, seq);
+    if (!isLatestBind(seq)) return;
     set({
       conversationId: detail.conversation_id,
       autoApprove: detail.auto_approve_steps,
       items: itemsFromTranscript(detail.messages, detail.artifacts),
     });
   } finally {
-    if (isCurrent()) set({ resumingConversationId: null });
+    if (isLatestBind(seq)) set({ resumingConversationId: null });
   }
 }
 
@@ -400,7 +413,7 @@ async function bootstrap(profile?: string): Promise<void> {
     const saved = readOpenConversationId();
     if (saved) {
       try {
-        await applyResume(saved);
+        await applyResume(saved, nextBindSeq());
         set({ ready: true });
         return;
       } catch (err) {
@@ -414,7 +427,7 @@ async function bootstrap(profile?: string): Promise<void> {
       }
     }
 
-    const session = await api.createSession(profile);
+    const session = await api.createSession(profile, nextBindSeq());
     set({
       ready: true,
       conversationId: session.conversation_id,
@@ -557,11 +570,17 @@ function stop(): void {
 async function reset(profile?: string): Promise<void> {
   disconnect();
   awaitedTaskIds.clear();
-  set({ items: [], awaiting: false });
+  // Clearing `resumingConversationId` drops the spinner of any resume still in
+  // flight; taking a new bind seq supersedes it, so it can apply neither its
+  // transcript here nor its binding on the server.
+  set({ items: [], awaiting: false, resumingConversationId: null });
+  const seq = nextBindSeq();
   try {
-    const session = await api.createSession(profile);
+    const session = await api.createSession(profile, seq);
+    if (!isLatestBind(seq)) return;
     set({ conversationId: session.conversation_id, autoApprove: session.auto_approve_steps });
   } catch (err) {
+    if (!isLatestBind(seq)) return;
     appendError(err instanceof Error ? err.message : "Failed to start a new conversation.");
   }
   connect();
@@ -574,17 +593,18 @@ async function loadConversation(conversationId: string): Promise<void> {
   disconnect();
   awaitedTaskIds.clear();
   set({ items: [], awaiting: false });
+  const seq = nextBindSeq();
   try {
-    await applyResume(conversationId);
+    await applyResume(conversationId, seq);
   } catch (err) {
     // A resume that lost the race must stay silent: appending its error would drop
     // a message from an abandoned conversation into the one now being loaded.
-    if (state.resumingConversationId !== null) return;
+    if (!isLatestBind(seq)) return;
     appendError(err instanceof Error ? err.message : "Failed to open conversation.");
   }
-  // Whichever resume is still in flight owns the tail — reconnecting and bumping the
-  // history list here would fire once per click during rapid switching.
-  if (state.resumingConversationId !== null) return;
+  // Whichever rebind is newer owns the tail — reconnecting and bumping the history
+  // list here would fire once per click during rapid switching.
+  if (!isLatestBind(seq)) return;
   connect();
   bumpHistory();
 }
@@ -604,8 +624,13 @@ export const chatStore = {
    * resumes the same conversation instead of opening an empty one. */
   suspendForReauth(): void {
     disconnect();
+    // Everything re-derives from the resume on sign-in: bootstrap replays the
+    // transcript, so stale items would only flash under the login screen, and
+    // awaited ids from before the re-auth must not claim events after it.
+    awaitedTaskIds.clear();
+    nextBindSeq(); // supersede an in-flight rebind; its session is gone
     bootstrapping = false;
-    set({ ready: false, authLost: false, awaiting: false, resumingConversationId: null });
+    set({ ready: false, authLost: false, awaiting: false, resumingConversationId: null, items: [] });
   },
   /** Drop every trace of the signed-in user's chat: close the stream, forget
    * awaited tasks and the remembered conversation id, and reset state. Called
@@ -614,6 +639,7 @@ export const chatStore = {
   clear(): void {
     disconnect();
     awaitedTaskIds.clear();
+    nextBindSeq(); // supersede an in-flight rebind
     saveOpenConversationId(null);
     bootstrapping = false;
     state = initialState;

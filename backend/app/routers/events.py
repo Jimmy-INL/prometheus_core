@@ -30,7 +30,7 @@ from app.config import settings
 from app.contract import ServerEvent
 from app.redis_client import RedisClient, get_redis
 from app.security import TokenClaims, current_claims
-from app.services.events import EventBus, run_task_subscriber
+from app.services.events import EventBus, StreamItem, run_task_subscriber
 from app.sessions import SessionStore, get_store
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ async def _event_stream(
     store: SessionStore,
     sid: str,
     redis: RedisClient,
-    queue: "asyncio.Queue[ServerEvent]",
+    queue: "asyncio.Queue[StreamItem]",
 ) -> AsyncIterator[str]:
     """Drain this connection's queue as SSE, heart-beating through idle gaps.
 
@@ -72,12 +72,16 @@ async def _event_stream(
 
     Starts the background-task subscriber, then yields frames until the client
     disconnects — at which point the subscriber is cancelled and the queue unregistered.
+    Also ends on the bus's ``None`` sentinel (this worker's Valkey relay for the sid
+    died): closing the response makes the browser's ``EventSource`` reconnect, and the
+    new request's ``register`` subscribes again.
     """
     # One background-task subscriber per session *per worker*, shared across this
     # worker's connections/tabs (T-5): start it only for the first connection of this
-    # sid; the last to close cancels it. Each worker relays Valkey pub/sub into its own
-    # queues, so one subscriber per worker feeds all of that worker's tabs exactly once
-    # -- two subscribers in one worker would duplicate every task_progress event.
+    # sid; the last to close cancels it. A worker with tabs for this sid runs its own
+    # subscriber, so that subscriber's task_progress is delivered to this worker's queues
+    # only (EventBus.deliver_local) -- publishing it would reach every tab once per
+    # worker. task_done is published, deduplicated cluster-wide by claim_task.
     if bus.get_task_subscriber(sid) is None:
         task = asyncio.create_task(
             run_task_subscriber(
@@ -101,6 +105,8 @@ async def _event_stream(
             except asyncio.TimeoutError:
                 yield ": ping\n\n"
                 continue
+            if event is None:
+                break  # relay died; let the client reconnect
             yield _sse_frame(event)
     finally:
         await bus.unregister(sid, queue)

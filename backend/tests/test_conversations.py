@@ -622,3 +622,36 @@ async def test_resume_seeds_session_artifacts_with_the_enriched_catalog(monkeypa
     # identity. Equality is the property that matters: a second Redis round-trip would
     # have returned the *unenriched* rows.
     assert calls and calls[0] == session.artifacts
+
+
+async def test_superseded_resume_does_not_rebind_or_seed_the_session(monkeypatch, session_store):
+    """Click A (slow meshes), then B: the session must end on B whichever finishes last.
+
+    Resume rebinds before the slow enrichment and orders rebinds by ``bind_seq``, and
+    the enriched catalog is written back only while the session is still on A.
+    """
+    fake = _detail_client(monkeypatch, conversations={"A": {}, "B": {}}, owners={"A": "alice", "B": "alice"})
+    monkeypatch.setattr(
+        fake, "get_artifacts", lambda conv_id: [{"artifact_id": f"{conv_id}-art", "name": "n"}], raising=False
+    )
+
+    async def _enrich_while_b_lands(artifacts):
+        if artifacts and artifacts[0]["artifact_id"] == "A-art":
+            # B's resume (a newer click) lands while A is still converting meshes.
+            await session_store.reset("sid-conv", "B", artifacts=[{"artifact_id": "B-art"}], bind_seq=20)
+        for artifact in artifacts:
+            artifact["enriched"] = True
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _enrich_while_b_lands)
+    client = _authed_client(monkeypatch)
+
+    resp = client.post("/api/conversations/A/resume", json={"bind_seq": 10})
+    assert resp.status_code == 200  # still answered; the frontend drops it as superseded
+
+    session = await session_store.get_or_create("sid-conv")
+    assert session.conversation_id == "B"
+    assert session.artifacts == [{"artifact_id": "B-art"}]
+
+    # And a resume that arrives late with an older seq cannot rebind at all.
+    assert client.post("/api/conversations/A/resume", json={"bind_seq": 15}).status_code == 200
+    assert (await session_store.get_or_create("sid-conv")).conversation_id == "B"

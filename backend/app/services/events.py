@@ -50,6 +50,11 @@ BACKGROUND_STATUS_HISTORY_LIMIT = 50
 # consumer can't grow it without limit; on overflow the oldest event is dropped.
 EVENT_QUEUE_MAXSIZE = 1000
 
+#: What a connection's queue carries: an event, or ``None`` -- the close sentinel
+#: :meth:`EventBus._drain` pushes when this worker's relay for the sid dies, telling the
+#: SSE stream to end so the browser's ``EventSource`` reconnects through ``register``.
+StreamItem = Optional[ServerEvent]
+
 
 def _channel(sid: str) -> str:
     """Valkey pub/sub channel carrying one session's SSE events."""
@@ -67,10 +72,32 @@ async def _close_pubsub(pubsub: Any, sid: str) -> None:
 
 @dataclass
 class _Relay:
-    """One worker's Valkey subscription for a sid, plus the task draining it."""
+    """One worker's Valkey subscription for a sid, plus the task draining it.
+
+    ``task`` is ``None`` only for the instant between constructing the relay and starting
+    its drain task, which needs the relay itself to recognise it is still the current one.
+    """
 
     pubsub: Any
-    task: "asyncio.Task[None]"
+    task: "Optional[asyncio.Task[None]]"
+
+
+def _put_dropping_oldest(queue: "asyncio.Queue[StreamItem]", item: StreamItem, sid: str) -> None:
+    """Enqueue without blocking; on overflow drop the oldest entry to make room.
+
+    A wedged consumer loses old progress rather than growing memory without bound (E-3).
+    """
+    try:
+        queue.put_nowait(item)
+    except asyncio.QueueFull:
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+        try:
+            queue.put_nowait(item)
+        except asyncio.QueueFull:
+            logger.warning("event queue full for sid=%s; dropped an event", sid)
 
 
 # --------------------------------------------------------------------------- #
@@ -100,19 +127,29 @@ class EventBus:
     The bus also tracks **one** background-task Redis subscriber per sid *per worker*
     (see ``routers/events.py``): the first local connection for a sid starts it, the last
     local one to close cancels it, so N tabs on one worker share a single Task Graph
-    subscription rather than each opening its own (T-5) — which otherwise duplicated
-    ``task_progress`` events. Per-worker is correct: each tab's queue is fed only by its
-    own worker's relay, so no event is duplicated across workers either.
+    subscription rather than each opening its own (T-5). Because every worker with a tab
+    for the sid runs its own subscriber, what that subscriber produces must stay on the
+    worker: ``task_progress`` goes through :meth:`deliver_local`, never :meth:`publish`,
+    or each line would reach every tab once per worker. ``task_done`` *is* published —
+    :meth:`SessionStore.claim_task` makes exactly one subscriber cluster-wide announce it.
 
-    Single event loop per worker, so the plain dicts/sets need no lock.
+    Single event loop per worker, so the plain dicts/sets need no lock of their own. The
+    one exception is :meth:`register`'s first-subscriber branch, which awaits a
+    ``SUBSCRIBE`` in the middle of a check-then-install and so holds ``_register_lock``.
     """
 
     def __init__(self, redis: RedisClient) -> None:
         self._redis = redis
-        self._subscribers: dict[str, set[asyncio.Queue[ServerEvent]]] = {}
+        self._subscribers: dict[str, set[asyncio.Queue[StreamItem]]] = {}
         # One Valkey subscription per sid per worker, feeding every local queue.
         self._relays: dict[str, _Relay] = {}
         self._task_subscribers: dict[str, "asyncio.Task[None]"] = {}
+        # Serialises register()'s "no relay yet → SUBSCRIBE → install" so two tabs of one
+        # login connecting together (every open tab does, right after a backend restart)
+        # can't both see an empty set and both subscribe, orphaning the first relay.
+        # Per worker rather than per sid: it is only held across one SUBSCRIBE round trip
+        # for a sid's first stream, and a per-sid lock map would need its own cleanup.
+        self._register_lock = asyncio.Lock()
 
     async def publish(self, sid: str, event: ServerEvent) -> None:
         """Broadcast ``event`` to every worker streaming ``sid``.
@@ -126,7 +163,7 @@ class EventBus:
         except Exception as exc:  # noqa: BLE001 - progress is best-effort
             logger.warning("failed to publish %s event for sid=%s: %s", event.type, sid, exc)
 
-    async def register(self, sid: str) -> "asyncio.Queue[ServerEvent]":
+    async def register(self, sid: str) -> "asyncio.Queue[StreamItem]":
         """Add and return a fresh bounded queue for ``sid``. Pair with :meth:`unregister`.
 
         The Valkey ``SUBSCRIBE`` for the first local queue is awaited **here**, before
@@ -135,25 +172,28 @@ class EventBus:
         ``_fast_finish_guard`` does — would land before the subscription existed and be
         lost. Propagates on a Valkey failure so the caller can fail the request visibly
         instead of serving a stream that silently delivers nothing.
-        """
-        subs = self._subscribers.setdefault(sid, set())
-        if not subs:
-            pubsub = self._redis.pubsub()
-            try:
-                await pubsub.subscribe(_channel(sid))
-            except Exception:
-                self._subscribers.pop(sid, None)
-                await _close_pubsub(pubsub, sid)
-                raise
-            self._relays[sid] = _Relay(
-                pubsub=pubsub,
-                task=asyncio.create_task(self._drain(sid, pubsub)),
-            )
-        queue: asyncio.Queue[ServerEvent] = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
-        subs.add(queue)
-        return queue
 
-    async def unregister(self, sid: str, queue: "asyncio.Queue[ServerEvent]") -> None:
+        The check and the install happen under ``_register_lock``. Adding the queue to the
+        set *before* the await would also stop a second relay, but then the second caller
+        would return before the first caller's ``SUBSCRIBE`` landed — exactly the lost
+        event the paragraph above exists to prevent.
+        """
+        async with self._register_lock:
+            if sid not in self._relays:
+                pubsub = self._redis.pubsub()
+                try:
+                    await pubsub.subscribe(_channel(sid))
+                except Exception:
+                    await _close_pubsub(pubsub, sid)
+                    raise
+                relay = _Relay(pubsub=pubsub, task=None)
+                relay.task = asyncio.create_task(self._drain(sid, relay))
+                self._relays[sid] = relay
+            queue: asyncio.Queue[StreamItem] = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
+            self._subscribers.setdefault(sid, set()).add(queue)
+            return queue
+
+    async def unregister(self, sid: str, queue: "asyncio.Queue[StreamItem]") -> None:
         """Remove a queue; drop the sid's relay once its last local stream closes."""
         subs = self._subscribers.get(sid)
         if not subs:
@@ -165,17 +205,27 @@ class EventBus:
         relay = self._relays.pop(sid, None)
         if relay is None:
             return
-        relay.task.cancel()
-        try:
-            await relay.task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - cleanup only
-            pass
+        if relay.task is not None:
+            relay.task.cancel()
+            try:
+                await relay.task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - cleanup only
+                pass
         await _close_pubsub(relay.pubsub, sid)
 
-    async def _drain(self, sid: str, pubsub: Any) -> None:
-        """Relay this sid's Valkey channel into every local queue until cancelled."""
+    async def _drain(self, sid: str, relay: _Relay) -> None:
+        """Relay this sid's Valkey channel into every local queue until cancelled.
+
+        If the subscription itself dies — ``listen()`` raising after Valkey restarts and
+        redis-py's reconnects run out — the relay does not just log and stop. That left
+        a finished task installed for the sid: every open stream kept heart-beating and
+        never received another event, and a new tab skipped the ``SUBSCRIBE`` because the
+        sid looked covered. Instead the relay forgets itself and this sid's local queues,
+        and closes each stream (the ``None`` sentinel), so every ``EventSource``
+        reconnects and ``register`` subscribes afresh.
+        """
         try:
-            async for message in pubsub.listen():
+            async for message in relay.pubsub.listen():
                 if message.get("type") != "message":
                     continue
                 try:
@@ -183,27 +233,26 @@ class EventBus:
                 except Exception:  # noqa: BLE001 - a malformed frame must not kill the relay
                     logger.warning("discarding unparseable SSE event for sid=%s", sid)
                     continue
-                self._deliver_local(sid, event)
+                self.deliver_local(sid, event)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - a dead subscription must not kill the stream
-            logger.warning("SSE relay for sid=%s stopped: %s", sid, exc)
+        except Exception as exc:  # noqa: BLE001 - reported to the streams below
+            logger.warning("SSE relay for sid=%s stopped: %s; closing its streams", sid, exc)
+            if self._relays.get(sid) is relay:
+                del self._relays[sid]
+                for queue in self._subscribers.pop(sid, set()):
+                    _put_dropping_oldest(queue, None, sid)
+            await _close_pubsub(relay.pubsub, sid)
 
-    def _deliver_local(self, sid: str, event: ServerEvent) -> None:
+    def deliver_local(self, sid: str, event: ServerEvent) -> None:
+        """Hand ``event`` to this worker's queues for ``sid`` only — no Valkey round trip.
+
+        For events this worker produced for its own tabs (``task_progress`` from its
+        per-worker task subscriber); see the class docstring for why those must not be
+        published.
+        """
         for queue in list(self._subscribers.get(sid, ())):
-            try:
-                queue.put_nowait(event)
-            except asyncio.QueueFull:
-                # Drop the oldest to make room; a wedged consumer loses old progress
-                # rather than growing memory without bound (E-3).
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                try:
-                    queue.put_nowait(event)
-                except asyncio.QueueFull:
-                    logger.warning("event queue full for sid=%s; dropped an event", sid)
+            _put_dropping_oldest(queue, event, sid)
 
     async def has_listeners(self, sid: str) -> bool:
         """Whether *any* worker currently streams ``sid`` (``PUBSUB NUMSUB``).
@@ -251,6 +300,7 @@ async def _announce_completion(
     task_id: str,
     state: str,
     *,
+    conversation_id: str,
     auto_approve: bool,
 ) -> None:
     """Emit the terminal event for a backgrounded task, exactly once.
@@ -266,6 +316,9 @@ async def _announce_completion(
     ``map_response`` the synchronous turn uses (via ``response_from_payload``), so a
     backgrounded answer reaches the frontend identically to an inline one. Any other
     terminal state emits a bodyless :class:`TaskDoneEvent`.
+
+    ``conversation_id`` is the one the caller observed the task under; the result is
+    fetched from, and ``map_response``'s session writes are guarded on, that id.
     """
     if not task_events.is_terminal(state):
         return
@@ -289,8 +342,7 @@ async def _announce_completion(
             )
             return
 
-        session = await store.get_or_create(sid)
-        result = await task_events.fetch_result(redis, session.conversation_id or "", task_id)
+        result = await task_events.fetch_result(redis, conversation_id, task_id)
         response = None
         if result:
             # Reuse the turn mapper; the task id doubles as the turn id for this event.
@@ -299,6 +351,7 @@ async def _announce_completion(
                 task_id,
                 store,
                 sid,
+                conversation_id=conversation_id,
                 auto_approve=auto_approve,
             )
         await bus.publish(
@@ -306,7 +359,9 @@ async def _announce_completion(
             TaskDoneEvent(task_id=task_id, state="completed", response=response),
         )
     except BaseException:  # incl. CancelledError — restore so a reconnect retries
-        await store.await_task(sid, task_id)
+        # Guarded like any awaited-set write: if the session has moved on, the id no
+        # longer belongs in its set.
+        await store.await_task(sid, task_id, conversation_id=conversation_id)
         raise
 
 
@@ -345,24 +400,35 @@ async def reconcile_backgrounded(
         return
     state = str(node.get("state") or "") if node else ""
     if task_events.is_terminal(state):
-        await _announce_completion(bus, store, sid, redis, task_id, state, auto_approve=auto_approve)
+        await _announce_completion(
+            bus,
+            store,
+            sid,
+            redis,
+            task_id,
+            state,
+            conversation_id=session.conversation_id or "",
+            auto_approve=auto_approve,
+        )
 
 
-async def _emit_progress(
+def _emit_progress(
     bus: EventBus,
     sid: str,
     history: dict[str, list[str]],
     task_id: str,
     message: str,
 ) -> None:
-    """Publish a non-terminal progress line, de-duplicating consecutive repeats.
+    """Deliver a non-terminal progress line, de-duplicating consecutive repeats.
 
     Ports ``_update_background_progress`` (message_handler.py:326): blank messages
     and immediate repeats are dropped, and the retained history is capped at
     :data:`BACKGROUND_STATUS_HISTORY_LIMIT`.
 
-    ``history`` is per-SSE-connection, so dedup is per relay rather than global. That
-    was already true across tabs; it stays true across workers.
+    Delivered to this worker's queues only (:meth:`EventBus.deliver_local`): every
+    worker with a tab for the sid runs its own subscriber and so produces its own copy
+    of each line, and publishing those would hand every tab one copy per worker.
+    ``history`` belongs to that per-worker subscriber, so dedup is per worker too.
     """
     text = str(message or "").strip()
     if not text:
@@ -372,7 +438,7 @@ async def _emit_progress(
         return
     entries.append(text)
     del entries[:-BACKGROUND_STATUS_HISTORY_LIMIT]
-    await bus.publish(sid, TaskProgressEvent(task_id=task_id, message=text))
+    bus.deliver_local(sid, TaskProgressEvent(task_id=task_id, message=text))
 
 
 async def _fast_finish_guard(
@@ -404,12 +470,17 @@ async def _fast_finish_guard(
         state = str(node.get("state") or "") if node else ""
         if task_events.is_terminal(state):
             await _announce_completion(
-                bus, store, sid, redis, task_id, state, auto_approve=auto_approve
+                bus,
+                store,
+                sid,
+                redis,
+                task_id,
+                state,
+                conversation_id=conversation_id,
+                auto_approve=auto_approve,
             )
         elif node:
-            await _emit_progress(
-                bus, sid, history, task_id, str(node.get("last_status_message") or "")
-            )
+            _emit_progress(bus, sid, history, task_id, str(node.get("last_status_message") or ""))
 
 
 async def run_task_subscriber(
@@ -455,12 +526,17 @@ async def run_task_subscriber(
             try:
                 if task_events.is_terminal(state):
                     await _announce_completion(
-                        bus, store, sid, redis, root_task_id, state, auto_approve=auto_approve
+                        bus,
+                        store,
+                        sid,
+                        redis,
+                        root_task_id,
+                        state,
+                        conversation_id=conversation_id,
+                        auto_approve=auto_approve,
                     )
                 else:
-                    await _emit_progress(
-                        bus, sid, history, root_task_id, str(event.get("message") or "")
-                    )
+                    _emit_progress(bus, sid, history, root_task_id, str(event.get("message") or ""))
             except Exception as exc:
                 logger.warning("Failed to relay background task %s: %s", root_task_id, exc)
     except asyncio.CancelledError:

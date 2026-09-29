@@ -463,3 +463,17 @@ class ConversationRenameRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     title: str
+
+
+class ConversationResumeRequest(BaseModel):
+    """Optional body for ``POST /api/conversations/{id}/resume``.
+
+    ``bind_seq`` orders session rebinds by click, not by arrival: a resume or new
+    session whose seq is not greater than the last one applied leaves the session where
+    it is. The frontend sends a strictly increasing value (``Date.now()``-based). Also
+    accepted by ``POST /api/sessions``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    bind_seq: Optional[int] = None

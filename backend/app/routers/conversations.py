@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import Any, Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status as http_status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status as http_status
 
 from app.config import settings
 from app.contract import (
@@ -35,13 +35,14 @@ from app.contract import (
     ConversationHistoryResponse,
     ConversationMessage,
     ConversationRenameRequest,
+    ConversationResumeRequest,
     ConversationSummary,
 )
 from app.conversation_state import ConversationStateClient
 from app.security import TokenClaims, current_claims
 from app.services.artifacts import shape_artifacts
 from app.services.mesh.service import enrich_mesh_artifact_dicts
-from app.sessions import SessionState, get_store
+from app.sessions import get_store
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def _fetch_detail_parts(conv_id: str, user_id: str) -> tuple[bool, dict[str, Any
     yours".
 
     Stops at the *raw* artifact dicts rather than returning a finished response,
-    because mesh enrichment (:func:`_load_detail`) is async and must run on the event
+    because mesh enrichment (:func:`_build_detail`) is async and must run on the event
     loop, not in this thread.
     """
     client = _client()
@@ -114,11 +115,11 @@ def _fetch_detail_parts(conv_id: str, user_id: str) -> tuple[bool, dict[str, Any
     }
 
 
-async def _load_detail(conv_id: str, user_id: str) -> tuple[bool, Any, list[dict[str, Any]]]:
-    """Assemble the detail/resume response, enriching mesh artifacts on the way.
+async def _build_detail(conv_id: str, parts: dict[str, Any]) -> ConversationDetailResponse:
+    """Turn :func:`_fetch_detail_parts` output into the response, enriching meshes.
 
-    Returns ``(found, detail_or_none, raw_artifacts)``. The raw catalog is handed back
-    so ``resume`` can seed ``session.artifacts`` from it instead of re-reading Redis.
+    Enriches ``parts["raw_artifacts"]`` **in place**, so a caller holding that list (the
+    resume path, which seeds the session catalog from it) sees the enriched dicts.
 
     The mesh pass is what makes restored conversations mount the interactive
     MeshViewer: the frontend adapter only builds a viewer element when a mesh
@@ -126,24 +127,27 @@ async def _load_detail(conv_id: str, user_id: str) -> tuple[bool, Any, list[dict
     ``json_body: None`` (the live turn's manifest is computed on the fly and never
     written back). Without this the whole restored transcript degrades to download
     cards. Enrichment is content-hash cached, so a conversation whose meshes were
-    already converted live costs a cache hit.
+    already converted live costs a cache hit -- but a cache miss is a VTK conversion per
+    mesh, which is why the resume path rebinds the session *before* calling this.
     """
-    found, parts = await asyncio.to_thread(_fetch_detail_parts, conv_id, user_id)
-    if not found or parts is None:
-        return False, None, []
-
     raw_artifacts = cast(list[dict[str, Any]], parts["raw_artifacts"])
     await enrich_mesh_artifact_dicts(raw_artifacts)
 
     messages = cast(list[dict[str, Any]], parts["messages"])
-    detail = ConversationDetailResponse(
+    return ConversationDetailResponse(
         conversation_id=conv_id,
         title=cast(str, parts["title"]),
         profile=cast(str, parts["profile"]),
         messages=[ConversationMessage(**m) for m in messages],
         artifacts=shape_artifacts(raw_artifacts),
     )
-    return True, detail, raw_artifacts
+
+
+async def _fetch_parts_or_404(conv_id: str, user_id: str) -> dict[str, Any]:
+    found, parts = await asyncio.to_thread(_fetch_detail_parts, conv_id, user_id)
+    if not found or parts is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return parts
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
@@ -151,10 +155,8 @@ async def get_conversation_detail(
     conversation_id: str,
     claims: TokenClaims = Depends(current_claims),
 ) -> ConversationDetailResponse:
-    found, detail, _ = await _load_detail(conversation_id, claims.sub)
-    if not found:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    return cast(ConversationDetailResponse, detail)
+    parts = await _fetch_parts_or_404(conversation_id, claims.sub)
+    return await _build_detail(conversation_id, parts)
 
 
 def _rename(conv_id: str, user_id: str, title: str) -> bool:
@@ -202,36 +204,48 @@ async def delete_conversation(
 async def resume_conversation(
     conversation_id: str,
     request: Request,
+    body: Optional[ConversationResumeRequest] = Body(default=None),
     claims: TokenClaims = Depends(current_claims),
 ) -> ConversationDetailResponse:
     """Rebind the caller's session to a past conversation so the next chat turn
     continues it. Returns its transcript + artifact catalog in the same call so
-    the frontend can render history and resume in one round-trip."""
-    found, detail, raw_artifacts = await _load_detail(conversation_id, claims.sub)
-    if not found:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    detail = cast(ConversationDetailResponse, detail)
+    the frontend can render history and resume in one round-trip.
+
+    Rebinds first, enriches meshes second. Enrichment can take seconds per mesh on a
+    cache miss, and the frontend lets the user click elsewhere meanwhile; the rebind
+    itself is ordered by ``bind_seq`` (see ``SessionStore.reset``), so a newer click
+    always wins regardless of which request finishes last. The enriched catalog is then
+    written back only if the session is still on this conversation."""
+    parts = await _fetch_parts_or_404(conversation_id, claims.sub)
+    raw_artifacts = cast(list[dict[str, Any]], parts["raw_artifacts"])
 
     store = get_store(request)
-    session: SessionState = await store.get_or_create(claims.sid)
     # Resuming the conversation the session is already on (the reload path) keeps the
     # awaited-task set, so a task backgrounded before the reload still streams its
     # `task_progress` / `task_done` into the resumed session -- the ids now live in
     # Valkey rather than in a process-local SessionState, which is what RELOAD.md
     # Tier 2.2 deferred to Tier 4. Switching to a *different* conversation still
-    # clears it: those ids only resolve against the conversation that produced them
-    # (see SessionStore.reset). Either way the history sidebar marks a conversation
-    # pending while `agent:status:{id}` is live, and the result lands in the transcript.
+    # clears it: those ids only resolve against the conversation that produced them.
+    # SessionStore.reset decides which, atomically. Either way the history sidebar marks
+    # a conversation pending while `agent:status:{id}` is live, and the result lands in
+    # the transcript.
     #
-    # ``raw_artifacts`` is the catalog _load_detail already read (and mesh-enriched);
-    # seeding it here avoids re-reading Redis, and the content proxy resolves
-    # artifact ids out of this list.
+    # ``raw_artifacts`` is the catalog _fetch_detail_parts already read; seeding it here
+    # avoids re-reading Redis, and the content proxy resolves artifact ids out of it.
+    # If a newer rebind already won, this is a no-op -- the response is still returned
+    # and the frontend discards it as superseded.
     await store.reset(
         claims.sid,
         conversation_id,
         artifacts=raw_artifacts,
-        keep_awaited=session.conversation_id == conversation_id,
+        bind_seq=body.bind_seq if body else None,
     )
+
+    detail = await _build_detail(conversation_id, parts)
+    # Enrichment only adds ``json_body`` to the same dicts, so the ids the content proxy
+    # resolves are already correct; this just keeps the stored catalog in step. Guarded:
+    # skipped if the user has moved on in the meantime.
+    await store.set_artifacts(claims.sid, raw_artifacts, conversation_id=conversation_id)
 
     detail.auto_approve_steps = settings.auto_approve_steps
     return detail

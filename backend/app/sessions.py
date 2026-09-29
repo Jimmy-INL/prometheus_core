@@ -15,7 +15,7 @@ identical across ``uvicorn --workers N`` (see ``backend/README.md``). Two keys p
 session, both carrying the cookie's TTL, refreshed on every write — no reaper:
 
     session:{sid}           HASH  conversation_id, profile, consecutive_needs_info,
-                                  artifacts (JSON array)
+                                  artifacts (JSON array), bind_seq
     session:{sid}:awaited   SET   root task ids the session is waiting on
 
 **:class:`SessionState` is a read-only snapshot.** It used to be the live object every
@@ -31,6 +31,19 @@ and ``awaited_task_ids`` is a ``frozenset``. Every former mutation is now an exp
 background-task completion used to be a check-then-discard against an in-process set,
 safe only because of the single process. It is now a single ``SREM`` whose return count
 *is* the claim — atomic, and correct across workers.
+
+The same single-process assumption hid two check-then-write races, now closed in Valkey
+itself rather than by re-reading first:
+
+- **Per-conversation writes are guarded.** A chat turn's writes (the artifact catalog,
+  an awaited task, the follow-up counter) belong to the conversation the turn was *sent*
+  for. Each takes that ``conversation_id`` and applies only if the session is still bound
+  to it, checked and written under one ``WATCH`` -- so a "New chat" or resume that lands
+  mid-turn, on any worker, can't have its fresh state overwritten by the old
+  conversation's response.
+- **Rebinds are ordered.** :meth:`SessionStore.reset` takes the client's ``bind_seq`` and
+  refuses one older than the last applied, so a slow resume that arrives after a newer
+  click can't pull the session back to the conversation the user already left.
 """
 
 from __future__ import annotations
@@ -38,11 +51,13 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 from fastapi import Request
 
 from app.config import settings
+from redis.asyncio.client import Pipeline
+from redis.exceptions import WatchError
 from redis.typing import FieldT
 
 from app.redis_client import RedisClient
@@ -56,6 +71,12 @@ logger = logging.getLogger(__name__)
 #: non-encodable one -- a list, a dataclass -- is caught here and not by redis-py at run
 #: time; every field is stored as a string, ints included.
 SessionFields = dict[FieldT, str | int]
+
+# Bound on optimistic-transaction retries (see :meth:`SessionStore._guarded`). A retry
+# only happens when another write to the same ``session:{sid}`` hash lands between our
+# WATCH and EXEC -- one login's own concurrent requests -- so a handful is plenty; running
+# out means something is hammering one hash, and failing loudly beats spinning.
+_WATCH_RETRIES = 10
 
 
 def _hash_key(sid: str) -> str:
@@ -159,16 +180,75 @@ class SessionStore:
         pipe.expire(_hash_key(sid), self._ttl)
         await pipe.execute()
 
-    async def set_conversation(self, sid: str, conversation_id: str) -> None:
-        """Bind the session to ``conversation_id`` without touching anything else."""
-        await self._write(sid, {"conversation_id": conversation_id})
+    async def _guarded(
+        self,
+        sid: str,
+        check: Callable[[dict[str, Any]], bool],
+        queue_writes: Callable[[Pipeline], None],
+    ) -> Optional[list[Any]]:
+        """Run ``queue_writes`` in a transaction iff ``check(current hash)`` holds.
+
+        Optimistic concurrency: ``WATCH session:{sid}``, read the hash, and if ``check``
+        passes queue the writes in ``MULTI``/``EXEC``. Any write to the hash in between --
+        a rebind on another worker included -- aborts the ``EXEC`` with ``WatchError``,
+        and the check is re-run against the new state. Watching the hash alone covers
+        writes to ``:awaited`` too, because the thing being guarded against (a rebind)
+        always rewrites ``conversation_id``.
+
+        Returns the ``EXEC`` results, or ``None`` when ``check`` failed and nothing was
+        written.
+        """
+        key = _hash_key(sid)
+        async with self._redis.pipeline(transaction=True) as pipe:
+            for _ in range(_WATCH_RETRIES):
+                try:
+                    await pipe.watch(key)
+                    # decode_responses=True: fields and values are str.
+                    current = cast(dict[str, Any], await pipe.hgetall(key))
+                    if not check(current or {}):
+                        await pipe.unwatch()
+                        return None
+                    pipe.multi()
+                    queue_writes(pipe)
+                    return cast(list[Any], await pipe.execute())
+                except WatchError:
+                    continue
+        raise WatchError(f"session:{sid} kept changing; gave up after {_WATCH_RETRIES} attempts")
+
+    async def _write_for(
+        self, sid: str, conversation_id: str, queue_writes: Callable[[Pipeline], None]
+    ) -> Optional[list[Any]]:
+        """:meth:`_guarded` on "the session is still bound to ``conversation_id``"."""
+        return await self._guarded(sid, lambda current: current.get("conversation_id") == conversation_id, queue_writes)
+
+    async def ensure_conversation(self, sid: str, candidate: str) -> str:
+        """Bind ``sid`` to ``candidate`` unless it is already bound; return the binding.
+
+        ``HSETNX`` then ``HGET`` in one transaction, so concurrent first requests -- the
+        frontend uploads every selected file in parallel -- all agree on a single id
+        instead of each minting its own and staging files under different conversations.
+        """
+        pipe = self._redis.pipeline(transaction=True)
+        pipe.hsetnx(_hash_key(sid), "conversation_id", candidate)
+        pipe.expire(_hash_key(sid), self._ttl)
+        pipe.hget(_hash_key(sid), "conversation_id")
+        _set, _expire, stored = await pipe.execute()
+        return str(stored)
 
     async def set_profile(self, sid: str, profile: str) -> None:
         await self._write(sid, {"profile": profile})
 
-    async def set_artifacts(self, sid: str, artifacts: list[dict[str, Any]]) -> None:
-        """Replace the conversation's artifact catalog (task 07 resolves ids from it)."""
-        await self._write(sid, {"artifacts": json.dumps(artifacts)})
+    async def set_artifacts(self, sid: str, artifacts: list[dict[str, Any]], *, conversation_id: str) -> bool:
+        """Replace ``conversation_id``'s artifact catalog (task 07 resolves ids from it).
+
+        A no-op returning ``False`` if the session has since moved to another conversation.
+        """
+
+        def queue(pipe: Pipeline) -> None:
+            pipe.hset(_hash_key(sid), "artifacts", json.dumps(artifacts))
+            pipe.expire(_hash_key(sid), self._ttl)
+
+        return await self._write_for(sid, conversation_id, queue) is not None
 
     async def reset(
         self,
@@ -177,24 +257,34 @@ class SessionStore:
         *,
         profile: Optional[str] = None,
         artifacts: Optional[list[dict[str, Any]]] = None,
-        keep_awaited: bool = False,
-    ) -> None:
+        bind_seq: Optional[int] = None,
+    ) -> bool:
         """Rebind the session to a conversation, clearing per-conversation state.
 
         The "New chat" / history-resume path: a different conversation starts with no
         artifact catalog, no awaited background tasks and no follow-up depth. One
-        pipeline so a concurrent reader can't see the new conversation id alongside the
-        old conversation's artifacts.
+        transaction so a concurrent reader can't see the new conversation id alongside
+        the old conversation's artifacts.
 
-        ``artifacts`` seeds the catalog in the same pipeline -- the resume path already
-        holds the (mesh-enriched) list and would otherwise write ``[]`` and immediately
-        overwrite it, leaving a window where the content proxy 404s every artifact.
+        ``bind_seq`` orders rebinds by when the user *clicked*, not by when the request
+        happened to finish: the frontend stamps each New chat / resume with a strictly
+        increasing value, and a rebind whose seq is not greater than the last applied one
+        is dropped (returns ``False``). Without it, a slow resume of conversation A that
+        completes after a newer click on B rebinds the session back to A, and B's next
+        turn is appended to A. ``None`` (tests, internal callers) always applies and
+        leaves the stored seq alone.
 
-        ``keep_awaited`` preserves the awaited-task set, which is only ever correct when
-        rebinding to the conversation the session is *already* on: the set holds root
-        task ids, and every lookup of one (``task_events.fetch_result``, the subscriber's
-        channel) is scoped by conversation id, so an id carried across a switch would
-        resolve against the wrong conversation.
+        ``artifacts`` seeds the catalog in the same transaction -- the resume path already
+        holds the list and would otherwise write ``[]`` and immediately overwrite it,
+        leaving a window where the content proxy 404s every artifact.
+
+        The awaited-task set is kept when rebinding to the conversation the session is
+        *already* on (the reload path: a task backgrounded before the reload still streams
+        into the resumed session) and cleared otherwise: the set holds root task ids, and
+        every lookup of one (``task_events.fetch_result``, the subscriber's channel) is
+        scoped by conversation id, so an id carried across a switch would resolve against
+        the wrong conversation. That is decided inside the transaction, against the
+        binding it is about to replace, not against a snapshot a caller read earlier.
         """
         fields: SessionFields = {
             "conversation_id": conversation_id,
@@ -203,12 +293,28 @@ class SessionStore:
         }
         if profile is not None:
             fields["profile"] = profile
-        pipe = self._redis.pipeline()
-        pipe.hset(_hash_key(sid), mapping=fields)
-        pipe.expire(_hash_key(sid), self._ttl)
-        if not keep_awaited:
-            pipe.delete(_awaited_key(sid))
-        await pipe.execute()
+        if bind_seq is not None:
+            fields["bind_seq"] = bind_seq
+
+        same_conversation = False
+
+        def newer(current: dict[str, Any]) -> bool:
+            nonlocal same_conversation
+            same_conversation = current.get("conversation_id") == conversation_id
+            if bind_seq is None:
+                return True
+            try:
+                return bind_seq > int(current.get("bind_seq") or 0)
+            except (TypeError, ValueError):
+                return True  # a corrupt seq must not wedge the session on one conversation
+
+        def queue(pipe: Pipeline) -> None:
+            pipe.hset(_hash_key(sid), mapping=fields)
+            pipe.expire(_hash_key(sid), self._ttl)
+            if not same_conversation:
+                pipe.delete(_awaited_key(sid))
+
+        return await self._guarded(sid, newer, queue) is not None
 
     async def drop(self, sid: str) -> None:
         """Forget a session (e.g. on logout). Idempotent."""
@@ -216,25 +322,42 @@ class SessionStore:
 
     # -- follow-up depth cap (T-2) ------------------------------------------ #
 
-    async def bump_needs_info(self, sid: str) -> int:
-        """Increment and return the consecutive-``needs_info`` counter (``HINCRBY``)."""
-        pipe = self._redis.pipeline()
-        pipe.hincrby(_hash_key(sid), "consecutive_needs_info", 1)
-        pipe.expire(_hash_key(sid), self._ttl)
-        count, _ = await pipe.execute()
-        return int(count)
+    async def bump_needs_info(self, sid: str, *, conversation_id: str) -> Optional[int]:
+        """Increment and return ``conversation_id``'s consecutive-``needs_info`` counter.
 
-    async def reset_needs_info(self, sid: str) -> None:
-        await self._write(sid, {"consecutive_needs_info": 0})
+        ``None`` if the session has moved to another conversation; that one's counter is
+        left alone.
+        """
+
+        def queue(pipe: Pipeline) -> None:
+            pipe.hincrby(_hash_key(sid), "consecutive_needs_info", 1)
+            pipe.expire(_hash_key(sid), self._ttl)
+
+        results = await self._write_for(sid, conversation_id, queue)
+        return None if results is None else int(results[0])
+
+    async def reset_needs_info(self, sid: str, *, conversation_id: str) -> None:
+        def queue(pipe: Pipeline) -> None:
+            pipe.hset(_hash_key(sid), "consecutive_needs_info", 0)
+            pipe.expire(_hash_key(sid), self._ttl)
+
+        await self._write_for(sid, conversation_id, queue)
 
     # -- awaited background tasks ------------------------------------------- #
 
-    async def await_task(self, sid: str, task_id: str) -> None:
-        """Register a backgrounded root task id for this session (``SADD``)."""
-        pipe = self._redis.pipeline()
-        pipe.sadd(_awaited_key(sid), task_id)
-        pipe.expire(_awaited_key(sid), self._ttl)
-        await pipe.execute()
+    async def await_task(self, sid: str, task_id: str, *, conversation_id: str) -> bool:
+        """Register a backgrounded root task id of ``conversation_id`` (``SADD``).
+
+        Skipped (``False``) if the session has moved on: the awaited set is scoped to the
+        current conversation (see :meth:`reset`), and an id from another one would make
+        this session wait on a task it never started.
+        """
+
+        def queue(pipe: Pipeline) -> None:
+            pipe.sadd(_awaited_key(sid), task_id)
+            pipe.expire(_awaited_key(sid), self._ttl)
+
+        return await self._write_for(sid, conversation_id, queue) is not None
 
     async def claim_task(self, sid: str, task_id: str) -> bool:
         """Atomically consume ``task_id``; ``True`` for exactly one caller.

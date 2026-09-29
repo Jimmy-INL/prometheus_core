@@ -7,6 +7,7 @@ round-trip is guarded by ``pytest.importorskip("vtk")`` so it runs only where VT
 installed (the container), never breaking the offline suite.
 """
 
+import asyncio
 import json
 import pickle
 import types
@@ -211,7 +212,7 @@ class _FakeExecutor:
     """Minimal executor: `run_in_executor` only needs `.submit()` returning a Future.
 
     `_processes` mirrors ProcessPoolExecutor's private worker map, which
-    `_discard_executor(kill_children=True)` reaches into to stop a wedged conversion.
+    `_discard_executor(..., kill_children=True)` reaches into to stop a wedged conversion.
     """
 
     def __init__(self, future: futures.Future) -> None:
@@ -256,6 +257,61 @@ async def test_convert_offloop_times_out_and_kills_the_pool(monkeypatch, tmp_pat
     assert service._vtk_executor is None
     assert fake._processes[1].killed is True
     assert fake.shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+async def test_stale_pool_failure_leaves_the_replacement_pool_alone(monkeypatch, tmp_path):
+    """A job still on a replaced pool A breaks with ``BrokenProcessPool`` after B took over.
+
+    Discarding "whatever is current" used to shut down B, cancelling unrelated
+    conversions queued on it; only the pool the job actually ran on may be discarded.
+    """
+    future: futures.Future = futures.Future()
+    stale = _FakeExecutor(future)
+    replacement = _FakeExecutor(futures.Future())
+    monkeypatch.setattr(service, "_vtk_executor", stale)
+
+    async def fail_after_replacement():
+        await asyncio.sleep(0)  # let _convert_offloop submit to `stale` first
+        service._vtk_executor = replacement  # a timeout elsewhere replaced the pool
+        future.set_running_or_notify_cancel()
+        future.set_exception(BrokenProcessPool("worker died"))
+
+    result, _ = await asyncio.gather(
+        service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m3"),
+        fail_after_replacement(),
+    )
+
+    assert result is None
+    assert service._vtk_executor is replacement
+    assert replacement.shutdown_calls == []
+
+
+async def test_pool_teardown_cancellation_degrades_instead_of_propagating(monkeypatch, tmp_path):
+    """``shutdown(cancel_futures=True)`` on our pool cancels our pending job. That is not a
+    cancellation of *this* task, so it must degrade to "no mesh data", not escape."""
+    future: futures.Future = futures.Future()
+    monkeypatch.setattr(service, "_vtk_executor", _FakeExecutor(future))
+
+    async def teardown():
+        await asyncio.sleep(0)
+        future.cancel()
+
+    result, _ = await asyncio.gather(
+        service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m4"),
+        teardown(),
+    )
+    assert result is None
+
+
+async def test_real_task_cancellation_still_propagates(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "_vtk_executor", _FakeExecutor(futures.Future()))
+    task = asyncio.create_task(
+        service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m5")
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 def test_shutdown_mesh_executor_is_a_noop_when_unused(monkeypatch):

@@ -86,7 +86,9 @@ async def test_map_response_handles_every_status(source_status, session_store):
     """
     await _seed(session_store)
     response = _resp(status=source_status, **_STATUS_PAYLOADS[source_status])
-    mapped = await chat_service.map_response(response, "turn-1", session_store, SID, auto_approve=False)
+    mapped = await chat_service.map_response(
+        response, "turn-1", session_store, SID, conversation_id="c1", auto_approve=False
+    )
 
     assert mapped.turn_id == "turn-1"
     # use_enum_values=True → status is the string value; must equal the source status.
@@ -101,7 +103,7 @@ async def test_map_response_handles_bare_payload(source_status, session_store):
     """Even a status-only response (no optional fields) maps without raising."""
     await _seed(session_store)
     mapped = await chat_service.map_response(
-        _resp(status=source_status), "t", session_store, SID, auto_approve=False
+        _resp(status=source_status), "t", session_store, SID, conversation_id="c1", auto_approve=False
     )
     assert mapped.status == source_status
 
@@ -129,7 +131,7 @@ async def test_map_response_unknown_status_collapses_to_answer_not_500(session_s
 
     await _seed(session_store)
     stub = SimpleNamespace(status="some_future_status", message="hi", response_text="body")
-    mapped = await chat_service.map_response(stub, "t", session_store, SID, auto_approve=False)
+    mapped = await chat_service.map_response(stub, "t", session_store, SID, conversation_id="c1", auto_approve=False)
     assert mapped.status == ChatStatus.ANSWER.value
     assert mapped.response_text == "body"
 

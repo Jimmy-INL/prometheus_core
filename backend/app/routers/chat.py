@@ -27,7 +27,7 @@ from app.redis_client import get_redis
 from app.security import TokenClaims, current_claims
 from app.services import chat as chat_service
 from app.services import events as events_service
-from app.sessions import SessionState, get_store
+from app.sessions import get_store
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +91,11 @@ async def post_message(
     claims: TokenClaims = Depends(current_claims),
 ) -> ChatMessageResponse:
     store = get_store(request)
-    session: SessionState = await store.get_or_create(claims.sid)
 
     # A conversation is normally started via POST /api/sessions; tolerate a
-    # missing one by minting an id so a bare first message still works.
-    if not session.conversation_id:
-        await store.set_conversation(claims.sid, str(uuid.uuid4()))
+    # missing one by minting an id so a bare first message still works. Atomic
+    # (HSETNX) so it can't race a concurrent upload minting its own.
+    await store.ensure_conversation(claims.sid, str(uuid.uuid4()))
 
     query = (body.query or "").strip()
     if (

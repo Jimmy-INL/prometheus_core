@@ -91,8 +91,14 @@ def _executor() -> ProcessPoolExecutor:
     return _vtk_executor
 
 
-def _discard_executor(*, kill_children: bool) -> None:
-    """Drop the current pool so the next :func:`_executor` call builds a fresh one.
+def _discard_executor(executor: ProcessPoolExecutor, *, kill_children: bool) -> None:
+    """Drop ``executor`` so the next :func:`_executor` call builds a fresh one.
+
+    Acts only while ``executor`` is still *the* pool. A conversion names the pool it ran
+    on, because by the time it fails that pool may already have been replaced: a timeout
+    kills pool A, a new conversion builds pool B, and another job still on A then gets
+    ``BrokenProcessPool``. Discarding "whatever is current" there shut down B with
+    ``cancel_futures=True`` and cancelled unrelated conversions queued on it.
 
     A :class:`BrokenProcessPool` poisons the executor for *every* subsequent submit,
     not just the one whose child died, so the pool cannot be reused after a crash —
@@ -106,9 +112,9 @@ def _discard_executor(*, kill_children: bool) -> None:
     concurrently: it degrades down the same "no mesh data" path as any other failure.
     """
     global _vtk_executor
-    executor, _vtk_executor = _vtk_executor, None
-    if executor is None:
-        return
+    if _vtk_executor is not executor:
+        return  # already replaced; whoever replaced it dealt with this one
+    _vtk_executor = None
     if kill_children:
         # `_processes` is private, so guard it: on a CPython that renames it we still
         # get the cancel-pending-work half below, just not the hard kill.
@@ -127,7 +133,8 @@ def shutdown_mesh_executor() -> None:
     Without this, spawned workers outlive the server on a graceful stop and the
     container lingers until Docker's kill timeout expires.
     """
-    _discard_executor(kill_children=True)
+    if _vtk_executor is not None:
+        _discard_executor(_vtk_executor, kill_children=True)
 
 
 def mesh_cache_root() -> Path:
@@ -237,20 +244,37 @@ async def _convert_offloop(
     * timeout — a wedged conversion cannot be cancelled cooperatively, so the workers
       are killed. See :func:`_discard_executor` for why that can also abort a
       concurrent conversion.
+
+    That abort arrives as a :class:`asyncio.CancelledError` — ``shutdown(cancel_futures=
+    True)`` cancels the pending future ``run_in_executor`` wrapped — which, unlike a real
+    cancellation of this task, must not propagate: it would escape every ``except
+    Exception`` above us and fail an unrelated chat turn. ``Task.cancelling()`` tells the
+    two apart.
     """
     loop = asyncio.get_running_loop()
+    executor = _executor()
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(_executor(), _convert_sync, local_path, cache_root, name, uri, mime),
+            loop.run_in_executor(executor, _convert_sync, local_path, cache_root, name, uri, mime),
             timeout=settings.mesh_timeout_seconds,
         )
+    except asyncio.CancelledError:
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise  # we are being cancelled; not the pool's doing
+        logger.warning(
+            "mesh: conversion for artifact %s (%s) was cancelled by a pool teardown",
+            ident,
+            name or uri,
+        )
+        return None
     except BrokenProcessPool:
         logger.warning(
             "mesh: conversion worker died for artifact %s (%s); rebuilding the pool",
             ident,
             name or uri,
         )
-        _discard_executor(kill_children=False)
+        _discard_executor(executor, kill_children=False)
         return None
     except asyncio.TimeoutError:
         logger.warning(
@@ -259,7 +283,7 @@ async def _convert_offloop(
             ident,
             name or uri,
         )
-        _discard_executor(kill_children=True)
+        _discard_executor(executor, kill_children=True)
         return None
 
 
