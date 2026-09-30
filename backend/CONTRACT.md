@@ -405,5 +405,6 @@ Body: `{ "title": "New title" }` (rejects empty/whitespace-only with 422). Sets
 ### `DELETE /api/conversations/{id}` → `204 No Content`
 
 Soft delete: sets `conv:meta:{id}.hidden`, which excludes the conversation from
-`recent`. The underlying `conversation:{id}` document (and its artifacts) are
-left untouched.
+`recent`. `GET /api/conversations/{id}` and `/resume` then answer `404`, so a tab
+that still remembers the id starts a clean chat instead of reopening it. The
+underlying `conversation:{id}` document (and its artifacts) are left untouched.

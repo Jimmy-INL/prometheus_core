@@ -95,9 +95,11 @@ def _fetch_detail_parts(conv_id: str, user_id: str) -> tuple[bool, dict[str, Any
     """Blocking ownership check + raw store reads, run in a worker thread.
 
     Returns ``(found, parts_or_none)``: ``found`` is ``False`` when Redis is down,
-    the conversation doesn't exist, or it isn't owned by *user_id* — the caller maps
-    that uniformly to 404 so a non-owner can't distinguish "doesn't exist" from "not
-    yours".
+    the conversation doesn't exist, it isn't owned by *user_id*, or it is soft-deleted
+    -- the caller maps that uniformly to 404 so a non-owner can't distinguish "doesn't
+    exist" from "not yours". A soft-deleted conversation must 404 here too, not only
+    drop out of ``recent``: a tab that still remembers its id would otherwise resume
+    it on reload and append the next turn to a conversation the user deleted.
 
     Stops at the *raw* artifact dicts rather than returning a finished response,
     because mesh enrichment (:func:`_build_detail`) is async and must run on the event
@@ -106,8 +108,10 @@ def _fetch_detail_parts(conv_id: str, user_id: str) -> tuple[bool, dict[str, Any
     client = _client()
     if not client.available or not client.owns(user_id, conv_id):
         return False, None
-    conv = client.get_conversation(conv_id) or {}
     meta = client.get_meta(conv_id)
+    if meta.get("hidden"):
+        return False, None
+    conv = client.get_conversation(conv_id) or {}
     return True, {
         "title": meta.get("title_override") or conv.get("title") or conv.get("user_query", ""),
         "profile": str(conv.get("profile") or ""),

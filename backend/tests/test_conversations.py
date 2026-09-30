@@ -536,6 +536,18 @@ def test_delete_soft_hides_without_touching_the_conversation_document(monkeypatc
     assert fake.get_conversation("c1") == {"user_query": "hi"}  # untouched
 
 
+def test_soft_deleted_conversation_is_not_found_for_detail_or_resume(monkeypatch, session_store):
+    # A tab that still remembers a deleted conversation's id must not reopen it on
+    # reload, or the next turn is appended to a conversation the user deleted.
+    conv = {"user_query": "hi", "conversation_history": [{"role": "user", "content": "hi"}]}
+    _detail_client(monkeypatch, conversations={"c1": conv}, owners={"c1": "alice"})
+    client = _authed_client(monkeypatch)
+
+    assert client.delete("/api/conversations/c1").status_code == 204
+    assert client.get("/api/conversations/c1").status_code == 404
+    assert client.post("/api/conversations/c1/resume").status_code == 404
+
+
 def test_resume_requires_ownership(monkeypatch):
     _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "bob"})
     client = _authed_client(monkeypatch)
