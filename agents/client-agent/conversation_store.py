@@ -12,7 +12,10 @@ started. So a store never overwrites the document wholesale:
 - A store merges (``merge_conversation``): the turn's own entries come from its copy,
   every other turn's from the stored document, interleaved by timestamp. The other
   top-level fields belong to the newest-*started* turn, so a background turn that
-  finishes late cannot wipe the plan or form a newer turn left pending.
+  finishes late cannot wipe the plan or form a newer turn left pending. The one
+  exception: a late turn that leaves pending input (a form, a plan to approve) takes
+  the fields from a newer turn that left none, because its form is what the user
+  answers next.
 - ``record_turn_artifacts`` stamps the ids of the artifacts a turn produced on that
   turn's reply, which a restored conversation renders from.
 
@@ -67,6 +70,14 @@ def _current_turn() -> tuple[str, float]:
     return task_tracking.new_turn_id(), time.time()
 
 
+def _leaves_pending_input(state: Dict[str, Any]) -> bool:
+    """Whether *state* waits on the user: follow-up questions, subagent input, or a
+    plan to approve (the fields ``chat_flow.chat`` resumes from)."""
+    return bool(
+        state.get("missing_info") or state.get("pending_subagent_requests") or state.get("awaiting_approval")
+    )
+
+
 def merge_conversation(
     stored: Optional[Dict[str, Any]],
     local: Dict[str, Any],
@@ -81,9 +92,12 @@ def merge_conversation(
     two lists are interleaved by ``timestamp``, each keeping its own order, so a
     background reply lands after the turns that ran meanwhile, as it did live.
 
-    Other fields: *local*'s, unless *stored* was last written by a turn that started
-    after this one; then *stored*'s are kept and only the history changes. A title
-    is never cleared.
+    Other fields: *local*'s, unless *stored*'s ``state_turn_id`` names a turn that
+    started after this one; then *stored*'s are kept and only the history changes.
+    Except when this turn leaves pending input and that newer one left none: the
+    user answers this turn's form next, and ``chat()`` reads it from these fields.
+    If both left pending input, the newer one wins, and the older form is lost. A
+    title is never cleared.
     """
     if not stored:
         merged = dict(local)
@@ -116,6 +130,8 @@ def merge_conversation(
         stored.get("state_turn_id") not in (None, turn_id)
         and float(stored.get("state_turn_started_at") or 0) > started_at
     )
+    if newer_owner and _leaves_pending_input(local) and not _leaves_pending_input(stored):
+        newer_owner = False
     if newer_owner:
         merged = dict(stored)
     else:

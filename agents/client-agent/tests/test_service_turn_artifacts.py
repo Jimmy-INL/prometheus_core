@@ -142,18 +142,41 @@ def test_an_echoed_older_artifact_is_not_new(orchestrator, monkeypatch):
     assert orchestrator.recorded == []
 
 
+def test_an_artifact_only_in_the_response_json_is_new(orchestrator, monkeypatch):
+    # Not a native A2A artifact, so no dispatch reported it, but this response is
+    # the one that brought it into the catalog.
+    async def fake_chat(request):
+        return service_mod.ConversationResponse(
+            conversation_id=CONV,
+            status="completed",
+            report="made",
+            tool_results={"skill": {"result": {"artifacts": [{"artifact_id": "inline", "name": "inline.json", "json_body": {"k": 1}}]}}},
+        )
+
+    monkeypatch.setattr(service_mod, "chat", fake_chat)
+
+    payload = _run(orchestrator)
+
+    assert _ids(payload["new_artifacts"]) == ["inline"]
+    assert orchestrator.recorded[0][2] == ["inline"]
+
+
 def test_a_slash_command_has_no_turn_and_records_nothing(orchestrator, monkeypatch):
+    seen = {}
+
     async def fake_chat(request):
         orchestrator.artifact_registry.add("x")
+        task_tracking.record_produced_artifacts(["x"])  # lands only if a turn began
+        seen["turn"] = task_tracking.current_turn()
         return service_mod.ConversationResponse(conversation_id=CONV, status="answer", response_text="listed")
 
     monkeypatch.setattr(service_mod, "chat", fake_chat)
 
     payload = _run(orchestrator, query="/artifacts")
 
+    assert seen["turn"] is None
     assert payload["new_artifacts"] == []
     assert orchestrator.recorded == []
-    assert task_tracking.current_turn() is None
 
 
 def test_the_placeholder_shows_nothing_and_the_finisher_owns_the_turns_artifacts(orchestrator, monkeypatch):
@@ -163,8 +186,7 @@ def test_the_placeholder_shows_nothing_and_the_finisher_owns_the_turns_artifacts
         orchestrator.artifact_registry.add("early")
         task_tracking.record_produced_artifacts(["early"])  # produced before the detach
         task_tracking.request_background()
-        await asyncio.sleep(0.05)
-        return service_mod.ConversationResponse(conversation_id=CONV, status="completed", report="late")
+        await asyncio.Event().wait()  # never completes; fake_spawn cancels the task
 
     def fake_spawn(self, chat_task, conversation_id, root_id, turn):
         spawned["turn"] = turn

@@ -138,6 +138,38 @@ def test_other_turns_come_from_the_stored_copy():
     ]
 
 
+def test_a_late_turn_that_leaves_a_form_takes_the_fields_from_one_that_left_none():
+    # The user answers B's form next; chat() resumes it from the top-level fields.
+    stored = {"conversation_history": [], "state_turn_id": "F", "state_turn_started_at": 200.0, "missing_info": []}
+    b_local = {"conversation_history": [], "missing_info": ["width"], "routing_decision": {"skill": "b"}}
+
+    merged = merge_conversation(stored, b_local, turn_id="B", started_at=100.0)
+
+    assert merged["missing_info"] == ["width"]
+    assert merged["routing_decision"] == {"skill": "b"}
+    assert merged["state_turn_id"] == "B"
+
+
+def test_when_both_turns_leave_pending_input_the_newer_one_wins():
+    stored = {"conversation_history": [], "state_turn_id": "F", "state_turn_started_at": 200.0, "awaiting_approval": True}
+    b_local = {"conversation_history": [], "missing_info": ["width"]}
+
+    merged = merge_conversation(stored, b_local, turn_id="B", started_at=100.0)
+
+    assert merged["awaiting_approval"] is True
+    assert "missing_info" not in merged
+    assert merged["state_turn_id"] == "F"
+
+
+def test_an_entry_without_a_timestamp_goes_after_the_stored_ones():
+    stored = {"conversation_history": [_entry("user", "a", "A", "t1")]}
+    local = {"conversation_history": [_entry("user", "b", "B", "")]}
+
+    merged = merge_conversation(stored, local, turn_id="B", started_at=1.0)
+
+    assert [e["content"] for e in merged["conversation_history"]] == ["a", "b"]
+
+
 def test_the_first_store_takes_the_local_copy():
     local = {"conversation_history": [_entry("user", "hi", "B", "t1")], "user_query": "hi"}
 
@@ -159,9 +191,10 @@ class _FakePipe:
         return self._store.get(key)
 
     def multi(self):
-        pass
+        self._in_multi = True
 
     def set(self, key, value):
+        assert getattr(self, "_in_multi", False), "set() must be queued after multi()"
         self._queued.append((key, value))
 
 
@@ -176,10 +209,12 @@ class _FakeClient:
         return self.store.get(key)
 
     def transaction(self, fn, *keys):
+        assert keys, "transaction() must WATCH the conversation key"
         self.transactions += 1
         pipe = _FakePipe(self.store)
         fn(pipe)
         for key, value in pipe._queued:
+            assert key in keys, f"{key} was written without being watched"
             self.store[key] = value
 
 
@@ -229,3 +264,13 @@ def test_record_turn_artifacts_without_ids_touches_nothing(monkeypatch):
 
     record_turn_artifacts("c1", "T1", [])
     record_turn_artifacts("c1", "", ["a1"])
+
+
+def test_record_turn_artifacts_skips_the_write_without_a_matching_reply(client):
+    untouched = json.dumps({"conversation_history": [_entry("assistant", "done", "T2", "t2")]}, indent=1)
+    client.store["conversation:c1"] = untouched
+
+    record_turn_artifacts("c1", "T1", ["a1"])
+    record_turn_artifacts("missing", "T1", ["a1"])
+
+    assert client.store == {"conversation:c1": untouched}

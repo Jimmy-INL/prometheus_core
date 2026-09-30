@@ -150,7 +150,7 @@ Requirements:
 - the response envelope must appear only in `result.status.message.parts[*].text`
 - `result.artifacts` must carry artifacts, not duplicate conversation responses
 - `artifacts` must be the post-turn full catalog
-- `new_artifacts` must hold only what the current turn produced: the ids its own dispatches returned and its uploads, not a diff of the catalog. A turn running in the background registers into the same catalog, so a diff would pick up its artifacts.
+- `new_artifacts` must hold only what the current turn produced: the artifacts its own dispatches returned, its uploads, and any artifact its response brings into the catalog. It is not a diff of the catalog. A turn running in the background registers into the same catalog, so a diff would pick up its artifacts.
 
 ## 4.3 Status updates
 

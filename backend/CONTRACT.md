@@ -389,7 +389,7 @@ turns stored before the ids were recorded, have an empty list.
     { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…", "artifact_ids": [] },
     { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…", "artifact_ids": ["a-41c9…"] }
   ],
-  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "mime_type": "application/json", "render_hint": "json" }]
+  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "mime_type": "application/json", "description": "", "tags": [], "render_hint": "json", "…": "…" }]
 }
 ```
 

@@ -159,7 +159,7 @@ Major methods:
 - `_workflow_start_endpoint(request)`: Starts a conversation turn from a workflow catalog selection.
 - `_collect_artifact_reference_payloads(payload)`: Recursively finds artifact-like payloads in responses.
 - `_ingest_response_artifacts(conversation_id, payload)`: Registers downstream artifact references in the orchestrator artifact registry.
-- `_response_payload_with_artifacts(...)`: Serializes a `ConversationResponse` and attaches `artifacts` (the whole catalog) plus `new_artifacts`: the artifacts this turn produced, from the ids its dispatches and uploads reported (`task_tracking.record_produced_artifacts`), not a catalog diff. It then stamps those ids on the turn's reply (`record_turn_artifacts`).
+- `_response_payload_with_artifacts(...)`: Serializes a `ConversationResponse` and attaches `artifacts` (the whole catalog) plus `new_artifacts`. `new_artifacts` holds the artifacts this turn produced: the ids that its dispatches and uploads reported (`task_tracking.record_produced_artifacts`), and any artifact the response brings into the catalog. It is not a catalog diff. It then stamps those ids on the turn's reply (`record_turn_artifacts`).
 - `_handle_uploaded_files(...)`: Validates uploaded files, infers descriptions, stores them in DeepLynx, and injects artifact references into the request payload.
 - `_execute(params, context, event_queue)`: Main A2A entry point for normal chat turns.
 - `configure_app(app)`: Adds client-agent-specific HTTP routes.
@@ -328,7 +328,7 @@ Persists full `AgentState` payloads in Redis. Turns of one conversation can run 
 
 Major functions:
 
-- `store_conversation(conv_id, state)`: Tags the current turn's new history entries with its `turn_id`, then merges with the stored document in one `WATCH`/`MULTI` transaction (`merge_conversation`): other turns' entries are kept, and the newest-started turn owns the top-level fields.
+- `store_conversation(conv_id, state)`: Tags the current turn's new history entries with its `turn_id`. Then it merges the state with the stored document in one `WATCH`/`MULTI` transaction (`merge_conversation`). Other turns' entries are kept, and the newest-started turn owns the top-level fields. A late turn that leaves a form or plan pending takes them from a newer turn that left none.
 - `get_conversation(conv_id)`: Reads conversation state; untagged history entries read as `turn_id: "legacy"`.
 - `record_turn_artifacts(conv_id, turn_id, artifact_ids)`: Stamps a turn's artifact ids on its last reply (`stamp_turn_artifacts`), which a restored conversation renders from.
 

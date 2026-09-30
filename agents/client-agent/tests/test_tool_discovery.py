@@ -1066,7 +1066,7 @@ def test_artifact_callback_fires_even_when_the_reply_is_malformed(monkeypatch) -
     payload = _completed_result(_data_artifact("a-1", "plot.json"))
     payload["result"]["status"]["state"] = "completed"  # not a TASK_STATE_* value
 
-    with pytest.raises(Exception):
+    with pytest.raises(tool_discovery.A2AContractError, match="TASK_STATE_"):
         _call(monkeypatch, payload, _artifact_callback=produced.extend)
 
     assert produced == ["a-1"]

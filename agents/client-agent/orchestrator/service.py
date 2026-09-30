@@ -282,12 +282,18 @@ class OrchestratorAgent(PrometheusAgent):
         walk(payload)
         return collected
 
-    def _ingest_response_artifacts(self, conversation_id: str, payload: Dict[str, Any]) -> int:
-        """Register downstream artifact refs into this orchestrator conversation scope."""
-        if not conversation_id:
-            return 0
+    def _ingest_response_artifacts(self, conversation_id: str, payload: Dict[str, Any]) -> List[str]:
+        """Register downstream artifact refs into this orchestrator conversation scope.
 
-        ingested = 0
+        Returns the ids that were not in the catalog before: an agent that put an
+        artifact only in its response JSON (not as a native A2A artifact) produced
+        it in this response. An echoed older artifact is re-registered but not
+        returned.
+        """
+        if not conversation_id:
+            return []
+
+        first_seen: List[str] = []
         for candidate in self._collect_artifact_reference_payloads(payload):
             try:
                 reference = ArtifactReference.from_any(
@@ -312,12 +318,14 @@ class OrchestratorAgent(PrometheusAgent):
             reference.conversation_id = conversation_id
 
             try:
+                known = self.artifact_registry.resolve_by_id(conversation_id, reference.artifact_id)
                 self.artifact_registry.register(reference)
-                ingested += 1
+                if known is None:
+                    first_seen.append(reference.artifact_id)
             except Exception as exc:
                 print(f"[WARN] Failed to ingest artifact reference: {exc}")
 
-        return ingested
+        return first_seen
 
     def _response_payload_with_artifacts(
         self,
@@ -329,7 +337,8 @@ class OrchestratorAgent(PrometheusAgent):
 
         ``artifacts`` is the whole catalog (state for later turns). ``new_artifacts``
         is what *turn* produced: the ids its dispatches and uploads reported (see
-        ``task_tracking.record_produced_artifacts``), resolved in the catalog. It is
+        ``task_tracking.record_produced_artifacts``) plus any artifact this response
+        carries that the catalog did not hold yet, resolved in the catalog. It is
         not a catalog diff, because a turn running in parallel (a backgrounded one,
         or the one the user sent meanwhile) registers into the same catalog. With no
         turn (a slash command, the "running in the background" notice) it is empty;
@@ -337,9 +346,15 @@ class OrchestratorAgent(PrometheusAgent):
         """
         response_payload = response.model_dump(exclude_none=True)
         try:
-            ingested = self._ingest_response_artifacts(conversation_id, response_payload)
-            if ingested:
-                print(f"[DEBUG] Ingested {ingested} artifact reference(s) for {conversation_id}")
+            first_seen = self._ingest_response_artifacts(conversation_id, response_payload)
+            if first_seen:
+                print(f"[DEBUG] Ingested {len(first_seen)} new artifact reference(s) for {conversation_id}")
+                if turn is not None:
+                    # The finisher passes its turn explicitly, so record on it rather
+                    # than on whatever turn the context holds.
+                    turn.produced_artifact_ids.extend(
+                        i for i in first_seen if i not in turn.produced_artifact_ids
+                    )
         except Exception as exc:
             print(f"[WARN] Failed to ingest artifacts from response payload: {exc}")
         try:

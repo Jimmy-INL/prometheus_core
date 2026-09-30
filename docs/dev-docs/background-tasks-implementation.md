@@ -176,7 +176,7 @@ service._execute()
   _spawn_background_finisher(chat_task, …)             # strong-ref in service._BACKGROUND_TASKS
   store_status_update("running in the background", final=True)
   return ConversationResponse(status="backgrounded", message_metadata={"task_id": root_id})
-                                                        # no new_artifacts: the finisher owns them
+                                                        # empty new_artifacts: the finisher owns them
 
 # … meanwhile, in the detached background task …
 run_background_finish(chat_task, …):

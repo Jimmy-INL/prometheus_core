@@ -597,7 +597,8 @@ same catalog.
 - **What a turn produced.** Each turn has a stable `turn_id` and a `produced_artifact_ids` list
   (`orchestrator/task_tracking.py`). Every dispatch reports the ids of the A2A artifacts it
   returned (`tool_discovery.call_a2a_agent`'s `_artifact_callback`, wired in `skills.invoke_skill`),
-  and the turn's uploads are added. `_response_payload_with_artifacts` builds `new_artifacts` from
+  and the turn's uploads are added. So is an artifact that appears only in the response JSON and
+  that the catalog did not hold before (`_ingest_response_artifacts`). `_response_payload_with_artifacts` builds `new_artifacts` from
   that list, so the live reply and the background reply each show only their own artifacts.
 - **Which reply.** `conversation_store.store_conversation` tags each history entry with the
   `turn_id` of the turn that wrote it. `record_turn_artifacts` stamps the turn's ids on that turn's
@@ -606,7 +607,9 @@ same catalog.
   (`merge_conversation`): the turn's own entries come from its copy, every other turn's from the
   stored document, interleaved by timestamp. Before this, a background turn that finished late
   overwrote the document with the copy it read at its start and erased the newer turn's entries.
-  The other top-level fields (plan, pending form, routing) belong to the newest-started turn.
+  The other top-level fields (plan, pending form, routing) belong to the newest-started turn,
+  unless a late turn leaves a form or plan pending and the newer one left none: the user answers
+  that form next.
 - **Restore.** `get_transcript` returns the ids as `messages[].artifact_ids`, and
   `frontend/src/lib/store/transcriptArtifacts.ts`'s `artifactsPerTurn(messages, artifacts)` gives
   each restored turn exactly those catalog entries. The detail catalog leaves out user uploads, so
@@ -952,7 +955,10 @@ is the pass to make.
     `frontend/src/lib/store/transcriptArtifacts.test.ts` (5 tests). The resume above predates the
     ids, so it restores no artifacts. Verified live on conversations created after it: two SVG
     turns reload with one SVG each, and an upload plus an SVG in one turn reloads with the SVG
-    only.
+    only. Overlap, verified live: a 60 s task detached to the background (soft deadline 20 s), and
+    an SVG turn ran meanwhile. Live and after a reload, the SVG shows once under its own reply and
+    the background reply shows only its JSON summary. The stored history keeps both turns'
+    entries, each artifact id on its own turn's reply.
 
 **Already covered on `chat_history` — re-run rather than re-write:**
 
