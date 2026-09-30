@@ -6,6 +6,7 @@
  * `historyVersion` changes (a turn completed, a new chat started, or a past
  * one was opened — see `lib/store/chat.ts`). Degrades to the header alone
  * when Redis is unavailable, matching the endpoint's graceful-degrade shape.
+ * Opening a row calls `onOpenConversation` first, so the shell shows Home.
  *
  * `historyVersion` only bumps for events on the *currently open* conversation,
  * so a different conversation's own background turn finishing wouldn't
@@ -27,9 +28,10 @@ const PENDING_POLL_MS = 8000;
 
 interface Props {
   onNewChat: () => void;
+  onOpenConversation: () => void;
 }
 
-export function ChatHistory({ onNewChat }: Props) {
+export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
   const { conversationId, historyVersion } = useChatState();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -76,7 +78,10 @@ export function ChatHistory({ onNewChat }: Props) {
               key={c.conversation_id}
               conversation={c}
               active={c.conversation_id === conversationId}
-              onSelect={() => void chatStore.loadConversation(c.conversation_id)}
+              onSelect={() => {
+                onOpenConversation();
+                void chatStore.loadConversation(c.conversation_id);
+              }}
               onRenamed={(title) =>
                 setConversations((prev) =>
                   prev.map((it) => (it.conversation_id === c.conversation_id ? { ...it, title } : it)),

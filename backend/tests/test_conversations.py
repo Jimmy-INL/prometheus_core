@@ -364,9 +364,8 @@ def test_get_history_marks_actively_running_conversations_pending(monkeypatch):
             return list(blobs.keys()) if pattern == "conversation:*" else []
 
         def get(self, key):
-            if key.startswith("conversation:"):
-                conv_id = key.split(":", 1)[1]
-                return _json.dumps(blobs[conv_id]) if conv_id in blobs else None
+            if key in blobs:
+                return _json.dumps(blobs[key])
             return status.get(key)
 
         def hgetall(self, key):
