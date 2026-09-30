@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hackathon Day 1 Slides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  body { overflow: auto; background: #fff; }
+  main { max-width: 1120px; margin: 0 auto; padding: 56px 24px 80px; display: flex; flex-direction: column; gap: 28px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+  header img.p { width: 380px; max-width: 100%; }
+  header .logos { display: flex; gap: 22px; align-items: center; }
+  header .logos img { height: 44px; }
+  a.deck { display: grid; grid-template-columns: 110px 1fr auto; gap: 20px; align-items: center; text-decoration: none; color: inherit;
+           border: 1px solid var(--rule); border-left: 8px solid var(--c); border-radius: 12px; padding: 18px 22px; background: #fff; transition: box-shadow .15s; }
+  a.deck:hover { box-shadow: 0 4px 22px rgba(7, 81, 158, .12); }
+  a.deck .tm { font: 600 20px var(--mono); color: var(--ink-2); }
+  a.deck h3 { font-size: 24px; }
+  a.deck p { font-size: 16px; color: var(--ink-2); line-height: 1.4; margin-top: 4px; }
+  a.deck .n { font: 600 14px var(--mono); color: var(--ink-3); white-space: nowrap; }
+  .keys { font-size: 15px; color: var(--ink-2); line-height: 1.6; }
+  kbd { font: 600 13px var(--mono); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--panel); }
+  @media (max-width: 640px) { a.deck { grid-template-columns: 1fr; gap: 6px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img class="p" src="assets/prometheus_logo.png" alt="Prometheus">
+    <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
+  </header>
+  <div class="head"><div class="eyebrow" style="color:var(--navy-ink)">Agent developer hackathon</div><h1 style="font-size:52px">Day 1 slides</h1>
+    <p class="lede">One deck per agenda item. Content was verified against <code>prometheus_platform@dev</code>, <code>prometheus_api@main</code> (v0.13.0) and <code>prometheus_agent_template@main</code>.</p></div>
+
+  <a class="deck" href="01-welcome.html" style="--c: var(--navy)"><span class="tm">12:15</span><div><h3>Welcome &amp; kickoff</h3><p>Agenda, mentors, Day 2 criteria preview, platform architecture: tiers, services, one chat turn, the planner, A2A v1, trust boundaries, artifacts, the agent ecosystem, and repos.</p></div><span class="n">21 slides</span></a>
+  <a class="deck" href="02-github.html" style="--c: var(--violet)"><span class="tm">1:00</span><div><h3>GitHub overview &amp; PR workflow</h3><p>Org access, repo map and relationships, base-image pinning, Git Flow branching, fork/clone, the rebase workflow, commits, local checks, CI, rulesets, PRs, code review, the practice PR.</p></div><span class="n">24 slides</span></a>
+  <a class="deck" href="03-deployment.html" style="--c: var(--sky)"><span class="tm">1:45</span><div><h3>Local platform deployment</h3><p>Prerequisites, <code>.env</code>, <code>make up</code>, base-image selection and contents, Makefile targets, first login and signing keys, health checks, LLM profiles and aliases, local DeepLynx, troubleshooting.</p></div><span class="n">27 slides</span></a>
+  <a class="deck" href="04-agent-template.html" style="--c: var(--orange)"><span class="tm">2:45</span><div><h3>Agent template</h3><p>Anatomy, <code>setup_agent.py</code>, <code>_execute</code>, lifecycle, the agent card, registry and discovery, run modes, A2A testing, helpers, artifacts, input-required, long-running work, LLMClient (flavors, profiles, custom configs, tool calling), workflows, worked examples.</p></div><span class="n">33 slides</span></a>
+  <a class="deck" href="05-dry-run.html" style="--c: var(--green)"><span class="tm">3:30</span><div><h3>End-to-end dry run</h3><p>A command refresher for the hands-on session: platform, agent, practice PR, with quick fixes.</p></div><span class="n">4 slides</span></a>
+  <a class="deck" href="06-team-formation.html" style="--c: var(--crimson)"><span class="tm">4:30</span><div><h3>Team formation</h3><p>Process, three challenge tracks, nine example agent ideas, baseline and roles, acceptance criteria, sign-up, first hour of hacking.</p></div><span class="n">14 slides</span></a>
+
+  <p class="keys">In a deck: <kbd>→</kbd>/<kbd>Space</kbd> next · <kbd>←</kbd> back · <kbd>Home</kbd>/<kbd>End</kbd> · <kbd>O</kbd> overview · <kbd>N</kbd> speaker notes · <kbd>F</kbd> fullscreen · <kbd>I</kbd> back to this index. Print to PDF from the browser for one slide per page (1600×900).</p>
+</main>
+</body>
+</html>

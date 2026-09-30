@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub &amp; PR Workflow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/deck.css">
+</head>
+<body data-sec="gh" data-title="Day 1 · GitHub &amp; PR workflow">
+<div id="viewport"><div id="stage">
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
+  <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
+  <div class="kicker">Day 1 · 1:00 pm</div>
+  <h1>GitHub overview &amp;<br>PR workflow</h1>
+  <p class="sub">Repo structure and org access, how the repositories depend on each other, fork/clone conventions, branching, rebasing, opening a PR, CI checks, and what reviewers expect.</p>
+  <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">github.inl.gov/genesis</span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">This session</div><h2>What you will be able to do afterwards</h2></div>
+  <div class="content">
+    <div class="grid g3">
+      <div class="card acc"><h3>Find your way</h3><ul class="b sm"><li>Know the three core repos and what lives where</li><li>Understand how <code>prometheus_api</code> reaches every agent (the base image)</li><li>Know which branch each repo integrates on</li></ul></div>
+      <div class="card acc"><h3>Work safely</h3><ul class="b sm"><li>Fork, clone, add <code>upstream</code></li><li>Branch <code>feature/&lt;desc&gt;</code> from the integration branch</li><li>Stay current with <code>git pull --rebase upstream dev</code></li><li>Push with <code>--force-with-lease</code> to <i>your fork</i></li></ul></div>
+      <div class="card acc"><h3>Get merged</h3><ul class="b sm"><li>Run the local checks (they <i>are</i> the CI for most repos)</li><li>Open a PR with <code>gh pr create</code> against the right base</li><li>Pass review: 1 approval, all threads resolved</li></ul></div>
+    </div>
+    <div class="callout info">Hands-on is at 3:30 pm: you will open a practice PR against the <code>sandbox</code> branch. Nothing today touches <code>dev</code> or <code>main</code>.</div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">The organization</div><h2><code style="font-size:.8em">github.inl.gov/genesis</code></h2><p class="lede">INL's GitHub Enterprise Server. The org profile (<code>genesis/.github</code> → <code>profile/README.md</code>) lists what matters most.</p></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <h3 class="acc">⚙️ Platform: the three core repos</h3>
+        <div class="card"><h4>🧰 prometheus_api</h4><p class="small">"Agent base class and storage helpers." It also contains LLMClient, identity, and the artifact catalog.</p></div>
+        <div class="card"><h4>🚀 prometheus_platform</h4><p class="small">"Orchestration, agent registry, frontend, core agents."</p></div>
+        <div class="card"><h4>🤖 prometheus_agent_template</h4><p class="small">"Get started on writing your own Prometheus agent here!"</p></div>
+      </div>
+      <div class="col">
+        <h3 class="acc">🔗 Links on the profile</h3>
+        <table class="t">
+          <tr><th>Link</th><th>Used for</th></tr>
+          <tr><td>📚 Prometheus Wiki (Confluence)</td><td>Software design and planning documents</td></tr>
+          <tr><td>📖 Confluence</td><td>Project management</td></tr>
+          <tr><td>🗂️ JIRA project <code>PPLT</code></td><td>Issues and work items</td></tr>
+          <tr><td>📦 Proposal Box</td><td>Proposal documents</td></tr>
+        </table>
+        <div class="callout">27 repos in the org. All are private except <code>.github</code> and <code>agent-sandbox-mcp</code>. Container images are published at <code>containers.github.inl.gov/genesis/&lt;repo&gt;</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Access</div><h2>Getting in: org, git, and registry</h2></div>
+  <div class="content">
+    <div class="grid g3">
+      <div class="card"><span class="tag">1 · org membership</span><h4>Read access through the <code>open</code> team</h4><p class="small">The org default permission is <b>none</b>. Team <code>open</code> (about 57 members) gives read access to 18 shared repos: the core three, gmsh, bim, requirements, component agents… Some agent repos need extra access. <b>Write access is granted per repo</b> by repo admins.</p><p class="small">With read access you <b>fork</b> and open PRs from your fork.</p></div>
+      <div class="card"><span class="tag">2 · git transport</span><h4>SSH key or gh credential helper</h4><p class="small">Add a key at <code>github.inl.gov/settings/keys</code>, then:</p><pre class="xs">ssh -T git@github.inl.gov</pre><p class="small">Or use HTTPS and let <code>gh</code> handle credentials:</p><pre class="xs">gh auth login --hostname github.inl.gov
+export GH_HOST=github.inl.gov</pre></div>
+      <div class="card"><span class="tag">3 · container registry</span><h4>PAT with <code>read:packages</code></h4><p class="small">Needed to pull the <code>prometheus_api</code> base image. Create a classic token at <code>github.inl.gov/settings/tokens/new</code>:</p><pre class="xs">echo $GITHUB_PAT | docker login \
+  containers.github.inl.gov \
+  --username &lt;you&gt; --password-stdin</pre></div>
+    </div>
+    <div class="callout warn">No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm will cost you the dry run.</div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Repository map</div><h2>What is in the org</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:16px">
+      <div class="col">
+        <h4 class="acc">Core platform</h4>
+        <table class="t xs">
+          <tr><td><b>prometheus_platform</b></td><td>default <code>dev</code></td></tr>
+          <tr><td><b>prometheus_api</b></td><td><code>main</code> · v0.13.0</td></tr>
+          <tr><td><b>prometheus_agent_template</b></td><td><code>main</code></td></tr>
+          <tr><td>.github</td><td>org profile + wiki bot</td></tr>
+        </table>
+        <h4 class="acc" style="margin-top:6px">Tooling</h4>
+        <table class="t xs">
+          <tr><td><b>agent-sandbox-mcp</b></td><td>notebook MCP sandbox</td></tr>
+          <tr><td>mcps</td><td>FastMCP server template</td></tr>
+          <tr><td>a2a-tester</td><td>debug UI (still A2A v0.3)</td></tr>
+          <tr><td>reactor-dt-modules</td><td>digital-twin library</td></tr>
+          <tr><td>pythia</td><td>surrogate model repo</td></tr>
+        </table>
+      </div>
+      <div class="col">
+        <h4 class="acc">Agents (A2A / PrometheusAgent)</h4>
+        <table class="t xs">
+          <tr><td><b>gmsh_agent</b></td><td>STEP → tet mesh</td></tr>
+          <tr><td><b>bim_agent</b></td><td>"Alchemy" IFC4 BIM</td></tr>
+          <tr><td><b>requirements_agent</b></td><td>plant sizing + reqs</td></tr>
+          <tr><td>muninn</td><td>RAVEN UQ</td></tr>
+          <tr><td>open_pronghorn-agent</td><td>RANS CFD</td></tr>
+          <tr><td>pythia-agent</td><td>ATR valve surrogate</td></tr>
+          <tr><td>component_*_agent (×3)</td><td>inspection · QA · testing reports</td></tr>
+          <tr><td>data-catalog-search-agent</td><td>DeepLynx search</td></tr>
+          <tr><td>aegis</td><td>safety analysis</td></tr>
+        </table>
+      </div>
+      <div class="col">
+        <h4 class="acc">More agent work</h4>
+        <table class="t xs">
+          <tr><td>system-thermal-hydraulics</td><td>TH network solver</td></tr>
+          <tr><td>cubit-energy-agent</td><td>Cubit meshing (ADK)</td></tr>
+          <tr><td>amsc-client-agent</td><td>American Science Cloud</td></tr>
+          <tr><td>am-print-planner</td><td>preform/slicer agents</td></tr>
+          <tr><td>nuclear_safety_agent</td><td>Chainlit app (not A2A)</td></tr>
+          <tr><td>cad-agent</td><td>build123d CAD app</td></tr>
+          <tr><td>multiphysics-uq-agent</td><td>empty</td></tr>
+        </table>
+        <div class="callout" style="font-size:16px">Only <b>prometheus_platform</b> has a <code>dev</code> branch. Every other repo takes PRs directly into <code>main</code>. Some repos listed here are not readable through the <code>open</code> team; ask if you need one.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">How the repositories relate</div><h2>One SDK, delivered as a base image</h2></div>
+  <div class="content">
+    <div class="dg">
+      <div class="row" style="gap:0; align-items:stretch">
+        <div class="box navy" style="width:330px"><b>prometheus_api</b><span class="small">package <code>prometheus-api</code></span><span class="small">push to <code>main</code> → CI "Tests"</span></div>
+        <div class="arrow-h" style="width:120px"><span>docker build</span></div>
+        <div class="box violet" style="flex:1"><b>Base image</b><span class="mono">containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span><span class="small">Python 3.12 + uv + git + prometheus_api + a2a-sdk/starlette/uvicorn/litellm/httpx/redis/fsspec + INL CA bundle</span></div>
+      </div>
+      <div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
+      <div class="row" style="gap:24px">
+        <div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 23c9454</code> (v0.12.0)</span></div>
+        <div class="box orange" style="flex:1"><b>prometheus_agent_template → your agent</b><span class="small"><code>agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h4>Not a pip dependency</h4><p class="small">Agent <code>pyproject.toml</code> files must <b>not</b> list <code>prometheus_api</code>, a2a-sdk, starlette, or uvicorn. The image has them, and <code>uv sync --inexact</code> keeps them.</p></div>
+      <div class="card"><h4>Not git submodules</h4><p class="small">The platform's <code>.gitmodules</code> is empty. External agents are separate repos that <b>register at runtime</b> with the platform's LiteLLM registry.</p></div>
+      <div class="card"><h4>Local venvs</h4><p class="small">For IDE and tests outside Docker, install the same commit:</p><pre class="xs">uv pip install \
+ "git+https://github.inl.gov/genesis/\
+prometheus_api.git@23c9454"</pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Base image tags</div><h2>Where the pin lives, and what tags exist</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <table class="t sm">
+          <tr><th>Location</th><th>Value today</th></tr>
+          <tr class="hl"><td>platform <code>Makefile:22</code></td><td><code>23c9454</code> (v0.12.0, 2026-09-01)</td></tr>
+          <tr><td>platform <code>.env.example</code></td><td><code>#PROMETHEUS_API_BASE_IMAGE_HASH=</code> (keep in sync)</td></tr>
+          <tr><td>platform <code>docker-compose.yml</code></td><td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-}</code>, empty default</td></tr>
+          <tr><td>template <code>docker-compose.yml</code></td><td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}</code></td></tr>
+          <tr><td>template README / TUTORIAL</td><td><code>2b3dbcf</code>, <b>stale</b> (v0.8.0)</td></tr>
+          <tr><td>platform <code>backend/pyproject.toml</code></td><td><code>branch = "a2a_1.0"</code>, broken for local <code>uv sync</code></td></tr>
+          <tr><td><code>prometheus_api</code> <code>main</code></td><td><code>95c32b5</code>, v0.13.0 (adds LLM tool calling)</td></tr>
+        </table>
+      </div>
+      <div class="col">
+        <h4 class="acc">Tag schemes in the registry</h4>
+        <ul class="b sm">
+          <li><b>CI</b> (push to <code>main</code>): <code>:&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and <code>:latest</code>, multi-arch (amd64 + arm64).</li>
+          <li><b>Manual</b> <code>make build-push</code>: <code>:&lt;git short sha&gt;</code>, which is the format the pins use.</li>
+          <li>It is a <b>tag</b>, not a sha256 digest. The variable is called <code>…_HASH</code> because the tag is a commit hash.</li>
+        </ul>
+        <div class="callout">Bumping the SDK in the platform = changing that one Makefile line, then reading <code>prometheus_api/docs/agent/AGENT_MIGRATIONS.md</code> for everything that changed in between.</div>
+        <div class="callout warn">Running <code>docker compose up</code> in the platform <b>without</b> <code>make</code> gives an empty tag and a broken <code>FROM</code>. Always go through <code>make</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Inside the repos</div><h2>Where things live</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:18px">
+      <pre class="xs"><span class="p">prometheus_platform/</span>  <span class="c">(dev)</span>
+├── Makefile             <span class="c"># up, restart, logs…</span>
+├── docker-compose.yml   <span class="c"># core services</span>
+├── .env.example
+├── litellm_config.yaml  <span class="c"># LLM aliases</span>
+├── certs/INL.pem        <span class="c"># frontend build</span>
+├── frontend/            <span class="c"># React + Vite</span>
+├── backend/             <span class="c"># FastAPI</span>
+├── agents/
+│   ├── client-agent/    <span class="c"># orchestrator</span>
+│   ├── form-filler-agent/
+│   ├── osti-research-agent/
+│   ├── synthesis-agent/
+│   └── debug-agents/*/
+├── tests/  <span class="c"># infrastructure/, system/</span>
+├── docs/   <span class="c"># zensical site</span>
+├── AGENTS.md · CLAUDE.md
+└── README.md</pre>
+      <pre class="xs"><span class="p">prometheus_api/</span>  <span class="c">(main)</span>
+├── prometheus_api/
+│   ├── agent/        <span class="c"># PrometheusAgent,</span>
+│   │                 <span class="c">#  identity, registry,</span>
+│   │                 <span class="c">#  artifacts, worker</span>
+│   ├── llm_client/   <span class="c"># LLMClient</span>
+│   ├── llm_configs/  <span class="c"># *.yaml profiles</span>
+│   ├── storage_client/ <span class="c"># DeepLynx</span>
+│   ├── credentials/
+│   └── contract.py · a2a_stream.py
+├── specs/  <span class="c"># 000–014, REQ-/BEH- IDs</span>
+├── docs/agent/  <span class="c"># GUIDE, MIGRATIONS</span>
+├── examples/
+├── Dockerfile · Makefile
+├── llm_config.example.yaml
+└── .github/workflows/tests.yml</pre>
+      <pre class="xs"><span class="p">prometheus_agent_template/</span>
+├── setup_agent.py     <span class="c"># scaffolder</span>
+├── TUTORIAL.md        <span class="c"># 1,200+ lines</span>
+├── README.md
+├── success_message.txt
+├── tests/test_setup_agent.py
+└── agent_template/
+    ├── agent.py
+    ├── agent_card.json
+    ├── Dockerfile · Makefile
+    ├── docker-compose.yml
+    ├── docker-compose.net_internal.yml
+    ├── docker-compose.net_external.yml
+    ├── docker-compose.linux.yml
+    ├── .env.example · pyproject.toml
+    ├── prompts/  workflows/
+    └── tests/</pre>
+    </div>
+    <p class="small">Each subtree has its own toolchain: <code>uv</code> + <code>ruff</code> + <code>mypy</code> + <code>pytest</code> for Python, <code>npm</code> + <code>eslint</code> + <code>tsc</code> for the frontend. Never hand-edit the generated <code>docker-compose.agents.yml</code>; <code>make generate</code> rewrites it.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide section">
+  <div class="num">02</div>
+  <h2>Branching strategy</h2>
+  <p class="lede">Git Flow: a production branch, an integration branch, short-lived feature branches, and release/hotfix lanes.</p>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-nofit style="gap:10px">
+  <div class="head"><div class="eyebrow">Our model · develop = dev in prometheus_platform</div></div>
+  <div class="content center" style="flex:1; min-height:0">
+    <img class="fit" src="assets/git_branches.png" alt="Git Flow branching strategy diagram" style="max-height:740px">
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Branch roles</div><h2>Five kinds of branches</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:230px">Branch</th><th style="width:330px">Cut from → merges into</th><th>Rules</th></tr>
+      <tr><td><b><code>main</code></b></td><td>merges only</td><td>Production. Never commit directly. Every merge gets a version tag (<code>v1.0</code>, <code>v1.1</code>…). If it is in <code>main</code>, it is deployable.</td></tr>
+      <tr class="hl"><td><b><code>develop</code></b><br><span class="small">= <code>dev</code> in prometheus_platform</span></td><td>integration branch</td><td>All day-to-day work flows through here. It is "what the next release will look like": not always stable, but <b>always buildable</b>.</td></tr>
+      <tr><td><b><code>feature/&lt;desc&gt;</code></b></td><td><code>develop</code> → <code>develop</code></td><td>Short-lived, one piece of work, deleted after merge. Never touches <code>main</code>. Name it <code>feature/login</code>, <code>feature/mesh-qa-agent</code>…</td></tr>
+      <tr><td><b><code>release/&lt;x.y&gt;</code></b></td><td><code>develop</code> → <code>main</code> <b>and</b> <code>develop</code></td><td>Freezes scope. Only bug fixes, docs, and version bumps. The double merge is critical and easy to forget.</td></tr>
+      <tr><td><b><code>hotfix/&lt;desc&gt;</code></b></td><td><code>main</code> → <code>main</code> <b>and</b> <code>develop</code></td><td>The emergency lane, the only branch cut from <code>main</code>. Skipping the merge back to <code>develop</code> makes the bug resurface in the next release.</td></tr>
+    </table>
+    <div class="callout">Only <code>release/*</code> and <code>hotfix/*</code> ever merge into <code>main</code>, and both always merge back into <code>develop</code>. Everything else flows through <code>develop</code> exclusively.</div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Applied to our repos</div><h2>Which base branch do I target?</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <table class="t">
+          <tr><th>Repo</th><th>Integration branch</th><th>Your PR base</th></tr>
+          <tr class="hl"><td><b>prometheus_platform</b></td><td><code>dev</code> (default branch)</td><td><code>--base dev</code></td></tr>
+          <tr><td><b>prometheus_api</b></td><td><code>main</code></td><td><code>--base main</code></td></tr>
+          <tr><td><b>prometheus_agent_template</b></td><td><code>main</code></td><td><code>--base main</code></td></tr>
+          <tr><td>agent repos (gmsh_agent…)</td><td><code>main</code></td><td><code>--base main</code></td></tr>
+          <tr><td><b>Hackathon practice</b></td><td><code>sandbox</code> (platform)</td><td><code>--base sandbox</code></td></tr>
+        </table>
+        <p class="small">In the commands on the next slides, substitute <code>main</code> for <code>dev</code> when you work on a repo without a <code>dev</code> branch.</p>
+      </div>
+      <div class="col">
+        <h4 class="acc">Where we are today</h4>
+        <ul class="b sm">
+          <li>Platform <code>dev</code> carries all recent work. <code>main</code> has not been updated since April 2026: the first formal release is still ahead of us.</li>
+          <li>There are no version tags or <code>release/*</code> / <code>hotfix/*</code> branches yet. <code>prometheus_api</code> versions live in <code>pyproject.toml</code> (0.13.0) plus <code>docs/agent/AGENT_MIGRATIONS.md</code>.</li>
+          <li>Existing branch names are mixed (<code>admin_setup_ui</code>, <code>fix/certs</code>, <code>task/…</code>, and <code>feat/…</code> in api). <b>New branches: <code>feature/&lt;short-desc&gt;</code></b>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Fork &amp; clone conventions</div><h2>One-time setup: <code style="font-size:.8em">origin</code> is yours, <code style="font-size:.8em">upstream</code> is genesis</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm"><span class="c"># 1. fork in the web UI, or:</span>
+export GH_HOST=github.inl.gov
+gh repo fork genesis/prometheus_platform --clone=false
+
+<span class="c"># 2. clone YOUR fork</span>
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
+cd prometheus_platform
+
+<span class="c"># 3. add the org repo as "upstream"</span>
+git remote add upstream \
+  git@github.inl.gov:genesis/prometheus_platform.git
+git fetch upstream
+git remote -v
+<span class="c">#   origin    …:&lt;you&gt;/prometheus_platform  (push here)</span>
+<span class="c">#   upstream  …:genesis/prometheus_platform (PR target)</span>
+
+<span class="c"># 4. make rebase the default for pull</span>
+git config pull.rebase true
+git config rebase.autoStash true</pre>
+      <div class="col">
+        <div class="card"><h4>Why fork?</h4><p class="small">Most participants have <b>read</b> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p></div>
+        <div class="card"><h4>Clone side by side</h4><p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p><pre class="xs">~/prometheus/
+├── prometheus_platform/
+├── prometheus_agent_template/
+└── my-agent/            <span class="c"># generated</span></pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Day-to-day loop</div><h2>Feature branch → rebase → push → PR</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm"><span class="c"># start from the latest integration branch</span>
+git fetch upstream
+git switch -c feature/<span class="p">mesh-qa-agent</span> upstream/dev
+
+<span class="c"># work, commit in small logical steps</span>
+git add -p
+git commit -m "Add mesh quality report skill"
+
+<span class="c"># stay current: replay your commits on top</span>
+<span class="h">git pull --rebase upstream dev</span>
+
+<span class="c"># run the local checks (next slides), then publish</span>
+git push -u origin HEAD                <span class="c"># first push</span>
+git push --force-with-lease            <span class="c"># after a rebase</span>
+
+<span class="c"># open the PR against genesis</span>
+gh pr create --repo genesis/prometheus_platform \
+  --base dev --head <span class="p">&lt;you&gt;</span>:feature/mesh-qa-agent \
+  --title "Add mesh quality report skill" \
+  --body-file pr.md</pre>
+      <div class="col">
+        <div class="card acc"><h4>Why rebase, not merge?</h4><p class="small">Your branch stays a straight line of <i>your</i> commits on top of the current <code>dev</code>. Reviewers see only your change, the history has no "Merge branch 'dev' into …" noise, and conflicts are resolved once, commit by commit.</p></div>
+        <div class="card"><h4><code>--force-with-lease</code>, never <code>--force</code></h4><p class="small">A rebase rewrites your branch, so the push must be forced. <code>--force-with-lease</code> refuses if the remote has commits you have not seen, for example a reviewer's suggestion you accepted in the web UI.</p></div>
+        <div class="callout warn">Force-pushing is only for <b>your own feature branch</b>. The protected branches (platform <code>dev</code>, api and template <code>main</code>) reject force-pushes, and nobody force-pushes shared branches anyway.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">What rebase does</div><h2><code style="font-size:.8em">git pull --rebase upstream dev</code>, visually</h2></div>
+  <div class="content">
+    <svg viewBox="0 0 1400 380" width="1400" height="380" role="img" aria-label="Rebase diagram">
+      <style>
+        .ln{stroke:#9aa8ba;stroke-width:4;fill:none}
+        .dv{fill:#d8c93a;stroke:#fff;stroke-width:3}
+        .ft{fill:#6b4fbb;stroke:#fff;stroke-width:3}
+        .ftn{fill:#fff;stroke:#6b4fbb;stroke-width:3;stroke-dasharray:4 3}
+        .lb{font:600 17px 'JetBrains Mono',monospace;fill:#35455b}
+        .tt{font:700 22px Archivo,sans-serif;fill:#0e1b2c}
+        .cm{font:15px 'JetBrains Mono',monospace;fill:#66768c}
+      </style>
+      <text class="tt" x="20" y="34">Before</text>
+      <path class="ln" d="M60 110 H600"/>
+      <path class="ln" d="M200 110 C240 110 240 180 280 180 H440" style="stroke:#6b4fbb"/>
+      <circle class="dv" cx="100" cy="110" r="15"/><circle class="dv" cx="200" cy="110" r="15"/>
+      <circle class="dv" cx="400" cy="110" r="15"/><circle class="dv" cx="520" cy="110" r="15"/>
+      <circle class="ft" cx="320" cy="180" r="15"/><circle class="ft" cx="430" cy="180" r="15"/>
+      <text class="lb" x="560" y="94">upstream/dev</text>
+      <text class="lb" x="460" y="186">feature/x</text>
+      <text class="cm" x="300" y="224">A</text><text class="cm" x="422" y="224">B</text>
+      <text class="cm" x="385" y="80">C</text><text class="cm" x="507" y="80">D</text>
+
+      <text class="tt" x="720" y="34">After</text>
+      <path class="ln" d="M760 110 H1260"/>
+      <path class="ln" d="M1220 110 C1250 110 1250 180 1280 180 H1340" style="stroke:#6b4fbb"/>
+      <circle class="dv" cx="800" cy="110" r="15"/><circle class="dv" cx="900" cy="110" r="15"/>
+      <circle class="dv" cx="1060" cy="110" r="15"/><circle class="dv" cx="1220" cy="110" r="15"/>
+      <circle class="ft" cx="1290" cy="180" r="15"/><circle class="ft" cx="1345" cy="180" r="15"/>
+      <text class="lb" x="1040" y="80">upstream/dev</text>
+      <text class="cm" x="1045" y="150">C</text><text class="cm" x="1207" y="150">D</text>
+      <text class="cm" x="1266" y="224">A′</text><text class="cm" x="1330" y="224">B′</text>
+      <text class="lb" x="1150" y="258">feature/x</text>
+
+      <text class="cm" x="20" y="300">Your commits A and B are replayed on top of the new tip D as new commits A′ and B′ (new SHAs).</text>
+      <text class="cm" x="20" y="328">That is why the next push needs --force-with-lease, and why rebasing an open PR restarts review.</text>
+    </svg>
+    <div class="grid g3">
+      <div class="card"><h4>Conflict?</h4><pre class="xs">git status              <span class="c"># see files</span>
+<span class="c"># edit, then</span>
+git add &lt;file&gt;
+git rebase --continue
+git rebase --abort      <span class="c"># bail out</span></pre></div>
+      <div class="card"><h4>Tidy before review</h4><pre class="xs">git rebase -i upstream/dev
+<span class="c"># squash fixups, reword</span>
+git commit --fixup &lt;sha&gt;
+git rebase -i --autosquash …</pre><p class="tiny">Interactive rebase needs a terminal editor.</p></div>
+      <div class="card"><h4>Repeated conflicts</h4><pre class="xs">git config rerere.enabled true</pre><p class="small">git remembers how you resolved a conflict and reapplies it on the next rebase.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Rebase and review</div><h2>When to rebase an open PR</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <p class="body">The repos use <b>rulesets</b> that interact with force-pushes:</p>
+        <ul class="b sm">
+          <li><b>Dismiss stale approvals on push</b>: any new push, including a rebase, clears existing approvals.</li>
+          <li><b>Require approval of the most recent push</b>: whoever pushed last cannot be the approver.</li>
+          <li><b>All review threads resolved</b> before merge.</li>
+        </ul>
+        <div class="callout good"><b>Recommended rhythm</b><br>① Rebase onto <code>upstream/dev</code> and tidy <i>before</i> requesting review.<br>② During review, push <b>new commits</b> that address comments, so reviewers see the delta.<br>③ Rebase once more only if <code>dev</code> moved and there are conflicts, then ask for a final approval.</div>
+      </div>
+      <div class="col">
+        <h4 class="acc">How maintainers merge today</h4>
+        <table class="t sm">
+          <tr><th>Repo</th><th>Allowed merge methods</th></tr>
+          <tr><td>prometheus_platform</td><td>merge commit, squash, rebase</td></tr>
+          <tr><td>prometheus_api</td><td>merge commit, squash (rebase-merge <b>off</b>); head branch auto-deleted</td></tr>
+          <tr><td>template, gmsh, sandbox</td><td>all three</td></tr>
+        </table>
+        <p class="small">In practice most PRs land as <b>merge commits</b> ("Merge pull request #N from …"). A rebased feature branch makes that merge commit clean: the history shows your commits intact, followed by one merge.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Commits</div><h2>Commit messages people can read later</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <ul class="b">
+          <li><b>Imperative subject, under 72 characters</b>, capitalized, no trailing period.</li>
+          <li><b>The body explains <i>why</i></b>; the diff already shows what.</li>
+          <li>One topic per commit. No "update file" or "fix bug".</li>
+          <li>Never commit <code>.env</code>, keys, or tokens. Every repo gitignores <code>.env</code>; check <code>git status</code> anyway.</li>
+          <li>Lockfile changed? Commit <code>uv.lock</code> with the <code>pyproject.toml</code> change.</li>
+        </ul>
+        <p class="small">Based on <code>prometheus_platform/AGENTS.md</code> (subject under 72 chars, body explains why, no "update file"/"fix bug") plus the style of recent commits. The platform AGENTS.md also asks you to prefix any PR review reply written by a coding agent with 🤖.</p>
+      </div>
+      <div class="col">
+        <h4 class="acc">Real subjects from the org repos</h4>
+        <pre class="sm">Add per-user chat history: list, rename,
+    soft-delete, resume
+Check in INL certificate and fix cert install
+Drop HS256 identity support; RS256 only,
+    split keys by role in compose
+Configure agents by LLM profile, not by
+    MODEL_NAME
+Stop a large STEP from 413ing behind the
+    sandbox's request-body cap</pre>
+        <div class="callout bad">Avoid: <code>wip</code>, <code>fix</code>, <code>changes</code>, <code>address comments</code> as the only description of a change.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Before you push</div><h2>Local checks per repo</h2></div>
+  <div class="content">
+    <table class="t sm">
+      <tr><th style="width:280px">Repo / area</th><th style="width:520px">Commands</th><th>Notes</th></tr>
+      <tr class="hl"><td><b>Your generated agent</b></td><td><code>uv run pytest && uv run ruff check .</code></td><td>The template ships 2 tests with mocked <code>RequestContext</code> and <code>EventQueue</code>.</td></tr>
+      <tr><td><b>prometheus_platform</b> infra</td><td><code>make test-static</code></td><td>No Docker needed. <code>make test-integration</code> and <code>make test-system</code> need the stack running.</td></tr>
+      <tr><td>platform <code>frontend/</code></td><td><code>cd frontend && make install && make check</code></td><td>eslint + tsc</td></tr>
+      <tr><td>platform <code>agents/&lt;name&gt;</code></td><td><code>cd agents/&lt;name&gt; && uv run pytest</code></td><td>client-agent: <code class="wrap">PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests</code></td></tr>
+      <tr><td><b>prometheus_api</b></td><td><code>make check && make test</code><br><code>make hooks</code> (once)</td><td><code>check</code> = ruff lint + ruff format --check + mypy. The hooks run ruff on commit and mypy + unit tests on push.</td></tr>
+      <tr><td>prometheus_agent_template</td><td><code>make check && make test</code></td><td>Tests <code>setup_agent.py</code> itself.</td></tr>
+      <tr><td>agent-sandbox-mcp</td><td><code>make check && make test</code></td><td><code>test-image</code> and <code>test-system</code> need Docker.</td></tr>
+    </table>
+    <div class="callout warn">For the platform, the template, and the agent repos, <b>these local checks are the only CI</b>. Nothing automated runs on those PRs.</div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Continuous integration</div><h2>What runs where</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <h4 class="acc">prometheus_api · <code>.github/workflows/tests.yml</code></h4>
+        <p class="small">On a push or PR to <code>main</code>, on self-hosted runners (group <code>genesis</code>):</p>
+        <table class="t sm">
+          <tr><th>Job (required check)</th><th>Does</th></tr>
+          <tr><td>Python 3.12 / 3.13 / 3.14</td><td><code>uv sync --frozen</code> + <code>pytest</code> in pinned uv images</td></tr>
+          <tr><td>Docker prepare</td><td>computes the tag <code>&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and the cache URI</td></tr>
+          <tr><td>Docker amd64 / arm64</td><td>builds the image and runs pytest <i>inside</i> it against the installed package</td></tr>
+          <tr><td><i>(push only)</i> multi-arch</td><td>pushes the manifest <code>:&lt;tag&gt;</code> and <code>:latest</code></td></tr>
+        </table>
+        <p class="small">Checks are strict (the branch must be up to date). There is no ruff or mypy job yet, so run <code>make check</code> yourself.</p>
+      </div>
+      <div class="col">
+        <h4 class="acc">Everything else</h4>
+        <table class="t sm">
+          <tr><th>Repo</th><th>CI</th></tr>
+          <tr><td>prometheus_platform <code>dev</code></td><td><b>none</b>. <code>docs.yml</code> builds the docs site only on a push to <code>main</code>.</td></tr>
+          <tr><td>prometheus_agent_template</td><td>none</td></tr>
+          <tr><td>gmsh_agent, agent-sandbox-mcp</td><td>none</td></tr>
+        </table>
+        <div class="callout warn"><b>Fork PRs to prometheus_api</b> currently get no CI runs at all, so the six required checks never report. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Branch protection</div><h2>Rulesets on the protected branches</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th>Branch</th><th>Approvals</th><th>Other review rules</th><th>Required checks</th><th>Push rules</th></tr>
+      <tr class="hl"><td><b>platform <code>dev</code></b></td><td>1</td><td>dismiss stale · last-push approval · threads resolved</td><td>—</td><td>no force-push, no delete</td></tr>
+      <tr><td><b>api <code>main</code></b></td><td>1</td><td>same, plus code-owner review (CODEOWNERS covers only <code>/.github</code>)</td><td>6 jobs, strict</td><td>no force-push, no delete</td></tr>
+      <tr><td><b>template <code>main</code></b></td><td>1</td><td>dismiss stale · last-push approval · threads resolved</td><td>—</td><td>no force-push, no delete</td></tr>
+      <tr><td>gmsh_agent, sandbox <code>main</code></td><td>—</td><td>unprotected</td><td>—</td><td>—</td></tr>
+      <tr><td>platform <code>main</code></td><td>—</td><td>its ruleset targets no branch yet</td><td>—</td><td>—</td></tr>
+    </table>
+    <div class="grid g3">
+      <div class="card"><h4>PR required</h4><p class="small">No one pushes to <code>dev</code> or api/template <code>main</code> directly, not even admins (no bypass actors).</p></div>
+      <div class="card"><h4>Someone else approves</h4><p class="small">You cannot approve your own PR, and the last pusher cannot approve either. Pair up with another team for reviews.</p></div>
+      <div class="card"><h4>No PR templates</h4><p class="small">There is no template in any repo, so use the structure on the next slide.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Opening a PR</div><h2>A description reviewers can act on</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm"><span class="p">## What</span>
+Add a `mesh_quality_report` skill that reads an
+Exodus artifact and reports scaled Jacobian and
+aspect-ratio histograms.
+
+<span class="p">## Why</span>
+Meshes from `geometry_meshing` go to MOOSE
+unchecked; bad elements fail late.
+
+<span class="p">## How it was tested</span>
+- `uv run pytest` (6 passed), `uv run ruff check .`
+- Local platform: "check the mesh I just made"
+  routes to the skill; report artifact renders.
+
+<span class="p">## Config / environment changes</span>
+- New env var `MESHQA_MAX_ELEMENTS` (default 2e6)
+- Base image: PROMETHEUS_API_BASE_IMAGE_HASH=23c9454</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li><b>Title</b>: an imperative sentence, like the commit subject ("Add…", "Fix…", "Stop…").</li>
+          <li><b>Small and focused.</b> One topic. Split refactors from behavior changes.</li>
+          <li>List the <b>commands you ran</b>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>prometheus_api/AGENTS.md</code>).</li>
+          <li><b>prometheus_api API changes</b>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li>
+          <li>UI change? Add a screenshot.</li>
+          <li>Open as <b>draft</b> (<code>gh pr create --draft</code>) while it is still in progress.</li>
+        </ul>
+        <pre class="xs">gh pr view --web          <span class="c"># open in browser</span>
+gh pr checks              <span class="c"># CI status (api only)</span>
+gh pr ready               <span class="c"># draft → ready</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Code review</div><h2>What reviewers look for, and how to respond</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:20px">
+      <div class="card"><h3>As an author</h3><ul class="b xs">
+        <li>Reply to <b>every</b> thread. "Fixed in 8e46a68: …" with the commit SHA and a sentence of explanation.</li>
+        <li>Disagree with reasons. Maintainers push back too, sometimes with a table of cases.</li>
+        <li>Resolve threads only when the reviewer is satisfied, or after replying.</li>
+        <li>Accepted a GitHub suggestion in the web UI? <code>git pull --rebase</code> before your next push.</li>
+      </ul></div>
+      <div class="card"><h3>As a reviewer</h3><ul class="b xs">
+        <li>Be concrete: file:line, the scenario that breaks, ideally a failing test.</li>
+        <li>Check the tests enforce what they claim. In the api repo, reviewers check that tests citing a <code>REQ-…</code> ID actually test it.</li>
+        <li>Check the lockfile, the version bump, and the migration note.</li>
+        <li>Separate "must fix" from "nit".</li>
+      </ul></div>
+      <div class="card"><h3>Project stance</h3><p class="tiny">From the Prometheus project philosophy.</p><ul class="b xs">
+        <li>Experimental project: <b>breaking changes are fine</b>.</li>
+        <li>No backward-compatibility shims, deprecation warnings, or workarounds. Fix root causes.</li>
+        <li>When docs and code disagree, fix the docs in the same PR.</li>
+        <li>Agent-authored review text is marked with 🤖.</li>
+      </ul></div>
+    </div>
+    <div class="callout">A real example: platform PR #98 had about 10 inline findings, each reproduced with a small test. The author answered each one with the fixing commit. That is the bar.</div>
+  </div>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Practice at 3:30</div><h2>Your practice PR against <code style="font-size:.8em">sandbox</code></h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm">cd prometheus_platform
+git fetch upstream
+git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/sandbox
+
+<span class="c"># add your generated hello-world agent (not under</span>
+<span class="c"># agents/, so it is not auto-included in the stack)</span>
+mkdir -p hackathon/<span class="p">&lt;you&gt;</span>
+cp -r ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
+      hackathon/<span class="p">&lt;you&gt;</span>/
+git add hackathon/<span class="p">&lt;you&gt;</span>
+git commit -m "Add hello-world agent for &lt;you&gt;"
+
+git push -u origin HEAD
+gh pr create --repo genesis/prometheus_platform \
+  --base sandbox --title "Practice: hello from &lt;you&gt;" \
+  --body "Dry run PR."</pre>
+      <div class="col">
+        <ol class="b sm">
+          <li>Open the PR against <b><code>sandbox</code></b>, never <code>dev</code>.</li>
+          <li>Ask a neighbour to review. Leave one comment, answer it, and resolve it.</li>
+          <li>The reviewer approves; a mentor merges.</li>
+          <li>Rebase exercise: after someone else's PR merges, run <code>git pull --rebase upstream sandbox</code> on your next branch.</li>
+        </ol>
+        <div class="callout warn">Double-check <code>git status</code> before committing: your agent directory contains a <code>.env</code> with the platform secrets. It is gitignored inside the agent directory; do not copy it.</div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Organizers: the sandbox branch does not exist yet. Create "sandbox" from dev in genesis/prometheus_platform before the event (ruleset 35 only covers the default branch, so sandbox will be unprotected; maintainers merge).</aside>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Cheat sheet</div><h2>Git &amp; gh commands on one page</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:18px">
+      <pre class="xs"><span class="c"># setup (once)</span>
+export GH_HOST=github.inl.gov
+gh auth login --hostname github.inl.gov
+gh repo fork genesis/&lt;repo&gt; --clone=false
+git clone git@github.inl.gov:&lt;you&gt;/&lt;repo&gt;.git
+git remote add upstream \
+  git@github.inl.gov:genesis/&lt;repo&gt;.git
+git config pull.rebase true
+git config rebase.autoStash true
+git config rerere.enabled true</pre>
+      <pre class="xs"><span class="c"># every feature</span>
+git fetch upstream
+git switch -c feature/&lt;desc&gt; upstream/dev
+<span class="c">#   (upstream/main for api/template)</span>
+git commit -m "Imperative subject"
+git pull --rebase upstream dev
+git push -u origin HEAD
+git push --force-with-lease
+gh pr create --repo genesis/&lt;repo&gt; \
+  --base dev --head &lt;you&gt;:feature/&lt;desc&gt;</pre>
+      <pre class="xs"><span class="c"># during review</span>
+gh pr status
+gh pr view --comments
+gh pr checks
+gh pr diff
+git rebase --continue | --abort
+git log --oneline --graph \
+  upstream/dev..HEAD
+
+<span class="c"># after merge</span>
+git switch -d upstream/dev
+git branch -D feature/&lt;desc&gt;
+git push origin --delete feature/&lt;desc&gt;</pre>
+    </div>
+    <div class="callout">Next: <b>Local platform deployment</b> (1:45 pm). Have your PAT with <code>read:packages</code> and an LLM API key ready.</div>
+  </div>
+</section>
+
+</div></div>
+<script src="assets/deck.js"></script>
+</body>
+</html>
