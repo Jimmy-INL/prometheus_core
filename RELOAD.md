@@ -586,12 +586,18 @@ before it. The client-agent logs each answer twice — once as `agent_response_<
 a visible duplicate in a replayed transcript. Adjacent-only, so a user legitimately repeating
 themselves later in the conversation is untouched.
 
-**A.3 Attach each artifact to the turn that produced it.** New
-`frontend/src/lib/store/transcriptArtifacts.ts` exports
-`artifactsByAssistantTurn(messages, artifacts)`, which buckets artifacts to assistant turns by
-comparing `created_at` against the message timestamps, falling back to the last turn for anything
-unattributable. `chat.ts`'s `itemsFromTranscript` uses it instead of dumping the whole catalog on
-the final assistant item. Covered by `transcriptArtifacts.test.ts` (5 tests, `node --test`).
+**A.3 Attach each artifact to the turn that produced it.** The Prometheus Artifact Contract
+("Frontend viewer ownership") forbids rendering from the conversation catalog: a generated output
+renders only under the response whose `new_artifacts` created it. So the turn is recorded, not
+guessed. After each turn the client-agent's `_response_payload_with_artifacts` stamps the ids of
+that turn's `new_artifacts` on its reply in `conversation_history`
+(`conversation_store.stamp_turn_artifacts`, matched by reply text). `get_transcript` returns them
+as `messages[].artifact_ids`, and `frontend/src/lib/store/transcriptArtifacts.ts`'s
+`artifactsPerTurn(messages, artifacts)` gives each restored turn exactly those catalog entries.
+The detail catalog leaves out user uploads, so an upload id resolves to nothing. A turn stored
+before the stamp existed restores with no artifacts. Covered by `transcriptArtifacts.test.ts`
+(5 tests, `node --test`), `agents/client-agent/tests/test_turn_artifacts.py` and
+`backend/tests/test_conversations.py`.
 
 ### Tier 2 — Make a reload non-destructive. **Implemented 2026-09-22.**
 
@@ -923,8 +929,9 @@ is the pass to make.
 13. Transcript roles alternate `user`/`assistant` with no doubled answers (the client-agent writes
     each answer twice, as `agent_response_<tool>` then `final_report`; `get_transcript` collapses
     adjacent duplicates). Verified: `user/assistant × 3` for the conversation above.
-14. Artifacts attach to the assistant turn that produced them, not all to the last one — covered
-    by `frontend/src/lib/store/transcriptArtifacts.test.ts` (5 tests) and exercised end to end by
+14. Artifacts attach to the assistant turn that produced them, from the `artifact_ids` the
+    client-agent records on each reply, not all to the last one — covered by
+    `frontend/src/lib/store/transcriptArtifacts.test.ts` (5 tests) and exercised end to end by
     the resume above.
 
 **Already covered on `chat_history` — re-run rather than re-write:**

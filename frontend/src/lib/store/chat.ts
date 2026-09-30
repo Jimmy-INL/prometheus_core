@@ -30,7 +30,7 @@ import type {
   TaskProgressEvent,
   UploadDescriptor,
 } from "@/lib/api/types";
-import { artifactsByAssistantTurn } from "./transcriptArtifacts";
+import { artifactsPerTurn } from "./transcriptArtifacts";
 import { readOpenConversationId, saveOpenConversationId } from "./openConversation";
 
 // --- item model -------------------------------------------------------------
@@ -190,13 +190,14 @@ function assistantFrom(res: ChatMessageResponse, text: string): AssistantItem {
   };
 }
 
-/** Map a resumed conversation's normalized transcript to renderable items. */
+/** Map a resumed conversation's normalized transcript to renderable items. Each
+ * assistant turn gets only the artifacts it produced (see `artifactsPerTurn`). */
 function itemsFromTranscript(messages: ConversationMessage[], artifacts: ArtifactMeta[]): ChatItem[] {
-  const buckets = artifactsByAssistantTurn(messages, artifacts);
+  const perTurn = artifactsPerTurn(messages, artifacts);
   return messages.map((m, i) =>
     m.role === "user"
       ? { id: nextId("user"), kind: "user", text: m.content }
-      : assistantItem(m.content, buckets[i]),
+      : assistantItem(m.content, perTurn[i]),
   );
 }
 

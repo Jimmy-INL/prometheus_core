@@ -97,7 +97,12 @@ class ConversationStateClient:
         ``type: agent_response_<tool>`` and again as ``type: final_report``, with the
         same ``content`` — so without this every restored assistant turn would appear
         duplicated. Only *adjacent* repeats are dropped, so a genuinely repeated
-        answer later in the conversation still shows up.
+        answer later in the conversation still shows up. A collapsed entry keeps the
+        ``artifact_ids`` of both copies.
+
+        ``artifact_ids`` are the artifacts that turn produced, stamped on the reply by
+        the client-agent (``conversation_store.stamp_turn_artifacts``). A restored turn
+        renders exactly these; a turn stored before the stamp existed has none.
         """
         conv = self.get_conversation(conv_id)
         if not conv:
@@ -112,12 +117,16 @@ class ConversationStateClient:
             if role not in ("user", "assistant") or not content:
                 continue
             text = str(content)
+            ids = [str(i) for i in entry.get("artifact_ids") or [] if i]
             if messages and messages[-1]["role"] == role and messages[-1]["content"] == text:
+                kept = messages[-1]["artifact_ids"]
+                kept.extend(i for i in ids if i not in kept)
                 continue
             messages.append({
                 "role": role,
                 "content": text,
                 "timestamp": entry.get("timestamp", ""),
+                "artifact_ids": ids,
             })
         return messages
 

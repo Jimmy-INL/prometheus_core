@@ -1,11 +1,14 @@
 /**
- * Correlate a resumed conversation's artifact catalog with its assistant turns.
+ * Give each turn of a resumed conversation the artifacts that turn produced.
  *
- * The catalog in Valkey is conversation-scoped, not per-turn: `GET /api/conversations/{id}`
- * returns every artifact the conversation ever produced, with no link back to the turn
- * that produced it. A live session showed each turn's own artifacts under that turn's
- * reply, so restoring a conversation has to reconstruct the grouping — and the only
- * shared signal is time (`ArtifactMeta.created_at` against `ConversationMessage.timestamp`).
+ * `GET /api/conversations/{id}` returns the conversation's artifact catalog plus, per
+ * message, the `artifact_ids` the client-agent recorded on that reply. The Prometheus
+ * Artifact Contract ("Frontend viewer ownership") says the catalog is state for future
+ * turns and never a rendering source: a generated output renders only under the
+ * response that created it. So a restored turn shows exactly its own ids, resolved in
+ * the catalog, and nothing else. An id the catalog does not hold (a user upload, which
+ * the backend leaves out) is skipped, and a turn with no ids (a user turn, or one stored
+ * before the ids were recorded) shows none.
  *
  * Kept as a dependency-free leaf module so it is unit-testable under `node --test`
  * (`chat.ts` itself pulls in the API client and can only run inside Vite).
@@ -14,48 +17,23 @@
 /** Minimal shape needed from a transcript entry. */
 export type TurnLike = {
   role: "user" | "assistant";
-  timestamp?: string | null;
+  artifact_ids?: string[] | null;
 };
 
-/** Minimal shape needed from an artifact. */
-export type DatedArtifact = {
-  created_at?: string | null;
+/** Minimal shape needed from a catalog entry. */
+export type IdentifiedArtifact = {
+  artifact_id: string;
 };
-
-/** Epoch ms for an ISO timestamp, or `null` when absent/unparseable. */
-function epoch(ts: string | null | undefined): number | null {
-  if (!ts) return null;
-  const t = Date.parse(ts);
-  return Number.isNaN(t) ? null : t;
-}
 
 /**
- * Bucket `artifacts` per message, returning one array per entry in `messages`.
- *
- * An artifact belongs to the first assistant turn completed at or after it was created.
- * Artifacts created before the first assistant turn fall to that first turn (user uploads
- * never get here: the backend leaves them out of the detail response); anything created after the last assistant turn — or carrying no usable
- * `created_at` — falls to the last one, which is also where the whole catalog lands when
- * no assistant turn has a usable timestamp. That keeps the previous
- * everything-on-the-last-turn behaviour as the degenerate case while giving a multi-turn
- * conversation the per-turn grouping a live session showed. Buckets for user entries stay
- * empty. Order within a bucket follows `artifacts`.
+ * One array per entry in `messages`: the catalog entries named by that message's
+ * `artifact_ids`, in that order, each at most once per turn. User entries stay empty.
  */
-export function artifactsByAssistantTurn<A extends DatedArtifact>(
-  messages: TurnLike[],
-  artifacts: A[],
-): A[][] {
-  const buckets: A[][] = messages.map(() => []);
-  const turns = messages
-    .map((m, index) => ({ index, at: epoch(m.timestamp) }))
-    .filter((t) => messages[t.index].role === "assistant");
-  if (!turns.length) return buckets;
-
-  const last = turns[turns.length - 1].index;
-  for (const artifact of artifacts) {
-    const at = epoch(artifact.created_at);
-    const turn = at === null ? undefined : turns.find((t) => t.at !== null && t.at >= at);
-    buckets[turn ? turn.index : last].push(artifact);
-  }
-  return buckets;
+export function artifactsPerTurn<A extends IdentifiedArtifact>(messages: TurnLike[], catalog: A[]): A[][] {
+  const byId = new Map(catalog.map((a) => [a.artifact_id, a] as const));
+  return messages.map((m) => {
+    if (m.role !== "assistant") return [];
+    const ids = [...new Set(m.artifact_ids ?? [])];
+    return ids.flatMap((id) => byId.get(id) ?? []);
+  });
 }

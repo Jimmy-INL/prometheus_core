@@ -21,8 +21,9 @@ function EmptyState({ icon, title, hint }: { icon: React.ReactNode; title: strin
 }
 
 /** Every artifact in the open conversation's transcript, newest last, deduped
- * by id (a resumed conversation attaches its whole catalog to the last
- * assistant turn — see `itemsFromTranscript` in `lib/store/chat.ts`). */
+ * by id. A resumed conversation gives each assistant turn the artifacts it
+ * produced (see `itemsFromTranscript` in `lib/store/chat.ts`), so this matches
+ * the live session. */
 function useConversationArtifacts(): ArtifactMeta[] {
   const { items } = useChatState();
   const byId = new Map<string, ArtifactMeta>();

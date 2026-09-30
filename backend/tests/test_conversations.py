@@ -401,8 +401,8 @@ def test_get_transcript_normalizes_and_drops_orchestration_noise(monkeypatch):
 
     messages = c.get_transcript("c1")
     assert messages == [
-        {"role": "user", "content": "hello", "timestamp": "t1"},
-        {"role": "assistant", "content": "hi there", "timestamp": "t2"},
+        {"role": "user", "content": "hello", "timestamp": "t1", "artifact_ids": []},
+        {"role": "assistant", "content": "hi there", "timestamp": "t2", "artifact_ids": []},
     ]
 
 
@@ -432,11 +432,39 @@ def test_get_transcript_collapses_the_duplicate_final_report_turn(monkeypatch):
     monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
 
     assert c.get_transcript("c1") == [
-        {"role": "user", "content": "mesh it", "timestamp": "t1"},
-        {"role": "assistant", "content": "done", "timestamp": "t2"},
-        {"role": "user", "content": "again", "timestamp": "t4"},
-        {"role": "assistant", "content": "done", "timestamp": "t5"},
+        {"role": "user", "content": "mesh it", "timestamp": "t1", "artifact_ids": []},
+        {"role": "assistant", "content": "done", "timestamp": "t2", "artifact_ids": []},
+        {"role": "user", "content": "again", "timestamp": "t4", "artifact_ids": []},
+        {"role": "assistant", "content": "done", "timestamp": "t5", "artifact_ids": []},
     ]
+
+
+def test_get_transcript_carries_each_turns_artifact_ids(monkeypatch):
+    """The client-agent stamps a turn's artifact ids on its reply. They come through
+    per message, and a collapsed duplicate keeps the ids of both copies (the stamp
+    lands on the last copy, the ``final_report``)."""
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    conv = {
+        "conversation_history": [
+            {"role": "user", "content": "mesh it", "timestamp": "t1"},
+            {"role": "assistant", "content": "done", "type": "agent_response_meshing", "artifact_ids": ["m0"]},
+            {"role": "assistant", "content": "done", "type": "final_report", "artifact_ids": ["m0", "m1", ""]},
+            {"role": "user", "content": "again", "timestamp": "t4"},
+            {"role": "assistant", "content": "no files", "type": "final_report", "timestamp": "t5"},
+        ],
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            return _json.dumps(conv)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert [m["artifact_ids"] for m in c.get_transcript("c1")] == [[], ["m0", "m1"], [], []]
 
 
 # --------------------------------------------------------------------------- #
@@ -477,7 +505,12 @@ class _FakeDetailClient:
         conv = self._conversations.get(conv_id) or {}
         history = conv.get("conversation_history", []) or []
         return [
-            {"role": e["role"], "content": e["content"], "timestamp": e.get("timestamp", "")}
+            {
+                "role": e["role"],
+                "content": e["content"],
+                "timestamp": e.get("timestamp", ""),
+                "artifact_ids": e.get("artifact_ids", []),
+            }
             for e in history
             if isinstance(e, dict) and e.get("role") in ("user", "assistant") and e.get("content")
         ]
@@ -662,6 +695,28 @@ async def test_detail_and_resume_leave_user_uploads_out_of_the_response(monkeypa
     assert [a["artifact_id"] for a in resumed["artifacts"]] == ["gen"]
     session = await session_store.get_or_create("sid-conv")
     assert [a["artifact_id"] for a in session.artifacts] == ["up", "gen"]
+
+
+def test_detail_messages_name_the_artifacts_each_turn_produced(monkeypatch):
+    """A restored turn renders from its own ``artifact_ids``; each id resolves in the
+    detail's ``artifacts``, which is a lookup table, not a rendering source."""
+    conv = {
+        "conversation_history": [
+            {"role": "user", "content": "plot it"},
+            {"role": "assistant", "content": "here", "artifact_ids": ["gen"]},
+        ],
+    }
+    fake = _detail_client(monkeypatch, conversations={"c1": conv}, owners={"c1": "alice"})
+    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [{"artifact_id": "gen", "name": "plot.png"}], raising=False)
+
+    async def _no_enrich(artifacts):
+        return None
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _no_enrich)
+    body = _authed_client(monkeypatch).get("/api/conversations/c1").json()
+
+    assert [m["artifact_ids"] for m in body["messages"]] == [[], ["gen"]]
+    assert [a["artifact_id"] for a in body["artifacts"]] == ["gen"]
 
 
 async def test_resume_keeps_a_newer_catalog_written_during_enrichment(monkeypatch, session_store):

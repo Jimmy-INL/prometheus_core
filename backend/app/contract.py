@@ -439,6 +439,11 @@ class ConversationMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = ""
     timestamp: str = ""
+    #: Ids of the artifacts this turn produced, each resolvable in the detail's
+    #: ``artifacts``. The frontend renders a restored turn from these alone, never
+    #: from the whole catalog. Empty for user turns and for turns stored before
+    #: the client-agent recorded them.
+    artifact_ids: list[str] = Field(default_factory=list)
 
 
 class ConversationDetailResponse(BaseModel):

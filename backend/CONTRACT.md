@@ -369,7 +369,14 @@ currently viewing may still have work in flight.
 
 A past conversation's normalized transcript (`conversation_history` filtered
 to `role: user|assistant` turns) plus its artifact catalog, shaped the same way
-a live turn's `artifacts` are.
+a live turn's `artifacts` are. The catalog leaves out user uploads
+(`metadata.source: user-upload`); the session catalog keeps them.
+
+Each message carries `artifact_ids`: the artifacts that turn produced, which the
+client-agent records on the reply. Render a restored turn from its own
+`artifact_ids`, resolved in `artifacts`. Never render the whole catalog. An id
+that `artifacts` does not hold (a user upload) is not rendered. User turns, and
+turns stored before the ids were recorded, have an empty list.
 
 ```json
 {
@@ -378,10 +385,10 @@ a live turn's `artifacts` are.
   "profile": "",
   "auto_approve_steps": false,
   "messages": [
-    { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…" },
-    { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…" }
+    { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…", "artifact_ids": [] },
+    { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…", "artifact_ids": ["a-41c9…"] }
   ],
-  "artifacts": []
+  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "…": "…" }]
 }
 ```
 

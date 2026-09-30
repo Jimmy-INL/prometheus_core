@@ -1,59 +1,55 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { artifactsByAssistantTurn, type TurnLike } from "./transcriptArtifacts.ts";
+import { artifactsPerTurn, type TurnLike } from "./transcriptArtifacts.ts";
 
-const a = (id: string, created_at?: string | null) => ({ id, created_at });
+const a = (artifact_id: string) => ({ artifact_id });
+const ids = (turns: { artifact_id: string }[][]) => turns.map((t) => t.map((x) => x.artifact_id));
 
-test("splits the catalog across assistant turns by creation time", () => {
+test("each turn gets exactly the artifacts it produced", () => {
   const messages: TurnLike[] = [
-    { role: "user", timestamp: "2026-09-22T12:15:41Z" },
-    { role: "assistant", timestamp: "2026-09-22T12:20:21Z" },
-    { role: "user", timestamp: "2026-09-22T12:21:22Z" },
-    { role: "assistant", timestamp: "2026-09-22T12:30:03Z" },
-  ];
-  // One artifact stamped at the first prompt itself; then one artifact per turn.
-  const artifacts = [
-    a("early", "2026-09-22T12:15:41Z"),
-    a("mesh-1", "2026-09-22T12:20:10Z"),
-    a("mesh-2", "2026-09-22T12:29:55Z"),
+    { role: "user" },
+    { role: "assistant", artifact_ids: ["mesh-1"] },
+    { role: "user" },
+    { role: "assistant", artifact_ids: ["mesh-2", "plot"] },
   ];
 
-  const buckets = artifactsByAssistantTurn(messages, artifacts);
+  const turns = artifactsPerTurn(messages, [a("plot"), a("mesh-1"), a("mesh-2")]);
 
-  assert.deepEqual(buckets.map((b) => b.map((x) => x.id)), [[], ["early", "mesh-1"], [], ["mesh-2"]]);
+  assert.deepEqual(ids(turns), [[], ["mesh-1"], [], ["mesh-2", "plot"]]);
 });
 
-test("artifacts created after the last reply fall to the last turn", () => {
-  const messages: TurnLike[] = [
-    { role: "user", timestamp: "2026-09-22T12:00:00Z" },
-    { role: "assistant", timestamp: "2026-09-22T12:01:00Z" },
-  ];
-  const buckets = artifactsByAssistantTurn(messages, [a("late", "2026-09-22T13:00:00Z")]);
-  assert.deepEqual(buckets[1].map((x) => x.id), ["late"]);
+test("catalog entries no turn produced are not rendered anywhere", () => {
+  // The catalog is state for future turns, not a rendering fallback.
+  const messages: TurnLike[] = [{ role: "user" }, { role: "assistant", artifact_ids: ["gen"] }];
+
+  const turns = artifactsPerTurn(messages, [a("gen"), a("from-another-turn"), a("unowned")]);
+
+  assert.deepEqual(ids(turns), [[], ["gen"]]);
 });
 
-test("an artifact with no usable created_at falls to the last turn", () => {
-  const messages: TurnLike[] = [
-    { role: "assistant", timestamp: "2026-09-22T12:01:00Z" },
-    { role: "user", timestamp: "2026-09-22T12:02:00Z" },
-    { role: "assistant", timestamp: "2026-09-22T12:03:00Z" },
-  ];
-  const buckets = artifactsByAssistantTurn(messages, [a("x"), a("y", "not-a-date")]);
-  assert.deepEqual(buckets.map((b) => b.map((i) => i.id)), [[], [], ["x", "y"]]);
+test("an id missing from the catalog (a user upload) is skipped", () => {
+  const messages: TurnLike[] = [{ role: "assistant", artifact_ids: ["upload", "gen"] }];
+
+  assert.deepEqual(ids(artifactsPerTurn(messages, [a("gen")])), [["gen"]]);
 });
 
-test("falls back to everything-on-the-last-turn when timestamps are unusable", () => {
+test("a turn stored before ids were recorded shows no artifacts", () => {
   const messages: TurnLike[] = [
-    { role: "user", timestamp: "" },
-    { role: "assistant", timestamp: "" },
-    { role: "assistant", timestamp: null },
+    { role: "user" },
+    { role: "assistant" },
+    { role: "assistant", artifact_ids: null },
+    { role: "assistant", artifact_ids: [] },
   ];
-  const buckets = artifactsByAssistantTurn(messages, [a("p", "2026-09-22T12:00:00Z"), a("q")]);
-  assert.deepEqual(buckets.map((b) => b.map((i) => i.id)), [[], [], ["p", "q"]]);
+
+  assert.deepEqual(ids(artifactsPerTurn(messages, [a("x")])), [[], [], [], []]);
 });
 
-test("a transcript with no assistant turn drops nothing into user buckets", () => {
-  const buckets = artifactsByAssistantTurn([{ role: "user", timestamp: "2026-09-22T12:00:00Z" }], [a("z")]);
-  assert.deepEqual(buckets, [[]]);
+test("user turns stay empty and a repeated id renders once", () => {
+  const messages: TurnLike[] = [
+    { role: "user", artifact_ids: ["x"] },
+    { role: "assistant", artifact_ids: ["x", "x"] },
+  ];
+
+  assert.deepEqual(ids(artifactsPerTurn(messages, [a("x")])), [[], ["x"]]);
 });

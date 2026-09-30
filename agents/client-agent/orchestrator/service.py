@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 
 from artifact_handling import merge_artifact_catalogs
 from capability_cache import get_capability_cache
-from conversation_store import get_conversation
+from conversation_store import get_conversation, record_turn_artifacts
 from workflow_library import get_workflow_registry, verify_workflow_source_health
 
 from . import runtime, task_tracking
@@ -345,6 +345,16 @@ class OrchestratorAgent(PrometheusAgent):
             ]
         except Exception as exc:
             print(f"[WARN] Failed to attach artifacts to response: {exc}")
+        try:
+            # Remember which artifacts this turn produced, on the turn itself, so a
+            # restored conversation renders them under this reply and nowhere else.
+            record_turn_artifacts(
+                conversation_id,
+                (r.get("artifact_id") or r.get("id") for r in response_payload.get("new_artifacts") or []),
+                (response.report, response.message, response.response_text),
+            )
+        except Exception as exc:
+            print(f"[WARN] Failed to record this turn's artifacts: {exc}")
         return response_payload
 
     async def _handle_uploaded_files(

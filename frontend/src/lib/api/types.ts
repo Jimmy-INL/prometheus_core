@@ -304,6 +304,8 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  /** Ids of the artifacts this turn produced, resolved in the detail's `artifacts`. */
+  artifact_ids: string[];
 }
 
 export interface ConversationDetailResponse {
