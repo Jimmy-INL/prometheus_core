@@ -41,7 +41,7 @@ from app.contract import (
 )
 from app.conversation_state import ConversationStateClient
 from app.security import TokenClaims, current_claims
-from app.services.artifacts import shape_artifacts
+from app.services.artifacts import is_user_upload, shape_artifacts
 from app.services.mesh.service import enrich_mesh_artifact_dicts
 from app.sessions import get_store
 
@@ -144,7 +144,10 @@ async def _build_detail(conv_id: str, parts: dict[str, Any]) -> ConversationDeta
         title=cast(str, parts["title"]),
         profile=cast(str, parts["profile"]),
         messages=[ConversationMessage(**m) for m in messages],
-        artifacts=shape_artifacts(raw_artifacts),
+        # User uploads stay in the session catalog (the content proxy and later turns
+        # resolve them) but not in the response: the Artifact Contract excludes them
+        # from rendering, and the live turn already drops them from `new_artifacts`.
+        artifacts=shape_artifacts([a for a in raw_artifacts if not is_user_upload(a)]),
     )
 
 

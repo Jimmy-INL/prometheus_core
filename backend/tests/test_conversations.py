@@ -638,6 +638,32 @@ async def test_resume_seeds_session_artifacts_with_the_enriched_catalog(monkeypa
     assert calls and calls[0] == session.artifacts
 
 
+async def test_detail_and_resume_leave_user_uploads_out_of_the_response(monkeypatch, session_store):
+    """The Artifact Contract excludes ``user-upload`` entries from rendering, as the live
+    turn does; a restored transcript must not show the user's own file in a reply. The
+    session catalog keeps them, so the content proxy and later turns still resolve them."""
+    catalog = [
+        {"artifact_id": "up", "name": "qa-a.txt", "metadata": {"source": "user-upload"}},
+        {"artifact_id": "gen", "name": "result.json"},
+    ]
+    fake = _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [dict(a) for a in catalog], raising=False)
+
+    async def _no_enrich(artifacts):
+        return None
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _no_enrich)
+    client = _authed_client(monkeypatch)
+
+    detail = client.get("/api/conversations/c1").json()
+    assert [a["artifact_id"] for a in detail["artifacts"]] == ["gen"]
+
+    resumed = client.post("/api/conversations/c1/resume").json()
+    assert [a["artifact_id"] for a in resumed["artifacts"]] == ["gen"]
+    session = await session_store.get_or_create("sid-conv")
+    assert [a["artifact_id"] for a in session.artifacts] == ["up", "gen"]
+
+
 async def test_resume_keeps_a_newer_catalog_written_during_enrichment(monkeypatch, session_store):
     """Reload path: a task of c1 finishes while the resume converts meshes.
 

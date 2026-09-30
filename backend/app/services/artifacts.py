@@ -312,6 +312,15 @@ def to_artifact_meta(artifact: dict[str, Any]) -> Optional[ArtifactMeta]:
     )
 
 
+def is_user_upload(artifact: dict[str, Any]) -> bool:
+    """True for a file the user uploaded (``metadata.source == "user-upload"``).
+
+    The Prometheus Artifact Contract keeps these in the catalog but excludes them from
+    response rendering, so both the live turn and a restored transcript drop them.
+    """
+    return (artifact.get("metadata") or {}).get("source") == "user-upload"
+
+
 def shape_artifacts(artifacts: list[dict[str, Any]]) -> list[ArtifactMeta]:
     """Shape a list of raw catalog dicts, dropping skipped/invalid entries."""
     shaped: list[ArtifactMeta] = []

@@ -27,7 +27,7 @@ from typing import Any, Callable, Coroutine, Optional
 from app.a2a_client import A2AClient, ConversationResponse
 from app.contract import ChatMessageResponse, ChatStatus, UploadDescriptor
 from app.contract import normalize_followup_questions as _normalize_followup_questions
-from app.services.artifacts import shape_artifacts
+from app.services.artifacts import is_user_upload, shape_artifacts
 from app.services.mesh.service import enrich_mesh_artifacts
 from app.sessions import SessionStore
 
@@ -131,11 +131,7 @@ async def _map_final(
     is_slash_command = bool(metadata.get("slash_command"))
 
     raw_new = [] if is_slash_command else (response.new_artifacts or [])
-    new_artifacts = [
-        artifact
-        for artifact in raw_new
-        if (artifact.get("metadata") or {}).get("source") != "user-upload"
-    ]
+    new_artifacts = [artifact for artifact in raw_new if not is_user_upload(artifact)]
 
     # Persist the full conversation catalog for later content fetches (task 07).
     # Truthy, not ``is not None`` (T-7): an ``artifacts=[]`` turn must not wipe the

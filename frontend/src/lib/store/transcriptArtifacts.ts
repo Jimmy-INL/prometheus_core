@@ -33,8 +33,8 @@ function epoch(ts: string | null | undefined): number | null {
  * Bucket `artifacts` per message, returning one array per entry in `messages`.
  *
  * An artifact belongs to the first assistant turn completed at or after it was created.
- * Artifacts created before the first assistant turn (a user upload, say) fall to that
- * first turn; anything created after the last assistant turn — or carrying no usable
+ * Artifacts created before the first assistant turn fall to that first turn (user uploads
+ * never get here: the backend leaves them out of the detail response); anything created after the last assistant turn — or carrying no usable
  * `created_at` — falls to the last one, which is also where the whole catalog lands when
  * no assistant turn has a usable timestamp. That keeps the previous
  * everything-on-the-last-turn behaviour as the degenerate case while giving a multi-turn

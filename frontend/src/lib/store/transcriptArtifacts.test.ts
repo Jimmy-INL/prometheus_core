@@ -12,16 +12,16 @@ test("splits the catalog across assistant turns by creation time", () => {
     { role: "user", timestamp: "2026-09-22T12:21:22Z" },
     { role: "assistant", timestamp: "2026-09-22T12:30:03Z" },
   ];
-  // Upload precedes the first reply; then one artifact per turn.
+  // One artifact stamped at the first prompt itself; then one artifact per turn.
   const artifacts = [
-    a("upload", "2026-09-22T12:15:41Z"),
+    a("early", "2026-09-22T12:15:41Z"),
     a("mesh-1", "2026-09-22T12:20:10Z"),
     a("mesh-2", "2026-09-22T12:29:55Z"),
   ];
 
   const buckets = artifactsByAssistantTurn(messages, artifacts);
 
-  assert.deepEqual(buckets.map((b) => b.map((x) => x.id)), [[], ["upload", "mesh-1"], [], ["mesh-2"]]);
+  assert.deepEqual(buckets.map((b) => b.map((x) => x.id)), [[], ["early", "mesh-1"], [], ["mesh-2"]]);
 });
 
 test("artifacts created after the last reply fall to the last turn", () => {
