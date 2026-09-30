@@ -20,7 +20,7 @@ the web process never imports VTK at all.
 WHY A SUBPROCESS AND NOT A THREAD: VTK is a large C++ library reached through Python
 bindings. A segfault or an OOM kill inside it takes down the whole interpreter — which,
 with a thread pool, is the web process, dropping every in-flight conversation on the
-floor (the most plausible source of the unexplained restarts in ``RELOAD.md`` §3). In a
+floor (the most plausible source of the unexplained backend restarts seen in dev). In a
 child process the same crash costs exactly one artifact: :func:`_enrich_one` catches it
 and the frontend adapter degrades that artifact to a file download.
 """

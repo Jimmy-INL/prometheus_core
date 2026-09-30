@@ -232,9 +232,8 @@ async def resume_conversation(
     store = get_store(request)
     # Resuming the conversation the session is already on (the reload path) keeps the
     # awaited-task set, so a task backgrounded before the reload still streams its
-    # `task_progress` / `task_done` into the resumed session -- the ids now live in
-    # Valkey rather than in a process-local SessionState, which is what RELOAD.md
-    # Tier 2.2 deferred to Tier 4. Switching to a *different* conversation still
+    # `task_progress` / `task_done` into the resumed session -- the ids live in
+    # Valkey, not in a process-local SessionState. Switching to a *different* conversation still
     # clears it: those ids only resolve against the conversation that produced them.
     # SessionStore.reset decides which, atomically. Either way the history sidebar marks
     # a conversation pending while `agent:status:{id}` is live, and the result lands in

@@ -398,7 +398,7 @@ async function bootstrap(profile?: string): Promise<void> {
   // false) but does *not* reset a component ref — so a ref guard stayed `true`
   // while `ready` was false, and the UI wedged on an empty transcript with
   // nothing in the console. Guard and guarded state are re-initialised together
-  // here, so that cannot happen. See RELOAD.md cause 4.
+  // here, so that cannot happen.
   if (bootstrapping || state.ready) return;
   bootstrapping = true;
   const gen = bootstrapGen;

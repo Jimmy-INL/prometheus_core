@@ -42,7 +42,7 @@ export default defineConfig({
       // pinned frontend-dev at ~58% CPU while idle. The starved event loop let the
       // HMR websocket close uncleanly, and Vite's client answers an unclean close
       // by calling location.reload() -- silently destroying the live conversation,
-      // since the transcript lives only in module memory. See RELOAD.md.
+      // since the transcript lives only in module memory.
       ignored: [
         "**/.venv/**",
         "**/__pycache__/**",
