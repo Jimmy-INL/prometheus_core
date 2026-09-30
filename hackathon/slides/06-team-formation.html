@@ -189,7 +189,7 @@ outputs: {final: {from: step.check.result}}</pre>
             message=call.arguments[<span class="s">"summary"</span>])
         history.append(tool_result_message(
             call, render(cell) + budget_note(step)))</pre>
-        <p class="small">Copy <code>sandbox_client.py</code> from <code>gmsh_agent</code> (branch <code>agentic-hex-meshing</code>): <code>SandboxSession.run_cell(code)</code> returns a <code>CellResult</code>, and it includes the <code>Host: localhost</code> header fix. The <code>vision</code> flavor needs an alias on a stock platform.</p>
+        <p class="small">Copy <code>sandbox_client.py</code> from <code>gmsh_agent</code> (branch <code>agentic-hex-meshing</code>): <code>SandboxSession.run_cell(code)</code> returns a <code>CellResult</code>, and it includes the <code>Host: localhost</code> header fix.</p>
       </div>
     </div>
   </div>
@@ -209,7 +209,7 @@ outputs: {final: {from: step.check.result}}</pre>
       <div class="card"><h3>8 · Regulatory citation finder ("NUREG Navigator")</h3>
         <p class="small"><b>Pitch</b>: paste a design statement or requirement and get the relevant 10 CFR, NUREG-0800 SRP, Regulatory Guide, or ASME sections, with quoted rationale, as a citation table. It uses a small curated corpus of public NRC documents, indexed at startup.</p>
         <p class="small"><b>Skills</b>: <code>find_regulatory_basis</code>; <code>compare_to_regulation</code> (a gap check).</p>
-        <p class="small"><b>Uses</b>: the <code>embedding</code> flavor (needs an embedding alias or a profile such as <code>inl_litellm</code>), context state, JSON artifacts with a <code>json_type</code>.</p>
+        <p class="small"><b>Uses</b>: the <code>embedding</code> flavor, context state, JSON artifacts with a <code>json_type</code>.</p>
         <p class="small"><b>Stretch</b>: a citation viewer served by <code>add_static_endpoint</code>; reranking with <code>llm.small</code>.</p>
         <p class="small"><b>Chain</b>: <code>requirements_from_design</code> → <code>find_regulatory_basis</code>; it feeds the <code>component_*</code> report agents and <code>audit</code>.</p></div>
     </div>
@@ -254,7 +254,7 @@ VALIDATE = ToolDefinition("validate",
         <ul class="b sm">
           <li>be scaffolded with <code>setup_agent.py</code>, with a <b>team prefix</b> on the card name and skill IDs</li>
           <li>set <code>"streaming": true</code> and send meaningful status updates</li>
-          <li>call the LLM through <code>self.llm_client(context, config=…)</code> with <code>LLMConfig.from_env().with_api_key(LITELLM_MASTER_KEY)</code>, flavor <code>medium</code>. <code>small</code>, <code>vision</code>, and <code>embedding</code> need aliases added to <code>litellm_config.yaml</code> (or another profile)</li>
+          <li>call the LLM through <code>self.llm_client(context, config=…)</code> with <code>LLMConfig.from_env().with_api_key(LITELLM_MASTER_KEY)</code>, choosing the flavor per task: <code>small</code> for cheap classification, <code>medium</code>/<code>large</code> for analysis, <code>vision</code> for plots and renders, <code>embedding</code> for search</li>
           <li>publish outputs with <code>send_deeplynx_artifact</code> or JSON artifacts with a correct <code>mime_type</code></li>
           <li>take file inputs through <code>x_artifact_ref</code></li>
           <li>ship one <code>workflows/*.yaml</code> that chains with an existing agent</li>

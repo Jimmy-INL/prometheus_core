@@ -55,7 +55,7 @@
           <tr><td>🗂️ JIRA project <code>PPLT</code></td><td>Issues and work items</td></tr>
           <tr><td>📦 Proposal Box</td><td>Proposal documents</td></tr>
         </table>
-        <div class="callout">27 repos in the org. All are private except <code>.github</code> and <code>agent-sandbox-mcp</code>. Container images are published at <code>containers.github.inl.gov/genesis/&lt;repo&gt;</code>.</div>
+        <div class="callout">27 repos in the org. All are private except <code>.github</code> (the org profile). Container images are published at <code>containers.github.inl.gov/genesis/&lt;repo&gt;</code>.</div>
       </div>
     </div>
   </div>
@@ -66,7 +66,7 @@
   <div class="head"><div class="eyebrow">Access</div><h2>Getting in: org, git, and registry</h2></div>
   <div class="content">
     <div class="grid g3">
-      <div class="card"><span class="tag">1 · org membership</span><h4>Read access through the <code>open</code> team</h4><p class="small">The org default permission is <b>none</b>. Team <code>open</code> (about 57 members) gives read access to 18 shared repos: the core three, gmsh, bim, requirements, component agents… Some agent repos need extra access. <b>Write access is granted per repo</b> by repo admins.</p><p class="small">With read access you <b>fork</b> and open PRs from your fork.</p></div>
+      <div class="card"><span class="tag">1 · org membership</span><h4>Read access through the <code>open</code> team</h4><p class="small">The org default permission is <b>none</b>. Team <code>open</code> (about 57 members) gives read access to 19 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents… Some agent repos need extra access. <b>Write access is granted per repo</b> by repo admins.</p><p class="small">With read access you <b>fork</b> and open PRs from your fork.</p></div>
       <div class="card"><span class="tag">2 · git transport</span><h4>SSH key or gh credential helper</h4><p class="small">Add a key at <code>github.inl.gov/settings/keys</code>, then:</p><pre class="xs">ssh -T git@github.inl.gov</pre><p class="small">Or use HTTPS and let <code>gh</code> handle credentials:</p><pre class="xs">gh auth login --hostname github.inl.gov
 export GH_HOST=github.inl.gov</pre></div>
       <div class="card"><span class="tag">3 · container registry</span><h4>PAT with <code>read:packages</code></h4><p class="small">Needed to pull the <code>prometheus_api</code> base image. Create a classic token at <code>github.inl.gov/settings/tokens/new</code>:</p><pre class="xs">echo $GITHUB_PAT | docker login \

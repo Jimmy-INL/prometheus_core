@@ -738,7 +738,7 @@ cfg = LLMConfig.from_env()
           <tr><th>Flavor</th><th>Intended use</th></tr>
           <tr><td><code>default</code></td><td><code>llm(...)</code> / <code>chat(model=None)</code></td></tr>
           <tr><td><code>small</code></td><td>fast, low-cost: titles, classification</td></tr>
-          <tr class="hl"><td><code>medium</code></td><td>general analysis. <b>The only one on a stock platform.</b></td></tr>
+          <tr><td><code>medium</code></td><td>general analysis</td></tr>
           <tr><td><code>large</code></td><td>deeper reasoning</td></tr>
           <tr><td><code>vision</code></td><td>multimodal (images in messages)</td></tr>
           <tr><td><code>embedding</code></td><td>vectors</td></tr>
@@ -1016,7 +1016,7 @@ networks:
         <li>☐ Every <code>inputSchema</code> property described; minimal <code>required</code></li>
         <li>☐ File inputs use <code>x_artifact_ref</code>; chained values use <code>x_input_source: runtime</code></li>
         <li>☐ <code>"streaming": true</code> if you send status updates</li>
-        <li>☐ LLM through <code>self.llm_client</code> with the master key attached; flavor <code>medium</code></li>
+        <li>☐ LLM through <code>self.llm_client</code> with the master key attached; the flavor that fits each call</li>
         <li>☐ Nothing blocks the event loop</li>
         <li>☐ Outputs as artifacts with a correct <code>mime_type</code>; return <code>artifact_id</code>s</li>
         <li>☐ Errors: return an error dict for user problems; raise for infrastructure</li>

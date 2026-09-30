@@ -89,7 +89,7 @@
         <h3 class="acc">Stretch</h3>
         <ol class="b sm">
           <li>It streams live status updates (<code>capabilities.streaming: true</code>).</li>
-          <li>It uses the LLM through <code>LLMClient</code> (the <code>medium</code> flavor), possibly with tool calling.</li>
+          <li>It uses the LLM through <code>LLMClient</code>, with the flavors that fit each task (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>), possibly with tool calling.</li>
           <li>It asks the user for missing inputs (<code>send_input_required</code>) or needs plan approval (<code>requires_approval</code>).</li>
           <li>An agent-owned <b>workflow YAML</b> chains your skill with an existing agent.</li>
           <li>It consumes an uploaded file or another agent's artifact (<code>x_artifact_ref</code>).</li>
@@ -159,7 +159,7 @@
       <tr><td><b>DeepLynx</b></td><td>INL's data warehouse. It stores uploads and agent files and resolves <code>deeplynx://organizations/…/items/N</code>.</td></tr>
       <tr><td><b>Workflow</b></td><td>A YAML template that chains skills (sequential, parallel, or DAG) with parameter bindings between steps.</td></tr>
       <tr><td><b>contextId</b></td><td>The conversation ID. It scopes artifacts, state, and ownership across all agents in one chat.</td></tr>
-      <tr><td><b>Flavor / profile</b></td><td>An LLM <i>flavor</i> (<code>small</code>, <code>medium</code>, <code>large</code>…) is chosen in code; a <i>profile</i> chosen by deployment maps flavors to real models. A stock platform serves only <code>medium</code>.</td></tr>
+      <tr><td><b>Flavor / profile</b></td><td>An LLM <i>flavor</i> (<code>small</code>, <code>medium</code>, <code>large</code>…) is chosen in code; a <i>profile</i> chosen by deployment maps flavors to real models. With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy (<code>litellm_config.yaml</code>).</td></tr>
       <tr><td><b>Base image</b></td><td><code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td></tr>
     </table>
   </div>
