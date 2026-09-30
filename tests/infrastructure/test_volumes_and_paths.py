@@ -33,12 +33,29 @@ def _host_mounts(svc: dict) -> set[str]:
 
     A single-segment entry such as '/app/node_modules' is an anonymous volume, not a
     bind, and a 'name:/target' entry is a named volume — neither ties the deployment
-    to the host filesystem, so neither counts here.
+    to the host filesystem, so neither counts here. The long syntax counts when its
+    ``type`` is ``bind``, and a source that starts with ``~`` or ``${...}`` counts too.
     """
-    return {
-        v for v in _get_volumes(svc)
-        if ":" in v and v.split(":", 1)[0].startswith((".", "/"))
-    }
+    mounts = set()
+    for v in svc.get("volumes", []):
+        if isinstance(v, dict):  # long syntax: {type: bind, source: ..., target: ...}
+            if v.get("type") == "bind":
+                mounts.add(f"{v.get('source')}:{v.get('target')}")
+        elif ":" in str(v) and str(v).split(":", 1)[0].startswith((".", "/", "~", "$")):
+            mounts.add(str(v))
+    return mounts
+
+
+def test_host_mounts_sees_every_bind_form():
+    svc = {"volumes": [
+        {"type": "bind", "source": "./shared", "target": "/app/shared"},
+        {"type": "volume", "source": "mesh-cache", "target": "/cache"},
+        "~/src:/app/src",
+        "${HOME}/src:/app/home",
+        "mesh-cache:/cache",
+        "/app/node_modules",
+    ]}
+    assert _host_mounts(svc) == {"./shared:/app/shared", "~/src:/app/src", "${HOME}/src:/app/home"}
 
 
 def test_no_unexpected_host_bind_mounts(compose_data):

@@ -13,7 +13,6 @@ import pickle
 import types
 from concurrent import futures
 from concurrent.futures.process import BrokenProcessPool
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -219,8 +218,10 @@ class _FakeExecutor:
         self._future = future
         self._processes = {1: _FakeProc()}
         self.shutdown_calls: list[dict] = []
+        self.submitted: list[tuple] = []
 
     def submit(self, fn, *args):
+        self.submitted.append((fn, args))
         return self._future
 
     def shutdown(self, wait=True, cancel_futures=False):
@@ -321,13 +322,32 @@ def test_shutdown_mesh_executor_is_a_noop_when_unused(monkeypatch):
     assert service._vtk_executor is None
 
 
-def test_convert_sync_crosses_the_process_boundary():
+def test_shutdown_mesh_executor_kills_a_live_pool(monkeypatch):
+    """A graceful stop must not leave spawned VTK workers holding the container open."""
+    fake = _FakeExecutor(futures.Future())
+    monkeypatch.setattr(service, "_vtk_executor", fake)
+    service.shutdown_mesh_executor()
+    assert service._vtk_executor is None
+    assert fake._processes[1].killed is True
+    assert fake.shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+async def test_convert_sync_crosses_the_process_boundary(monkeypatch, tmp_path):
     """Guard the contract the process pool depends on: the callable is picklable by
     reference and every argument survives a pickle round-trip. A future refactor that
     closes `_convert_sync` over something unpicklable would otherwise only fail at
-    runtime, inside a submit, as a degraded artifact."""
-    assert pickle.loads(pickle.dumps(service._convert_sync)) is service._convert_sync
-    args = (Path("/tmp/mesh.exo"), Path("/var/cache/prometheus-mesh"), "mesh.exo", "file:///mesh.exo", "")
+    runtime, inside a submit, as a degraded artifact. The arguments are the ones
+    `_convert_offloop` really submits, not a tuple built here."""
+    done: futures.Future = futures.Future()
+    done.set_running_or_notify_cancel()
+    done.set_result(None)
+    fake = _FakeExecutor(done)
+    monkeypatch.setattr(service, "_vtk_executor", fake)
+
+    await service._convert_offloop(tmp_path / "m.exo", tmp_path, "m.exo", "file:///m.exo", "", ident="m6")
+
+    ((fn, args),) = fake.submitted
+    assert pickle.loads(pickle.dumps(fn)) is service._convert_sync
     assert pickle.loads(pickle.dumps(args)) == args
 
 

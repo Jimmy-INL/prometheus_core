@@ -10,7 +10,7 @@ Two things changed shape when this moved off in-process state:
 - **Publishing is no longer synchronous fan-out.** Every event round-trips through
   Valkey pub/sub and is delivered by a per-sid relay task, so "the queue is empty"
   is only meaningful after the loop has had a chance to run — hence ``_wait_until``
-  for positive assertions and a short settle before negative ones.
+  for positive assertions and :func:`_rest_before_marker` before negative ones.
 - **Awaited task ids live in the store, not on a mutable ``SessionState``.** Tests
   seed them with ``await_task`` and assert on ``is_awaiting``.
 """
@@ -49,13 +49,24 @@ async def _wait_until(predicate, timeout: float = 2.0) -> None:
     raise AssertionError("condition was not met within the timeout")
 
 
-async def _settle() -> None:
-    """Give the relay tasks room to deliver anything in flight.
+_MARKER = "end-of-delivery-marker"
 
-    Used before asserting that *nothing* arrived; without it such an assertion would
-    pass trivially by racing the relay rather than by the event being filtered out.
+
+async def _rest_before_marker(bus, sid: str, *queues) -> list:
+    """What each queue received before a marker published after the event under test.
+
+    Used before asserting that *nothing* else arrived. Valkey keeps the order of one
+    channel, so a stray copy from the same relay reaches the queue before the marker;
+    a fixed sleep would let a late copy on a loaded runner arrive after the assertion.
     """
-    await asyncio.sleep(0.1)
+    await bus.publish(sid, StatusEvent(turn_id=_MARKER, message=_MARKER))
+    rest = []
+    for queue in queues:
+        got = []
+        while getattr(item := await asyncio.wait_for(queue.get(), 2.0), "turn_id", None) != _MARKER:
+            got.append(item)
+        rest.append(got)
+    return rest
 
 
 # --------------------------------------------------------------------------- #
@@ -72,13 +83,16 @@ async def test_bus_fans_out_to_all_queues_for_sid(event_bus):
 
     assert (await asyncio.wait_for(q1.get(), 2.0)).message == "hi"
     assert (await asyncio.wait_for(q2.get(), 2.0)).message == "hi"
-    await _settle()
-    assert other.empty()
+    assert await _rest_before_marker(event_bus, "sid-2", other) == [[]]
 
 
 async def test_bus_publish_with_no_subscribers_is_noop(event_bus):
-    # Must not raise even though nobody is subscribed to the channel.
+    # Must not raise with nobody subscribed, and must not be kept for a later stream.
     await event_bus.publish("nobody", StatusEvent(turn_id="t", message="x"))
+    late = await event_bus.register("nobody")
+    await event_bus.publish("nobody", StatusEvent(turn_id="t", message="y"))
+    assert (await asyncio.wait_for(late.get(), 2.0)).message == "y"
+    await event_bus.unregister("nobody", late)
 
 
 async def test_bus_unregister_drops_sid_when_last_queue_closes(event_bus):
@@ -127,28 +141,29 @@ async def test_bus_delivers_one_copy_per_queue_with_two_relays(fake_redis, valke
 
     assert (await asyncio.wait_for(qa.get(), 2.0)).message == "once"
     assert (await asyncio.wait_for(qb.get(), 2.0)).message == "once"
-    await _settle()
-    assert qa.empty() and qb.empty()
+    assert await _rest_before_marker(bus_a, SID, qa, qb) == [[], []]
 
     await bus_a.unregister(SID, qa)
     await bus_b.unregister(SID, qb)
 
 
-async def test_concurrent_first_registers_share_one_relay(event_bus):
+async def test_concurrent_first_registers_share_one_relay(interleaving_redis):
     """Two tabs connecting at once must not both subscribe and orphan a relay.
 
     Without the register lock each saw no relay, both awaited ``SUBSCRIBE``, and the
     second overwrote the first — whose subscription kept running and delivered every
-    event a second time.
+    event a second time. ``interleaving_redis`` suspends before the ``SUBSCRIBE``, so
+    the two registers really do overlap.
     """
+    event_bus = EventBus(interleaving_redis)
     q1, q2 = await asyncio.gather(event_bus.register(SID), event_bus.register(SID))
 
-    assert len(event_bus._relays) == 1
+    # One SUBSCRIBE on the channel; an orphaned relay would make this 2.
+    assert (await event_bus._redis.pubsub_numsub(f"sse:{SID}"))[0][1] == 1
     await event_bus.publish(SID, StatusEvent(turn_id="t", message="once"))
     assert (await asyncio.wait_for(q1.get(), 2.0)).message == "once"
     assert (await asyncio.wait_for(q2.get(), 2.0)).message == "once"
-    await _settle()
-    assert q1.empty() and q2.empty()
+    assert await _rest_before_marker(event_bus, SID, q1, q2) == [[], []]
 
     await event_bus.unregister(SID, q1)
     await event_bus.unregister(SID, q2)
@@ -205,8 +220,7 @@ async def test_progress_is_delivered_locally_not_published(monkeypatch, fake_red
 
     assert [e.message for e in await _drain(qa, 1)] == ["step 1"]
     assert [e.message for e in await _drain(qb, 1)] == ["step 1"]
-    await _settle()
-    assert qa.empty() and qb.empty()
+    assert await _rest_before_marker(bus_a, SID, qa, qb) == [[], []]
 
     await bus_a.unregister(SID, qa)
     await bus_b.unregister(SID, qb)
@@ -313,8 +327,7 @@ async def test_child_and_unawaited_events_are_ignored(
     assert isinstance(event, TaskProgressEvent)
     assert event.task_id == "root-1"
     assert event.message == "step 1"
-    await _settle()
-    assert queue.empty()
+    assert await _rest_before_marker(event_bus, SID, queue) == [[]]
     # root-1 never reached a terminal state, so it stays awaited.
     assert await session_store.is_awaiting(SID, "root-1")
 
@@ -337,8 +350,7 @@ async def test_progress_dedups_consecutive_repeats(monkeypatch, fake_redis, even
 
     events = await _drain(queue, 2)
     assert [e.message for e in events] == ["same", "next"]
-    await _settle()
-    assert queue.empty()
+    assert await _rest_before_marker(event_bus, SID, queue) == [[]]
 
 
 # --------------------------------------------------------------------------- #
@@ -366,8 +378,7 @@ async def test_fast_finish_guard_announces_once(monkeypatch, fake_redis, event_b
     assert len(events) == 1
     assert isinstance(events[0], TaskDoneEvent)
     assert events[0].response.response_text == "done"
-    await _settle()
-    assert queue.empty()
+    assert await _rest_before_marker(event_bus, SID, queue) == [[]]
 
 
 async def test_fast_finish_guard_seeds_initial_progress(
@@ -418,12 +429,17 @@ async def test_announce_restores_id_on_fetch_failure(
     assert await session_store.is_awaiting(SID, "task-1")
 
 
-async def test_claim_task_is_exactly_once_under_concurrency(session_store):
+async def test_claim_task_is_exactly_once_under_concurrency(interleaving_redis):
     """The ``SREM``-as-claim: two concurrent claimants, exactly one winner.
 
     This is the multi-worker version of what used to be a check-then-discard against
     an in-process set — the guarantee that stops ``task_done`` being announced twice.
+    ``interleaving_redis`` suspends before each command, so a ``SISMEMBER``-then-``SREM``
+    claim would let every claimant win.
     """
+    from app.sessions import SessionStore
+
+    session_store = SessionStore(interleaving_redis)
     await _seed(session_store, awaited=["task-1"])
 
     results = await asyncio.gather(
@@ -447,11 +463,9 @@ async def test_event_queue_is_bounded_and_drops_oldest(monkeypatch, event_bus):
     for i in range(4):
         await event_bus.publish(SID, StatusEvent(turn_id="t", message=f"m{i}"))
 
-    # The relay delivers asynchronously, so wait for all four to have been handled
-    # (the queue saturates at 2 and then rotates) rather than assuming.
-    await _wait_until(lambda: queue.qsize() == 2)
-    await _settle()
-    assert queue.qsize() == 2
+    # The relay delivers asynchronously and the queue saturates after m1, so wait for
+    # the newest event to reach the tail rather than for a size reached halfway.
+    await _wait_until(lambda: queue.qsize() == 2 and queue._queue[-1].message == "m3")
     # Oldest (m0, m1) were dropped; the two newest remain in order.
     assert [(await queue.get()).message for _ in range(2)] == ["m2", "m3"]
 
@@ -564,8 +578,7 @@ async def test_on_status_accumulates_deduped_history(event_bus):
     second = await asyncio.wait_for(queue.get(), 2.0)
     assert first.history == ["step one"]
     assert second.history == ["step one", "step two"]
-    await _settle()
-    assert queue.empty()
+    assert await _rest_before_marker(event_bus, SID, queue) == [[]]
 
 
 # --------------------------------------------------------------------------- #

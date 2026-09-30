@@ -18,7 +18,7 @@ import json
 import logging
 from typing import Any, AsyncIterator, Dict, Optional
 
-from app.redis_client import RedisClient
+from app.redis_client import RedisClient, close_pubsub
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +109,4 @@ async def subscribe(redis: RedisClient, conversation_id: str) -> AsyncIterator[D
     finally:
         # The client itself is process-wide and stays open; only this subscription
         # (and the connection it borrowed from the pool) is released here.
-        for close in (
-            lambda: pubsub.unsubscribe(events_channel(conversation_id)),
-            pubsub.aclose,
-        ):
-            try:
-                await close()
-            except Exception:
-                pass
+        await close_pubsub(pubsub, events_channel(conversation_id))

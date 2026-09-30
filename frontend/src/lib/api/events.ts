@@ -20,10 +20,10 @@ export interface EventStreamHandlers {
   onOpen?: () => void;
   /** `closed` distinguishes the two very different things `EventSource` reports
    * as the same `error` event: `false` means it is retrying on its own (a
-   * transport blip, a backend restart) and will recover; `true` means
+   * transport blip, a dropped connection) and may recover; `true` means
    * `readyState === CLOSED`, which it only reaches for a non-2xx response — the
-   * 401 from an expired session cookie, most often — and from which it never
-   * retries. Without this distinction the caller cannot tell "reconnecting" from
+   * 401 from an expired session cookie, most often, or the proxy's 5xx while the
+   * backend restarts — and from which it never retries. Without this distinction the caller cannot tell "reconnecting" from
    * "dead forever", and a dead stream looks exactly like an idle one. */
   onError?: (info: { closed: boolean; event: Event }) => void;
 }

@@ -608,6 +608,8 @@ async def test_resume_seeds_session_artifacts_with_the_enriched_catalog(monkeypa
 
     async def _fake_enrich(artifacts):
         calls.append(artifacts)
+        for artifact in artifacts:  # stamp in place, as the real mesh pass does
+            artifact["json_body"] = {"datasetId": "d1"}
 
     monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _fake_enrich)
 
@@ -622,6 +624,34 @@ async def test_resume_seeds_session_artifacts_with_the_enriched_catalog(monkeypa
     # identity. Equality is the property that matters: a second Redis round-trip would
     # have returned the *unenriched* rows.
     assert calls and calls[0] == session.artifacts
+
+
+async def test_resume_keeps_a_newer_catalog_written_during_enrichment(monkeypatch, session_store):
+    """Reload path: a task of c1 finishes while the resume converts meshes.
+
+    ``_map_final`` then writes the agent's full, newer catalog for the same conversation.
+    The resume write-back must not replace it with the older enriched list.
+    """
+    fake = _detail_client(monkeypatch, conversations={"c1": {}}, owners={"c1": "alice"})
+    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [{"artifact_id": "old", "name": "n"}], raising=False)
+    # The session is already on c1, so the rebind keeps the awaited-task set.
+    await session_store.reset("sid-conv", "c1", artifacts=[{"artifact_id": "old"}])
+
+    newer = [{"artifact_id": "old", "name": "n"}, {"artifact_id": "new", "name": "task result"}]
+
+    async def _enrich_while_task_finishes(artifacts):
+        assert await session_store.set_artifacts("sid-conv", newer, conversation_id="c1")
+        for artifact in artifacts:
+            artifact["json_body"] = {"datasetId": "d1"}
+
+    monkeypatch.setattr(conversations_router, "enrich_mesh_artifact_dicts", _enrich_while_task_finishes)
+    client = _authed_client(monkeypatch)
+
+    assert client.post("/api/conversations/c1/resume").status_code == 200
+
+    session = await session_store.get_or_create("sid-conv")
+    assert session.conversation_id == "c1"
+    assert session.artifacts == newer
 
 
 async def test_superseded_resume_does_not_rebind_or_seed_the_session(monkeypatch, session_store):

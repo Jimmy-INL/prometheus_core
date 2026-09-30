@@ -470,10 +470,19 @@ class ConversationResumeRequest(BaseModel):
 
     ``bind_seq`` orders session rebinds by click, not by arrival: a resume or new
     session whose seq is not greater than the last one applied leaves the session where
-    it is. The frontend sends a strictly increasing value (``Date.now()``-based). Also
-    accepted by ``POST /api/sessions``.
+    it is. The frontend sends a strictly increasing value (``Date.now()``-based).
+    ``POST /api/sessions`` takes the same field in :class:`CreateSessionRequest`.
     """
 
     model_config = ConfigDict(extra="ignore")
 
+    bind_seq: Optional[int] = None
+
+
+class CreateSessionRequest(BaseModel):
+    """Optional body for ``POST /api/sessions`` — the selected chat profile, plus the
+    ``bind_seq`` that orders this rebind against in-flight resumes (see
+    :class:`ConversationResumeRequest`)."""
+
+    profile: Optional[str] = None
     bind_seq: Optional[int] = None

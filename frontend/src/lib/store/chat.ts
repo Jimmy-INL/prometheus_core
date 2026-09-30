@@ -106,18 +106,11 @@ export interface ChatState {
    * a completed turn, a switch to another conversation) — components rendering
    * the history list re-fetch when this changes. */
   historyVersion: number;
-  /** Health of the `/api/events` SSE stream. `"reconnecting"` is benign —
-   * `EventSource` retries by itself. `"lost"` is not: it means `readyState`
-   * reached `CLOSED`, which only happens on a non-2xx response and is never
-   * retried, so live updates have stopped for good until something reconnects. */
-  connection: ConnectionState;
   /** Set when the stream died *and* a `/api/auth/me` probe confirmed the session
    * is gone. Watched by `useAuthLost()` so the UI can prompt for re-login
    * instead of sitting there silently receiving nothing. */
   authLost: boolean;
 }
-
-export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
 
 const initialState: ChatState = {
   ready: false,
@@ -128,7 +121,6 @@ const initialState: ChatState = {
   config: null,
   autoApprove: false,
   historyVersion: 0,
-  connection: "idle",
   authLost: false,
 };
 
@@ -394,6 +386,10 @@ async function applyResume(conversationId: string, seq: number): Promise<void> {
 }
 
 let bootstrapping = false;
+/** Bumped by `suspendForReauth()` and `clear()`. A bootstrap captures it on entry
+ * and writes no more state once it has changed: the session it was binding is
+ * gone, and a stale `ready: true` would make the next `bootstrap()` return at once. */
+let bootstrapGen = 0;
 
 async function bootstrap(profile?: string): Promise<void> {
   // The run-once guard lives here rather than in a React ref on purpose. A Fast
@@ -404,19 +400,27 @@ async function bootstrap(profile?: string): Promise<void> {
   // here, so that cannot happen. See RELOAD.md cause 4.
   if (bootstrapping || state.ready) return;
   bootstrapping = true;
+  const gen = bootstrapGen;
+  const isCurrent = () => gen === bootstrapGen;
+  // A reload used to drop the user into an empty new chat with the previous
+  // conversation orphaned in Valkey. If this tab had one open, resume it. The
+  // marker goes up before `getConfig()` so the reload shows the spinner, not the
+  // welcome screen, for that round trip too.
+  const saved = readOpenConversationId();
+  if (saved) set({ resumingConversationId: saved });
   try {
     const config = await api.getConfig();
+    if (!isCurrent()) return;
     set({ config });
 
-    // A reload used to drop the user into an empty new chat with the previous
-    // conversation orphaned in Valkey. If this tab had one open, resume it.
-    const saved = readOpenConversationId();
     if (saved) {
       try {
         await applyResume(saved, nextBindSeq());
+        if (!isCurrent()) return;
         set({ ready: true });
         return;
       } catch (err) {
+        if (!isCurrent()) return;
         if (!(err instanceof ApiError) || err.status !== 404) throw err;
         // 404 is definitive: soft-deleted, not ours, or evicted from Valkey.
         // Drop the id and start clean. Any other failure (network, 5xx) is
@@ -427,29 +431,37 @@ async function bootstrap(profile?: string): Promise<void> {
       }
     }
 
-    const session = await api.createSession(profile, nextBindSeq());
+    const seq = nextBindSeq();
+    const session = await api.createSession(profile, seq);
+    if (!isCurrent()) return;
+    // A newer rebind (a sidebar click) owns the session: the server kept it and
+    // still answered 200 with an unbound id, so only mark the store ready.
+    if (!isLatestBind(seq)) {
+      set({ ready: true });
+      return;
+    }
     set({
       ready: true,
       conversationId: session.conversation_id,
       autoApprove: session.auto_approve_steps,
     });
   } catch (err) {
-    // Surface a bootstrap failure but still let the UI render (empty).
+    if (!isCurrent()) return;
+    // Surface a bootstrap failure but still let the UI render (empty). Drop the
+    // early resume marker too, or a failed `getConfig()` leaves the spinner up.
     set({ ready: true });
+    if (saved && state.resumingConversationId === saved) set({ resumingConversationId: null });
     appendError(err instanceof Error ? err.message : "Failed to start session.");
   } finally {
-    bootstrapping = false;
+    // A superseding call already reset the flag, and a newer bootstrap may own it now.
+    if (isCurrent()) bootstrapping = false;
   }
 }
 
 /** React to an `/api/events` error. See `EventStreamHandlers.onError` for why
  * `closed` is the whole question. */
 async function onStreamError({ closed }: { closed: boolean }): Promise<void> {
-  if (!closed) {
-    set({ connection: "reconnecting" });
-    return;
-  }
-  set({ connection: "lost" });
+  if (!closed) return;
   // A closed stream is usually an expired session cookie (the TTL is 24h, so a
   // tab left open overnight hits it), but it can also be a 502 from a
   // restarting backend. Probe before declaring the session dead: bouncing
@@ -473,7 +485,6 @@ function connect(): void {
     onStatus,
     onTaskProgress,
     onTaskDone,
-    onOpen: () => set({ connection: "open" }),
     onError: (info) => void onStreamError(info),
   });
 }
@@ -481,7 +492,6 @@ function connect(): void {
 function disconnect(): void {
   closeStream?.();
   closeStream = null;
-  set({ connection: "idle" });
 }
 
 async function post(body: ChatMessageRequest): Promise<void> {
@@ -629,6 +639,7 @@ export const chatStore = {
     // awaited ids from before the re-auth must not claim events after it.
     awaitedTaskIds.clear();
     nextBindSeq(); // supersede an in-flight rebind; its session is gone
+    bootstrapGen += 1; // and an in-flight bootstrap, so it cannot mark the store ready
     bootstrapping = false;
     set({ ready: false, authLost: false, awaiting: false, resumingConversationId: null, items: [] });
   },
@@ -641,6 +652,7 @@ export const chatStore = {
     awaitedTaskIds.clear();
     nextBindSeq(); // supersede an in-flight rebind
     saveOpenConversationId(null);
+    bootstrapGen += 1;
     bootstrapping = false;
     state = initialState;
     emit();

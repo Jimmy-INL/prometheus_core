@@ -36,13 +36,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # would raise a 500 on the first login rather than here. Crash on boot with an
     # actionable message instead. (Bare TestClient(app) does not run the lifespan,
     # so this never trips in the test suite.)
-    if not settings.jwt_secret:
+    if not settings.jwt_secret or settings.jwt_secret.startswith("change-me"):
         raise RuntimeError(
-            "jwt_secret is not configured: set BACKEND_JWT_SECRET in .env "
-            "(forwarded to the container in docker-compose.yml). If this deploy "
-            "predates the Chainlit excision, copy the value from the retired "
-            "CHAINLIT_AUTH_SECRET -- it is no longer accepted as a fallback. "
-            "Refusing to start with an empty signing key."
+            "jwt_secret is not configured: set BACKEND_JWT_SECRET in .env to a generated "
+            "value, not the .env.example placeholder (forwarded to the container in "
+            "docker-compose.yml). If this deploy predates the Chainlit excision, copy "
+            "the value from the retired CHAINLIT_AUTH_SECRET -- it is no longer accepted "
+            "as a fallback. Refusing to start with an empty or placeholder signing key."
         )
     # Schema migrations are NOT run here. `alembic upgrade head` is a deploy step,
     # executed once by docker-entrypoint.sh before uvicorn starts -- running it in

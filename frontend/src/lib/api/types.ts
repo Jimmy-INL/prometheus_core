@@ -244,9 +244,12 @@ export interface OidcProviderUpdate {
   is_enabled?: boolean;
 }
 
-/** Rebind ordering: the server applies a rebind (`POST /sessions`, `/resume`) only
+/** Body of `POST /api/sessions` (`CreateSessionRequest` in `contract.py`).
+ *
+ * Rebind ordering: the server applies a rebind (`POST /sessions`, `/resume`) only
  * if its `bind_seq` is greater than the last one it applied, so a slow, superseded
- * request cannot rebind the session after a newer one. */
+ * request cannot rebind the session after a newer one. A superseded create still
+ * answers 200 with a fresh `conversation_id` that is not bound; discard it. */
 export interface CreateSessionRequest {
   profile?: string;
   bind_seq?: number;

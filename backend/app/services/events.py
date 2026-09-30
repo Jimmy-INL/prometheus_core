@@ -31,7 +31,7 @@ from pydantic import TypeAdapter
 from app import task_events
 from app.a2a_client import response_from_payload
 from app.contract import ServerEvent, TaskDoneEvent, TaskProgressEvent
-from app.redis_client import RedisClient
+from app.redis_client import RedisClient, close_pubsub
 from app.services.chat import map_response
 from app.sessions import SessionStore
 
@@ -59,15 +59,6 @@ StreamItem = Optional[ServerEvent]
 def _channel(sid: str) -> str:
     """Valkey pub/sub channel carrying one session's SSE events."""
     return f"sse:{sid}"
-
-
-async def _close_pubsub(pubsub: Any, sid: str) -> None:
-    """Best-effort teardown of a relay's subscription."""
-    for close in (lambda: pubsub.unsubscribe(_channel(sid)), pubsub.aclose):
-        try:
-            await close()
-        except Exception:  # noqa: BLE001 - cleanup only
-            pass
 
 
 @dataclass
@@ -184,7 +175,7 @@ class EventBus:
                 try:
                     await pubsub.subscribe(_channel(sid))
                 except Exception:
-                    await _close_pubsub(pubsub, sid)
+                    await close_pubsub(pubsub, _channel(sid))
                     raise
                 relay = _Relay(pubsub=pubsub, task=None)
                 relay.task = asyncio.create_task(self._drain(sid, relay))
@@ -211,7 +202,7 @@ class EventBus:
                 await relay.task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 - cleanup only
                 pass
-        await _close_pubsub(relay.pubsub, sid)
+        await close_pubsub(relay.pubsub, _channel(sid))
 
     async def _drain(self, sid: str, relay: _Relay) -> None:
         """Relay this sid's Valkey channel into every local queue until cancelled.
@@ -242,7 +233,7 @@ class EventBus:
                 del self._relays[sid]
                 for queue in self._subscribers.pop(sid, set()):
                     _put_dropping_oldest(queue, None, sid)
-            await _close_pubsub(relay.pubsub, sid)
+            await close_pubsub(relay.pubsub, _channel(sid))
 
     def deliver_local(self, sid: str, event: ServerEvent) -> None:
         """Hand ``event`` to this worker's queues for ``sid`` only — no Valkey round trip.

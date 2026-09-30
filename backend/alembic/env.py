@@ -64,8 +64,7 @@ def run_migrations_offline() -> None:
 
 #: Advisory-lock id serialising `alembic upgrade` against admin-db. Any fixed 64-bit
 #: integer works -- Postgres advisory locks are a bare namespace with no registry -- so
-#: it only has to be one no other component of this deployment reuses. Digits spell
-#: "prometheus admin-db migrations".
+#: it only has to be one no other component of this deployment reuses.
 _MIGRATION_LOCK_ID = 8317202504
 
 

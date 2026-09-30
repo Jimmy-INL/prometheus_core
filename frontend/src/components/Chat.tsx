@@ -236,6 +236,12 @@ export function Chat({ scrollContainerRef }: ChatProps) {
   // screen flashed for the whole round trip.
   const resuming = resumingConversationId !== null;
 
+  // Disabling the textarea for a resume drops its focus (a reload mounts it
+  // enabled, so `autoFocus` fires first); give it back once the transcript lands.
+  useEffect(() => {
+    if (!resuming) textareaRef.current?.focus();
+  }, [resuming]);
+
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -488,8 +494,7 @@ export function Chat({ scrollContainerRef }: ChatProps) {
         {resuming ? (
           <div
             className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4"
-            aria-live="polite"
-            aria-label="Loading conversation"
+            role="status"
           >
             <span className="loading loading-spinner w-16 h-16 text-primary" />
             <p className="text-lg text-base-content/70">Loading conversation&hellip;</p>
@@ -578,7 +583,9 @@ export function Chat({ scrollContainerRef }: ChatProps) {
               <button
                 className="btn btn-ghost btn-circle btn-sm absolute bottom-2.5 left-2.5"
                 onClick={handlePickFiles}
-                disabled={awaiting}
+                // An upload is staged under the session's current conversation, which
+                // is still the previous one until the resume returns.
+                disabled={awaiting || resuming}
                 aria-label="Attach files"
               >
                 <Paperclip size={16} />

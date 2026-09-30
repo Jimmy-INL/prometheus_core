@@ -15,6 +15,7 @@ fixture to reach the objects that were installed.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncIterator, Iterator
 
 import pytest
@@ -103,7 +104,7 @@ def no_real_oidc_provider_registration(monkeypatch):
     """app.main.lifespan() queries admin-db for every configured OidcProvider
     row at startup (app.security.register_existing_oidc_providers) so they're
     resolvable via get_provider() immediately. No live admin-db in tests --
-    stub it to a no-op like the migrations fixture above. Tests exercising the
+    stub it to a no-op like ``no_real_signing_key_db_lookup`` above. Tests exercising the
     OIDC flow register a GenericOidcProvider directly via
     ``app.security.register_provider`` and don't need this step at all.
 
@@ -155,6 +156,38 @@ def fake_redis(valkey_server: Any) -> Iterator[Any]:
     # Not closed: the fake holds no socket, and aclose() is a coroutine this sync
     # fixture has no loop to run.
     yield FakeRedis(server=valkey_server, decode_responses=True)
+
+
+@pytest.fixture
+def interleaving_redis(valkey_server: Any) -> Any:
+    """A client over :func:`valkey_server` that yields to the event loop before each command.
+
+    A plain ``FakeRedis`` answers a command without suspending, so coroutines under
+    ``asyncio.gather`` run one after another and a check-then-write race never fires.
+    This client suspends before each send, so every await on Redis is a point where
+    another coroutine can run -- as it is against a real server. A pipeline or
+    ``MULTI``/``EXEC`` is still one send, so it stays atomic. The connect handshake
+    does not yield: a caller that opens a new pool connection would otherwise fall
+    several commands behind one that reuses a connection, and the calls would not overlap.
+    """
+    from fakeredis.aioredis import FakeAsyncRedisConnection, FakeRedis
+
+    class _YieldingConnection(FakeAsyncRedisConnection):
+        _handshaking = False
+
+        async def connect_check_health(self, *args: Any, **kwargs: Any) -> None:
+            self._handshaking = True
+            try:
+                await super().connect_check_health(*args, **kwargs)
+            finally:
+                self._handshaking = False
+
+        async def send_packed_command(self, *args: Any, **kwargs: Any) -> None:
+            if not self._handshaking:
+                await asyncio.sleep(0)
+            await super().send_packed_command(*args, **kwargs)
+
+    return FakeRedis(server=valkey_server, decode_responses=True, connection_class=_YieldingConnection)
 
 
 @pytest.fixture

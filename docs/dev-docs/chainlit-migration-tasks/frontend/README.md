@@ -7,15 +7,14 @@ The **follow-up** anticipated by [`tasks/README.md`](../README.md): migrate the 
 
 > **Note (branch `old-frontend-removal`):** the destructive part happened **out of order** — the
 > old Chainlit `frontend/` app and the `chainlit-frontend` service are already **removed**, and
-> `frontend-react/` was renamed to `frontend/`. What remains is the *code-level* Chainlit/recoil
-> cleanup inside the React app (Step 09 below). The runtime already talks to `/api` over SSE; the
-> Chainlit client just hasn't been fully excised yet.
+> `frontend-react/` was renamed to `frontend/`. The *code-level* Chainlit/recoil cleanup inside
+> the React app (Step 09 below) is now done too, so the Chainlit client is fully excised.
 
-## Progress (2026-08-19)
+## Progress (2026-09-22)
 
 **Steps 00–09 all done.** The app authenticates, bootstraps, streams SSE, chats against
 `/api`, uploads files, routes artifacts to viewers, and lists/resumes conversation history —
-with **no Chainlit anything in the tree**: not in the data path, not in `package.json`, not in
+with **no Chainlit code or dependency left**: not in the data path, not in `package.json`, not in
 the Vite proxy. Gates: `tsc --noEmit` + `eslint` + `vite build` clean. **Not yet validated live**
 (`make up` needs Docker/VPN) — verified by typecheck + eslint + build + the Python suites only.
 
@@ -34,12 +33,12 @@ the Vite proxy. Gates: `tsc --noEmit` + `eslint` + `vite build` clean. **Not yet
 
 **Done — 05 (artifact adapter):**
 
-- `src/lib/chainlit/artifactAdapter.ts` — `artifactToElement(ArtifactMeta) → AnyElement`
+- `src/lib/elements/artifactAdapter.ts` — `artifactToElement(ArtifactMeta) → AnyElement`
   keyed on `render_hint`; `Chat.tsx` feeds `artifactsToElements(item.artifacts)` to
   `ElementList` (replaced the placeholder `ArtifactLinks`). Every element is stamped with
   `props.artifact_id` so `dedupeElements` keys on the unique id (custom viewers otherwise
   collapse by component name).
-- `src/lib/chainlit/elements.ts` — **`AnyElement` decoupled from Chainlit's `IElement`**
+- `src/lib/elements/elements.ts` — **`AnyElement` decoupled from Chainlit's `IElement`**
   (standalone interface; type-only import dropped early); added `report`/`reference`
   `ElementKind`s + classifier cases + registry entries; added `image/gif`+`image/webp` to
   the image set (note A-8).
@@ -109,7 +108,7 @@ transport + state layer and the auth calls must be rewritten.
 Chainlit **type-only** and stay behind a thin adapter:
 
 - `components/ElementRenderer.tsx` (`classifyElement` + `VIEWER_REGISTRY` + `dedupeElements`)
-- `lib/chainlit/elements.ts` (classifier/registry), `artifactPresentation.ts`,
+- `lib/elements/elements.ts` (classifier/registry), `artifactPresentation.ts`,
   `elementDeduplication.ts` — logic unchanged, only the input type is retargeted
 - Viewers with **no runtime** Chainlit dep: `JSONViewer`, `FollowUpSuggestionsElement`,
   `PlanViewerElement`, `ThermalAnalysisElement`, `MermaidElement`, `MeshViewerElement`,
@@ -209,10 +208,10 @@ atoms + socket:
   Build `AnyElement`-shaped props from `ArtifactMeta` (name, description, `content`/`url` via
   the artifacts content route) so viewers stay untouched. `dedupeElements` +
   `artifactFilePresentation` keep working on the adapted shape.
-- **Step 09 is the only remaining destructive code change.** Everything before it is additive
-  and testable against a running backend (host `:8600`). *(The Chainlit **service** and old app
-  are already gone — Step 09 now only removes the leftover Chainlit **client code** from the React
-  app.)*
+- **Step 09 was the only destructive code change, and it is done.** Everything before it is
+  additive and testable against a running backend (host `:8600`). *(The Chainlit **service** and
+  old app were removed first; Step 09 then removed the leftover Chainlit **client code** from the
+  React app.)*
 
 ## Open decisions (resolve before Step 00)
 

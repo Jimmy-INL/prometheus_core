@@ -48,7 +48,10 @@ Optional body: `{ "profile": "Beginner Chat", "bind_seq": 1759060000123 }`.
 `bind_seq` orders session rebinds (this and `/resume`) by when the user clicked
 rather than by when the request finished: the server applies a rebind only if its
 `bind_seq` is greater than the last one applied to the session. The frontend sends
-a strictly increasing, `Date.now()`-based value. Omitted → always applied.
+a strictly increasing, `Date.now()`-based value. Omitted → always applied. A
+superseded create still returns `200` with a fresh `conversation_id`, but the
+session stays where the newer rebind put it, so that id is not bound. A client that
+has sent a newer rebind must discard the response.
 
 ```json
 {
@@ -307,6 +310,13 @@ data: {"type":"task_done","task_id":"bg-43","state":"failed","message":"Backgrou
 ```
 : ping
 ```
+
+**Failure and close.** The server subscribes to Valkey before it commits the response:
+
+- If that subscribe fails, the route answers `503` with no stream. `EventSource` treats a
+  non-2xx answer as final: `readyState` becomes `CLOSED` and the browser does not retry.
+- If the Valkey relay for the session dies after the `200`, the server ends the stream
+  cleanly. `EventSource` then reconnects by itself, and the new request subscribes again.
 
 ---
 

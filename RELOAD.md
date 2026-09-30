@@ -1,7 +1,7 @@
 # Why the platform reloads itself, and what it takes to fix
 
 **Status:** **All four tiers are implemented** (2026-09-22), along with a separately reported
-artifact-restore bug (§3 cause 8) — see the per-item notes in §4. Tiers 1–3 are verified.
+artifact-restore bug (§3 cause 8) — see the per-item notes in §4. Tier 1 is verified; the Tier 2–3 browser checks in §6 are still unrun.
 Tier 4 passes every offline gate (373 backend tests, ruff, mypy, 90 infra static tests,
 `docker compose config`); its container-level checks are listed in §6 and still want a pass.
 **Scope:** the dev-profile React frontend (`frontend/`, Vite on :5150) and the FastAPI
@@ -22,9 +22,9 @@ problem, not the first. The reload itself is untouched and slightly worse; what 
 |---|-------|--------------------------|
 | 1 | Watcher starvation → HMR socket drop → `location.reload()` | **Fixed.** On arrival at `chat_history` this was unchanged and measurably worse: `vite.config.ts` byte-identical (0-line diff), watched files 9,430 → **9,554**, idle CPU **63.61%** on a container 3 minutes old. Now 378 watched entries and **~0.6%** idle. See §4 Tier 1.1–1.2. |
 | 2 | No `optimizeDeps` + nested `import("mermaid")` | **Fixed (it was latent, never firing).** The cache was warm throughout (286 deps, `mermaid` present), so this was never today's symptom; `optimizeDeps.include: ["mermaid"]` stops it recurring after the next cache rebuild. See §4 Tier 1.3. |
-| 3 | Explicit HMR full reloads from `src/lib/api/types.ts` | **Fixed — but by a different mechanism than this document first claimed.** The original "HMR propagates up through non-component importers and dead-ends" explanation was wrong: nothing imports `types.ts` at runtime at all. See §3.3 for the real chain (Tailwind's `addWatchFile` → an untransformed module-graph node → `propagateUpdate` bails). The originally prescribed `import.meta.hot.accept()` was implemented, measured, and **found to be a no-op**; the working fix is a Tailwind `@source not` exclusion. |
+| 3 | Explicit HMR full reloads from `src/lib/api/types.ts` | **Fixed — but by a different mechanism than this document first claimed.** The original "HMR propagates up through non-component importers and dead-ends" explanation was wrong: nothing imports `types.ts` at runtime at all. See §3 cause 3 for the real chain (Tailwind's `addWatchFile` → an untransformed module-graph node → `propagateUpdate` bails). The originally prescribed `import.meta.hot.accept()` was implemented, measured, and **found to be a no-op**; the working fix is a Tailwind `@source not` exclusion. |
 | 4 | Fast Refresh state wipe with no reload | **Fixed.** `bootstrappedRef` deleted; the run-once guard moved into `chat.ts` as a module-level flag beside the `state` it guards, so a Fast Refresh resets both together. See §4 Tier 3.3. |
-| 5 | Zero persistence + unconditional new `conversation_id` | **Fixed.** `chat_history` supplied the server side (see §3.5); the remaining gap — `bootstrap()` minting a fresh conversation on every load — is closed by remembering the open conversation per tab and resuming it. A reload now lands you back in the same conversation with no click at all. See §4 Tier 2.1. |
+| 5 | Zero persistence + unconditional new `conversation_id` | **Fixed.** `chat_history` supplied the server side (see §3 cause 5); the remaining gap — `bootstrap()` minting a fresh conversation on every load — is closed by remembering the open conversation per tab and resuming it. A reload now lands you back in the same conversation with no click at all. See §4 Tier 2.1. |
 | 6 | Backend restart wipes the in-process session store | **Fixed at root (Tier 4, stream A).** Session state, logout markers and the SSE event bus all moved into Valkey, so a restart no longer forks the conversation, kills the task subscriber or wipes the artifact catalog. Tiers 2–3 had already made it visible and recoverable; this removes the loss. |
 | 7 | Silent SSE death on 401; `Secure` cookie over `http://` | **Fixed, all three.** `chat.ts` passes an `onError` that tells a retrying stream from a dead one and probes `/api/auth/me` before prompting re-login; `App.tsx` retries a network/5xx probe failure instead of reading it as a logout; `settings.cookie_secure` is derived from the browser-facing scheme. See §4 Tier 3. |
 | 8 | Resuming a conversation restores the text but **not** the artifact viewers | **New finding (reported 2026-09-22), now fixed.** Three separate defects in the `chat_history` resume path, all in §3 cause 8: persisted mesh artifacts carry `json_body: null` so they degraded to download cards; the client-agent writes each answer twice so every restored transcript showed doubled assistant turns; and the whole artifact catalog was attached to the last assistant turn. Fixed and verified live. |
@@ -32,7 +32,7 @@ problem, not the first. The reload itself is untouched and slightly worse; what 
 **Two recommendations were wrong and are corrected below.** First, the prescribed
 `import.meta.hot.accept()` on `types.ts` (originally Tier 1.4) does nothing — it was
 implemented and measured, and the full reload still fired. The module is never loaded by the
-browser, so Vite never transforms it and never sees the accept. §3.3 has the real mechanism and
+browser, so Vite never transforms it and never sees the accept. §3 cause 3 has the real mechanism and
 Tier 1.4 has the fix that does work. Second, tightening
 `react-refresh/only-export-components` (originally Tier 1.5) would **not** have caught this
 bug. `npm run lint` passes clean on this branch with `--max-warnings 0`, because that rule only
@@ -455,7 +455,7 @@ server cold start 267 ms with no re-optimize pass, a 15-minute soak with **zero*
 no-op, and editing `src/components/Chat.tsx` still producing a normal `hmr update`.
 
 **1.1 Delete the leftover Python tree from `frontend/`.** ✅ **Done.** This is 96% of the watcher load and is
-dead weight from the removed Chainlit frontend. Still present on this branch.
+dead weight from the removed Chainlit frontend.
 
 ```bash
 cd frontend
@@ -595,7 +595,7 @@ the final assistant item. Covered by `transcriptArtifacts.test.ts` (5 tests, `no
 
 ### Tier 2 — Make a reload non-destructive. **Implemented 2026-09-22.**
 
-Everything this tier needs on the server side shipped with `chat_history` (§3.5): ownership-gated
+Everything this tier needs on the server side shipped with `chat_history` (§3 cause 5): ownership-gated
 `GET /api/conversations/{id}`, `POST /api/conversations/{id}/resume`, and the transcript replay
 helper `itemsFromTranscript()` on the client. The remaining work is to use them **automatically**
 instead of only on a sidebar click.
@@ -633,12 +633,11 @@ Wiring in `frontend/src/lib/store/chat.ts`:
 
 **2.2 What a reload does to a backgrounded task.** ✅ **Decided: accept it, and say so in the
 code.** A task backgrounded before the reload keeps running, but its `task_progress` /
-`task_done` will not stream into the resumed session — the ids to subscribe to lived only in the
-old in-process `SessionState` and are persisted nowhere. The user is not left guessing: the
-history sidebar marks the conversation pending while `agent:status:{id}` is live, and the result
-is in the transcript once it lands. The comment recording this is on
-`resume_conversation`'s `session.awaited_task_ids = set()`
-(`backend/app/routers/conversations.py`).
+`task_done` will not stream into the resumed session. Since Tier 4 the server keeps the
+awaited-task set in Valkey, and `SessionStore.reset` keeps it on a same-conversation resume, but the
+reloaded page starts with an empty module-level `awaitedTaskIds` (`frontend/src/lib/store/chat.ts`)
+and drops those events. The user is not left guessing: the history sidebar marks the conversation
+pending while `agent:status:{id}` is live, and the result is in the transcript once it lands.
 
 Restoring live streaming was the alternative, and it is deliberately **not** done here: doing it
 properly means `SessionState` in Valkey (Tier 4), not a second ad-hoc persistence path for one
@@ -658,8 +657,7 @@ reports a transport blip it will retry and a fatal non-2xx it will *never* retry
 `error` event, and without telling them apart a permanently dead stream is indistinguishable
 from an idle one.
 
-`chat.ts` now tracks `connection: "idle" | "open" | "reconnecting" | "lost"` in `ChatState` and,
-on `closed`, probes `/api/auth/me` before concluding anything. A 401/403 sets `authLost`; any
+On `closed`, `chat.ts` probes `/api/auth/me` before concluding anything. A 401/403 sets `authLost`; any
 other failure appends a recoverable "the server is unreachable" error. Probing first matters —
 bouncing someone to Login over a restarting backend is the same bug as 3.2, just from the other
 direction.
@@ -710,8 +708,8 @@ everything. Three independent streams, implemented C → B → A.
 **4.1 Chainlit excision (stream C).** ✅ **Done.** `frontend/vite.config.ts` lost `CHAINLIT_TARGET`
 and all twelve proxy entries (only `/api` survives); `@chainlit/react-client` and `recoil` are out
 of `package.json`, with the `ChainlitAPI` / `RecoilRoot` / `ChainlitContext` wrappers gone from
-`main.tsx`; `lib/chainlit/` is now `lib/elements/`; `DynamicFormElement.tsx` was rewritten without
-recoil (it was unreachable in both directions — no producer emits a `DynamicForm` element, and
+`main.tsx`; `lib/chainlit/` is now `lib/elements/`; `DynamicFormElement.tsx` was deleted and
+`dynamic_form` unregistered (it was unreachable in both directions — no producer emits a `DynamicForm` element, and
 `askUserState` could never populate because `useChatSession` is never called).
 
 `CHAINLIT_AUTH_SECRET` is gone too, which was the point of doing this stream properly rather than
@@ -789,7 +787,7 @@ write-back shim:
   blip must not 401 every logged-in user; a logged-out session staying usable until its token
   expires is exactly what the old dict did after any restart). `has_listeners` fails **open**.
   `publish` swallows and warns. Session *reads* do **not** degrade — sessions are core state, so an
-  unreachable Valkey is a 503, not a confusingly empty session.
+  unreachable Valkey fails the request (a 503 on `GET /api/events`, a 500 elsewhere), not a confusingly empty session.
 
 **Alembic had to move for `--workers` to be correct at all** (`docker-entrypoint.sh` is new).
 `alembic upgrade head` ran inside the FastAPI lifespan, guarded only by a comment that a

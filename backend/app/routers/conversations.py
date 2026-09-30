@@ -24,6 +24,7 @@ guess at another user's conversation id can't even confirm the id exists.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from typing import Any, Optional, cast
 
@@ -215,7 +216,8 @@ async def resume_conversation(
     cache miss, and the frontend lets the user click elsewhere meanwhile; the rebind
     itself is ordered by ``bind_seq`` (see ``SessionStore.reset``), so a newer click
     always wins regardless of which request finishes last. The enriched catalog is then
-    written back only if the session is still on this conversation."""
+    written back only if the session is still on this conversation, with the catalog
+    the rebind seeded."""
     parts = await _fetch_parts_or_404(conversation_id, claims.sub)
     raw_artifacts = cast(list[dict[str, Any]], parts["raw_artifacts"])
 
@@ -241,11 +243,14 @@ async def resume_conversation(
         bind_seq=body.bind_seq if body else None,
     )
 
+    # _build_detail enriches raw_artifacts in place, so keep the list reset just seeded.
+    seeded = copy.deepcopy(raw_artifacts)
     detail = await _build_detail(conversation_id, parts)
-    # Enrichment only adds ``json_body`` to the same dicts, so the ids the content proxy
-    # resolves are already correct; this just keeps the stored catalog in step. Guarded:
-    # skipped if the user has moved on in the meantime.
-    await store.set_artifacts(claims.sid, raw_artifacts, conversation_id=conversation_id)
+    # Required, not cosmetic: artifact_identity hashes json_body for an artifact with no
+    # explicit id, so the ids in this response only resolve against the enriched catalog.
+    # Guarded: skipped if the user has moved on in the meantime, or if a turn or task of
+    # this conversation wrote a newer catalog while the meshes were converting.
+    await store.replace_seeded_artifacts(claims.sid, raw_artifacts, conversation_id=conversation_id, seeded=seeded)
 
     detail.auto_approve_steps = settings.auto_approve_steps
     return detail

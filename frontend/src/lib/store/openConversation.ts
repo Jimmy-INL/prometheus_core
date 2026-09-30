@@ -1,9 +1,11 @@
 /** Remembers which conversation this tab has open, so a page reload lands back
  * in it instead of an empty new chat.
  *
- * `sessionStorage`, not `localStorage`, on purpose: it is **per-tab**, so a
- * second tab still gets its own conversation instead of the two fighting over
- * one id. It also dies with the tab, which is the right lifetime — the id is a
+ * `sessionStorage`, not `localStorage`, on purpose: it is **per-tab**, so each
+ * tab reloads into the conversation it last showed. The tabs still share one
+ * server session (keyed by the cookie's `sid`), so the next turn from any tab
+ * goes to the conversation that was bound last. The id also dies with the tab,
+ * which is the right lifetime — the id is a
  * convenience for surviving a reload, not a durable user preference (the
  * durable copy is Valkey's, reachable through the history sidebar).
  *

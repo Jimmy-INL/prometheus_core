@@ -87,20 +87,20 @@ Consequences worth knowing:
 ### Session state lives in Valkey
 
 Everything a logged-in browser session carries is in Valkey, keyed by the JWT `sid`, not in
-process memory (`app/sessions.py`). Two keys per session, both carrying the cookie's TTL and
-refreshed on every write, so there is no reaper:
+process memory (`app/sessions.py`). The two `session:` keys carry the cookie's TTL and are
+refreshed on every write, so there is no reaper; the logout marker carries its own TTL:
 
 | Key | Type | Holds |
 |-----|------|-------|
-| `session:{sid}` | HASH | `conversation_id`, `profile`, `consecutive_needs_info`, `artifacts` (JSON array) |
+| `session:{sid}` | HASH | `conversation_id`, `profile`, `consecutive_needs_info`, `artifacts` (JSON array), `bind_seq` |
 | `session:{sid}:awaited` | SET | root task ids this session is waiting on |
 | `revoked:sid:{sid}` | STRING | logout marker, TTL = the token's remaining lifetime |
 
 Two consequences for anyone touching this code:
 
-- **`SessionState` is a frozen snapshot, not the live object.** Mutating it does nothing, so it
+- **`SessionState` is a frozen snapshot, not the live object.** A mutation would not reach Valkey, so it
   raises instead. Every former in-place mutation is an explicit `SessionStore` coroutine
-  (`set_conversation`, `set_artifacts`, `bump_needs_info`, `await_task`, `claim_task`, …).
+  (`ensure_conversation`, `reset`, `set_artifacts`, `bump_needs_info`, `await_task`, `claim_task`, …).
 - **`claim_task` is the exactly-once primitive** for announcing a finished background task. It is
   a single `SREM` whose return count *is* the claim, so the subscriber loop, the fast-finish
   guard and the router's reconcile can all race it and exactly one wins — atomically, and across
@@ -108,7 +108,7 @@ Two consequences for anyone touching this code:
 
 A restart therefore no longer forks the conversation, drops the SSE task subscriber or wipes the
 artifact catalog. Valkey being unreachable does mean chat cannot work: sessions are core state,
-so that surfaces as a 503 rather than a confusingly empty session.
+so a request fails (a 503 on `GET /api/events`, a 500 elsewhere) rather than seeing a confusingly empty session.
 
 ### Multi-worker
 

@@ -46,14 +46,21 @@ def test_create_session_rejects_unknown_profile(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-async def test_ensure_conversation_mints_one_id_under_concurrency(session_store):
-    """Parallel first uploads/turns on a fresh sid must agree on one conversation id."""
+async def test_ensure_conversation_mints_one_id_under_concurrency(interleaving_redis):
+    """Parallel first uploads/turns on a fresh sid must agree on one conversation id.
+
+    ``interleaving_redis`` suspends before each command, so a read-then-write
+    (``HGET``, then ``HSET`` when empty) would let every caller mint its own id.
+    """
     import asyncio
 
-    ids = await asyncio.gather(*(session_store.ensure_conversation("sid-new", f"cand-{i}") for i in range(8)))
+    from app.sessions import SessionStore
+
+    store = SessionStore(interleaving_redis)
+    ids = await asyncio.gather(*(store.ensure_conversation("sid-new", f"cand-{i}") for i in range(8)))
 
     assert len(set(ids)) == 1
-    assert (await session_store.get_or_create("sid-new")).conversation_id == ids[0]
+    assert (await store.get_or_create("sid-new")).conversation_id == ids[0]
 
 
 async def test_ensure_conversation_keeps_an_existing_binding(session_store):

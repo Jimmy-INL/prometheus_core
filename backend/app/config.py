@@ -138,13 +138,13 @@ class Settings(BaseSettings):
     # gives N × mesh_workers VTK children at peak, so size the container memory limit
     # against that product, not against this number alone.
     mesh_workers: int = _positive_int(
-        os.environ.get("PROMETHEUS_MESH_WORKERS", data.get("mesh-workers", 2)),
+        (os.environ.get("PROMETHEUS_MESH_WORKERS") or "").strip() or data.get("mesh-workers", 2),
         "mesh-workers",
     )
     # Wall-clock budget for one Exodus/STL → VTP conversion. On expiry the pool is
     # killed and the artifact degrades to a file download; see _discard_executor.
     mesh_timeout_seconds: int = _positive_int(
-        os.environ.get("PROMETHEUS_MESH_TIMEOUT_SECONDS", data.get("mesh-timeout-seconds", 120)),
+        (os.environ.get("PROMETHEUS_MESH_TIMEOUT_SECONDS") or "").strip() or data.get("mesh-timeout-seconds", 120),
         "mesh-timeout-seconds",
     )
 

@@ -59,6 +59,18 @@ def test_lifespan_raises_without_jwt_secret(monkeypatch):
         asyncio.run(run())
 
 
+def test_lifespan_raises_with_the_env_example_placeholder(monkeypatch):
+    # A deploy that copies .env.example unchanged must not boot with a public HS256 key.
+    monkeypatch.setattr(settings, "jwt_secret", "change-me-to-a-random-string", raising=False)
+
+    async def run() -> None:
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="jwt_secret is not configured"):
+        asyncio.run(run())
+
+
 def test_lifespan_starts_with_jwt_secret(monkeypatch):
     monkeypatch.setattr(settings, "jwt_secret", "x" * 32, raising=False)
 
@@ -107,13 +119,14 @@ def test_entrypoint_migrates_before_exec_and_fails_closed():
     from pathlib import Path
 
     script = Path(__file__).resolve().parent.parent / "docker-entrypoint.sh"
-    body = script.read_text()
+    # The header comments quote each of these strings, so match executable lines only.
+    lines = [ln.strip() for ln in script.read_text().splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
 
-    assert "set -e" in body, "a failed migration has to stop the boot"
-    migrate = body.index("alembic upgrade head")
-    serve = body.index("exec uvicorn")
-    assert migrate < serve, "migrations must complete before the server starts"
-    assert "BACKEND_WORKERS" in body
+    assert "set -e" in lines, "a failed migration has to stop the boot"
+    migrate = lines.index("alembic upgrade head")  # exact line, so `|| true` fails too
+    serve = next(i for i, ln in enumerate(lines) if ln.startswith("exec uvicorn"))
+    assert lines.index("set -e") < migrate < serve, "migrations must complete before the server starts"
+    assert any("BACKEND_WORKERS" in ln for ln in lines)
 
 
 def test_alembic_takes_an_advisory_lock_before_running_migrations():
@@ -171,9 +184,10 @@ def test_cookie_secure_explicit_override_wins(monkeypatch, raw, expected):
     from app.config import _cookie_secure
 
     # Needed when TLS is terminated by an ingress that doesn't set BACKEND_PUBLIC_URL.
-    monkeypatch.setenv("BACKEND_PUBLIC_URL", "http://localhost:5150")
+    # The URL and `debug` both give the opposite answer, so only the override can pass.
+    monkeypatch.setenv("BACKEND_PUBLIC_URL", "http://localhost:5150" if expected else "https://prometheus.example.gov")
     monkeypatch.setenv("BACKEND_COOKIE_SECURE", raw)
-    assert _cookie_secure({"debug": True}) is expected
+    assert _cookie_secure({"debug": expected}) is expected
 
 
 def test_cookie_secure_ignores_an_empty_override(monkeypatch):

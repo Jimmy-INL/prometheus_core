@@ -12,10 +12,9 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
-from pydantic import BaseModel
 
 from app.config import settings
-from app.contract import SessionResponse
+from app.contract import CreateSessionRequest, SessionResponse
 from app.routers.config import BEGINNER_PROFILE, CHAT_PROFILES
 from app.security import TokenClaims, current_claims
 from app.sessions import get_store
@@ -26,19 +25,10 @@ router = APIRouter(prefix="/api", tags=["sessions"])
 _VALID_PROFILES = {p.name for p in CHAT_PROFILES}
 
 
-class CreateSessionBody(BaseModel):
-    """Optional body for ``POST /api/sessions`` — the selected chat profile, plus the
-    ``bind_seq`` that orders this rebind against in-flight resumes (see
-    ``ConversationResumeRequest``)."""
-
-    profile: Optional[str] = None
-    bind_seq: Optional[int] = None
-
-
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(
     request: Request,
-    body: Optional[CreateSessionBody] = Body(default=None),
+    body: Optional[CreateSessionRequest] = Body(default=None),
     claims: TokenClaims = Depends(current_claims),
 ) -> SessionResponse:
     """Create a new conversation under the caller's session identity.
