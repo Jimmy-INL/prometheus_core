@@ -176,11 +176,14 @@ service._execute()
   _spawn_background_finisher(chat_task, …)             # strong-ref in service._BACKGROUND_TASKS
   store_status_update("running in the background", final=True)
   return ConversationResponse(status="backgrounded", message_metadata={"task_id": root_id})
+                                                        # no new_artifacts: the finisher owns them
 
 # … meanwhile, in the detached background task …
 run_background_finish(chat_task, …):
   response = await chat_task                            # finishes whenever the work is done
-  payload  = build_payload(response)                    # full ConversationResponse incl. new_artifacts
+  payload  = build_payload(response)                    # full ConversationResponse incl. new_artifacts:
+                                                        # only what this turn produced (its _Turn is
+                                                        # passed in), never a newer turn's artifacts
   task_graph.store_result(conversation_id, root_id, payload)   # → tasks:result:…
   finish_turn_for(conversation_id, root_id, response.status)   # root → terminal → reconcile publishes node-completed
 ```

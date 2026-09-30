@@ -22,10 +22,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional
 
 import task_graph
 
@@ -58,14 +59,37 @@ def _clean_title(title: str, limit: int = 80) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def new_turn_id() -> str:
+    """A turn id, distinct from Task Graph ``t_`` ids."""
+    return f"turn_{uuid.uuid4().hex[:12]}"
+
+
 class _Turn:
-    __slots__ = ("conversation_id", "title", "root_id", "created", "background_requested")
+    __slots__ = (
+        "conversation_id",
+        "title",
+        "root_id",
+        "created",
+        "background_requested",
+        "turn_id",
+        "started_at",
+        "produced_artifact_ids",
+    )
 
     def __init__(self, conversation_id: str, title: str) -> None:
         self.conversation_id = conversation_id
         self.title = title
         self.root_id = _new_id()
         self.created = False
+        # ``root_id`` is the Task Graph handle and a resume rewrites it (see
+        # ``track_skill``); ``turn_id`` names this turn and never changes. It tags
+        # the turn's history entries and the artifacts it produced.
+        self.turn_id = new_turn_id()
+        self.started_at = time.time()
+        # Artifact ids this turn's own dispatches and uploads produced, in arrival
+        # order. The turn's ``new_artifacts`` come from this list, never from a
+        # catalog diff, so a turn running in parallel cannot leak into it.
+        self.produced_artifact_ids: List[str] = []
         # Set when a dispatched agent declares itself long-running (proactive
         # detach). The turn object is created once per turn and shared by
         # reference into the detached chat() task's copied context, so a deep
@@ -108,6 +132,32 @@ def _ensure_root() -> Optional[str]:
 def current_root_id() -> Optional[str]:
     turn = _turn.get()
     return turn.root_id if turn is not None else None
+
+
+def current_turn() -> Optional[_Turn]:
+    """The current turn, or ``None`` outside one (slash commands)."""
+    return _turn.get()
+
+
+def current_turn_id() -> Optional[str]:
+    turn = _turn.get()
+    return turn.turn_id if turn is not None else None
+
+
+def record_produced_artifacts(artifact_ids: Iterable[Optional[str]]) -> None:
+    """Add artifact ids to the current turn's produced list. No-op outside a turn.
+
+    Called with the ids of every A2A artifact a dispatch returns (see
+    ``tool_discovery.call_a2a_agent``) and with the ids of the turn's uploads. The
+    turn object is shared by reference into the detached ``chat()`` task and its
+    ``asyncio.gather`` children, so their ids land on the same list.
+    """
+    turn = _turn.get()
+    if turn is None:
+        return
+    for artifact_id in artifact_ids:
+        if artifact_id and str(artifact_id) not in turn.produced_artifact_ids:
+            turn.produced_artifact_ids.append(str(artifact_id))
 
 
 def background_event() -> Optional[asyncio.Event]:

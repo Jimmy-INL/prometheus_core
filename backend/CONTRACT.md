@@ -372,8 +372,9 @@ to `role: user|assistant` turns) plus its artifact catalog, shaped the same way
 a live turn's `artifacts` are. The catalog leaves out user uploads
 (`metadata.source: user-upload`); the session catalog keeps them.
 
-Each message carries `artifact_ids`: the artifacts that turn produced, which the
-client-agent records on the reply. Render a restored turn from its own
+Messages are in time order, so the reply of a turn that ran in the background can
+follow later turns. Each message carries `artifact_ids`: the artifacts that turn
+produced, which the client-agent records on the reply. Render a restored turn from its own
 `artifact_ids`, resolved in `artifacts`. Never render the whole catalog. An id
 that `artifacts` does not hold (a user upload) is not rendered. User turns, and
 turns stored before the ids were recorded, have an empty list.
@@ -388,7 +389,7 @@ turns stored before the ids were recorded, have an empty list.
     { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…", "artifact_ids": [] },
     { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…", "artifact_ids": ["a-41c9…"] }
   ],
-  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "…": "…" }]
+  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "mime_type": "application/json", "render_hint": "json" }]
 }
 ```
 

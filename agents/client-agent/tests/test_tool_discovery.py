@@ -661,6 +661,7 @@ def test_get_all_tools_dynamic_fetches_full_agent_card(monkeypatch) -> None:
 
 
 def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch) -> None:
+    produced: list = []
     streamed_events = [
         json.dumps(
             {
@@ -773,10 +774,13 @@ def test_call_a2a_agent_streaming_parses_final_status_and_artifacts(monkeypatch)
             question="What is the creep rate of SS316?",
             _prefer_streaming=True,
             _status_callback=_status_callback,
+            _artifact_callback=produced.extend,
         )
     )
 
     assert statuses == ["Searching publications..."]
+    # A streamed artifactUpdate is reported to the turn like a blocking one.
+    assert produced == ["artifact-1"]
     assert request_capture["method"] == "POST"
     assert request_capture["url"] == "http://example.test/a2a/osti-research-agent"
     assert request_capture["json"]["method"] == "SendStreamingMessage"
@@ -976,3 +980,103 @@ def test_apply_stream_event_heartbeat_does_not_fire_background() -> None:
         )
     )
     assert fired == []
+
+
+def _data_artifact(artifact_id: str, name: str, *, kind: str = "") -> dict:
+    part_metadata = {"mime_type": "application/json"}
+    if kind:
+        part_metadata["kind"] = kind
+    return {
+        "artifactId": artifact_id,
+        "name": name,
+        "parts": [{"kind": "data", "data": {"n": 1}, "metadata": part_metadata}],
+        "metadata": {"conversation_id": "conv-1", "producer_agent_id": "artifact-debug-agent"},
+    }
+
+
+def _completed_result(*artifacts: dict) -> dict:
+    return {
+        "result": {
+            "status": {
+                "state": "TASK_STATE_COMPLETED",
+                "message": {"parts": [{"text": json.dumps({"status": "completed"})}]},
+            },
+            "artifacts": list(artifacts),
+        }
+    }
+
+
+def _call(monkeypatch, payload: dict, **kwargs):
+    monkeypatch.setattr(
+        tool_discovery.httpx,
+        "AsyncClient",
+        lambda *args, **kw: _FakeAsyncClient(payload=payload, **kw),
+    )
+    return asyncio.run(
+        tool_discovery.call_a2a_agent(
+            "http://example.test/a2a/artifact-debug-agent",
+            "create_json_artifact",
+            conversation_id="conv-1",
+            **kwargs,
+        )
+    )
+
+
+def test_artifact_callback_reports_the_ids_a_dispatch_returned(monkeypatch) -> None:
+    # The turn attributes artifacts from these ids; a conversation_message is not one.
+    produced: list = []
+    payload = _completed_result(
+        _data_artifact("a-1", "plot.json"),
+        _data_artifact("msg-1", "conversation_message", kind="conversation_message"),
+        _data_artifact("a-2", "table.json"),
+    )
+
+    result = _call(monkeypatch, payload, _artifact_callback=produced.extend)
+
+    assert produced == ["a-1", "a-2"]
+    assert result["status"] == "completed"
+
+
+def test_artifact_callback_fires_before_an_input_required_return(monkeypatch) -> None:
+    # INPUT_REQUIRED drops the artifacts from the result, but the agent registered
+    # them, so the turn still owns them.
+    produced: list = []
+    payload = {
+        "result": {
+            "task": {
+                "id": "task-1",
+                "contextId": "conv-1",
+                "status": {
+                    "state": "TASK_STATE_INPUT_REQUIRED",
+                    "message": {"parts": [{"data": _input_required_payload("width")}]},
+                },
+                "artifacts": [_data_artifact("draft-1", "draft.json")],
+            }
+        }
+    }
+
+    result = _call(monkeypatch, payload, _artifact_callback=produced.extend)
+
+    assert result["status"] == "input_required"
+    assert produced == ["draft-1"]
+
+
+def test_artifact_callback_fires_even_when_the_reply_is_malformed(monkeypatch) -> None:
+    produced: list = []
+    payload = _completed_result(_data_artifact("a-1", "plot.json"))
+    payload["result"]["status"]["state"] = "completed"  # not a TASK_STATE_* value
+
+    with pytest.raises(Exception):
+        _call(monkeypatch, payload, _artifact_callback=produced.extend)
+
+    assert produced == ["a-1"]
+
+
+def test_a_failing_artifact_callback_does_not_fail_the_dispatch(monkeypatch) -> None:
+    def _broken(ids):
+        raise RuntimeError("boom")
+
+    result = _call(monkeypatch, _completed_result(_data_artifact("a-1", "plot.json")), _artifact_callback=_broken)
+
+    assert result["status"] == "completed"
+    assert [a["artifact_id"] for a in result["artifacts"]] == ["a-1"]

@@ -201,8 +201,9 @@ async def delete_conversation(
     conversation_id: str,
     claims: TokenClaims = Depends(current_claims),
 ) -> None:
-    """Soft delete: hides the conversation from ``recent``. The underlying
-    ``conversation:{id}`` document (and its artifacts) are left intact."""
+    """Soft delete: hides the conversation from ``recent``, and ``GET /{id}`` and
+    ``/resume`` answer 404 for it. The underlying ``conversation:{id}`` document (and
+    its artifacts) are left intact."""
     ok = await asyncio.to_thread(_soft_delete, conversation_id, claims.sub)
     if not ok:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Conversation not found")

@@ -30,6 +30,9 @@ StatusCallback = Callable[[str], Awaitable[None]]
 # Invoked once when a downstream agent emits a status tagged metadata.background
 # (declare_long_running). Receives the event metadata dict.
 BackgroundCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+# Invoked with the artifact ids a dispatch returned, so the orchestrator can
+# attribute them to the turn that made the call.
+ArtifactCallback = Callable[[List[str]], None]
 _A2A_V1_TASK_STATES = {
     "TASK_STATE_UNSPECIFIED",
     "TASK_STATE_SUBMITTED",
@@ -404,6 +407,7 @@ async def call_a2a_agent(
     _prefer_streaming: bool = False,
     _status_callback: Optional[StatusCallback] = None,
     _background_callback: Optional[BackgroundCallback] = None,
+    _artifact_callback: Optional[ArtifactCallback] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
@@ -423,6 +427,9 @@ async def call_a2a_agent(
         skill_id: The skill ID to invoke
         _prefer_streaming: Whether to use streaming mode
         _status_callback: Callback for intermediate status updates
+        _artifact_callback: Called with the ids of the A2A artifacts the agent
+            returned, before the reply is validated, so an INPUT_REQUIRED or
+            malformed reply still reports what the agent registered
         **kwargs: Parameters for the skill
 
     Returns:
@@ -549,6 +556,11 @@ async def call_a2a_agent(
             a2a_result.get("artifacts", []),
             conversation_id=str(kwargs.get("conversation_id") or ""),
         )
+        if callable(_artifact_callback) and normalized_artifacts:
+            try:
+                _artifact_callback([str(a["artifact_id"]) for a in normalized_artifacts if a.get("artifact_id")])
+            except Exception as exc:  # attribution must never fail a dispatch
+                logger.warning("[A2A] Artifact callback failed for %s: %s", skill_id, exc)
 
         status = a2a_result.get("status", {})
         state = status.get("state") if isinstance(status, dict) else None

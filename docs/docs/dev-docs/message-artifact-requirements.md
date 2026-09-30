@@ -142,7 +142,7 @@ Additional fields by status:
 Cross-cutting optional fields:
 
 - `artifacts`: full conversation artifact catalog after this turn
-- `new_artifacts`: artifact delta created by this turn
+- `new_artifacts`: the artifacts this turn produced
 - `message_metadata`: UI-facing metadata such as follow-up suggestions
 
 Requirements:
@@ -150,7 +150,7 @@ Requirements:
 - the response envelope must appear only in `result.status.message.parts[*].text`
 - `result.artifacts` must carry artifacts, not duplicate conversation responses
 - `artifacts` must be the post-turn full catalog
-- `new_artifacts` must be the delta for the current turn
+- `new_artifacts` must hold only what the current turn produced: the ids its own dispatches returned and its uploads, not a diff of the catalog. A turn running in the background registers into the same catalog, so a diff would pick up its artifacts.
 
 ## 4.3 Status updates
 

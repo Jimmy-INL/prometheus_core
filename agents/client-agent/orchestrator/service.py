@@ -323,9 +323,18 @@ class OrchestratorAgent(PrometheusAgent):
         self,
         conversation_id: str,
         response: ConversationResponse,
-        artifact_ids_before_turn: set[str],
+        turn: Optional[task_tracking._Turn],
     ) -> Dict[str, Any]:
-        """Serialize chat response and attach the current conversation artifact catalog."""
+        """Serialize chat response and attach the conversation artifact catalog.
+
+        ``artifacts`` is the whole catalog (state for later turns). ``new_artifacts``
+        is what *turn* produced: the ids its dispatches and uploads reported (see
+        ``task_tracking.record_produced_artifacts``), resolved in the catalog. It is
+        not a catalog diff, because a turn running in parallel (a backgrounded one,
+        or the one the user sent meanwhile) registers into the same catalog. With no
+        turn (a slash command, the "running in the background" notice) it is empty;
+        a detached turn's finisher owns everything it produced.
+        """
         response_payload = response.model_dump(exclude_none=True)
         try:
             ingested = self._ingest_response_artifacts(conversation_id, response_payload)
@@ -334,28 +343,42 @@ class OrchestratorAgent(PrometheusAgent):
         except Exception as exc:
             print(f"[WARN] Failed to ingest artifacts from response payload: {exc}")
         try:
-            all_refs = [
+            response_payload["artifacts"] = [
                 ref.to_dict() for ref in self.list_artifact_references(conversation_id, limit=50)
-            ]
-            response_payload["artifacts"] = all_refs
-            # new_artifacts = refs not present at the start of this turn
-            response_payload["new_artifacts"] = [
-                r for r in all_refs
-                if (r.get("artifact_id") or r.get("id")) not in artifact_ids_before_turn
             ]
         except Exception as exc:
             print(f"[WARN] Failed to attach artifacts to response: {exc}")
-        try:
-            # Remember which artifacts this turn produced, on the turn itself, so a
-            # restored conversation renders them under this reply and nowhere else.
-            record_turn_artifacts(
-                conversation_id,
-                (r.get("artifact_id") or r.get("id") for r in response_payload.get("new_artifacts") or []),
-                (response.report, response.message, response.response_text),
-            )
-        except Exception as exc:
-            print(f"[WARN] Failed to record this turn's artifacts: {exc}")
+        produced = self._produced_artifacts(conversation_id, turn)
+        response_payload["new_artifacts"] = [ref.to_dict() for ref in produced]
+        if turn is not None and produced:
+            try:
+                # Record them on the turn's reply, so a restored conversation renders
+                # them under this reply and nowhere else.
+                record_turn_artifacts(conversation_id, turn.turn_id, [ref.artifact_id for ref in produced])
+            except Exception as exc:
+                print(f"[WARN] Failed to record this turn's artifacts: {exc}")
         return response_payload
+
+    def _produced_artifacts(
+        self,
+        conversation_id: str,
+        turn: Optional[task_tracking._Turn],
+    ) -> List[ArtifactReference]:
+        """The catalog entries *turn* produced, newest first. An id the catalog does
+        not hold (never registered, or already expired) is skipped."""
+        if turn is None:
+            return []
+        refs: List[ArtifactReference] = []
+        for artifact_id in turn.produced_artifact_ids:
+            try:
+                ref = self.resolve_artifact_reference(conversation_id, artifact_id)
+            except Exception as exc:
+                print(f"[WARN] Failed to resolve produced artifact {artifact_id}: {exc}")
+                continue
+            if ref is not None:
+                refs.append(ref)
+        refs.sort(key=lambda ref: ref.created_at or "", reverse=True)
+        return refs
 
     async def _handle_uploaded_files(
         self,
@@ -506,16 +529,6 @@ class OrchestratorAgent(PrometheusAgent):
             except Exception as exc:
                 print(f"[WARN] Ownership check failed (non-fatal): {exc}")
 
-        # Snapshot artifact IDs before this turn so we can diff new_artifacts at the end.
-        # Must happen before _handle_uploaded_files so uploaded files appear in new_artifacts.
-        try:
-            artifact_ids_before_turn = {
-                ref.artifact_id
-                for ref in self.list_artifact_references(conversation_id, limit=50)
-            }
-        except Exception:
-            artifact_ids_before_turn = set()
-
         await self.send_status_update(
             context=context,
             event_queue=event_queue,
@@ -539,11 +552,10 @@ class OrchestratorAgent(PrometheusAgent):
         if _is_supported_slash_command_query(request_payload.get("query")):
             chat_request = ConversationRequest.model_validate(request_payload)
             response = await chat(chat_request)
-            return self._response_payload_with_artifacts(
-                conversation_id,
-                response,
-                artifact_ids_before_turn,
-            )
+            return self._response_payload_with_artifacts(conversation_id, response, None)
+
+        # The turn begins before uploads, so their ids count as produced by it.
+        task_tracking.begin_turn(conversation_id, request_payload.get("query") or "request")
 
         if runtime._tools_cache is None:
             await self.send_status_update(
@@ -566,6 +578,7 @@ class OrchestratorAgent(PrometheusAgent):
         )
         if newly_uploaded_ids:
             request_payload["newly_uploaded_artifact_ids"] = newly_uploaded_ids
+            task_tracking.record_produced_artifacts(newly_uploaded_ids)
 
         chat_request = ConversationRequest.model_validate(request_payload)
 
@@ -584,7 +597,7 @@ class OrchestratorAgent(PrometheusAgent):
                     finally:
                         await runtime.wait_for_status_stream(status_tasks)
 
-        task_tracking.begin_turn(conversation_id, chat_request.query or "request")
+        turn = task_tracking.current_turn()
         deadline = task_tracking.background_deadline_seconds()
         background_evt = task_tracking.background_event()
 
@@ -609,17 +622,13 @@ class OrchestratorAgent(PrometheusAgent):
         if chat_task in done:
             response = chat_task.result()
             task_tracking.finish_turn(getattr(response, "status", "") or "")
-            return self._response_payload_with_artifacts(
-                conversation_id, response, artifact_ids_before_turn
-            )
+            return self._response_payload_with_artifacts(conversation_id, response, turn)
 
         # Detach (soft deadline exceeded, or an agent declared itself long-running):
         # the orchestration keeps running in a background task; the user regains
         # control and is notified on completion.
         root_id = task_tracking.ensure_background_root()
-        self._spawn_background_finisher(
-            chat_task, conversation_id, root_id, artifact_ids_before_turn
-        )
+        self._spawn_background_finisher(chat_task, conversation_id, root_id, turn)
         runtime.store_status_update(
             conversation_id, "Task is now running in the background.", final=True
         )
@@ -632,24 +641,25 @@ class OrchestratorAgent(PrometheusAgent):
             ),
             message_metadata={"task_id": root_id} if root_id else None,
         )
-        return self._response_payload_with_artifacts(
-            conversation_id, backgrounded, artifact_ids_before_turn
-        )
+        # No turn: the notice writes no history entry, and the finisher's response
+        # is the one that created this turn's outputs, so it carries all of them.
+        return self._response_payload_with_artifacts(conversation_id, backgrounded, None)
 
     def _spawn_background_finisher(
         self,
         chat_task: "asyncio.Task",
         conversation_id: str,
         root_id: Optional[str],
-        artifact_ids_before_turn: set,
+        turn: Optional[task_tracking._Turn],
     ) -> None:
         """Detach a slow orchestration task: await it in the background, finalize
-        its Task Graph root, and persist the result for delivery on completion."""
+        its Task Graph root, and persist the result for delivery on completion.
+
+        *turn* is passed explicitly: the finisher reports what that turn produced,
+        whatever turn the user starts meanwhile."""
 
         def _build_payload(response: ConversationResponse) -> Dict[str, Any]:
-            return self._response_payload_with_artifacts(
-                conversation_id, response, artifact_ids_before_turn
-            )
+            return self._response_payload_with_artifacts(conversation_id, response, turn)
 
         def _emit(message: str) -> None:
             runtime.store_status_update(conversation_id, message, final=True)

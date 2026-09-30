@@ -1,11 +1,11 @@
 """Redis-backed client for browsing and lightly editing persisted conversation state.
 
 The client-agent owns the ``conversation:{id}`` document (the full orchestration
-state, rewritten wholesale on every turn — see ``agents/client-agent/conversation_store.py``).
+state, merged by turn on every store — see ``agents/client-agent/conversation_store.py``).
 This client never writes to it. User-driven edits (rename, soft delete) instead
 live on a small, backend-owned ``conv:meta:{id}`` hash: writing there can never be
-clobbered by the client-agent's next-turn overwrite, and the client-agent never
-needs to know these edits exist.
+clobbered by a client-agent store, and the client-agent never needs to know these
+edits exist.
 """
 
 from __future__ import annotations
@@ -89,16 +89,18 @@ class ConversationStateClient:
         The stored history is an orchestration/evidence log — routing decisions,
         tool results, and follow-up bookkeeping are mixed in with real chat
         turns. This keeps only entries with a ``role`` of ``user``/``assistant``
-        and non-empty ``content``, in original order, as ``{role, content,
-        timestamp}``.
+        and non-empty ``content``, in stored order (time order: the client-agent
+        interleaves concurrent turns by timestamp), as ``{role, content, timestamp,
+        artifact_ids}``.
 
-        Consecutive entries with the same role *and* identical content collapse to
-        one. The client-agent logs each answer twice — once as
+        Consecutive entries of the same turn with the same role *and* identical
+        content collapse to one. The client-agent logs each answer twice — once as
         ``type: agent_response_<tool>`` and again as ``type: final_report``, with the
         same ``content`` — so without this every restored assistant turn would appear
-        duplicated. Only *adjacent* repeats are dropped, so a genuinely repeated
-        answer later in the conversation still shows up. A collapsed entry keeps the
-        ``artifact_ids`` of both copies.
+        duplicated. Only *adjacent* repeats of *one* turn (same ``turn_id``, or both
+        untagged) are dropped: a genuinely repeated answer later in the conversation,
+        or two turns that both answer "Done.", still show up. A collapsed entry keeps
+        the ``artifact_ids`` of both copies.
 
         ``artifact_ids`` are the artifacts that turn produced, stamped on the reply by
         the client-agent (``conversation_store.stamp_turn_artifacts``). A restored turn
@@ -109,6 +111,7 @@ class ConversationStateClient:
             return []
         history = conv.get("conversation_history", []) or []
         messages: List[Dict[str, Any]] = []
+        turns: List[str] = []  # turn_id per message, for the collapse rule only
         for entry in history:
             if not isinstance(entry, dict):
                 continue
@@ -118,10 +121,17 @@ class ConversationStateClient:
                 continue
             text = str(content)
             ids = [str(i) for i in entry.get("artifact_ids") or [] if i]
-            if messages and messages[-1]["role"] == role and messages[-1]["content"] == text:
+            turn = str(entry.get("turn_id") or "legacy")
+            if (
+                messages
+                and turns[-1] == turn
+                and messages[-1]["role"] == role
+                and messages[-1]["content"] == text
+            ):
                 kept = messages[-1]["artifact_ids"]
                 kept.extend(i for i in ids if i not in kept)
                 continue
+            turns.append(turn)
             messages.append({
                 "role": role,
                 "content": text,
@@ -203,8 +213,9 @@ class ConversationStateClient:
             return False
 
     def set_hidden(self, conv_id: str, hidden: bool) -> bool:
-        """Soft delete/undelete: hidden conversations drop out of ``recent`` but
-        the underlying ``conversation:{id}`` document is left untouched."""
+        """Soft delete/undelete: hidden conversations drop out of ``recent``, and
+        detail and resume answer 404 for them (see ``routers/conversations.py``). The
+        underlying ``conversation:{id}`` document is left untouched."""
         client = self.client
         if client is None:
             return False

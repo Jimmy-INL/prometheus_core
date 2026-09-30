@@ -580,24 +580,42 @@ proxy resolves restored artifacts too. Enrichment is content-hash cached, so a c
 meshes were already converted live costs a cache hit, not a re-conversion.
 
 **A.2 Collapse the duplicated assistant turn.** `backend/app/conversation_state.py`'s
-`get_transcript` drops an entry whose `role` *and* `content` both match the entry immediately
-before it. The client-agent logs each answer twice — once as `agent_response_<tool>`, once as
-`final_report` — which is harmless live (the frontend only renders the final one) but shows up as
-a visible duplicate in a replayed transcript. Adjacent-only, so a user legitimately repeating
-themselves later in the conversation is untouched.
+`get_transcript` drops an entry whose `role`, `content` *and* `turn_id` all match the entry
+immediately before it. The client-agent logs each answer twice — once as `agent_response_<tool>`,
+once as `final_report` — which is harmless live (the frontend only renders the final one) but shows
+up as a visible duplicate in a replayed transcript. Adjacent-only, so a user legitimately repeating
+themselves later in the conversation is untouched. Same-turn only, so two turns that both answer
+"Done." stay two replies. Untagged (legacy) entries count as one turn.
 
 **A.3 Attach each artifact to the turn that produced it.** The Prometheus Artifact Contract
 ("Frontend viewer ownership") forbids rendering from the conversation catalog: a generated output
 renders only under the response whose `new_artifacts` created it. So the turn is recorded, not
-guessed. After each turn the client-agent's `_response_payload_with_artifacts` stamps the ids of
-that turn's `new_artifacts` on its reply in `conversation_history`
-(`conversation_store.stamp_turn_artifacts`, matched by reply text). `get_transcript` returns them
-as `messages[].artifact_ids`, and `frontend/src/lib/store/transcriptArtifacts.ts`'s
-`artifactsPerTurn(messages, artifacts)` gives each restored turn exactly those catalog entries.
-The detail catalog leaves out user uploads, so an upload id resolves to nothing. A turn stored
-before the stamp existed restores with no artifacts. Covered by `transcriptArtifacts.test.ts`
-(5 tests, `node --test`), `agents/client-agent/tests/test_turn_artifacts.py` and
-`backend/tests/test_conversations.py`.
+guessed from timestamps or from a catalog diff. Both fail when turns overlap: a turn detached to
+the background keeps registering artifacts while the user's next turn registers its own, into the
+same catalog.
+
+- **What a turn produced.** Each turn has a stable `turn_id` and a `produced_artifact_ids` list
+  (`orchestrator/task_tracking.py`). Every dispatch reports the ids of the A2A artifacts it
+  returned (`tool_discovery.call_a2a_agent`'s `_artifact_callback`, wired in `skills.invoke_skill`),
+  and the turn's uploads are added. `_response_payload_with_artifacts` builds `new_artifacts` from
+  that list, so the live reply and the background reply each show only their own artifacts.
+- **Which reply.** `conversation_store.store_conversation` tags each history entry with the
+  `turn_id` of the turn that wrote it. `record_turn_artifacts` stamps the turn's ids on that turn's
+  last reply, found by `turn_id`, not by text.
+- **No lost turns.** A store merges by turn in one `WATCH`/`MULTI` transaction
+  (`merge_conversation`): the turn's own entries come from its copy, every other turn's from the
+  stored document, interleaved by timestamp. Before this, a background turn that finished late
+  overwrote the document with the copy it read at its start and erased the newer turn's entries.
+  The other top-level fields (plan, pending form, routing) belong to the newest-started turn.
+- **Restore.** `get_transcript` returns the ids as `messages[].artifact_ids`, and
+  `frontend/src/lib/store/transcriptArtifacts.ts`'s `artifactsPerTurn(messages, artifacts)` gives
+  each restored turn exactly those catalog entries. The detail catalog leaves out user uploads, so
+  an upload id resolves to nothing. A turn stored before this change restores with no artifacts.
+
+Covered by `transcriptArtifacts.test.ts` (5 tests, `node --test`),
+`agents/client-agent/tests/{test_turn_artifacts,test_service_turn_artifacts,test_task_tracking,test_tool_discovery}.py`
+and `backend/tests/test_conversations.py`, and verified live with a backgrounded turn overlapping
+a foreground one (see item 14).
 
 ### Tier 2 — Make a reload non-destructive. **Implemented 2026-09-22.**
 
@@ -928,11 +946,13 @@ is the pass to make.
     `manifest.json`, `meta.json`, `surface_t0000.vtp`.
 13. Transcript roles alternate `user`/`assistant` with no doubled answers (the client-agent writes
     each answer twice, as `agent_response_<tool>` then `final_report`; `get_transcript` collapses
-    adjacent duplicates). Verified: `user/assistant × 3` for the conversation above.
+    adjacent duplicates of one turn). Verified: `user/assistant × 3` for the conversation above.
 14. Artifacts attach to the assistant turn that produced them, from the `artifact_ids` the
     client-agent records on each reply, not all to the last one — covered by
-    `frontend/src/lib/store/transcriptArtifacts.test.ts` (5 tests) and exercised end to end by
-    the resume above.
+    `frontend/src/lib/store/transcriptArtifacts.test.ts` (5 tests). The resume above predates the
+    ids, so it restores no artifacts. Verified live on conversations created after it: two SVG
+    turns reload with one SVG each, and an upload plus an SVG in one turn reloads with the SVG
+    only.
 
 **Already covered on `chat_history` — re-run rather than re-write:**
 

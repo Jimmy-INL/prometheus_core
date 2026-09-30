@@ -439,6 +439,39 @@ def test_get_transcript_collapses_the_duplicate_final_report_turn(monkeypatch):
     ]
 
 
+def test_get_transcript_collapses_duplicates_only_within_one_turn(monkeypatch):
+    """Two turns can reply with the same text ("SVG artifact created successfully.").
+    The client-agent tags each entry with its turn, and only one turn's own
+    ``agent_response_*`` / ``final_report`` pair collapses; each turn keeps its ids.
+    Untagged (legacy) entries keep the old adjacent-duplicate rule."""
+    import json as _json
+
+    from app.conversation_state import ConversationStateClient
+
+    conv = {
+        "conversation_history": [
+            {"role": "assistant", "content": "done", "turn_id": "T1", "type": "agent_response_x"},
+            {"role": "assistant", "content": "done", "turn_id": "T1", "type": "final_report", "artifact_ids": ["a1"]},
+            {"role": "assistant", "content": "done", "turn_id": "T2", "type": "final_report", "artifact_ids": ["a2"]},
+            {"role": "assistant", "content": "old", "type": "agent_response_x"},
+            {"role": "assistant", "content": "old", "turn_id": "legacy", "type": "final_report"},
+        ],
+    }
+
+    class _FakeRedis:
+        def get(self, key):
+            return _json.dumps(conv)
+
+    c = ConversationStateClient("redis://x")
+    monkeypatch.setattr(type(c), "client", property(lambda self: _FakeRedis()))
+
+    assert [(m["content"], m["artifact_ids"]) for m in c.get_transcript("c1")] == [
+        ("done", ["a1"]),
+        ("done", ["a2"]),
+        ("old", []),
+    ]
+
+
 def test_get_transcript_carries_each_turns_artifact_ids(monkeypatch):
     """The client-agent stamps a turn's artifact ids on its reply. They come through
     per message, and a collapsed duplicate keeps the ids of both copies (the stamp
