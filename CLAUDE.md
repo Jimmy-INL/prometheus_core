@@ -8,9 +8,9 @@ Multi-agent platform for nuclear engineering analysis. A React frontend (`fronte
 
 The `frontend/` is a Node/TypeScript app (React + Vite). The `backend/` runs Python 3.12+ (also 3.13); the client-agent and infra tests use 3.13.
 
-## Frontend: FastAPI backend + React app (branch `old-frontend-removal`)
+## Frontend: FastAPI backend + React app
 
-The legacy Chainlit frontend has been removed. The frontend is now a standalone FastAPI **`backend/`** service (its own JSON/SSE contract, zero Chainlit deps) plus an in-house React app in **`frontend/`** (React + Vite) whose element/viewer plumbing lives in `frontend/src/lib/elements/`. The Step 09 cutover is complete: no Chainlit proxy routes, no `VITE_CHAINLIT_SERVER`, and no `@chainlit/react-client` / `recoil` dependency remain.
+The frontend is a standalone FastAPI **`backend/`** service (its own JSON/SSE contract) plus an in-house React app in **`frontend/`** (React + Vite) whose element/viewer plumbing lives in `frontend/src/lib/elements/`.
 
 - Design: `plan.md` (reconstructed brief + ordered work plan) and `backend/CONTRACT.md` (frozen wire contract).
 - Ordered steps + live status: `tasks/README.md` — steps 00–09 done (skeleton, contract, auth/sessions, lifted utils, chat turn, SSE events, uploads, artifacts content proxy + `render_hint`, conversation history, docker/compose/nginx); only 10 (end-to-end verify) still pending. The `backend` service is in the root `docker-compose.yml` (host port 8600 → container 8000), built from the prometheus_api base image; it comes up with `make up` regardless of `PROFILE`.
@@ -104,7 +104,7 @@ Artifacts are conversation-scoped, tracked in Valkey (with in-memory fallback) b
 
 ### Visualization plugins
 
-The React viewers live in `frontend/src/viewers/` (`mesh/MeshViewer` for Exodus/STL, `ifc/`, Mermaid, PDF, image, JSON, PlanViewer, FollowUpSuggestions, Report, ThermalAnalysis, Reference); some older custom-element JSX also lives in `frontend/public/elements/`. They are driven by the backend's artifact/event payloads (via `render_hint`), not by Chainlit `cl.CustomElement`. Exodus/STL meshes are rendered client-side by the VTK.js-based engine in `frontend/src/viewers/mesh/MeshViewerEngine.ts` (supporting bundles in `frontend/public/js/`). See `docs/docs/dev-docs/visualization-plugins.md`.
+The React viewers live in `frontend/src/viewers/` (`mesh/MeshViewer` for Exodus/STL, `ifc/`, Mermaid, PDF, image, JSON, PlanViewer, FollowUpSuggestions, Report, ThermalAnalysis, Reference); some older custom-element JSX also lives in `frontend/public/elements/`. They are driven by the backend's artifact/event payloads (via `render_hint`). Exodus/STL meshes are rendered client-side by the VTK.js-based engine in `frontend/src/viewers/mesh/MeshViewerEngine.ts` (supporting bundles in `frontend/public/js/`). See `docs/docs/dev-docs/visualization-plugins.md`.
 
 ### Shared protocol types
 
