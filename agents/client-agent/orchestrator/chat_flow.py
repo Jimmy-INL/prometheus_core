@@ -117,7 +117,17 @@ def _respond(conv_id: str, state: AgentState, outcome: agent_loop.LoopOutcome) -
     state["final_report"] = None
 
     if outcome.kind == "needs_info":
-        _append_history(state, {"role": "assistant", "type": "followup_questions", "questions": outcome.questions})
+        # Content = the live reply text, so artifacts made before the pause are stamped
+        # on this entry (conversation_store.stamp_turn_artifacts) and restore with it.
+        _append_history(
+            state,
+            {
+                "role": "assistant",
+                "type": "followup_questions",
+                "content": outcome.message,
+                "questions": outcome.questions,
+            },
+        )
         store_conversation(conv_id, state)
         runtime.store_status_update(conv_id, "Awaiting additional information.", final=True)
         return ConversationResponse(
@@ -128,7 +138,7 @@ def _respond(conv_id: str, state: AgentState, outcome: agent_loop.LoopOutcome) -
         )
 
     if outcome.kind == "needs_approval":
-        _append_history(state, {"role": "assistant", "type": "plan", "plan": outcome.plan})
+        _append_history(state, {"role": "assistant", "type": "plan", "content": outcome.message, "plan": outcome.plan})
         store_conversation(conv_id, state)
         runtime.store_status_update(conv_id, "Plan ready for approval.", final=True)
         return ConversationResponse(
@@ -235,7 +245,8 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
             return ConversationResponse(conversation_id=conv_id, status="answer", message=message)
 
         if request.plan_approved and has_pending:
-            _append_history(state, {"role": "user", "type": "plan_approved", "content": "Approved."})
+            # Evidence only: no content, so a restored conversation shows no extra bubble.
+            _append_history(state, {"role": "user", "type": "plan_approved"})
             agent_loop.approve_pending(state)
         elif workflow_id:
             spec = agent_loop.workflow_tool_for(catalog, workflow_id)

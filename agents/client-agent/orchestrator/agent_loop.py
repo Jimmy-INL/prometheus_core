@@ -419,6 +419,42 @@ def inject_tool_call(
     ]
 
 
+# Bookkeeping keys conversation_store adds to persisted messages; never sent to the LLM.
+_MESSAGE_TAGS = ("turn_id", "turn_started_at")
+_SUPERSEDED_RESULT = json.dumps(
+    {"status": "not_executed", "message": "This call was superseded by a later turn and never ran."}
+)
+
+
+def llm_view(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The persisted transcript as a provider-valid message list.
+
+    Turns of one conversation can run concurrently and are stored as per-turn blocks
+    (``conversation_store``), so a tool result can be separated from its call (a
+    turn resumed after another turn ran in between) or never arrive (a superseded
+    pending call). Each call gets exactly one result, directly after its assistant
+    message: the stored one when it exists, otherwise a "not executed" result.
+    Results with no call are dropped. Bookkeeping tags are stripped.
+    """
+    results: Dict[str, Dict[str, Any]] = {}
+    for message in messages:
+        if message.get("role") == "tool":
+            results.setdefault(str(message.get("tool_call_id") or ""), message)
+    view: List[Dict[str, Any]] = []
+    for message in messages:
+        if message.get("role") == "tool":
+            continue
+        view.append({key: value for key, value in message.items() if key not in _MESSAGE_TAGS})
+        for tool_call in message.get("tool_calls") or []:
+            call_id = str(tool_call.get("id") or "")
+            stored = results.pop(call_id, None)
+            if stored is None:
+                view.append(tool_result_message(call_id, _SUPERSEDED_RESULT))
+            else:
+                view.append({key: value for key, value in stored.items() if key not in _MESSAGE_TAGS})
+    return view
+
+
 def _system_prompt(state: Dict[str, Any]) -> str:
     artifacts = summarize_artifacts_for_context((state.get("context") or {}).get("artifacts"))
     lines = [
@@ -1078,7 +1114,7 @@ async def advance(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> Loo
             )
         turns += 1
         runtime.store_status_update(conversation_id, "Deciding the next step.")
-        messages = [{"role": "system", "content": _system_prompt(state)}, *state["llm_messages"]]
+        messages = [{"role": "system", "content": _system_prompt(state)}, *llm_view(state["llm_messages"])]
         async with runtime.create_llm() as llm:
             response = await llm.medium(
                 messages,

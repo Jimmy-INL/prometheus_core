@@ -308,6 +308,4 @@ class ConversationStateClient:
             return "plan_ready"
         if conversation.get("missing_info"):
             return "needs_info"
-        if conversation.get("routing_decision"):
-            return "executing"
         return "unknown"

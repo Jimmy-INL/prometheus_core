@@ -16,6 +16,11 @@ started. So a store never overwrites the document wholesale:
   exception: a late turn that leaves pending input (a form, a plan to approve) takes
   the fields from a newer turn that left none, because its form is what the user
   answers next.
+- The LLM transcript (``llm_messages``) is merged by turn too: each message carries
+  the ``turn_id`` and ``turn_started_at`` of the turn that wrote it, and each turn's
+  messages stay one contiguous block, ordered by when the turn started. (The loop
+  re-pairs tool calls with their results before every LLM call; see
+  ``orchestrator.agent_loop.llm_view``.)
 - ``record_turn_artifacts`` stamps the ids of the artifacts a turn produced on that
   turn's reply, which a restored conversation renders from.
 
@@ -54,10 +59,37 @@ def _history(state: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [e for e in history if isinstance(e, dict)] if isinstance(history, list) else []
 
 
+def _messages(state: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    messages = (state or {}).get("llm_messages")
+    return [m for m in messages if isinstance(m, dict)] if isinstance(messages, list) else []
+
+
 def _tag_legacy(state: Dict[str, Any]) -> Dict[str, Any]:
     for entry in _history(state):
         entry.setdefault("turn_id", LEGACY_TURN_ID)
+    for message in _messages(state):
+        message.setdefault("turn_id", LEGACY_TURN_ID)
+        message.setdefault("turn_started_at", 0.0)
     return state
+
+
+def _merge_messages(
+    stored: List[Dict[str, Any]],
+    local: List[Dict[str, Any]],
+    *,
+    turn_id: str,
+    started_at: float,
+) -> List[Dict[str, Any]]:
+    """Every other turn's messages from *stored*, this turn's from *local*, as one
+    contiguous block placed before the first other turn that started later."""
+    others = [m for m in stored if m.get("turn_id") != turn_id]
+    mine = [m for m in local if m.get("turn_id") == turn_id]
+    position = len(others)
+    for index, message in enumerate(others):
+        if float(message.get("turn_started_at") or 0) > started_at:
+            position = index
+            break
+    return others[:position] + mine + others[position:]
 
 
 def _current_turn() -> tuple[str, float]:
@@ -71,11 +103,9 @@ def _current_turn() -> tuple[str, float]:
 
 
 def _leaves_pending_input(state: Dict[str, Any]) -> bool:
-    """Whether *state* waits on the user: follow-up questions, subagent input, or a
-    plan to approve (the fields ``chat_flow.chat`` resumes from)."""
-    return bool(
-        state.get("missing_info") or state.get("pending_subagent_requests") or state.get("awaiting_approval")
-    )
+    """Whether *state* waits on the user: a form, a specialist's input request, or a
+    plan to approve (unfinished ``pending_calls``, which ``chat_flow.chat`` resumes)."""
+    return bool(state.get("missing_info") or state.get("pending_calls") or state.get("awaiting_approval"))
 
 
 def merge_conversation(
@@ -93,7 +123,9 @@ def merge_conversation(
     background reply lands after the turns that ran meanwhile, as it did live.
 
     Other fields: *local*'s, unless *stored*'s ``state_turn_id`` names a turn that
-    started after this one; then *stored*'s are kept and only the history changes.
+    started after this one; then *stored*'s are kept and only the history and LLM
+    transcript change (``llm_messages`` merges per turn like history; see
+    :func:`_merge_messages`).
     Except when this turn leaves pending input and that newer one left none: the
     user answers this turn's form next, and ``chat()`` reads it from these fields.
     If both left pending input, the newer one wins, and the older form is lost. A
@@ -141,6 +173,9 @@ def merge_conversation(
         if not merged.get("title") and stored.get("title"):
             merged["title"] = stored["title"]
     merged["conversation_history"] = history
+    merged["llm_messages"] = _merge_messages(
+        _messages(stored), _messages(local), turn_id=turn_id, started_at=started_at
+    )
     return merged
 
 
@@ -168,12 +203,16 @@ def _update_conversation(
 def store_conversation(conv_id: str, state: Dict[str, Any]) -> None:
     """Persist *state* as the current turn's view of the conversation.
 
-    Tags the turn's new history entries in place (so later stores of the same turn
-    agree), then merges with what is stored; see :func:`merge_conversation`.
+    Tags the turn's new history entries and LLM messages in place (so later stores of
+    the same turn agree), then merges with what is stored; see
+    :func:`merge_conversation`.
     """
     turn_id, started_at = _current_turn()
     for entry in _history(state):
         entry.setdefault("turn_id", turn_id)
+    for message in _messages(state):
+        message.setdefault("turn_id", turn_id)
+        message.setdefault("turn_started_at", started_at)
     _update_conversation(
         conv_id,
         lambda stored: merge_conversation(stored, state, turn_id=turn_id, started_at=started_at),

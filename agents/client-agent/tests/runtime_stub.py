@@ -2,15 +2,25 @@
 
 Importing this module installs minimal stand-ins for ``langchain_core.tools``
 and ``prometheus_api.agent`` (a2a-sdk / starlette are not needed by the
-orchestrator logic under test) unless the real modules are already loaded.
+orchestrator logic under test) only when the real modules cannot be imported, so
+an environment with the agent runtime (the container) tests against the real one.
 """
 from __future__ import annotations
 
+import importlib
 import sys
 import types
 from types import SimpleNamespace
 
-if "langchain_core.tools" not in sys.modules:
+
+def _importable(name: str) -> bool:
+    try:
+        importlib.import_module(name)
+    except ImportError:
+        return False
+    return True
+
+if not _importable("langchain_core.tools"):
     tools_module = types.ModuleType("langchain_core.tools")
 
     class _StructuredTool:
@@ -21,7 +31,7 @@ if "langchain_core.tools" not in sys.modules:
     tools_module.StructuredTool = _StructuredTool
     sys.modules["langchain_core.tools"] = tools_module
 
-if "prometheus_api.agent" not in sys.modules:
+if not _importable("prometheus_api.agent"):
     prometheus_api_module = sys.modules.get(
         "prometheus_api", types.ModuleType("prometheus_api")
     )

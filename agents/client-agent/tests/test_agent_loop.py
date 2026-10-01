@@ -628,3 +628,52 @@ def test_explicit_workflow_start_collects_inputs_then_runs(harness, monkeypatch)
     assert executed["inputs"]["material_id"] == "SS316"
     assert "analyze_thermal" in second.tool_results
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+# --------------------------------------------------------------------------- #
+# Concurrent turns: transcript repair and restore fidelity
+# --------------------------------------------------------------------------- #
+
+
+def test_llm_view_repairs_a_transcript_interleaved_by_another_turn() -> None:
+    call = tool_call("analyze_thermal", {"material_id": "SS316"}, "c1")
+    other = tool_call("create_svg_artifact", {"word": "x"}, "c9")
+    messages = [
+        {"role": "user", "content": "analyze", "turn_id": "A", "turn_started_at": 1.0},
+        {"role": "assistant", "content": None, "tool_calls": [call], "turn_id": "A", "turn_started_at": 1.0},
+        # Turn B ran in between, and its own pending call was superseded.
+        {"role": "user", "content": "other", "turn_id": "B", "turn_started_at": 2.0},
+        {"role": "assistant", "content": None, "tool_calls": [other], "turn_id": "B", "turn_started_at": 2.0},
+        # A resumed in turn C: its result now sits after B's block.
+        {"role": "tool", "tool_call_id": "c1", "content": "{\"status\": \"succeeded\"}", "turn_id": "C"},
+        {"role": "tool", "tool_call_id": "orphan", "content": "{}", "turn_id": "C"},
+    ]
+
+    view = agent_loop.llm_view(messages)
+
+    assert [(m["role"], m.get("tool_call_id")) for m in view] == [
+        ("user", None),
+        ("assistant", None),
+        ("tool", "c1"),
+        ("user", None),
+        ("assistant", None),
+        ("tool", "c9"),
+    ]
+    assert json.loads(view[5]["content"])["status"] == "not_executed"
+    assert all("turn_id" not in m and "turn_started_at" not in m for m in view)
+    assert_transcript_valid(view)
+
+
+def test_pause_entries_carry_the_reply_text_and_approval_adds_no_bubble(harness) -> None:
+    harness.results.update(review_document=lambda params: {"result": {"answer": "Reviewed."}})
+    harness.script(
+        [reply("Shall I review it?", [tool_call("review_document", {"title": "SAR"}, "c1")]), reply("Done.")]
+    )
+
+    send(query="Review the SAR")
+    plan_entry = harness.store[CONV]["conversation_history"][-1]
+    assert plan_entry["type"] == "plan" and plan_entry["content"] == "Shall I review it?"
+
+    send(plan_approved=True)
+    approval = next(e for e in harness.store[CONV]["conversation_history"] if e.get("type") == "plan_approved")
+    assert "content" not in approval

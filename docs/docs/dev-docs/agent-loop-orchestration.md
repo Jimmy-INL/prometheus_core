@@ -158,6 +158,30 @@ injects a synthetic assistant tool call to that workflow, with the form inputs a
 arguments, so it takes the same validate/pause/execute path without an LLM
 routing decision.
 
+### 3.4a Concurrent turns
+
+A turn detached to the background keeps running while the user sends the next one, and
+`conversation_store` merges stores by turn instead of overwriting (`merge_conversation`).
+The loop fits into that model as follows:
+
+* **`llm_messages` merges per turn like `conversation_history`.** Each message is tagged
+  with its turn's `turn_id` and `turn_started_at` when first stored. A store keeps every
+  other turn's messages from the stored document and takes this turn's from its own copy,
+  as one contiguous block ordered by turn start.
+* **`llm_view` repairs the merged transcript before every LLM call.** A paused batch
+  resumes in a later request, which is a new turn, so another turn's block can land
+  between a call and its result. A superseded pending call may never get a result.
+  `llm_view` puts each call's stored result directly after its assistant message,
+  substitutes a "not executed" result where none exists, drops results with no call, and
+  strips the bookkeeping tags.
+* **Unfinished `pending_calls` count as pending input** in the newest-turn ownership rule
+  (`_leaves_pending_input`), so a late turn's open form or plan is not overwritten by a
+  newer turn that left none.
+* **Restore fidelity:** a pause's `followup_questions` / `plan` history entry carries the
+  reply text as `content`, so artifacts produced before the pause are stamped on it
+  (`stamp_turn_artifacts`) and restore with that reply. The `plan_approved` entry has no
+  content, so a restored chat shows no bubble the live UI never showed.
+
 ### 3.5 What goes back to the model
 
 A tool result is compact JSON:
