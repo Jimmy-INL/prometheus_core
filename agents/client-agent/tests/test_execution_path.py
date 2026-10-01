@@ -973,6 +973,13 @@ def test_workflow_slash_command_forces_explicit_workflow(monkeypatch) -> None:
     assert seen["kwargs"]["selection_source"] == "slash_command"
 
 
+class _NullEventQueue:
+    """``_execute`` sends status updates; the base class enqueues them here."""
+
+    async def enqueue_event(self, event):
+        pass
+
+
 def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> None:
     async def should_not_refresh(*args, **kwargs):
         raise AssertionError("Slash commands should not refresh tool caches before handling.")
@@ -1015,7 +1022,7 @@ def test_execute_slash_command_skips_upload_and_lazy_refresh(monkeypatch) -> Non
                 ],
             },
             SimpleNamespace(context_id="conv-debug"),
-            object(),
+            _NullEventQueue(),
         )
     )
 
@@ -1066,7 +1073,7 @@ def test_execute_detaches_when_agent_declares_long_running(monkeypatch) -> None:
 
     captured: dict = {}
 
-    def fake_spawn(self, chat_task, conversation_id, root_id, before):
+    def fake_spawn(self, chat_task, conversation_id, root_id, turn):
         captured["root_id"] = root_id
         chat_task.cancel()  # don't leave the slow task running past the test
 
@@ -1079,7 +1086,7 @@ def test_execute_detaches_when_agent_declares_long_running(monkeypatch) -> None:
         orchestrator._execute(
             {"query": "run a long simulation", "conversation_id": "conv-bg"},
             SimpleNamespace(context_id="conv-bg"),
-            object(),
+            _NullEventQueue(),
         )
     )
 

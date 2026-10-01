@@ -7,17 +7,16 @@ The **follow-up** anticipated by [`tasks/README.md`](../README.md): migrate the 
 
 > **Note (branch `old-frontend-removal`):** the destructive part happened **out of order** — the
 > old Chainlit `frontend/` app and the `chainlit-frontend` service are already **removed**, and
-> `frontend-react/` was renamed to `frontend/`. What remains is the *code-level* Chainlit/recoil
-> cleanup inside the React app (Step 09 below). The runtime already talks to `/api` over SSE; the
-> Chainlit client just hasn't been fully excised yet.
+> `frontend-react/` was renamed to `frontend/`. The *code-level* Chainlit/recoil cleanup inside
+> the React app (Step 09 below) is now done too, so the Chainlit client is fully excised.
 
-## Progress (2026-08-19)
+## Progress (2026-09-22)
 
-**Steps 00–05 + 07 done; 06 partial; 08 + 09 not started.** The app authenticates, bootstraps,
-streams SSE, chats against `/api`, uploads files, and routes artifacts to viewers — with **no
-Chainlit hooks in the live data path** (App/Chat/Login/ProjectView are cut over). Gates:
-`tsc --noEmit` + `eslint` + `vite build` clean. **Not yet validated live** (`make up` needs
-Docker/VPN) — verified by typecheck + eslint + build only.
+**Steps 00–09 all done.** The app authenticates, bootstraps, streams SSE, chats against
+`/api`, uploads files, routes artifacts to viewers, and lists/resumes conversation history —
+with **no Chainlit code or dependency left**: not in the data path, not in `package.json`, not in
+the Vite proxy. Gates: `tsc --noEmit` + `eslint` + `vite build` clean. **Not yet validated live**
+(`make up` needs Docker/VPN) — verified by typecheck + eslint + build + the Python suites only.
 
 **Done — 00–04 (text-chat vertical slice):**
 
@@ -34,12 +33,12 @@ Docker/VPN) — verified by typecheck + eslint + build only.
 
 **Done — 05 (artifact adapter):**
 
-- `src/lib/chainlit/artifactAdapter.ts` — `artifactToElement(ArtifactMeta) → AnyElement`
+- `src/lib/elements/artifactAdapter.ts` — `artifactToElement(ArtifactMeta) → AnyElement`
   keyed on `render_hint`; `Chat.tsx` feeds `artifactsToElements(item.artifacts)` to
   `ElementList` (replaced the placeholder `ArtifactLinks`). Every element is stamped with
   `props.artifact_id` so `dedupeElements` keys on the unique id (custom viewers otherwise
   collapse by component name).
-- `src/lib/chainlit/elements.ts` — **`AnyElement` decoupled from Chainlit's `IElement`**
+- `src/lib/elements/elements.ts` — **`AnyElement` decoupled from Chainlit's `IElement`**
   (standalone interface; type-only import dropped early); added `report`/`reference`
   `ElementKind`s + classifier cases + registry entries; added `image/gif`+`image/webp` to
   the image set (note A-8).
@@ -63,28 +62,31 @@ Docker/VPN) — verified by typecheck + eslint + build only.
 (Paperclip trigger, hidden file input, per-file spinner/error, send gated on in-flight uploads,
 `readyDescriptors` echoed as `upload_ids`).
 
-### Remaining
+**Done — 06 (follow-ups + plan):** the JSON-contract UI is the only one left — inline
+`FollowupForm` (`src/components/chat/FollowupForm.tsx`, reached from `Chat.tsx` →
+`chatStore.submitFollowup`) and inline `PlanCard` (`Chat.tsx` → `chatStore.decidePlan`). The
+legacy recoil/`askUserState`-driven `src/viewers/DynamicFormElement.tsx` was **deleted** and
+`dynamic_form` unregistered from the viewer map (`src/lib/elements/elements.ts`): no producer
+emitted it and `askUserState` could never populate, so there was nothing to preserve on either
+side. `PlanViewerElement` stays registered — it renders from `ArtifactMeta`.
 
-- **06 (follow-ups + plan): PARTIAL.** The JSON-contract UI is what actually runs — inline
-  `FollowupForm` (`Chat.tsx:458` → `chatStore.submitFollowup`) and inline `PlanCard`
-  (`Chat.tsx:475` → `chatStore.decidePlan`). But the completion criterion is unmet: the legacy
-  `src/viewers/DynamicFormElement.tsx` still has **runtime** `recoil` + `askUserState` imports
-  (`:2-3,69`), and both `DynamicFormElement`/`PlanViewerElement` are still registered in the
-  viewer map (`src/lib/chainlit/elements.ts:180-181`). Finish = drop the recoil dependency, then
-  decide whether the legacy `DynamicForm`/`PlanViewer` viewers are dead (unregister + delete) or
-  should be reused fed from `ArtifactMeta`.
-- **08 (history): NOT STARTED.** `src/lib/api/client.ts:101` `getRecentConversations` exists but
-  has **no caller**; `src/components/LeftPanel.tsx:39` is a placeholder comment. Wire it into the
-  panel (or explicitly defer — it's optional).
-- **09 (destructive cutover): NOT STARTED at code level.** Still to remove:
-  `@chainlit/react-client`^0.4.2 + `recoil`^0.7.7 from `frontend/package.json:15,26` (and fix the
-  Chainlit-mentioning `description` at `:5`); `ChainlitAPI`/`ChainlitContext`/`RecoilRoot` in
-  `src/main.tsx:2-3,7,10-14`; the dead `src/lib/chainlit/chainlit.ts` (still imports
-  `@chainlit/react-client` at `:47`); the runtime recoil in `DynamicFormElement.tsx` (shared with
-  06); the legacy Chainlit proxy routes + `VITE_CHAINLIT_SERVER` in `frontend/vite.config.ts:7,39-96`;
-  and the `VITE_CHAINLIT_SERVER` env value + commented `chainlit-frontend` `depends_on` in the root
-  `docker-compose.yml`. **Already clean:** `socket.io` is gone, nginx already proxies
-  `→ backend:8000`, and there is no live `ChainlitAPI(...).connect()`.
+**Done — 08 (history):** `getRecentConversations` is wired into
+`src/components/chat/ChatHistory.tsx:40`, with list / rename / soft-delete / resume.
+
+**Done — 09 (destructive cutover):** `@chainlit/react-client` and `recoil` are out of
+`frontend/package.json` (and out of its `description`); `npm ls` confirms neither resolves.
+`src/main.tsx` renders `<App />` with no `ChainlitAPI` / `ChainlitContext` / `RecoilRoot`;
+`src/lib/chainlit/chainlit.ts` is deleted and the directory renamed to `src/lib/elements/`;
+`frontend/vite.config.ts` proxies only `/api`, with `CHAINLIT_TARGET` and all twelve legacy
+routes gone; `VITE_CHAINLIT_SERVER` and the commented-out `chainlit-frontend` `depends_on` are
+out of the root `docker-compose.yml`. Beyond the original scope, `CHAINLIT_AUTH_SECRET` was
+retired as a fallback alias for the backend's own cookie-signing key — `BACKEND_JWT_SECRET` is
+now the only name for it (`backend/app/config.py` `_jwt_secret`). **Already clean beforehand:**
+`socket.io` was gone, nginx already proxied `→ backend:8000`, and there was no live
+`ChainlitAPI(...).connect()`.
+
+Gates after the cutover: `npm run typecheck` + `npm run lint` + `npm run build` clean, backend
+pytest 361 passed, infra static suite 87 passed. Still **not validated live** (needs Docker/VPN).
 
 ## Why this is required (not optional)
 
@@ -106,7 +108,7 @@ transport + state layer and the auth calls must be rewritten.
 Chainlit **type-only** and stay behind a thin adapter:
 
 - `components/ElementRenderer.tsx` (`classifyElement` + `VIEWER_REGISTRY` + `dedupeElements`)
-- `lib/chainlit/elements.ts` (classifier/registry), `artifactPresentation.ts`,
+- `lib/elements/elements.ts` (classifier/registry), `artifactPresentation.ts`,
   `elementDeduplication.ts` — logic unchanged, only the input type is retargeted
 - Viewers with **no runtime** Chainlit dep: `JSONViewer`, `FollowUpSuggestionsElement`,
   `PlanViewerElement`, `ThermalAnalysisElement`, `MermaidElement`, `MeshViewerElement`,
@@ -206,10 +208,10 @@ atoms + socket:
   Build `AnyElement`-shaped props from `ArtifactMeta` (name, description, `content`/`url` via
   the artifacts content route) so viewers stay untouched. `dedupeElements` +
   `artifactFilePresentation` keep working on the adapted shape.
-- **Step 09 is the only remaining destructive code change.** Everything before it is additive
-  and testable against a running backend (host `:8600`). *(The Chainlit **service** and old app
-  are already gone — Step 09 now only removes the leftover Chainlit **client code** from the React
-  app.)*
+- **Step 09 was the only destructive code change, and it is done.** Everything before it is
+  additive and testable against a running backend (host `:8600`). *(The Chainlit **service** and
+  old app were removed first; Step 09 then removed the leftover Chainlit **client code** from the
+  React app.)*
 
 ## Open decisions (resolve before Step 00)
 

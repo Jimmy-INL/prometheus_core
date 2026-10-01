@@ -1,7 +1,7 @@
 """POST /api/sessions — start a conversation for the authenticated session.
 
 Replaces Chainlit's ``on_chat_start``: mints a fresh ``conversation_id``, records
-it (and the chosen profile) on the in-memory session, and returns the client
+it (and the chosen profile) on the session, and returns the client
 bootstrap payload. For the beginner profile it includes the workflow suggestions,
 mirroring the ``chat_profile == "Beginner Chat"`` branch in ``frontend/main.py``.
 """
@@ -9,16 +9,15 @@ mirroring the ``chat_profile == "Beginner Chat"`` branch in ``frontend/main.py``
 from __future__ import annotations
 
 import uuid
-from typing import Optional, cast
+from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
-from pydantic import BaseModel
 
 from app.config import settings
-from app.contract import SessionResponse
+from app.contract import CreateSessionRequest, SessionResponse
 from app.routers.config import BEGINNER_PROFILE, CHAT_PROFILES
 from app.security import TokenClaims, current_claims
-from app.sessions import SessionStore
+from app.sessions import get_store
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -26,20 +25,10 @@ router = APIRouter(prefix="/api", tags=["sessions"])
 _VALID_PROFILES = {p.name for p in CHAT_PROFILES}
 
 
-class CreateSessionBody(BaseModel):
-    """Optional body for ``POST /api/sessions`` — the selected chat profile."""
-
-    profile: Optional[str] = None
-
-
-def _get_store(request: Request) -> SessionStore:
-    return cast(SessionStore, request.app.state.session_store)
-
-
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(
     request: Request,
-    body: Optional[CreateSessionBody] = Body(default=None),
+    body: Optional[CreateSessionRequest] = Body(default=None),
     claims: TokenClaims = Depends(current_claims),
 ) -> SessionResponse:
     """Create a new conversation under the caller's session identity.
@@ -48,8 +37,8 @@ async def create_session(
     fresh ``conversation_id``, so the user can start a new conversation without
     re-authenticating.
     """
-    store = _get_store(request)
-    state = store.get_or_create(claims.sid)
+    store = get_store(request)
+    state = await store.get_or_create(claims.sid)
 
     requested = body.profile if body else None
     if requested is not None and requested not in _VALID_PROFILES:
@@ -63,11 +52,12 @@ async def create_session(
     profile = requested or state.profile or BEGINNER_PROFILE
     conversation_id = str(uuid.uuid4())
 
-    state.conversation_id = conversation_id
-    state.profile = profile
-    # A new conversation starts with no artifacts and no in-flight background tasks.
-    state.artifacts = []
-    state.awaited_task_ids = set()
+    # One pipeline: rebind the conversation, record the profile, and clear the
+    # artifact catalog and the awaited-task set -- a new conversation starts with
+    # neither. ``SessionState`` is a frozen snapshot, so this is the only way to
+    # write; assigning to ``state`` would raise rather than silently do nothing.
+    # ``bind_seq`` keeps a slower, older resume from rebinding over this afterwards.
+    await store.reset(claims.sid, conversation_id, profile=profile, bind_seq=body.bind_seq if body else None)
 
     suggestions = settings.workflow_suggestions if profile == BEGINNER_PROFILE else []
 

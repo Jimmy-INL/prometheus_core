@@ -44,6 +44,15 @@ element/artifact classification and hands the frontend `render_hint`s.
 Explicit session creation (not implicit-on-first-message). Returns the new
 `conversation_id` and the chat-profile content.
 
+Optional body: `{ "profile": "Beginner Chat", "bind_seq": 1759060000123 }`.
+`bind_seq` orders session rebinds (this and `/resume`) by when the user clicked
+rather than by when the request finished: the server applies a rebind only if its
+`bind_seq` is greater than the last one applied to the session. The frontend sends
+a strictly increasing, `Date.now()`-based value. Omitted → always applied. A
+superseded create still returns `200` with a fresh `conversation_id`, but the
+session stays where the newer rebind put it, so that id is not bound. A client that
+has sent a newer rebind must discard the response.
+
 ```json
 {
   "conversation_id": "c-8f2a…",
@@ -302,6 +311,13 @@ data: {"type":"task_done","task_id":"bg-43","state":"failed","message":"Backgrou
 : ping
 ```
 
+**Failure and close.** The server subscribes to Valkey before it commits the response:
+
+- If that subscribe fails, the route answers `503` with no stream. `EventSource` treats a
+  non-2xx answer as final: `readyState` becomes `CLOSED` and the browser does not retry.
+- If the Valkey relay for the session dies after the `200`, the server ends the stream
+  cleanly. `EventSource` then reconnects by itself, and the new request subscribes again.
+
 ---
 
 ## `GET /api/artifacts/{artifact_id}/content`
@@ -353,7 +369,15 @@ currently viewing may still have work in flight.
 
 A past conversation's normalized transcript (`conversation_history` filtered
 to `role: user|assistant` turns) plus its artifact catalog, shaped the same way
-a live turn's `artifacts` are.
+a live turn's `artifacts` are. The catalog leaves out user uploads
+(`metadata.source: user-upload`); the session catalog keeps them.
+
+Messages are in time order, so the reply of a turn that ran in the background can
+follow later turns. Each message carries `artifact_ids`: the artifacts that turn
+produced, which the client-agent records on the reply. Render a restored turn from its own
+`artifact_ids`, resolved in `artifacts`. Never render the whole catalog. An id
+that `artifacts` does not hold (a user upload) is not rendered. User turns, and
+turns stored before the ids were recorded, have an empty list.
 
 ```json
 {
@@ -362,10 +386,10 @@ a live turn's `artifacts` are.
   "profile": "",
   "auto_approve_steps": false,
   "messages": [
-    { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…" },
-    { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…" }
+    { "role": "user", "content": "What is the corrosion rate of SS316 in seawater?", "timestamp": "…", "artifact_ids": [] },
+    { "role": "assistant", "content": "## Corrosion Analysis\n…", "timestamp": "…", "artifact_ids": ["a-41c9…"] }
   ],
-  "artifacts": []
+  "artifacts": [{ "artifact_id": "a-41c9…", "name": "corrosion_rate.json", "mime_type": "application/json", "description": "", "tags": [], "render_hint": "json", "…": "…" }]
 }
 ```
 
@@ -377,6 +401,10 @@ frontend can render history and resume in one round-trip. The **next**
 `POST /api/chat/messages` continues this conversation rather than starting a
 fresh one.
 
+Optional body: `{ "bind_seq": 1759060000123 }` — see `POST /api/sessions`. A
+resume superseded by a newer rebind still returns `200` with the detail, but
+leaves the session where the newer rebind put it; the frontend discards it.
+
 ### `PATCH /api/conversations/{id}` → `ConversationSummary`
 
 Body: `{ "title": "New title" }` (rejects empty/whitespace-only with 422). Sets
@@ -385,5 +413,6 @@ Body: `{ "title": "New title" }` (rejects empty/whitespace-only with 422). Sets
 ### `DELETE /api/conversations/{id}` → `204 No Content`
 
 Soft delete: sets `conv:meta:{id}.hidden`, which excludes the conversation from
-`recent`. The underlying `conversation:{id}` document (and its artifacts) are
-left untouched.
+`recent`. `GET /api/conversations/{id}` and `/resume` then answer `404`, so a tab
+that still remembers the id starts a clean chat instead of reopening it. The
+underlying `conversation:{id}` document (and its artifacts) are left untouched.

@@ -43,7 +43,7 @@ Specialist agents verify the JWT independently
 ```
 
 **Two distinct JWTs, two distinct keys** — easy to conflate, so be precise:
-- `BACKEND_JWT_SECRET` (or its `CHAINLIT_AUTH_SECRET` fallback, HS256) signs the
+- `BACKEND_JWT_SECRET` (HS256) signs the
   **browser session cookie** — backend-to-browser only, never leaves the backend.
 - The **platform identity JWT** — backend-to-agents, carried in
   `message.metadata["userToken"]` — is signed RS256 with whichever key
@@ -217,8 +217,9 @@ The full authorization-code flow (`app/security.py::GenericOidcProvider`,
   `{issuer_url}/.well-known/openid-configuration` on every login — an admin
   editing `issuer_url` takes effect immediately, nothing to restart). Sets a
   short-lived, signed `oidc_flow` cookie carrying this one attempt's
-  `state`/`nonce` — there is no server-side flow-state store, matching the
-  rest of the app's single-replica, in-memory-everything-else design.
+  `state`/`nonce` — there is no server-side flow-state store, so any backend
+  worker can finish the callback without shared state. (Sessions, logout
+  markers and the SSE bus live in Valkey; see `backend/README.md`.)
 - **Register this exact URL as the redirect URI with the provider**:
   `${BACKEND_PUBLIC_URL}/api/auth/callback/{provider_id}`. `BACKEND_PUBLIC_URL`
   (`.env`) must be set to whatever origin the *browser* actually uses to

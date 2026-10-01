@@ -22,13 +22,19 @@ redis-url: "redis://localhost:6379"
 max-upload-bytes: 104857600
 
 # Mesh (Exodus/STL) → VTP conversion cache root (empty = <tempdir>/prometheus-mesh).
-# Overridden by env PROMETHEUS_MESH_CACHE_DIR.
+# Overridden by env PROMETHEUS_MESH_CACHE_DIR. Point this at a persistent volume in
+# production -- docker-compose.yml mounts the `mesh-cache` volume for exactly this.
 mesh-cache-dir: ""
+# VTK conversion subprocess pool size, *per web worker* (env PROMETHEUS_MESH_WORKERS).
+mesh-workers: 2
+# Wall-clock budget for one conversion, in seconds (env PROMETHEUS_MESH_TIMEOUT_SECONDS).
+# On expiry the worker is killed and that artifact degrades to a file download.
+mesh-timeout-seconds: 120
 
 debug: false
 auto-approve-steps: false
 
-# Auth / session cookie (jwt-secret overridden by env BACKEND_JWT_SECRET / CHAINLIT_AUTH_SECRET)
+# Auth / session cookie (jwt-secret overridden by env BACKEND_JWT_SECRET)
 jwt-secret: ""
 cookie-name: "prometheus_session"
 token-ttl-seconds: 86400

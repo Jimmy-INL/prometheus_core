@@ -32,7 +32,7 @@ interface Props {
 }
 
 export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
-  const { conversationId, historyVersion } = useChatState();
+  const { conversationId, resumingConversationId, historyVersion } = useChatState();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -77,7 +77,10 @@ export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
             <ChatHistoryItem
               key={c.conversation_id}
               conversation={c}
-              active={c.conversation_id === conversationId}
+              // `conversationId` only flips once the resume resolves, so during the
+              // fetch prefer the id being loaded — otherwise the row the user just
+              // clicked sits unhighlighted for the whole round trip.
+              active={c.conversation_id === (resumingConversationId ?? conversationId)}
               onSelect={() => {
                 onOpenConversation();
                 void chatStore.loadConversation(c.conversation_id);

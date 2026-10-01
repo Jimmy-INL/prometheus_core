@@ -20,7 +20,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
@@ -31,7 +31,7 @@ from app import uri_resolver
 from app.security import TokenClaims, current_claims
 from app.services.artifacts import artifact_download_payload, artifact_identity, classify_render_hint
 from app.services.mesh.service import mesh_cache_root
-from app.sessions import SessionState, SessionStore
+from app.sessions import SessionState, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,6 @@ _DOWNLOAD_HINTS = {"file", "unknown"}
 # One safe path segment (no separators; `..` additionally rejected below). Guards the
 # dataset_id/filename the browser sends to the mesh VTP route.
 _MESH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-
-
-def _get_store(request: Request) -> SessionStore:
-    return cast(SessionStore, request.app.state.session_store)
 
 
 def _find_artifact(session: SessionState, artifact_id: str) -> Optional[dict[str, Any]]:
@@ -91,8 +87,8 @@ async def get_artifact_content(
     request: Request,
     claims: TokenClaims = Depends(current_claims),
 ) -> Response:
-    store = _get_store(request)
-    session = store.get_or_create(claims.sid)
+    store = get_store(request)
+    session = await store.get_or_create(claims.sid)
 
     artifact = _find_artifact(session, artifact_id)
     if artifact is None:

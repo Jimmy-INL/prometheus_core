@@ -388,3 +388,98 @@ def test_sibling_skills_share_root(fake_redis: _FakeRedis) -> None:
     tree = task_graph.build_tree(CONV)
     assert len(tree) == 1
     assert {c["skill"] for c in tree[0]["children"]} == {"a", "b"}
+
+
+# --- turn identity and produced artifacts -------------------------------------
+
+
+def test_turn_id_survives_the_resume_that_rewrites_root_id(fake_redis: _FakeRedis) -> None:
+    # root_id is the Task Graph handle and a resume replaces it with the original
+    # root; turn_id names this turn and must not change.
+    async def scenario():
+        task_tracking.begin_turn(CONV, "create a valve")
+        async with task_tracking.track_skill(CONV, "author_equipment_geometry") as tracker:
+            first_root = task_tracking.current_root_id()
+            node_id = tracker.node_id
+            tracker.input_required()
+        task_tracking.finish_turn("needs_info")
+
+        task_tracking.begin_turn(CONV, "rod diameter is 5 cm")
+        turn_id = task_tracking.current_turn_id()
+        own_root = task_tracking.current_root_id()
+        async with task_tracking.track_skill(
+            CONV, "author_equipment_geometry", resume_node_id=node_id, resume_root_id=first_root
+        ) as resumed:
+            resumed.complete()
+        return first_root, own_root, turn_id, task_tracking.current_root_id(), task_tracking.current_turn_id()
+
+    first_root, own_root, turn_id, root_after, turn_after = asyncio.run(scenario())
+
+    assert own_root != first_root and root_after == first_root  # the resume rewrote root_id
+    assert turn_id.startswith("turn_") and turn_after == turn_id
+
+
+def test_produced_artifacts_keep_order_and_skip_repeats(fake_redis: _FakeRedis) -> None:
+    task_tracking.begin_turn(CONV, "make plots")
+
+    task_tracking.record_produced_artifacts(["a1", "a2"])
+    task_tracking.record_produced_artifacts(["a2", None, "", "a3"])
+
+    assert task_tracking.current_turn().produced_artifact_ids == ["a1", "a2", "a3"]
+
+
+def test_recording_outside_a_turn_is_a_no_op(fake_redis: _FakeRedis) -> None:
+    task_tracking.record_produced_artifacts(["a1"])  # no begin_turn: a slash command
+
+    assert task_tracking.current_turn() is None
+    assert task_tracking.current_turn_id() is None
+
+
+def test_tasks_spawned_by_the_turn_record_on_the_same_turn(fake_redis: _FakeRedis) -> None:
+    # The detached chat() task and asyncio.gather children copy the context, and
+    # share the turn object by reference.
+    async def scenario():
+        task_tracking.begin_turn(CONV, "parallel")
+        turn = task_tracking.current_turn()
+
+        async def dispatch(artifact_id: str) -> None:
+            await asyncio.sleep(0)
+            task_tracking.record_produced_artifacts([artifact_id])
+
+        await asyncio.create_task(dispatch("detached"))
+        await asyncio.gather(dispatch("p1"), dispatch("p2"))
+        return turn
+
+    turn = asyncio.run(scenario())
+
+    assert sorted(turn.produced_artifact_ids) == ["detached", "p1", "p2"]
+
+
+def test_a_turn_started_meanwhile_keeps_its_own_list(fake_redis: _FakeRedis) -> None:
+    # A background turn and the turn the user sends meanwhile run in different
+    # contexts; neither sees the other's artifacts.
+    async def scenario():
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def background_turn():
+            task_tracking.begin_turn(CONV, "long job")
+            started.set()
+            await release.wait()
+            task_tracking.record_produced_artifacts(["mesh"])
+            return task_tracking.current_turn()
+
+        async def foreground_turn():
+            await started.wait()
+            task_tracking.begin_turn(CONV, "quick svg")
+            task_tracking.record_produced_artifacts(["svg"])
+            release.set()
+            return task_tracking.current_turn()
+
+        return await asyncio.gather(background_turn(), foreground_turn())
+
+    background, foreground = asyncio.run(scenario())
+
+    assert background.produced_artifact_ids == ["mesh"]
+    assert foreground.produced_artifact_ids == ["svg"]
+    assert background.turn_id != foreground.turn_id

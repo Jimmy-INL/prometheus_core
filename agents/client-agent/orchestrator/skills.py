@@ -93,6 +93,8 @@ async def _invoke_skill_impl(
             dict(single_params), input_schema=input_schema
         )
         invoke_params["conversation_id"] = conversation_id
+        # Every dispatch reports the artifacts it produced to the current turn.
+        invoke_params["_artifact_callback"] = task_tracking.record_produced_artifacts
         if capability and getattr(capability, "supports_streaming", False):
 
             async def _status_callback(message: str) -> None:

@@ -92,9 +92,9 @@ class SelectOption(BaseModel):
 
 
 class FormField(BaseModel):
-    """A single DynamicForm field.
+    """A single follow-up form field.
 
-    Matches the props consumed by ``frontend/src/viewers/DynamicFormElement.tsx``
+    Matches the props consumed by ``frontend/src/components/chat/FollowupForm.tsx``
     and the normalized shape produced by ``normalize_followup_questions`` below
     (ported from ``message_handler._handle_needs_info``).
     """
@@ -439,6 +439,11 @@ class ConversationMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = ""
     timestamp: str = ""
+    #: Ids of the artifacts this turn produced, each resolvable in the detail's
+    #: ``artifacts``. The frontend renders a restored turn from these alone, never
+    #: from the whole catalog. Empty for user turns and for turns stored before
+    #: the client-agent recorded them.
+    artifact_ids: list[str] = Field(default_factory=list)
 
 
 class ConversationDetailResponse(BaseModel):
@@ -463,3 +468,26 @@ class ConversationRenameRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     title: str
+
+
+class ConversationResumeRequest(BaseModel):
+    """Optional body for ``POST /api/conversations/{id}/resume``.
+
+    ``bind_seq`` orders session rebinds by click, not by arrival: a resume or new
+    session whose seq is not greater than the last one applied leaves the session where
+    it is. The frontend sends a strictly increasing value (``Date.now()``-based).
+    ``POST /api/sessions`` takes the same field in :class:`CreateSessionRequest`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    bind_seq: Optional[int] = None
+
+
+class CreateSessionRequest(BaseModel):
+    """Optional body for ``POST /api/sessions`` — the selected chat profile, plus the
+    ``bind_seq`` that orders this rebind against in-flight resumes (see
+    :class:`ConversationResumeRequest`)."""
+
+    profile: Optional[str] = None
+    bind_seq: Optional[int] = None
