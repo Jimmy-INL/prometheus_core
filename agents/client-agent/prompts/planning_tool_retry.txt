@@ -1,2 +1,0 @@
-Your previous tool call was rejected: {last_error}
-Call {tool_names} exactly once, with no prose. {shape_hint}

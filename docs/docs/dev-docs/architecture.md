@@ -13,7 +13,7 @@ graph TD
   end
 
   subgraph Orchestration
-    CA[Client Agent<br/>LangGraph + Prometheus LLMClient]
+    CA[Client Agent<br/>tool-calling loop + Prometheus LLMClient]
     LLM[LiteLLM Agent Gateway<br/>A2A routing + agent directory]
     RED[(Redis<br/>conversation state + status)]
   end
@@ -69,25 +69,24 @@ The frontend communicates with the client-agent via A2A JSON-RPC `message/stream
 
 ### Client-agent (orchestrator)
 
-The client-agent is a LangGraph-based orchestrator that:
+The client-agent is a tool-calling loop (`orchestrator/agent_loop.py`). It:
 
-1. **Classifies queries** using LLM-based routing with capability metadata
-2. **Discovers agents** from LiteLLM's agent directory and specialist agent cards
-3. **Collects parameters** by asking follow-up questions when information is missing
-4. **Builds execution plans** for multi-step analyses
-5. **Manages approval gates** before executing plans
-6. **Dispatches work** to specialist agents via A2A
-7. **Synthesizes results** from multiple agents into coherent responses
-
-**Routing flow:**
+1. **Discovers agents** from LiteLLM's agent directory and specialist agent cards, and
+   advertises every skill and workflow template as an LLM tool
+2. **Lets the model decide each next call** with the whole transcript (earlier calls,
+   results, artifact ids) in context, so multi-skill chains need no up-front plan
+3. **Pauses for the user** with typed forms (missing inputs, `ask_user`, specialist
+   `INPUT_REQUIRED`) or an approval gate (`requires_approval`), and resumes later
+4. **Dispatches work** to specialist agents via A2A and answers once no tool call remains
 
 ```
-understand_query → route_by_decision
-    ├─ "fallback"        → fallback_response → END
-    ├─ "direct_invoke"   → invoke_agent_generic → END
-    ├─ "collect_params"  → ask_followup_dynamic → END
-    └─ "plan_and_approve"→ plan → show_plan → [approval] → execute → END
+user turn → LLM ──tool calls──► validate → [form / approval pause] → invoke via A2A
+             ▲                                                          │
+             └────────── tool results (summary + artifact ids) ◄────────┘
+           LLM ──no tool calls──► final answer
 ```
+
+See [agent-loop-orchestration.md](agent-loop-orchestration.md) for the full design.
 
 ### LiteLLM agent gateway
 
@@ -134,7 +133,7 @@ sequenceDiagram
     CL->>CA: A2A message/stream (query, conversation_id)
     CA->>R: Retrieve prior conversation state
     CA->>LLM: GET /v1/agents (find corrosion agent)
-    CA->>CA: LLM classifies → "direct_invoke"
+    CA->>CA: LLM turn → tool call analyze_corrosion(...)
     CA->>LLM: POST /a2a/corrosion-agent/message/send
     LLM->>SA: A2A message/send (params)
     SA-->>CA: Result + artifacts

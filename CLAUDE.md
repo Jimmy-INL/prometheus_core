@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Stack at a glance
 
-Multi-agent platform for nuclear engineering analysis. A React frontend (`frontend/`) talks to a FastAPI **`backend/`** service over a JSON/SSE contract; the backend relays to a LangGraph **client-agent** orchestrator over A2A JSON-RPC 2.0; the client-agent dispatches to specialist agents (corrosion, radiation, thermal, data, synthesis, OSTI research, form-filler, artifact-debug) through a **LiteLLM proxy** that doubles as the agent registry/gateway and the LLM proxy. Valkey holds conversation state, browser-session state, short-lived status updates, the SSE event bus and the artifact registry via the Redis-compatible protocol. Postgres backs LiteLLM's persistent agent registrations, and separately the backend's admin plane (local users, OIDC config, signing keys) — migrated by Alembic from `backend/docker-entrypoint.sh`.
+Multi-agent platform for nuclear engineering analysis. A React frontend (`frontend/`) talks to a FastAPI **`backend/`** service over a JSON/SSE contract; the backend relays to a tool-calling **client-agent** orchestrator over A2A JSON-RPC 2.0; the client-agent dispatches to specialist agents (corrosion, radiation, thermal, data, synthesis, OSTI research, form-filler, artifact-debug) through a **LiteLLM proxy** that doubles as the agent registry/gateway and the LLM proxy. Valkey holds conversation state, browser-session state, short-lived status updates, the SSE event bus and the artifact registry via the Redis-compatible protocol. Postgres backs LiteLLM's persistent agent registrations, and separately the backend's admin plane (local users, OIDC config, signing keys) — migrated by Alembic from `backend/docker-entrypoint.sh`.
 
 The `frontend/` is a Node/TypeScript app (React + Vite). The `backend/` runs Python 3.12+ (also 3.13); the client-agent and infra tests use 3.13.
 
@@ -67,11 +67,12 @@ User → React frontend (frontend/, Vite dev server or nginx-served build)
      → FastAPI backend (backend/app, JSON/SSE contract; session-cookie auth)
      → A2A JSON-RPC over httpx (backend → client-agent, Bearer = AGENT_SECRET)
      → client-agent (agents/client-agent/agent.py)
-        ├─ LangGraph orchestration: understand_query → route_by_decision
-        │     ├─ "fallback"         → fallback_response
-        │     ├─ "direct_invoke"    → invoke_agent_generic
-        │     ├─ "collect_params"   → ask_followup_dynamic   (returns to frontend as needs_info)
-        │     └─ "plan_and_approve" → plan → show_plan → [approval] → execute
+        ├─ Tool-calling loop: orchestrator/agent_loop.py (entry: chat_flow.chat)
+        │     every skill / workflow template is an LLM tool; the model picks the next
+        │     parameterized call after each result (artifact ids flow via tool results).
+        │     Pauses persist in state: missing user inputs / ask_user / INPUT_REQUIRED
+        │     → needs_info; requires_approval → plan_ready.
+        │     Design: docs/docs/dev-docs/agent-loop-orchestration.md
         ├─ Tool/agent discovery: tool_discovery.py + capability_cache.py
         │     hits LiteLLM `/v1/agents` and each agent's well-known card
         ├─ Workflow library: workflow_library/  (YAML templates in workflows/)

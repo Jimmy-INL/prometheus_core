@@ -4,39 +4,28 @@ import copy
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-
-from prometheus_api.agent import PrometheusAgent
+from typing import Any, Dict, Optional
 
 from artifact_handling import merge_artifacts_into_context, summarize_artifacts_for_context
 from conversation_store import get_conversation, store_conversation
-from planner import PlanningContractError
 from workflow_library import find_workflow_by_command, get_workflow_registry
 
-from . import runtime
+from . import agent_loop, runtime
 from .debug_commands import (
     SUPPORTED_SLASH_COMMANDS,
     _maybe_handle_slash_command,
     _parse_slash_command,
 )
-from .execution import (
-    _format_plan_for_response,
-    _latest_conversation_entry,
-    apply_followup_answers_to_state,
-    ask_followup_dynamic,
-    execute_approved_plan,
-    execute_current_plan,
-    extract_followup_answers_from_query,
-    resume_pending_subagent_requests,
-)
 from .models import AgentState, ConversationRequest, ConversationResponse
-from .parameter_extraction import ParameterExtractionError
-from .parameters import order_skills_for_workflow
-from .planning_flow import compile_query_plan, extract_refinement_param_updates, plan_analysis, show_plan
+from .utils import collect_suggested_queries
 
 logger = logging.getLogger(__name__)
 
 _TITLE_MAX_CHARS = 60
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 async def _maybe_generate_title(state: AgentState, conv_id: str) -> None:
@@ -81,42 +70,110 @@ def _workflow_slash_selection(query: Optional[str]) -> Optional[Dict[str, str]]:
     if workflow is None:
         return None
 
-    workflow_id = workflow.definition.id
-    return {
-        "workflow_id": workflow_id,
-        "workflow_version": workflow.definition.version,
-        "query": args or f"Start workflow {workflow_id}",
-    }
+    return {"workflow_id": workflow.definition.id, "args": args}
 
 
-def _needs_info_response(
-    conv_id: str,
-    state: AgentState,
-    hint: str = "I need some additional information to proceed:",
-) -> ConversationResponse:
-    """Persist state and return a needs_info response with followup questions."""
-    store_conversation(conv_id, state)
-    runtime.store_status_update(conv_id, "Awaiting additional parameters.", final=True)
-    latest = _latest_conversation_entry(state)
-    return ConversationResponse(
-        conversation_id=conv_id,
-        status="needs_info",
-        message=PrometheusAgent.pending_hint(state.get("pending_subagent_requests"), hint),
-        followup_questions=latest.get("questions", []),
-        plan=_format_plan_for_response(state) if state.get("plan") else None,
+def _new_state(conv_id: str, existing: Optional[Dict[str, Any]]) -> AgentState:
+    """Load the conversation record, filling any field a fresh conversation lacks."""
+    state: Dict[str, Any] = dict(existing) if isinstance(existing, dict) else {}
+    state["conversation_id"] = conv_id
+    state.setdefault("user_query", None)
+    state.setdefault("title", None)
+    state.setdefault("conversation_history", [])
+    state.setdefault("context", {})
+    state.setdefault("llm_messages", [])
+    state.setdefault("pending_calls", [])
+    state.setdefault("pending_note", "")
+    state.setdefault("turn_tool_results", {})
+    state.setdefault("turn_tool_inputs", {})
+    state.setdefault("plan", None)
+    state.setdefault("missing_info", [])
+    state.setdefault("awaiting_approval", False)
+    state.setdefault("final_report", None)
+    return state  # type: ignore[return-value]
+
+
+def _append_history(state: AgentState, entry: Dict[str, Any]) -> None:
+    state["conversation_history"] = [*state.get("conversation_history", []), {**entry, "timestamp": _now()}]
+
+
+async def _start_user_turn(state: AgentState, request: ConversationRequest, query: str) -> None:
+    _append_history(state, {"role": "user", "content": query})
+    state["user_query"] = query
+    await _maybe_generate_title(state, state["conversation_id"] or "")
+    agent_loop.begin_user_turn(
+        state,
+        query,
+        uploaded_artifact_ids=request.newly_uploaded_artifact_ids,
+        received_files=request.received_files,
     )
 
 
-def _completed_response(conv_id: str, state: AgentState) -> ConversationResponse:
-    """Persist state and return a completed response with the final report."""
+def _respond(conv_id: str, state: AgentState, outcome: agent_loop.LoopOutcome) -> ConversationResponse:
+    """Persist state and map a loop outcome onto the frontend contract."""
+    state["awaiting_approval"] = outcome.kind == "needs_approval"
+    state["missing_info"] = [str(q["field"]) for q in outcome.questions] if outcome.kind == "needs_info" else []
+    state["plan"] = outcome.plan
+    state["final_report"] = None
+
+    if outcome.kind == "needs_info":
+        _append_history(state, {"role": "assistant", "type": "followup_questions", "questions": outcome.questions})
+        store_conversation(conv_id, state)
+        runtime.store_status_update(conv_id, "Awaiting additional information.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="needs_info",
+            message=outcome.message,
+            followup_questions=outcome.questions,
+        )
+
+    if outcome.kind == "needs_approval":
+        _append_history(state, {"role": "assistant", "type": "plan", "plan": outcome.plan})
+        store_conversation(conv_id, state)
+        runtime.store_status_update(conv_id, "Plan ready for approval.", final=True)
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="plan_ready",
+            message=outcome.message,
+            plan=outcome.plan,
+        )
+
+    if outcome.kind == "error":
+        _append_history(state, {"role": "assistant", "type": "error", "content": outcome.message})
+        store_conversation(conv_id, state)
+        runtime.store_status_update(conv_id, outcome.message, final=True)
+        return ConversationResponse(conversation_id=conv_id, status="error", message=outcome.message)
+
+    tool_results = dict(state.get("turn_tool_results") or {})
+    entry: Dict[str, Any] = {"role": "assistant", "content": outcome.message}
+    if tool_results:
+        entry.update(
+            type="final_report",
+            tool_inputs=copy.deepcopy(state.get("turn_tool_inputs") or {}),
+            tool_results=tool_results,
+        )
+        state["final_report"] = outcome.message
+    else:
+        entry["type"] = "answer"
+    _append_history(state, entry)
     store_conversation(conv_id, state)
     runtime.store_status_update(conv_id, "Response ready.", final=True)
+
+    if not tool_results:
+        return ConversationResponse(
+            conversation_id=conv_id,
+            status="answer",
+            message=outcome.message,
+            response_text=outcome.message,
+        )
+    suggestions = [item["suggested_query"] for item in collect_suggested_queries(tool_results, limit=3)]
     return ConversationResponse(
         conversation_id=conv_id,
         status="completed",
-        message=state.get("final_report", ""),
-        report=state.get("final_report", ""),
-        tool_results=state.get("tool_results"),
+        message=outcome.message,
+        report=outcome.message,
+        tool_results=tool_results,
+        message_metadata={"follow_up_suggestions": suggestions} if suggestions else None,
     )
 
 
@@ -126,150 +183,29 @@ def _error_response(conv_id: str, log_msg: str, user_msg: str) -> ConversationRe
     return ConversationResponse(conversation_id=conv_id, status="error", message=user_msg)
 
 
-def _structured_followup_entry(query: Optional[str], followup_answers: Dict[str, Any]) -> Dict[str, Any]:
-    """Represent form-submitted answers as ordinary conversation evidence."""
-    return {
-        "role": "user",
-        "content": query or "Provided requested inputs.",
-        "provided_inputs": copy.deepcopy(followup_answers),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def _successful_prior_capability_params(
-    existing_state: Optional[Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    """Return prior inputs only for capabilities that completed successfully."""
-    if not isinstance(existing_state, dict):
-        return {}
-    routing = existing_state.get("routing_decision")
-    tool_results = existing_state.get("tool_results")
-    if not isinstance(routing, dict) or not isinstance(tool_results, dict):
-        return {}
-
-    successful_skills = {
-        str(skill_id)
-        for skill_id, result in tool_results.items()
-        if skill_id != "workflow_execution"
-        and result is not None
-        and not (isinstance(result, dict) and result.get("error"))
-    }
-    result: Dict[str, Dict[str, Any]] = {}
-    history = existing_state.get("conversation_history")
-    if isinstance(history, list):
-        for entry in reversed(history):
-            if not isinstance(entry, dict):
-                continue
-            tool_inputs = entry.get("tool_inputs")
-            invocation_results = entry.get("tool_results")
-            if not isinstance(tool_inputs, dict) or not isinstance(invocation_results, dict):
-                continue
-            for skill_id, params in tool_inputs.items():
-                skill_id = str(skill_id)
-                invocation_result = invocation_results.get(skill_id)
-                if (
-                    skill_id in result
-                    or skill_id not in successful_skills
-                    or skill_id == "workflow_execution"
-                    or not isinstance(params, dict)
-                    or invocation_result is None
-                    or (
-                        isinstance(invocation_result, dict)
-                        and invocation_result.get("error")
-                    )
-                ):
-                    continue
-                result[skill_id] = copy.deepcopy(params)
-
-    stored = routing.get("capability_params")
-    if isinstance(stored, dict):
-        fallback = {
-            str(skill_id): copy.deepcopy(params)
-            for skill_id, params in stored.items()
-            if str(skill_id) in successful_skills
-            and str(skill_id) not in result
-            and isinstance(params, dict)
-        }
-        primary_skill = routing.get("primary_skill")
-        extracted_params = routing.get("extracted_params")
-        primary_params = fallback.get(str(primary_skill))
-        if isinstance(primary_params, dict) and isinstance(extracted_params, dict):
-            fallback[str(primary_skill)] = {
-                name: extracted_params[name]
-                for name in primary_params
-                if name in extracted_params
-            }
-        result.update(fallback)
-        return result
-
-    primary_skill = routing.get("primary_skill")
-    extracted_params = routing.get("extracted_params")
-    if (
-        primary_skill in successful_skills
-        and str(primary_skill) not in result
-        and isinstance(extracted_params, dict)
-    ):
-        result[str(primary_skill)] = copy.deepcopy(extracted_params)
-    return result
-
-
 async def chat(request: ConversationRequest) -> ConversationResponse:
     """Conversational A2A orchestration endpoint.
 
-    Every frontend message arrives here. Debug slash commands are handled first via a
-    lightweight path that never invokes the planner LLM. Otherwise, the
-    function dispatches to one of three high-level paths based on what the
-    request carries:
+    Debug slash commands are answered without the LLM. Everything else maps the
+    request onto the tool-calling loop (``agent_loop``):
 
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │ PATH A — CONTINUATION (existing conversation + followup/approval)       │
-    │                                                                         │
-    │  plan_approved=True  → execute_approved_plan → _completed_response      │
-    │                      (may loop back to _needs_info if agent requests     │
-    │                       more input mid-execution)                          │
-    │                                                                         │
-    │  followup_answers    → apply_followup_answers_to_state                  │
-    │                      → still missing?  → _needs_info_response           │
-    │                      → requires approval? → plan_ready response         │
-    │                      → otherwise → execute_current_plan                 │
-    │                                  → _completed_response                  │
-    │                                                                         │
-    │  (query only, pending followup) → ask_followup_dynamic                  │
-    │                                 → _needs_info_response                  │
-    ├─────────────────────────────────────────────────────────────────────────┤
-    │ PATH B — NEW QUERY (new conversation, or new query on existing one)     │
-    │                                                                         │
-    │  compile_query_plan → planner LLM selects skill(s) or workflow          │
-    │                                                                         │
-    │    outcome=fallback       → answer response (no subagent called)        │
-    │    missing params         → ask_followup_dynamic → _needs_info_response │
-    │    requires_approval=True → plan_ready response (await approval)        │
-    │    ready to execute       → execute_current_plan → _completed_response  │
-    └─────────────────────────────────────────────────────────────────────────┘
+    - with pending tool calls (a form, an approval, or a specialist's
+      INPUT_REQUIRED is outstanding): ``plan_rejected`` closes them,
+      ``plan_approved`` releases them, ``followup_answers`` fill them, and free
+      text answers ``ask_user`` or supersedes the rest;
+    - an explicit workflow selection (slash command, catalog start) injects a
+      call to that workflow's tool;
+    - otherwise the query starts a new user turn.
 
-    Key helpers:
-      compile_query_plan   — calls planner.compile_plan_with_tools (LLM-based)
-      execute_current_plan — invokes selected skills via A2A, collects results
-      ask_followup_dynamic — converts missing param paths into UI form fields
-      _needs_info_response — persist + return ConversationResponse(needs_info)
-      _completed_response  — persist + return ConversationResponse(completed)
+    Then ``agent_loop.advance`` runs until a final answer or the next pause.
     """
     conv_id = request.conversation_id or str(uuid.uuid4())
     runtime.store_status_update(conv_id, "Received request.")
     request_artifacts = summarize_artifacts_for_context(request.artifacts)
     existing_state = get_conversation(conv_id)
+
     workflow_slash = _workflow_slash_selection(request.query)
-    workflow_slash_selected = workflow_slash is not None
-    if workflow_slash is not None:
-        request = request.model_copy(
-            update={
-                "query": workflow_slash["query"],
-                "workflow_id": workflow_slash["workflow_id"],
-                "workflow_version": workflow_slash["workflow_version"],
-                "selection_source": "slash_command",
-            }
-        )
-    else:
+    if workflow_slash is None:
         slash_response = await _maybe_handle_slash_command(
             request,
             conv_id,
@@ -279,388 +215,82 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
         if slash_response is not None:
             return slash_response
 
-    has_pending_followup = bool(
-        existing_state and existing_state.get("missing_info") and not workflow_slash_selected
-    )
-    is_new_query_on_existing = (
-        bool(existing_state)
-        and bool(request.query)
-        and not request.followup_answers
-        and not request.plan_approved
-        and not has_pending_followup
-    )
-
-    # Existing conversation continuation path: followup answers and/or approval.
-    if existing_state and not is_new_query_on_existing:
-        state = existing_state
-        if request_artifacts:
-            state["context"] = merge_artifacts_into_context(state.get("context", {}), request_artifacts)
-
-        if request.plan_rejected:
-            # Clear the pending plan so the next message starts a fresh
-            # planning turn instead of dead-ending in the continuation path.
-            state["awaiting_approval"] = False
-            state["routing_decision"] = None
-            state["plan"] = None
-            state["missing_info"] = []
-            state["pending_subagent_requests"] = []
-            store_conversation(conv_id, state)
-            runtime.store_status_update(conv_id, "Plan rejected by user.", final=True)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="answer",
-                message="Plan rejected. Tell me how you'd like to proceed.",
-            )
-
-        if request.plan_approved:
-            state["awaiting_approval"] = False
-            # Persist the transition BEFORE executing. Execution can detach to
-            # the background (declare_long_running / soft deadline), in which
-            # case nothing else stores state until the detached run finishes —
-            # and a new query arriving meanwhile would read the stale
-            # awaiting_approval=True and be misrouted into the plan-refinement
-            # branch instead of starting a fresh planning turn.
-            store_conversation(conv_id, state)
-            try:
-                final_state = await execute_approved_plan(state)
-                if final_state.get("missing_info"):
-                    followup_result = await ask_followup_dynamic(final_state)
-                    for key, value in followup_result.items():
-                        if value is not None:
-                            final_state[key] = value
-                    return _needs_info_response(conv_id, final_state)
-                return _completed_response(conv_id, final_state)
-            except Exception as exc:
-                return _error_response(conv_id, f"Execution failed: {exc}", f"Error during analysis: {exc}")
-
-        followup_answers = dict(request.followup_answers or {})
-
-        if request.query and not followup_answers and has_pending_followup and not state.get("pending_subagent_requests"):
-            state["conversation_history"] = state.get("conversation_history", []) + [{
-                "role": "user",
-                "content": request.query,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }]
-            extracted = await extract_followup_answers_from_query(state, request.query)
-            followup_answers.update(extracted)
-
-        if followup_answers:
-            if request.followup_answers and not state.get("pending_subagent_requests"):
-                evidence = _structured_followup_entry(request.query, followup_answers)
-                state["conversation_history"] = state.get("conversation_history", []) + [evidence]
-
-            routing_decision = state.get("routing_decision", {}) or {}
-            requires_approval = routing_decision.get("requires_approval", False)
-
-            try:
-                if state.get("pending_subagent_requests"):
-                    resumed_skill_ids = [
-                        str(pending.get("skill_id") or "")
-                        for pending in state["pending_subagent_requests"]
-                        if pending.get("skill_id")
-                    ]
-                    state = await resume_pending_subagent_requests(state, followup_answers)
-                    if state.get("missing_info"):
-                        followup_result = await ask_followup_dynamic(state)
-                        for key, value in followup_result.items():
-                            if value is not None:
-                                state[key] = value
-                        return _needs_info_response(conv_id, state)
-                    # For workflow templates, re-execute the full plan so downstream steps run.
-                    rd = state.get("routing_decision", {}) or {}
-                    if rd.get("workflow_type") == "workflow_template":
-                        for key, value in followup_answers.items():
-                            rd.setdefault("extracted_params", {})[key] = value
-                        state["routing_decision"] = rd
-                        final_state = await execute_current_plan(
-                            state, start_message="Resuming workflow with provided parameters."
-                        )
-                        if final_state.get("missing_info"):
-                            followup_result = await ask_followup_dynamic(final_state)
-                            for key, value in followup_result.items():
-                                if value is not None:
-                                    final_state[key] = value
-                            return _needs_info_response(conv_id, final_state)
-                        return _completed_response(conv_id, final_state)
-                    if rd.get("workflow_type") == "sequential":
-                        selected_skills = order_skills_for_workflow(rd)
-                        resumed_positions = [
-                            selected_skills.index(skill_id)
-                            for skill_id in resumed_skill_ids
-                            if skill_id in selected_skills
-                        ]
-                        remaining_skills = (
-                            selected_skills[max(resumed_positions) + 1 :]
-                            if resumed_positions
-                            else []
-                        )
-                        if remaining_skills:
-                            resumed_report = str(state.get("final_report") or "").strip()
-                            continuation = dict(rd)
-                            continuation["primary_skill"] = remaining_skills[0]
-                            continuation["supporting_skills"] = remaining_skills[1:]
-                            state["routing_decision"] = continuation
-                            final_state = await execute_current_plan(
-                                state,
-                                start_message="Continuing sequential workflow after provided parameters.",
-                            )
-                            final_state["routing_decision"] = rd
-                            if final_state.get("missing_info"):
-                                followup_result = await ask_followup_dynamic(final_state)
-                                for key, value in followup_result.items():
-                                    if value is not None:
-                                        final_state[key] = value
-                                return _needs_info_response(conv_id, final_state)
-                            continuation_report = str(final_state.get("final_report") or "").strip()
-                            if resumed_report and continuation_report:
-                                final_state["final_report"] = (
-                                    f"{resumed_report}\n\n{continuation_report}"
-                                )
-                                history = final_state.get("conversation_history", []) or []
-                                if history and history[-1].get("type") == "final_report":
-                                    history[-1]["content"] = final_state["final_report"]
-                            return _completed_response(conv_id, final_state)
-                    return _completed_response(conv_id, state)
-
-                if routing_decision:
-                    state = await apply_followup_answers_to_state(
-                        state,
-                        followup_answers,
-                        query=request.query or "",
-                    )
-                    routing_decision = state.get("routing_decision", {}) or routing_decision
-
-                if state.get("missing_info"):
-                    followup_result = await ask_followup_dynamic(state)
-                    for key, value in followup_result.items():
-                        if value is not None:
-                            state[key] = value
-                    return _needs_info_response(conv_id, state)
-
-                if not requires_approval:
-                    runtime.store_status_update(conv_id, "All required parameters resolved. Executing skills.")
-                    final_state = await execute_current_plan(
-                        state,
-                        start_message="All required parameters resolved. Starting execution.",
-                    )
-                    if final_state.get("missing_info"):
-                        followup_result = await ask_followup_dynamic(final_state)
-                        for key, value in followup_result.items():
-                            if value is not None:
-                                final_state[key] = value
-                        return _needs_info_response(conv_id, final_state)
-                    return _completed_response(conv_id, final_state)
-
-                plan_result = plan_analysis(state)
-                for key, value in plan_result.items():
-                    if value is not None:
-                        state[key] = value
-                show_plan_result = show_plan(state)
-                for key, value in show_plan_result.items():
-                    if value is not None:
-                        state[key] = value
-
-                store_conversation(conv_id, state)
-                runtime.store_status_update(conv_id, "Plan ready for approval.", final=True)
-                return ConversationResponse(
-                    conversation_id=conv_id,
-                    status="plan_ready",
-                    message="I've created an analysis plan. Please review and approve:",
-                    plan=_format_plan_for_response(state),
-                )
-            except Exception as exc:
-                return _error_response(conv_id, f"Follow-up processing failed: {exc}", f"Error processing followup: {exc}")
-
-        if request.query and has_pending_followup:
-            followup_result = await ask_followup_dynamic(state)
-            for key, value in followup_result.items():
-                if value is not None:
-                    state[key] = value
-            return _needs_info_response(conv_id, state, "I still need a few details to proceed:")
-
-        return _error_response(conv_id, "No actionable follow-up input was provided.", "No actionable followup input was provided.")
-
-    # New query path: new conversation or new query in existing conversation.
-    if not request.query and not request.workflow_id:
-        return _error_response(
-            conv_id,
-            "A query or explicit workflow selection is required for a new planning turn.",
-            "A query or explicit workflow selection is required for a new planning turn.",
-        )
-
-    if is_new_query_on_existing:
-        old_history = existing_state.get("conversation_history", [])
-        previous_context = existing_state.get("context", {})
-    else:
-        old_history = []
-        previous_context = {}
-
-    forced_workflow_id = request.workflow_id
-    forced_workflow_version = request.workflow_version
-    forced_selection_source = request.selection_source
-    seed_params: Dict[str, Any] = {}
-    if isinstance(request.followup_answers, dict):
-        seed_params.update(request.followup_answers)
-
-    # Plan-refinement turns (while awaiting approval) should preserve the
-    # selected template and previously extracted parameters.
-    if is_new_query_on_existing and isinstance(existing_state, dict) and existing_state.get("awaiting_approval"):
-        existing_routing = existing_state.get("routing_decision", {}) or {}
-        existing_plan = existing_state.get("plan", {}) or {}
-
-        if not forced_workflow_id:
-            forced_workflow_id = (
-                existing_plan.get("workflow_id")
-                or existing_routing.get("workflow_id")
-            )
-        if not forced_workflow_version:
-            forced_workflow_version = (
-                existing_plan.get("workflow_version")
-                or existing_routing.get("workflow_version")
-            )
-        if not forced_selection_source:
-            forced_selection_source = (
-                existing_routing.get("selection_source")
-                or "plan_refinement"
-            )
-
-        existing_params = existing_routing.get("extracted_params")
-        if isinstance(existing_params, dict):
-            merged_seed = dict(existing_params)
-            merged_seed.update(seed_params)
-            seed_params = merged_seed
-
-        if request.query:
-            runtime.store_status_update(conv_id, "Applying refinement instructions to plan parameters.")
-            refinement_updates = await extract_refinement_param_updates(
-                query=request.query,
-                routing_decision=existing_routing,
-                conversation_history=old_history,
-            )
-            if refinement_updates:
-                merged_seed = dict(seed_params)
-                merged_seed.update(refinement_updates)
-                seed_params = merged_seed
-                runtime.store_status_update(conv_id, "Refinement parameters applied.")
-
-    previous_context = merge_artifacts_into_context(previous_context, request_artifacts)
-    # Inject transient per-turn upload IDs so planner and resolve_artifact_inputs can see them.
-    if request.newly_uploaded_artifact_ids:
-        previous_context["newly_uploaded_artifact_ids"] = list(request.newly_uploaded_artifact_ids)
-    if request.received_files:
-        previous_context["received_files"] = list(request.received_files)
-
-    state: AgentState = {
-        "messages": [],
-        "conversation_id": conv_id,
-        "user_query": request.query or f"Start workflow {request.workflow_id}",
-        "conversation_history": old_history + [{
-            "role": "user",
-            "content": request.query or f"Start workflow {request.workflow_id}",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }],
-        "prior_capability_params": _successful_prior_capability_params(existing_state),
-        "routing_decision": None,
-        "plan": None,
-        "missing_info": [],
-        "awaiting_approval": False,
-        "pending_subagent_requests": [],
-        "material_id": None,
-        "analysis_types": None,
-        "context": previous_context,
-        "question": None,
-        "tool_results": {},
-        "final_report": None,
-        "title": existing_state.get("title") if isinstance(existing_state, dict) else None,
-    }
-    await _maybe_generate_title(state, conv_id)
-
-    if isinstance(request.followup_answers, dict) and request.followup_answers:
-        merged_context = dict(state.get("context", {}) or {})
-        for key, value in request.followup_answers.items():
-            if key.startswith("context."):
-                merged_context[key.split(".", 1)[1]] = value
-            elif key != "material_id":
-                merged_context[key] = value
-        if merged_context:
-            state["context"] = merged_context
+    state = _new_state(conv_id, existing_state)
+    state["context"] = merge_artifacts_into_context(state.get("context") or {}, request_artifacts)
+    has_pending = bool(state["pending_calls"])
+    workflow_id = workflow_slash["workflow_id"] if workflow_slash else request.workflow_id
 
     try:
-        planning_update = await compile_query_plan(
-            state,
-            explicit_workflow_id=forced_workflow_id,
-            explicit_workflow_version=forced_workflow_version,
-            selection_source=forced_selection_source or ("catalog" if forced_workflow_id else None),
-            seed_params=seed_params or None,
-        )
-        if planning_update.get("is_fallback"):
-            fallback_message = planning_update.get("fallback_message", "I couldn't plan a capability invocation for that query.")
-            state["conversation_history"] = state.get("conversation_history", []) + [{
-                "role": "assistant",
-                "content": fallback_message,
-                "type": "fallback_response",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }]
+        catalog = await agent_loop.build_tool_catalog()
+
+        if request.plan_rejected and has_pending:
+            agent_loop.reject_pending(state)
+            message = "Plan rejected. Tell me how you'd like to proceed."
+            state["awaiting_approval"] = False
+            state["missing_info"] = []
+            state["plan"] = None
+            _append_history(state, {"role": "assistant", "type": "plan_rejected", "content": message})
             store_conversation(conv_id, state)
-            runtime.store_status_update(conv_id, "Responded without subagent execution.", final=True)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="answer",
-                message=fallback_message,
-                response_text=fallback_message,
+            runtime.store_status_update(conv_id, "Plan rejected by user.", final=True)
+            return ConversationResponse(conversation_id=conv_id, status="answer", message=message)
+
+        if request.plan_approved and has_pending:
+            _append_history(state, {"role": "user", "type": "plan_approved", "content": "Approved."})
+            agent_loop.approve_pending(state)
+        elif workflow_id:
+            spec = agent_loop.workflow_tool_for(catalog, workflow_id)
+            if spec is None:
+                return _error_response(
+                    conv_id,
+                    f"Workflow '{workflow_id}' is unavailable.",
+                    f"Workflow '{workflow_id}' is unavailable.",
+                )
+            args = workflow_slash["args"] if workflow_slash else ""
+            query = request.query if not workflow_slash else (args or f"Start workflow {workflow_id}")
+            query = query or f"Start workflow {workflow_id}"
+            if has_pending:
+                agent_loop.apply_reply(state, query)
+                agent_loop.commit_batch(state)
+            await _start_user_turn(state, request, query)
+            if args:
+                # Free-text arguments: let the model fill the workflow's inputs from them.
+                state["llm_messages"][-1]["content"] += f"\n\n[Use the {spec.name} tool for this request.]"
+            else:
+                agent_loop.inject_tool_call(
+                    state,
+                    catalog,
+                    spec,
+                    dict(request.followup_answers or {}),
+                    f"Running workflow '{workflow_id}'.",
+                )
+        elif request.followup_answers and has_pending:
+            _append_history(
+                state,
+                {
+                    "role": "user",
+                    "content": request.query or "Provided requested inputs.",
+                    "provided_inputs": copy.deepcopy(request.followup_answers),
+                },
             )
-
-        for key, value in planning_update.items():
-            if key in {"is_fallback", "fallback_message", "planner_message"}:
-                continue
-            if value is not None:
-                state[key] = value
-
-        if state.get("missing_info"):
-            followup_result = await ask_followup_dynamic(state)
-            for key, value in followup_result.items():
-                if value is not None:
-                    state[key] = value
-            return _needs_info_response(conv_id, state)
-
-        routing_decision = state.get("routing_decision", {}) or {}
-        requires_approval = routing_decision.get("requires_approval", False)
-
-        if requires_approval:
-            plan_result = plan_analysis(state)
-            for key, value in plan_result.items():
-                if value is not None:
-                    state[key] = value
-            show_plan_result = show_plan(state)
-            for key, value in show_plan_result.items():
-                if value is not None:
-                    state[key] = value
-            store_conversation(conv_id, state)
-            runtime.store_status_update(conv_id, "Plan ready for approval.", final=True)
-            return ConversationResponse(
-                conversation_id=conv_id,
-                status="plan_ready",
-                message=planning_update.get("planner_message") or "I've created an analysis plan. Please review and approve:",
-                plan=_format_plan_for_response(state),
+            agent_loop.apply_answers(state, catalog, request.followup_answers)
+        elif request.query and has_pending:
+            _append_history(state, {"role": "user", "content": request.query})
+            agent_loop.apply_reply(state, request.query)
+        elif request.query:
+            await _start_user_turn(state, request, request.query)
+        elif request.plan_approved or request.followup_answers:
+            return _error_response(
+                conv_id,
+                "Nothing is awaiting approval or input.",
+                "There is no pending step awaiting approval or input in this conversation.",
             )
+        else:
+            return _error_response(conv_id, "A query is required.", "A query is required.")
 
-        runtime.store_status_update(conv_id, "All required parameters resolved. Executing skills.")
-        final_state = await execute_current_plan(
-            state,
-            start_message="All required parameters resolved. Starting execution.",
-        )
-        if final_state.get("missing_info"):
-            followup_result = await ask_followup_dynamic(final_state)
-            for key, value in followup_result.items():
-                if value is not None:
-                    final_state[key] = value
-            return _needs_info_response(conv_id, final_state)
-        return _completed_response(conv_id, final_state)
-    except (PlanningContractError, ParameterExtractionError) as exc:
-        return _error_response(
-            conv_id,
-            f"Planning contract failure: {exc}",
-            "I couldn't build a valid execution plan for this request. Please try again.",
-        )
+        outcome = await agent_loop.advance(state, catalog)
+        return _respond(conv_id, state, outcome)
     except Exception as exc:
+        logger.exception("Request failed for conversation %s", conv_id)
+        # Keep completed tool calls and produced artifacts in the transcript.
+        store_conversation(conv_id, state)
         return _error_response(conv_id, f"Request failed: {exc}", f"Error processing request: {exc}")

@@ -190,9 +190,11 @@ class OrchestratorAgent(PrometheusAgent):
         version = request.query_params.get("version")
         conversation_id = request.query_params.get("conversation_id")
         state = get_conversation(conversation_id) if conversation_id else None
-        params = {}
-        if isinstance(state, dict):
-            params = dict((state.get("routing_decision") or {}).get("extracted_params", {}) or {})
+        # Values already supplied to a pending call of this workflow are not asked again.
+        params: Dict[str, Any] = {}
+        for call in (state or {}).get("pending_calls") or []:
+            if call.get("kind") == "workflow" and call.get("target") == workflow_id:
+                params = dict(call.get("arguments") or {})
         context = dict((state or {}).get("context", {}) or {})
 
         cache = get_capability_cache()

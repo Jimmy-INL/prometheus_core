@@ -1,4 +1,4 @@
-"""Unit tests for workflow library compile/match/execute behavior."""
+"""Unit tests for workflow library compile/execute behavior."""
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +16,6 @@ if str(CLIENT_AGENT_DIR) not in sys.path:
 
 from workflow_library.compiler import WorkflowCompileError, compile_workflow
 from workflow_library.executor import execute_workflow
-from workflow_library.matcher import match_workflows
 from workflow_library.naming import find_workflow_by_command, workflow_tool_name
 from workflow_library.registry import WorkflowRegistry
 
@@ -51,56 +50,8 @@ def _compile(raw: Dict[str, Any]) -> Any:
     return compile_workflow(raw=raw, source_path=Path("test.yaml"), capabilities_by_skill=capabilities, strict=True)
 
 
-def test_matcher_preserves_underscore_placeholders() -> None:
-    workflow = _compile(
-        {
-            "id": "w1",
-            "name": "W1",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["full safety analysis of {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-
-    matches = match_workflows("Full safety analysis of SS316", [workflow])
-    assert matches
-    assert matches[0].extracted_params.get("material_id") == "SS316"
-    assert "material.id" not in matches[0].extracted_params
 
 
-def test_matcher_tie_break_is_deterministic_lexical_id() -> None:
-    workflow_a = _compile(
-        {
-            "id": "alpha_workflow",
-            "name": "Alpha",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["analyze {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-    workflow_b = _compile(
-        {
-            "id": "beta_workflow",
-            "name": "Beta",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["analyze {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-
-    matches = match_workflows("analyze SS347", [workflow_b, workflow_a])
-    assert len(matches) == 2
-    assert matches[0].workflow_id == "alpha_workflow"
-    assert matches[1].workflow_id == "beta_workflow"
 
 
 def test_compile_detects_dependency_cycles() -> None:

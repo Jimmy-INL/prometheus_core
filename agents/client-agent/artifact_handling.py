@@ -1,30 +1,15 @@
-"""Declarative artifact catalog and artifact-input resolution helpers."""
+"""Conversation artifact catalog helpers and artifact-reference schema metadata."""
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Set
-
-from param_schema import extract_required_param_paths, get_nested_value, set_nested_value
+from typing import Any, Dict, List, Optional
 
 ARTIFACT_REF_KEYS = ("x_artifact_ref", "x-artifact-ref", "artifact_ref")
-UUID_PATTERN = re.compile(
-    r"\b[0-9a-fA-F]{8}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{12}\b"
-)
-
-
-def normalize_artifact_name(name: str) -> str:
-    return " ".join(str(name or "").strip().lower().split())
 
 
 def summarize_artifacts_for_context(
     artifacts: Optional[List[Dict[str, Any]]],
 ) -> List[Dict[str, Any]]:
-    """Build compact artifact metadata for planning/execution context."""
+    """Build compact artifact metadata for the orchestration context."""
     summary: List[Dict[str, Any]] = []
     seen_ids = set()
     for artifact in artifacts or []:
@@ -58,9 +43,6 @@ def merge_artifacts_into_context(
 ) -> Dict[str, Any]:
     """Merge artifact catalogs into context without dropping prior entries."""
     merged = dict(existing_context or {})
-    # Drop transient per-turn keys — set fresh by _execute() each turn.
-    merged.pop("newly_uploaded_artifact_ids", None)
-    merged.pop("received_files", None)
     current_catalog = summarize_artifacts_for_context((existing_context or {}).get("artifacts"))
     next_catalog = summarize_artifacts_for_context(artifacts)
     existing_ids = {item["artifact_id"] for item in current_catalog}
@@ -84,32 +66,6 @@ def merge_artifact_catalogs(
         seen_ids.add(artifact_id)
         merged.append(item)
     return merged
-
-
-def _build_artifact_indexes(
-    context: Optional[Dict[str, Any]],
-) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
-    artifact_by_id: Dict[str, Dict[str, Any]] = {}
-    artifact_by_name: Dict[str, str] = {}
-    for item in summarize_artifacts_for_context((context or {}).get("artifacts")):
-        artifact_by_id[item["artifact_id"]] = item
-        artifact_by_name[normalize_artifact_name(item["name"])] = item["artifact_id"]
-    return artifact_by_id, artifact_by_name
-
-
-def _resolve_artifact_identifier(
-    value: Any,
-    artifact_by_id: Dict[str, Dict[str, Any]],
-    artifact_by_name: Dict[str, str],
-) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    if text in artifact_by_id:
-        return text
-    return artifact_by_name.get(normalize_artifact_name(text))
 
 
 def _artifact_binding_mode(prop: Dict[str, Any]) -> Optional[str]:
@@ -145,122 +101,3 @@ def extract_artifact_field_paths(
         if is_object:
             result.update(extract_artifact_field_paths(prop, prefix=f"{path}."))
     return result
-
-
-@dataclass
-class ChainRequiredPaths:
-    """Aggregated required-input paths across a (possibly sequential) skill chain."""
-
-    user_paths: Set[str]
-    runtime_paths: Set[str]
-    deferred_paths: Set[str]
-
-
-def collect_chain_required_paths(
-    capabilities: Sequence[Any],
-    workflow_type: Optional[str],
-) -> ChainRequiredPaths:
-    """Compute user-required and runtime-required paths for a skill chain.
-
-    Sequential dataflow: artifact-reference inputs of downstream skills are
-    produced by earlier steps at runtime. They cannot exist at planning time,
-    so they are deferred — neither asked from the user nor counted as
-    missing. This is the single source of that rule; the planner's
-    requirement status, the planning flow, and follow-up recomputation all
-    derive from it.
-
-    ``capabilities`` is the chain's capabilities in execution order (None
-    entries for unknown skills are skipped, preserving positions).
-    """
-    user_paths: Set[str] = set()
-    runtime_paths: Set[str] = set()
-    deferred_paths: Set[str] = set()
-    for index, capability in enumerate(capabilities):
-        input_schema = getattr(capability, "input_schema", None)
-        if not isinstance(input_schema, dict):
-            continue
-        user_required = set(extract_required_param_paths(input_schema))
-        all_required = set(extract_required_param_paths(input_schema, include_internal=True))
-        if workflow_type == "sequential" and index > 0:
-            artifact_paths = set(extract_artifact_field_paths(input_schema))
-            deferred = (user_required | all_required) & artifact_paths
-            deferred_paths |= deferred
-            user_required -= deferred
-            all_required -= deferred
-        user_paths |= user_required
-        runtime_paths |= all_required - user_required
-    return ChainRequiredPaths(user_paths, runtime_paths, deferred_paths)
-
-
-def resolve_artifact_inputs(
-    params: Dict[str, Any],
-    query: str,
-    context: Optional[Dict[str, Any]],
-    input_schemas: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Resolve declared artifact-reference inputs from the conversation artifact catalog."""
-    artifact_paths: Dict[str, str] = {}
-    for schema in input_schemas:
-        artifact_paths.update(extract_artifact_field_paths(schema))
-    if not artifact_paths:
-        return params
-
-    artifact_by_id, artifact_by_name = _build_artifact_indexes(context)
-    if not artifact_by_id:
-        return params
-
-    resolved = dict(params or {})
-    for path, mode in artifact_paths.items():
-        existing = get_nested_value(resolved, path)
-        if mode == "multiple":
-            if isinstance(existing, list):
-                resolved_list: List[str] = []
-                for item in existing:
-                    artifact_id = _resolve_artifact_identifier(item, artifact_by_id, artifact_by_name)
-                    if artifact_id and artifact_id not in resolved_list:
-                        resolved_list.append(artifact_id)
-                if resolved_list:
-                    set_nested_value(resolved, path, resolved_list)
-        else:
-            artifact_id = _resolve_artifact_identifier(existing, artifact_by_id, artifact_by_name)
-            if artifact_id:
-                set_nested_value(resolved, path, artifact_id)
-
-    matched_ids: List[str] = []
-    q = str(query or "")
-    for uuid_match in UUID_PATTERN.findall(q):
-        if uuid_match in artifact_by_id and uuid_match not in matched_ids:
-            matched_ids.append(uuid_match)
-    q_normalized = normalize_artifact_name(q)
-    if q_normalized:
-        for normalized_name, artifact_id in artifact_by_name.items():
-            if normalized_name and normalized_name in q_normalized and artifact_id not in matched_ids:
-                matched_ids.append(artifact_id)
-
-    if matched_ids:
-        for path, mode in artifact_paths.items():
-            if get_nested_value(resolved, path) is not None:
-                continue
-            if mode == "multiple":
-                set_nested_value(resolved, path, list(matched_ids))
-            else:
-                set_nested_value(resolved, path, matched_ids[0])
-
-    # Conservative auto-binding for newly-uploaded artifacts.
-    # Only bind when there is exactly 1 newly-uploaded artifact AND
-    # exactly 1 still-unfilled x_artifact_ref field.
-    newly_uploaded = list((context or {}).get("newly_uploaded_artifact_ids") or [])
-    if newly_uploaded:
-        unfilled_paths = [
-            path for path in artifact_paths if get_nested_value(resolved, path) is None
-        ]
-        valid_candidates = [aid for aid in newly_uploaded if aid in artifact_by_id]
-        if len(valid_candidates) == 1 and len(unfilled_paths) == 1:
-            path = unfilled_paths[0]
-            mode = artifact_paths[path]
-            if mode == "multiple":
-                set_nested_value(resolved, path, valid_candidates)
-            else:
-                set_nested_value(resolved, path, valid_candidates[0])
-
-    return resolved
