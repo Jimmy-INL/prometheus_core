@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Formation</title>
+<title>The Challenge &amp; Teams</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="assets/deck.css">
 </head>
-<body data-sec="team" data-title="Day 1 · Team formation">
+<body data-sec="team" data-title="Day 1 · The challenge &amp; team formation">
 <div id="viewport"><div id="stage">
 
 <!-- 1 -->
@@ -17,31 +17,30 @@
   <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
   <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
   <div class="kicker">Day 1 · 4:30 pm</div>
-  <h1>Team formation</h1>
-  <p class="sub">Challenge tracks and example agent ideas, informal pitches, teams of 4–5, a team name and a Day 2 room. Then the hacking starts.</p>
-  <div class="meta"><span class="pill acc">All participants</span><span class="pill">teams of 4–5</span></div>
+  <h1>The challenge &amp;<br>team formation</h1>
+  <p class="sub">Every team builds the same agent: one that pulls a table out of a markdown document and plots it. At demo time it meets a file it has never seen.</p>
+  <div class="meta"><span class="pill acc">All participants</span><span class="pill">teams of 4–5</span><span class="pill">4–5 h of building</span></div>
 </section>
 
 <!-- 2 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">How this works</div><h2>From ideas to teams in 30 minutes</h2></div>
+  <div class="head"><div class="eyebrow">How this works</div><h2>From announcement to teams in 30 minutes</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
       <div class="steps">
-        <div class="step"><div><h4>Tracks and example ideas (10 min)</h4><p class="small">The next slides give three tracks and nine example agents. They are examples, not assignments; your own idea is welcome.</p></div></div>
-        <div class="step"><div><h4>Informal pitches (10 min)</h4><p class="small">Anyone with an idea gets 60 seconds: the problem, who would use it, and which existing agent it would chain with.</p></div></div>
-        <div class="step"><div><h4>Form teams (10 min)</h4><p class="small">4–5 people. Mix skills: someone comfortable with Docker, someone with domain knowledge, someone who likes prompts, someone who writes tests.</p></div></div>
-        <div class="step"><div><h4>Register</h4><p class="small">Team name, members, idea, and one-line pitch go on the sign-up sheet. Pick up your Day 2 room.</p></div></div>
+        <div class="step"><div><h4>The challenge (10 min)</h4><p class="small">One task for everybody, described on the next slides. Same practice file, same rules, same hidden test at the end.</p></div></div>
+        <div class="step"><div><h4>Questions (5 min)</h4><p class="small">Ask now about the task, the files, or the judging. The judging deck is public; the demo files are not.</p></div></div>
+        <div class="step"><div><h4>Form teams (10 min)</h4><p class="small">4–5 people. Mix skills: someone comfortable with Docker, someone who likes parsing, someone who likes prompts, someone who writes tests.</p></div></div>
+        <div class="step"><div><h4>Register (5 min)</h4><p class="small">Team name and members go on the sign-up sheet. Pick up your Day 2 room and the practice files.</p></div></div>
       </div>
       <div class="col">
-        <div class="card acc"><h3>A good hackathon agent…</h3><ul class="b sm">
-          <li>solves <b>one</b> clear task someone at INL actually has</li>
-          <li>wraps an existing code, library, dataset, or document corpus</li>
-          <li>takes or produces an <b>artifact</b> (file in, file out)</li>
-          <li>can be demoed in a chat conversation within 5 minutes</li>
-          <li>chains with an agent that already exists</li>
+        <div class="card acc"><h3>Why one shared task?</h3><ul class="b sm">
+          <li>Everyone exercises the same platform features: uploads, artifacts, routing, follow-up questions</li>
+          <li>Results are directly comparable on demo day</li>
+          <li>The interesting part is <b>generalization</b>: does your agent handle a file it has never seen?</li>
+          <li>Teams can compare approaches afterwards: regex vs LLM, one skill vs several</li>
         </ul></div>
-        <div class="callout warn">Scope for about one day of building. The platform does the plumbing; spend your time on the domain logic and a card the planner routes to.</div>
+        <div class="callout warn">Building time on Day 2 is about <b>4–5 hours</b>. Get something working end to end in the first two hours, then make it robust.</div>
       </div>
     </div>
   </div>
@@ -49,147 +48,186 @@
 
 <!-- 3 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Challenge tracks</div><h2>Three tracks, nine example agents</h2></div>
+  <div class="head"><div class="eyebrow">The challenge</div><h2>One agent, at least two skills</h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:22px">
-      <div class="card acc"><span class="tag">Track A</span><h3>Simulation &amp; analysis</h3><p class="small">Wrap physics or engineering calculations; produce plots and data artifacts.</p>
-        <ol class="b sm"><li>Reactivity Coach (point kinetics)</li><li>Decay-heat &amp; shutdown-cooling estimator</li><li>Mesh QA &amp; solver-readiness inspector</li></ol></div>
-      <div class="card acc"><span class="tag">Track B</span><h3>Engineering data &amp; tools</h3><p class="small">Help engineers with their inputs, logs, and datasets. Good fit for the code sandbox.</p>
-        <ol class="b sm" start="4"><li>MOOSE input-file doctor</li><li>Simulation log triage</li><li>DeepLynx dataset profiler</li></ol></div>
-      <div class="card acc"><span class="tag">Track C</span><h3>Safety, regulatory &amp; documents</h3><p class="small">Turn requirements and regulations into structured, traceable artifacts.</p>
-        <ol class="b sm" start="7"><li>Requirements-to-test traceability matrix</li><li>Regulatory citation finder</li><li>Fault-tree builder</li></ol></div>
+    <div class="grid g2" style="gap:30px">
+      <div class="card acc"><span class="tag">Skill 1</span><h3>Extract a table from a markdown document</h3>
+        <p class="body">The user uploads a markdown file and describes the table they want, the way people do: <i>"the table with population data"</i>, <i>"the maturation log of the big Emmental"</i>.</p>
+        <p class="body">The skill finds the right table by its <b>caption</b>, parses it into columns and rows, and emits it as a <b>table artifact</b> that other skills (and the UI) can use.</p></div>
+      <div class="card acc"><span class="tag">Skill 2</span><h3>Plot tabular data</h3>
+        <p class="body">Given tabular data (a table artifact from skill 1, <b>or</b> an uploaded CSV file) and the columns to plot, the skill draws the plot and emits it as an <b>image artifact</b> that renders in the chat.</p>
+        <p class="body">If it doesn't know what to plot, it <b>asks the user</b>, offering the real column names.</p></div>
     </div>
-    <div class="callout">Or bring your own: <b>wrap a code you already use</b> (a solver, a parser, a database). Existing org repos to chain with: <code>gmsh_agent</code>, <code>requirements_agent</code>, <code>bim_agent</code>, <code>muninn</code> (RAVEN), <code>open_pronghorn-agent</code>, <code>component_*</code> report agents, <code>data-catalog-search-agent</code>, and the in-tree OSTI research and synthesis agents.</div>
+    <div class="callout">The orchestrator chains them for a request like <i>"Extract the table with the population data and plot the population of Brie Basin versus year"</i>: skill 1 runs first; the orchestrator LLM reads its result and passes the new table's artifact id to skill 2. You design the skills; the orchestrator decides when to call each, and with what.</div>
   </div>
 </section>
 
 <!-- 4 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Overview</div><h2>The example ideas at a glance</h2></div>
+  <div class="head"><div class="eyebrow">What you get now</div><h2>The practice files</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:40px">#</th><th style="width:330px">Agent</th><th>In → out</th><th style="width:360px">Platform features exercised</th></tr>
-      <tr><td>1</td><td><b>Reactivity Coach</b></td><td>reactivity profile → power/period plots + explanation</td><td>worker thread, JSON + file artifacts, LLM, input-required</td></tr>
-      <tr><td>2</td><td><b>Decay-heat estimator</b></td><td>power history → decay-heat curve → cooling flow</td><td>enum schemas, a 2-step workflow, <code>x_input_source: runtime</code></td></tr>
-      <tr><td>3</td><td><b>Mesh QA inspector</b></td><td>Exodus mesh → quality report + histograms</td><td><code>x_artifact_ref</code>, DeepLynx, workflow with <code>geometry_meshing</code></td></tr>
-      <tr><td>4</td><td><b>MOOSE input doctor</b></td><td><code>.i</code> file → explanation, lint findings, diff</td><td>LLM tool calling, text artifacts, conversation messages</td></tr>
-      <tr><td>5</td><td><b>Log triage</b></td><td>failed run log → diagnosis, residual plot, fixes</td><td>regex + LLM hybrid, sandbox plotting, vision</td></tr>
-      <tr><td>6</td><td><b>Dataset profiler</b></td><td>DeepLynx item / query → stats, anomalies, notebook</td><td>agent-sandbox-mcp loop, notebook provenance, StorageClient</td></tr>
-      <tr><td>7</td><td><b>Traceability matrix</b></td><td>requirements JSON → verification methods + RTM (XLSX)</td><td>structured output via tool calling, <code>requires_approval</code></td></tr>
-      <tr><td>8</td><td><b>Regulatory citation finder</b></td><td>requirement text → 10 CFR / SRP / RG citations</td><td>embeddings, context state, JSON with <code>json_type</code></td></tr>
-      <tr><td>9</td><td><b>Fault-tree builder</b></td><td>system topology → fault tree + minimal cut sets</td><td>LLM tool loop, sandbox compute, SVG/XML artifacts</td></tr>
-    </table>
+    <div class="grid" style="grid-template-columns: 1.4fr 1fr; gap:26px">
+      <div class="col">
+        <p class="tiny"><code>challenge/practice/lunar_cheese_annual_report.md</code> (excerpt, as rendered)</p>
+        <p class="small"><b>Table 2. Census of the resident population of the three lunar mining settlements, 2042–2051, together with the estimated number of feral cheese mice living in the maintenance tunnels.</b></p>
+        <table class="t sm">
+          <tr><th>Year</th><th>Crater Gouda (residents)</th><th>Brie Basin (residents)</th><th>Camembert Ridge (residents)</th><th>Feral cheese mice (est.)</th></tr>
+          <tr><td>2042</td><td>412</td><td>188</td><td>—</td><td>350</td></tr>
+          <tr><td>2043</td><td>467</td><td>203</td><td>—</td><td>420</td></tr>
+          <tr><td>2044</td><td>521</td><td>231</td><td>37</td><td>515</td></tr>
+          <tr><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+          <tr><td>2051</td><td>930</td><td>465</td><td>668</td><td>2,610</td></tr>
+        </table>
+        <p class="tiny"><i>Camembert Ridge was not yet founded in 2042 and 2043 (—).</i> In the file, captions are bold paragraphs directly above GitHub-flavoured markdown tables.</p>
+      </div>
+      <div class="col">
+        <table class="t sm">
+          <tr><th>File</th><th>Contents</th></tr>
+          <tr><td><code>lunar_cheese_annual_report.md</code></td><td>3 captioned tables (equipment, population census, Emmental maturation log) with prose between them</td></tr>
+          <tr><td><code>cheese_mouse_sightings.csv</code></td><td>6 numeric columns, 14 nights</td></tr>
+          <tr><td><code>README.md</code></td><td>the challenge brief and the requirements</td></tr>
+        </table>
+        <h4 class="acc">Example prompt (after uploading the report)</h4>
+        <div class="callout good"><i>"Extract the table with the population data and plot the population of Brie Basin versus year."</i></div>
+        <p class="small">Note the traps already in the practice file: a non-numeric table, thousands separators (<code>1,020</code>), missing values (<code>—</code>), units in headers.</p>
+      </div>
+    </div>
   </div>
 </section>
 
 <!-- 5 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track A · Simulation &amp; analysis</div><h2>1 · Reactivity Coach &nbsp;·&nbsp; 2 · Decay-heat estimator</h2></div>
+  <div class="head"><div class="eyebrow">Demo time</div><h2>A file your agent has never seen</h2><p class="lede">At the demo, judges upload a <b>new markdown file</b> and a <b>new CSV file</b> and type two or three prompts. The files follow the same conventions as the practice file.</p></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>1 · Reactivity Coach</h3>
-        <p class="small"><b>Pitch</b>: "What happens if I insert $0.3 of reactivity in 0.5 s?" The agent solves 6-group point kinetics, plots power, period, and precursors, and explains the physics in plain language.</p>
-        <p class="small"><b>Skills</b>: <code>pk_simulate_transient</code> (reactivity profile step/ramp/sine, β, Λ, delayed-group preset U-235/Pu-239 as an <code>enum</code>, duration) → CSV + PNG to DeepLynx + a JSON summary (peak power, prompt jump, stable period). <code>pk_explain</code>: an LLM explanation of a run artifact.</p>
-        <p class="small"><b>Uses</b>: <code>PrometheusWorker</code> for the ODE solve, <code>send_input_required</code> when β is missing, artifacts.</p>
-        <p class="small"><b>Stretch</b>: temperature feedback; inverse kinetics from an uploaded power trace (CSV, <code>x_artifact_ref</code>); a vision check of its own plot.</p>
-        <p class="small"><b>Chain</b>: reuse <code>reactor-dt-modules/openpointkinetics</code>; workflow <code>pk_simulate_transient</code> → <code>pk_explain</code>.</p></div>
-      <div class="card"><h3>2 · Decay-heat &amp; shutdown-cooling estimator</h3>
-        <p class="small"><b>Pitch</b>: from a power history (constant or piecewise), estimate the decay-heat curve (an ANS-5.1-style fit, or Way–Wigner as a teaching approximation) and the cooling flow needed for a given ΔT, with plots and caveats.</p>
-        <p class="small"><b>Skills</b>: <code>decay_heat_curve</code> (<code>power_mwt</code>, <code>operating_time_days</code>, <code>shutdown_times</code>, <code>method</code> enum) → CSV/PNG + JSON. <code>cooling_requirement</code> (decay-heat artifact, coolant water/sodium/helium, ΔT) → a mass-flow table.</p>
-        <p class="small"><b>Uses</b>: deterministic compute via <code>asyncio.to_thread</code>, enum schemas, a 2-step workflow with <code>x_input_source: runtime</code>, a conversation message for "not for licensing use".</p>
-        <p class="small"><b>Stretch</b>: an uncertainty band by Monte Carlo in the sandbox.</p>
-        <p class="small"><b>Chain</b>: <code>design</code> (requirements_agent sizing) → <code>decay_heat_curve</code> → <code>cooling_requirement</code>.</p></div>
+    <div class="grid g3" style="gap:22px">
+      <div class="card acc"><span class="tag">Test 1</span><h3>Finding the table</h3><p class="small">Users refer to a table by what its <b>caption</b> says, not by number, and not in the same words. There may be several tables with similar columns.</p></div>
+      <div class="card acc"><span class="tag">Test 2</span><h3>Matching columns</h3><p class="small">Users say "temperature" and "time". The file may use symbols and units instead of words. Case can matter.</p></div>
+      <div class="card acc"><span class="tag">Test 3</span><h3>Plot this file</h3><p class="small">A user uploads a CSV and just says "plot this". The plot skill must work <b>without</b> the extract skill, and <b>ask</b> which columns to use instead of guessing.</p></div>
     </div>
+    <div class="callout warn">Tune for the conventions, not for the practice file. Hard-coding "Brie Basin" or "Table 2" will pass the practice prompt and fail every hidden one.</div>
   </div>
 </section>
 
 <!-- 6 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track A · Simulation &amp; analysis</div><h2>3 · Mesh QA &amp; solver-readiness inspector</h2></div>
+  <div class="head"><div class="eyebrow">A suggested design</div><h2>Two skills, connected by artifacts</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>3 · Mesh QA inspector</h3>
-        <p class="small"><b>Pitch</b>: given any Exodus mesh artifact (for example the output of <code>geometry_meshing</code>), report element quality (scaled Jacobian, aspect-ratio histograms), the block and sideset inventory, and a "ready for MOOSE?" verdict with suggested fixes.</p>
-        <p class="small"><b>Skills</b>: <code>mesh_quality_report</code> (<code>mesh_artifact_id</code> with <code>x_artifact_ref</code>, MIME <code>application/x-exodus</code>) → a JSON metrics artifact, histogram PNGs, and a markdown report. <code>suggest_mesh_fixes</code>: LLM.</p>
-        <p class="small"><b>Uses</b>: <code>get_artifact_file_path</code> on a <code>deeplynx://</code> URI, meshio/numpy (or pyvista in the sandbox), the <code>vision</code> flavor on renders.</p>
-        <p class="small"><b>Stretch</b>: generate a MOOSE <code>[Mesh]</code> block with sideset names; compare two meshes.</p></div>
-      <div class="col">
-        <h4 class="acc">The chaining workflow, ready to ship</h4>
-        <pre class="xs">id: &lt;team&gt;.step_to_checked_mesh
-name: STEP to checked mesh
-version: "1.0.0"
-description: Mesh a STEP file, then check the mesh.
-inputs: {required: [step_artifact_id]}
-execution: {mode: sequential, max_concurrency: 1,
-            on_error: fail_fast}
-steps:
-  - id: mesh
-    skill_id: geometry_meshing
-    params: {step_artifact_id:
-             {from: input.step_artifact_id}}
-    outputs: [{to_context: mesh_id, from: artifact_id}]
-  - id: check
-    skill_id: &lt;team&gt;_mesh_quality_report
-    depends_on: [mesh]
-    is_final: true
-    params: {mesh_artifact_id: {from: context.mesh_id}}
-outputs: {final: {from: step.check.result}}</pre>
-        <p class="small">Needs <code>gmsh_agent</code> running next to the platform. A mentor can help set it up.</p>
+    <div class="dg">
+      <div class="row" style="gap:0; align-items:stretch">
+        <div class="box gray" style="flex:0.8"><b>upload .md</b><span class="small">stored in DeepLynx, registered as an artifact</span></div>
+        <div class="arrow-h" style="width:50px"></div>
+        <div class="box crimson" style="flex:1.2"><b>skill 1 · <code>&lt;team&gt;_extract_table</code></b><span class="small">inputs: <code>document_artifact_id</code> (<code>x_artifact_ref</code>), <code>table_description</code></span><span class="small">parse all tables → pick by caption → clean numbers</span></div>
+        <div class="arrow-h" style="width:50px"></div>
+        <div class="box teal" style="flex:1"><b>table artifact</b><span class="small">JSON <code>{caption, columns, rows}</code> (+ a CSV file)</span></div>
       </div>
+      <div class="arrow-v at-right" style="height:34px"><span>artifact id</span></div>
+      <div class="row" style="gap:0; align-items:stretch">
+        <div class="box green" style="flex:1"><b>image artifact</b><span class="small">PNG via <code>send_deeplynx_artifact</code>, <code>image/png</code></span></div>
+        <div class="arrow-h left" style="width:50px"></div>
+        <div class="box crimson" style="flex:1.2"><b>skill 2 · <code>&lt;team&gt;_plot_table</code></b><span class="small">inputs: <code>table_artifact_id</code> (<code>x_artifact_ref</code>), <code>x_column</code>, <code>y_columns</code>, <code>title</code></span><span class="small">match columns → ask if unsure → matplotlib</span></div>
+        <div class="arrow-h left" style="width:50px"></div>
+        <div class="box gray" style="flex:0.8"><b>upload .csv</b><span class="small">or any table artifact</span></div>
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h4>Skill 1 returns</h4><p class="small"><code>artifact_id</code>, the matched caption, and the <b>exact column names</b> in its result dict. The orchestrator reads that JSON (not the artifact body) to fill the plot call. Never put an <code>artifacts</code> key in your result.</p></div>
+      <div class="card"><h4>Skill 2 accepts both</h4><p class="small">A JSON table artifact <b>and</b> a raw CSV file. <code>get_artifact_file_path()</code> gives you a local file either way.</p></div>
+      <div class="card"><h4>Keep columns optional</h4><p class="small">If <code>x_column</code> and <code>y_columns</code> are not required in the schema, <i>your</i> skill can ask with the real column names as choices. Say so in the description, so the orchestrator doesn't guess.</p></div>
     </div>
   </div>
 </section>
 
 <!-- 7 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track B · Engineering data &amp; tools</div><h2>4 · MOOSE input doctor &nbsp;·&nbsp; 5 · Log triage</h2></div>
+  <div class="head"><div class="eyebrow">The card</div><h2>Two skills in <code style="font-size:.8em">agent_card.json</code></h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>4 · MOOSE input-file doctor</h3>
-        <p class="small"><b>Pitch</b>: upload a MOOSE <code>.i</code> file. The agent parses the HIT blocks, explains the PDE system per variable (kernels → weak-form terms), flags suspicious BCs or units, and runs a syntax check.</p>
-        <p class="small"><b>Skills</b>: <code>moose_input_explain</code>, <code>moose_input_lint</code> (rules + LLM), <code>moose_input_diff</code> (explain what changed between two inputs).</p>
-        <p class="small"><b>Uses</b>: <b>LLM tool calling</b> with tools such as <code>get_block</code>, <code>list_objects</code>, <code>lookup_object_doc</code>; text artifacts; <code>send_conversation_message</code> for caveats.</p>
-        <p class="small"><b>Stretch</b>: run a tiny case in a MOOSE container in the sandbox; emit a patch artifact.</p>
-        <p class="small"><b>Chain</b>: <code>open_pronghorn-agent</code> (<code>cfd_query</code>) for documentation-backed answers; <code>muninn</code> (RAVEN wraps MOOSE inputs).</p></div>
-      <div class="card"><h3>5 · Simulation log triage</h3>
-        <p class="small"><b>Pitch</b>: upload a failed MOOSE, RAVEN, or Cubit run log. The agent classifies the failure (non-convergence, mesh inversion, missing material property, license or environment), extracts the residual history into a plot, and proposes concrete input changes.</p>
-        <p class="small"><b>Skills</b>: <code>triage_log</code> (<code>log_artifact_id</code>) → JSON diagnosis + residual PNG + suggested fixes; <code>summarize_run</code>.</p>
-        <p class="small"><b>Uses</b>: regex extraction plus an LLM for classification, sandbox plotting, optional vision, conversation messages.</p>
-        <p class="small"><b>Stretch</b>: hand off to the input doctor (#4) via a workflow; remember past failures in context state.</p>
-        <p class="small"><b>Chain</b>: downstream of <code>raven_workflow_execute</code> (muninn), <code>obstructed_pipe_cfd</code> (open_pronghorn), <code>run_transient</code> (system-thermal-hydraulics).</p></div>
+    <div class="grid g2" style="gap:24px">
+      <pre class="xs">{ <span class="s">"id"</span>: <span class="p">"neutron_extract_table"</span>,
+  <span class="s">"name"</span>: <span class="s">"Extract table from markdown"</span>,
+  <span class="s">"description"</span>: <span class="s">"Find one table in an uploaded markdown
+    document by matching the user's description against the
+    table captions, parse it, and publish it as a table
+    artifact with clean numeric columns."</span>,
+  <span class="s">"usage_notes"</span>: <span class="s">"Use when the user refers to a table inside
+    a markdown/text document. Not for CSV files: those can be
+    plotted directly."</span>,
+  <span class="s">"tags"</span>: [<span class="s">"table"</span>, <span class="s">"markdown"</span>, <span class="s">"extract"</span>],
+  <span class="s">"inputSchema"</span>: { <span class="s">"type"</span>: <span class="s">"object"</span>,
+    <span class="s">"properties"</span>: {
+      <span class="s">"document_artifact_id"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="s">"x_artifact_ref"</span>: <span class="s">"single"</span>,
+        <span class="s">"description"</span>: <span class="s">"The markdown document artifact."</span> },
+      <span class="s">"table_description"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="s">"description"</span>: <span class="s">"How the user referred to the table,
+          e.g. 'the table with population data'."</span> } },
+    <span class="s">"required"</span>: [<span class="s">"document_artifact_id"</span>, <span class="s">"table_description"</span>] } }</pre>
+      <pre class="xs">{ <span class="s">"id"</span>: <span class="p">"neutron_plot_table"</span>,
+  <span class="s">"name"</span>: <span class="s">"Plot tabular data"</span>,
+  <span class="s">"description"</span>: <span class="s">"Plot columns of a table artifact or an
+    uploaded CSV file as a PNG line, scatter, or bar chart.
+    If the user named no columns, call it with only
+    table_artifact_id: the skill asks, offering the
+    real column names. Do not guess columns."</span>,
+  <span class="s">"usage_notes"</span>: <span class="s">"Use for 'plot', 'chart', 'graph' requests on
+    tabular data, including a CSV the user just uploaded.
+    Column names may be approximate ('temperature')."</span>,
+  <span class="s">"tags"</span>: [<span class="s">"plot"</span>, <span class="s">"chart"</span>, <span class="s">"csv"</span>, <span class="s">"table"</span>],
+  <span class="s">"inputSchema"</span>: { <span class="s">"type"</span>: <span class="s">"object"</span>,
+    <span class="s">"properties"</span>: {
+      <span class="s">"table_artifact_id"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="s">"x_artifact_ref"</span>: <span class="s">"single"</span>,
+        <span class="s">"description"</span>: <span class="s">"Table artifact or CSV file."</span> },
+      <span class="s">"x_column"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="s">"description"</span>: <span class="s">"Column for the x axis (approximate ok)."</span> },
+      <span class="s">"y_columns"</span>: { <span class="s">"type"</span>: <span class="s">"array"</span>, <span class="s">"items"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>},
+        <span class="s">"description"</span>: <span class="s">"Column(s) for the y axis (approximate ok)."</span> },
+      <span class="s">"kind"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"enum"</span>: [<span class="s">"line"</span>, <span class="s">"scatter"</span>, <span class="s">"bar"</span>] } },
+    <span class="s">"required"</span>: [<span class="s">"table_artifact_id"</span>] } }</pre>
     </div>
+    <p class="small">These go in the card's <code>skills</code> array, with <code>"capabilities": {"streaming": true}</code> at the top level. Prefix the IDs with your team name: every team builds the same skills.</p>
   </div>
 </section>
 
 <!-- 8 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track B · Engineering data &amp; tools</div><h2>6 · DeepLynx dataset profiler</h2></div>
+  <div class="head"><div class="eyebrow">Implementation hints</div><h2>The pieces you need</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>6 · Dataset profiler / notebook analyst</h3>
-        <p class="small"><b>Pitch</b>: "Profile the thermocouple data from yesterday's loop test." The agent finds the file in DeepLynx, pulls it into a sandboxed notebook, lets the LLM write pandas code in a <code>run_python</code> loop, and returns stats, anomaly flags, and plots, with the executed notebook as provenance.</p>
-        <p class="small"><b>Skills</b>: <code>profile_dataset</code> (an <code>artifact_id</code> or a DeepLynx search query); <code>ask_dataset</code> (a free-form question answered through the code loop).</p>
-        <p class="small"><b>Uses</b>: the agent-sandbox-mcp session loop (the <code>agentic-hex-meshing</code> pattern), a notebook artifact, <code>StorageClient</code> search or fsspec <code>deeplynx://</code>, budgets, vision on plots.</p>
-        <p class="small"><b>Stretch</b>: IsolationForest anomaly detection from <code>reactor-dt-modules/ml</code>; save derived datasets back to DeepLynx with tags.</p>
-        <p class="small"><b>Chain</b>: <code>search_deeplynx</code> (data-catalog-search-agent) → <code>profile_dataset</code>.</p></div>
+    <div class="grid g2" style="gap:24px">
       <div class="col">
-        <h4 class="acc">The sandbox loop, sketched</h4>
-        <pre class="xs">tools = [RUN_PYTHON, SUBMIT]          <span class="c"># ToolDefinition ×2</span>
-<span class="k">for</span> step <span class="k">in</span> range(MAX_STEPS):
-    r = <span class="k">await</span> llm.medium(history, tools=tools,
-                         tool_choice=<span class="s">"auto"</span>)
-    <span class="k">if not</span> r.tool_calls: <span class="k">break</span>
-    history.append(assistant_message(r))
-    <span class="k">for</span> call <span class="k">in</span> r.tool_calls:
-        <span class="k">if</span> call.name == <span class="s">"submit"</span>: …
-        cell = <span class="k">await</span> session.run_cell(   <span class="c"># SandboxSession</span>
-            call.arguments[<span class="s">"code"</span>])
-        <span class="k">await</span> self.send_status_update(context,
-            event_queue,
-            message=call.arguments[<span class="s">"summary"</span>])
-        history.append(tool_result_message(
-            call, render(cell) + budget_note(step)))</pre>
-        <p class="small">Copy <code>sandbox_client.py</code> from <code>gmsh_agent</code> (branch <code>agentic-hex-meshing</code>): <code>SandboxSession.run_cell(code)</code> returns a <code>CellResult</code>, and it includes the <code>Host: localhost</code> header fix.</p>
+        <table class="t sm wrap-code">
+          <tr><th>Step</th><th>Options</th></tr>
+          <tr><td><b>Get the file</b></td><td><code>path = await self.get_artifact_file_path(params["document_artifact_id"], context=context, artifacts=params.get("artifacts"))</code></td></tr>
+          <tr><td><b>Find tables</b></td><td>Regex over <code>|</code>-rows plus the separator line, or a markdown parser (<code>markdown-it-py</code>). Keep the bold line above as the caption.</td></tr>
+          <tr><td><b>Pick the table</b></td><td>An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. LLMs handle "center line" vs "centerline" well.</td></tr>
+          <tr><td><b>Clean values</b></td><td><code>1,020</code> → 1020; <code>—</code>, <code>-</code>, empty → missing; keep text columns as text</td></tr>
+          <tr><td><b>Match columns</b></td><td>The LLM with the header list and the user's words; parse units in <code>[…]</code> or <code>(…)</code>; mind <code>t</code> vs <code>T</code></td></tr>
+          <tr><td><b>Plot</b></td><td><code>matplotlib</code> with the <code>Agg</code> backend; label axes with units; title from the caption</td></tr>
+          <tr><td><b>Publish</b></td><td><code>send_json_artifact(..., catalog_artifact=True)</code> for the table; <code>send_deeplynx_artifact(..., mime_type="image/png")</code> for the plot</td></tr>
+        </table>
+      </div>
+      <div class="col">
+        <h4 class="acc">Asking for the columns</h4>
+        <pre class="xs"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
+
+columns = list(df.columns)
+<span class="k">if not</span> x_col <span class="k">or not</span> y_cols:
+    self.save_context_state(ctx, {<span class="s">"table"</span>: table_id})
+    <span class="k">await</span> self.send_input_required(
+        context, event_queue,
+        missing_inputs=[
+          MissingInput(name=<span class="s">"x_column"</span>,
+            description=<span class="s">"Column for the x axis"</span>,
+            user_prompt=<span class="s">"Which column goes on the x axis?"</span>,
+            type=<span class="s">"enum"</span>, options=columns),
+          MissingInput(name=<span class="s">"y_column"</span>,
+            description=<span class="s">"Column for the y axis"</span>,
+            user_prompt=<span class="s">"Which column should be plotted?"</span>,
+            type=<span class="s">"enum"</span>, options=columns)],
+        hint=<span class="s">"Choose the columns to plot."</span>)
+    <span class="k">return</span> {}
+<span class="c"># resumed call: self.get_provided_inputs(context)</span>
+<span class="c">#   → {"x_column": "...", "y_column": "..."} → y_columns=[...]</span></pre>
+        <p class="small">A string list in <code>options</code> becomes a dropdown in the chat's follow-up form, with your <code>hint</code> as the message. With <code>resolvable_from_context=False</code> (the default) the user is asked. If they type a reply instead, the orchestrator calls you again with new arguments.</p>
       </div>
     </div>
   </div>
@@ -197,82 +235,53 @@ outputs: {final: {from: step.check.result}}</pre>
 
 <!-- 9 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track C · Safety, regulatory &amp; documents</div><h2>7 · Traceability matrix &nbsp;·&nbsp; 8 · Citation finder</h2></div>
+  <div class="head"><div class="eyebrow">Before you start</div><h2>Prerequisites and pitfalls</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>7 · Requirements-to-test traceability matrix</h3>
-        <p class="small"><b>Pitch</b>: take the requirements JSON produced by <code>requirements_agent</code>, classify each requirement's verification method (inspection, analysis, test, or demonstration), build a requirements traceability matrix (XLSX/CSV), and flag untestable requirements.</p>
-        <p class="small"><b>Skills</b>: <code>classify_verification_methods</code> (batched <code>llm.medium</code> with a forced tool whose schema is your pydantic output model); <code>build_rtm</code> → XLSX to DeepLynx.</p>
-        <p class="small"><b>Uses</b>: structured output via tool calling, <code>requires_approval</code> for bulk regeneration, input-required for the component type.</p>
-        <p class="small"><b>Stretch</b>: map rows to the 10 CFR 50 App. B criteria; per-row confidence; human edits through input-required.</p>
-        <p class="small"><b>Chain</b>: <code>requirements</code> → <code>classify_verification_methods</code> → <code>generate_testing_guides</code> (component_testing_guide_agent).</p></div>
-      <div class="card"><h3>8 · Regulatory citation finder ("NUREG Navigator")</h3>
-        <p class="small"><b>Pitch</b>: paste a design statement or requirement and get the relevant 10 CFR, NUREG-0800 SRP, Regulatory Guide, or ASME sections, with quoted rationale, as a citation table. It uses a small curated corpus of public NRC documents, indexed at startup.</p>
-        <p class="small"><b>Skills</b>: <code>find_regulatory_basis</code>; <code>compare_to_regulation</code> (a gap check).</p>
-        <p class="small"><b>Uses</b>: the <code>embedding</code> flavor, context state, JSON artifacts with a <code>json_type</code>.</p>
-        <p class="small"><b>Stretch</b>: a citation viewer served by <code>add_static_endpoint</code>; reranking with <code>llm.small</code>.</p>
-        <p class="small"><b>Chain</b>: <code>requirements_from_design</code> → <code>find_regulatory_basis</code>; it feeds the <code>component_*</code> report agents and <code>audit</code>.</p></div>
-    </div>
+    <table class="t sm">
+      <tr><th style="width:420px">Make sure…</th><th>Why</th></tr>
+      <tr class="hl"><td><b>DeepLynx is configured</b> on your platform (local or the shared instance)</td><td>Chat uploads are stored in DeepLynx and passed to agents as artifacts. Without it your agent never sees the file, and a PNG cannot render.</td></tr>
+      <tr><td><code>matplotlib</code>, <code>pandas</code>… are in <code>pyproject.toml</code></td><td>The base image has none of them. Set <code>MPLBACKEND=Agg</code> (no display in the container).</td></tr>
+      <tr><td>Extra modules have <code>COPY</code> lines in the Dockerfile</td><td>The template copies only <code>agent.py</code>, the card, <code>prompts/</code>, and <code>workflows/</code>.</td></tr>
+      <tr><td>Card name and skill IDs carry your <b>team prefix</b></td><td>Every team builds an "extract table" skill. Same name → the registry replaces one agent with the other.</td></tr>
+      <tr><td><code>"streaming": true</code></td><td>So "Parsing 4 tables…" and "Plotting T [K] vs t [min]…" appear live</td></tr>
+      <tr><td>LLM calls attach the master key; pick the flavor per call</td><td><code>LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY"))</code>. Under the <code>registry</code> profile every flavor you use must exist in the platform's <code>litellm_config.yaml</code>.</td></tr>
+      <tr><td>Results stay small</td><td>Return the artifact ID, caption, and column names, not 10,000 rows. The data lives in the artifact.</td></tr>
+      <tr><td>You test with a <b>fresh conversation</b> each time</td><td>Earlier uploads and results stay in the catalog and transcript the orchestrator LLM sees, and can make it pick the wrong file.</td></tr>
+    </table>
   </div>
 </section>
 
 <!-- 10 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Track C · Safety, regulatory &amp; documents</div><h2>9 · Fault-tree builder</h2></div>
+  <div class="head"><div class="eyebrow">Going further</div><h2>Once the basics work</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="card"><h3>9 · Fault-tree builder from a system description</h3>
-        <p class="small"><b>Pitch</b>: from a text description or a topology JSON of a cooling system (for example requirements_agent's Alchemy topology graph), generate a fault tree for "loss of cooling". The output is machine-readable (JSON or OpenPSA MEF XML) plus a rendered SVG, and the minimal cut sets are computed in the sandbox.</p>
-        <p class="small"><b>Skills</b>: <code>build_fault_tree</code> (<code>topology_artifact_id</code> or a description); <code>compute_cut_sets</code>; <code>explain_dominant_failures</code>.</p>
-        <p class="small"><b>Uses</b>: an LLM tool loop with <code>add_gate</code>, <code>add_basic_event</code>, <code>validate</code> tools; sandbox compute; SVG and XML artifacts; <code>requires_approval</code> before publishing to DeepLynx.</p>
-        <p class="small"><b>Stretch</b>: failure rates from a generic database table; importance measures (Fussell–Vesely, Birnbaum).</p>
-        <p class="small"><b>Chain</b>: complements <code>aegis</code> (<code>safety_analysis</code>) and the non-A2A <code>nuclear_safety_agent</code>. Workflow: <code>design</code> → <code>build_fault_tree</code> → <code>compute_cut_sets</code>.</p></div>
-      <div class="col">
-        <h4 class="acc">Tool loop as a builder</h4>
-        <p class="small">Instead of asking the LLM for a whole tree in one shot, give it small, validating tools. Each call mutates a tree kept in <code>load_context_state</code>/<code>save_context_state</code>, and <code>validate</code> reports orphans and cycles back to the model.</p>
-        <pre class="xs">ADD_GATE = ToolDefinition.from_pydantic(
-  "add_gate", GateArgs,
-  description="Add an AND/OR gate under a parent")
-ADD_EVENT = ToolDefinition.from_pydantic(
-  "add_basic_event", EventArgs,
-  description="Add a basic event (component failure)")
-VALIDATE = ToolDefinition("validate",
-  "Check the tree; returns problems or 'ok'")</pre>
-        <div class="callout">The same builder pattern works for P&amp;ID-to-topology, requirement sets, and workflow YAML generation.</div>
-      </div>
+    <div class="grid g3" style="gap:20px">
+      <div class="card"><h4>Better plots</h4><ul class="b xs"><li>Multiple y series, secondary axis for different units</li><li>Bar charts for text x columns</li><li>Log scales on request</li><li>Captions and units in the title and labels</li><li>A vision-model check of your own plot</li></ul></div>
+      <div class="card"><h4>More skills</h4><ul class="b xs"><li><code>list_tables</code>: show all captions in a document</li><li><code>describe_table</code>: statistics, min/max, trends</li><li><code>convert_units</code>: K ↔ °C before plotting</li><li><code>compare_tables</code> across two files</li></ul></div>
+      <div class="card"><h4>Platform features</h4><ul class="b xs"><li>An agent-owned workflow <code>extract → plot</code> (a slash command)</li><li>Input-required when two tables match equally well</li><li>Tool calling for column matching</li><li>The CSV of the extracted table as a second artifact</li><li>Thorough tests with fixtures from the practice file</li></ul></div>
     </div>
+    <div class="callout">Robustness beats features. A two-skill agent that handles every hidden prompt scores higher than a six-skill agent that crashes on a thousands separator.</div>
   </div>
 </section>
 
 <!-- 11 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Whatever you pick</div><h2>A common baseline, and a way to split the work</h2></div>
+  <div class="head"><div class="eyebrow">Planning the day</div><h2>Roles and a timeline for 4–5 hours</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <h4 class="acc">Every team agent should</h4>
-        <ul class="b sm">
-          <li>be scaffolded with <code>setup_agent.py</code>, with a <b>team prefix</b> on the card name and skill IDs</li>
-          <li>set <code>"streaming": true</code> and send meaningful status updates</li>
-          <li>call the LLM through <code>self.llm_client(context, config=…)</code> with <code>LLMConfig.from_env().with_api_key(LITELLM_MASTER_KEY)</code>, choosing the flavor per task: <code>small</code> for cheap classification, <code>medium</code>/<code>large</code> for analysis, <code>vision</code> for plots and renders, <code>embedding</code> for search</li>
-          <li>publish outputs with <code>send_deeplynx_artifact</code> or JSON artifacts with a correct <code>mime_type</code></li>
-          <li>take file inputs through <code>x_artifact_ref</code></li>
-          <li>ship one <code>workflows/*.yaml</code> that chains with an existing agent</li>
-          <li>have tests with a mocked <code>EventQueue</code> and LLM</li>
-          <li>live in its own repo (or a platform branch) with reviewed PRs</li>
-        </ul>
-      </div>
-      <div class="col">
-        <h4 class="acc">Suggested roles for 4–5 people</h4>
-        <table class="t sm">
-          <tr><th>Role</th><th>Owns</th></tr>
-          <tr><td><b>Card &amp; routing</b></td><td><code>agent_card.json</code>, workflow YAML, testing phrasings in the UI</td></tr>
-          <tr><td><b>Core compute</b></td><td>the domain logic, worker thread or sandbox integration</td></tr>
-          <tr><td><b>LLM</b></td><td>prompts, tool loop, budgets, structured output</td></tr>
-          <tr><td><b>Artifacts &amp; tests</b></td><td>DeepLynx outputs, previews, pytest, Dockerfile</td></tr>
-          <tr><td><b>Demo &amp; integration</b></td><td>the demo script, curl checks, the PR, the pitch</td></tr>
-        </table>
-        <div class="callout good">Get a <b>walking skeleton</b> registered and routed in the first two hours, then deepen it. An agent that works end to end with simple logic beats a clever one that never registers.</div>
+      <table class="t sm">
+        <tr><th>Role</th><th>Owns</th></tr>
+        <tr><td><b>Card &amp; routing</b></td><td><code>agent_card.json</code>, the result JSON the orchestrator reads, testing many phrasings</td></tr>
+        <tr><td><b>Parser</b></td><td>finding tables and captions, cleaning values</td></tr>
+        <tr><td><b>Matching (LLM)</b></td><td>caption and column matching, prompts, input-required</td></tr>
+        <tr><td><b>Plotting &amp; artifacts</b></td><td>matplotlib, DeepLynx upload, CSV/JSON handling</td></tr>
+        <tr><td><b>Tests &amp; integration</b></td><td>pytest fixtures, Docker build, PRs, the demo script</td></tr>
+      </table>
+      <div class="col" style="gap:0">
+        <div class="agenda-row"><span class="tm">0:00</span><div><div class="ti">Scaffold, card with 2 stub skills</div><div class="de">Registered and routed in the chat</div></div></div>
+        <div class="agenda-row"><span class="tm">1:00</span><div><div class="ti">Walking skeleton</div><div class="de">Practice prompt works end to end, even if crudely</div></div></div>
+        <div class="agenda-row"><span class="tm">2:30</span><div><div class="ti">Robustness</div><div class="de">Write your own test files and prompts; CSV path; asking for columns</div></div></div>
+        <div class="agenda-row"><span class="tm">4:00</span><div><div class="ti">Freeze features</div><div class="de">Tests, README, PR review, rehearse the demo</div></div></div>
       </div>
     </div>
   </div>
@@ -280,24 +289,25 @@ VALIDATE = ToolDefinition("validate",
 
 <!-- 12 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Day 2 acceptance criteria</div><h2>What the judges will check</h2><p class="lede">Draft, same as this morning. Organizers will confirm the final list.</p></div>
+  <div class="head"><div class="eyebrow">Acceptance criteria</div><h2>What the judges will check</h2><p class="lede">The full rubric and the awards are in the Judging &amp; awards deck.</p></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
-      <div class="card acc"><h3>Must have</h3><ol class="b sm">
+      <div class="card acc"><h3>Must have (the gate)</h3><ol class="b sm">
         <li>Built from the template; a <code>PrometheusAgent</code> subclass</li>
-        <li>Registers with the platform; visible in <code>/agents</code></li>
-        <li>A natural-language request in the UI is <b>routed</b> to your skill</li>
-        <li>A structured result plus at least one artifact</li>
+        <li>At least <b>two skills</b> (extract, plot) with team-prefixed IDs</li>
+        <li>Registers; visible in <code>/agents</code></li>
+        <li>Natural-language requests are <b>routed</b> to the right skill</li>
+        <li>Extract emits a table artifact; plot emits an <b>image</b> that renders</li>
         <li><code>uv run pytest</code> and <code>uv run ruff check .</code> pass</li>
-        <li>The code is in a repo with a PR reviewed by someone outside the team</li>
+        <li>A PR reviewed by someone outside the team</li>
       </ol></div>
       <div class="card"><h3>Stretch</h3><ol class="b sm">
         <li>Live status updates (streaming)</li>
-        <li>LLMClient use, with tool calling</li>
-        <li>Input-required or plan approval</li>
-        <li>A workflow chaining an existing agent</li>
-        <li>Consumes an uploaded file or another agent's artifact</li>
-        <li>A 5-minute demo: conversation, viewer, code walkthrough</li>
+        <li>LLM matching with tool calling or structured output</li>
+        <li>Asks for missing columns with the real names as choices</li>
+        <li>A workflow YAML chaining extract → plot</li>
+        <li>A third useful skill</li>
+        <li>A 5-minute demo: conversation, plot, code walkthrough</li>
       </ol></div>
     </div>
   </div>
@@ -308,7 +318,7 @@ VALIDATE = ToolDefinition("validate",
   <div class="head"><div class="eyebrow">Sign-up</div><h2>Teams and rooms</h2></div>
   <div class="content">
     <table class="t">
-      <tr><th style="width:230px">Team name</th><th>Members (4–5)</th><th style="width:320px">Idea / track</th><th style="width:150px">Day 2 room</th></tr>
+      <tr><th style="width:280px">Team name</th><th>Members (4–5)</th><th style="width:200px">Prefix</th><th style="width:150px">Day 2 room</th></tr>
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
@@ -318,7 +328,7 @@ VALIDATE = ToolDefinition("validate",
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
       <tr><td>&nbsp;</td><td></td><td></td><td></td></tr>
     </table>
-    <p class="small">Your team name becomes your prefix: the card name "&lt;Team&gt; … Agent", skill IDs <code>&lt;team&gt;_…</code>, workflow IDs <code>&lt;team&gt;.…</code>, and the branch <code>feature/&lt;team&gt;-…</code>.</p>
+    <p class="small">The team prefix goes everywhere: the card name "&lt;Team&gt; Table Plot" (the scaffolder appends " Agent"), skill IDs <code>&lt;team&gt;_extract_table</code> / <code>&lt;team&gt;_plot_table</code>, workflow IDs <code>&lt;team&gt;.…</code>, branches <code>feature/&lt;team&gt;-…</code>.</p>
   </div>
   <aside class="notes">Placeholder table: fill in live or replace with the room list.</aside>
 </section>
@@ -329,19 +339,19 @@ VALIDATE = ToolDefinition("validate",
   <div class="content">
     <div class="grid g2" style="gap:30px">
       <div class="steps">
-        <div class="step"><div><h4>Create the repo</h4><p class="small">One teammate creates <code>&lt;team&gt;-agent</code> (in the genesis org or under their own account) and adds everyone. The others clone it.</p></div></div>
-        <div class="step"><div><h4>Scaffold and push</h4><p class="small"><code>setup_agent.py</code> with the team prefix → first commit → push. Protect <code>main</code>: PRs only.</p></div></div>
-        <div class="step"><div><h4>Write the card first</h4><p class="small">Skill IDs, descriptions, <code>inputSchema</code>. Return a <b>stub</b> result. Register it and check routing in the UI with three phrasings.</p></div></div>
+        <div class="step"><div><h4>Create the repo</h4><p class="small">One teammate creates <code>&lt;team&gt;-table-plot-agent</code> and adds everyone. Commit the practice files under <code>tests/fixtures/</code>.</p></div></div>
+        <div class="step"><div><h4>Scaffold with two stub skills</h4><p class="small"><code>setup_agent.py</code>, then add the second skill to the card and a dispatch on <code>params["skill_id"]</code>. Push.</p></div></div>
+        <div class="step"><div><h4>Check routing first</h4><p class="small">Upload the practice report, try the example prompt, and see both stubs called in order. The extract stub must already emit a real artifact, or the orchestrator has no id to pass to plot.</p></div></div>
         <div class="step"><div><h4>Split by role</h4><p class="small">Everyone works on a <code>feature/…</code> branch, runs <code>git pull --rebase origin main</code> often, and opens small PRs.</p></div></div>
       </div>
       <div class="col">
         <div class="card acc"><h3>Keep these open</h3><ul class="b sm">
-          <li>This deck set (<code>index.html</code>). Press <code>O</code> in any deck for the slide overview.</li>
+          <li><code>challenge/README.md</code>: the brief and requirements</li>
+          <li>The agent-template deck (<code>04</code>): helpers, artifacts, input-required, LLMClient</li>
           <li><code>prometheus_api/docs/agent/GUIDE.md</code></li>
-          <li><code>prometheus_agent_template/TUTORIAL.md</code> (with today's caveats)</li>
-          <li>The platform's <code>agents/debug-agents/*</code> for working patterns</li>
+          <li>The platform's <code>agents/debug-agents/artifact-debug-agent</code>: a working image artifact via DeepLynx</li>
         </ul></div>
-        <div class="callout">Mentors are available all of Day 2. Post blocking environment issues early; do not lose an afternoon to Docker.</div>
+        <div class="callout">Write <b>your own</b> markdown test files with different captions, symbols, and units. The hidden file will not look exactly like the practice one.</div>
       </div>
     </div>
   </div>

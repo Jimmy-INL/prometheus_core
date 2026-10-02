@@ -78,7 +78,7 @@
         <div class="callout warn"><b>Outdated in the template docs</b> (use this deck's versions):
           <ul class="b xs" style="margin-top:6px">
             <li>curl examples use A2A v0.3 <code>message/send</code>, which now returns "Method not found"</li>
-            <li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>23c9454</code>, or <code>main</code></li>
+            <li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>95c32b5</code> (= <code>main</code>, v0.13.0)</li>
             <li>local testing also needs <code>USER_IDENTITY_REQUIRED=false</code></li>
             <li>the tutorial's minimal workflow YAML is missing the required <code>description</code></li>
             <li>verifying <code>/v1/agents</code> needs the master-key header</li>
@@ -110,7 +110,7 @@
       </div>
       <div class="col">
         <div class="card acc"><h4>It copies the platform secrets for you</h4><p class="small">If <code>../prometheus_platform/.env</code> exists, it offers to write the agent's <code>.env</code> with <code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code>, <code>USER_IDENTITY_PUBLIC_KEY/ISS/AUD</code>, <code>LLM_CONFIG_PROFILE</code>, and every <code>DEEPLYNX_*</code>. It never copies the private key.</p></div>
-        <div class="callout bad"><b>Choose a unique name and skill ID.</b> The registry keys agents by card name; re-registering <i>deletes</i> any agent with the same name. The planner looks skills up by <code>id</code> alone. Prefix both with your team name: type "Team Neutron Mesh QA" (the scaffolder appends " Agent"), skill <code>neutron_mesh_quality_report</code>.</div>
+        <div class="callout bad"><b>Choose a unique name and skill ID.</b> The registry keys agents by card name; re-registering <i>deletes</i> any agent with the same name. Your skill id becomes the orchestrator's tool name (<code>[a-zA-Z0-9_-]</code>, ≤ 64 chars). Prefix both with your team name: type "Team Neutron Mesh QA" (the scaffolder appends " Agent"), skill <code>neutron_mesh_quality_report</code>.</div>
         <pre class="xs"><span class="c"># non-interactive (accept defaults, answer the rest)</span>
 printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   | python3 setup_agent.py
@@ -127,7 +127,7 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
     <div class="grid g2" style="gap:30px">
       <pre class="sm"><span class="p">hello-world/</span>
 ├── agent.py                  <span class="c"># your class, _execute()</span>
-├── agent_card.json           <span class="c"># what the planner reads</span>
+├── agent_card.json           <span class="c"># what the orchestrator reads</span>
 ├── prompts/
 │   ├── system_prompt.txt     <span class="c"># load_prompt("system_prompt.txt")</span>
 │   └── README.md
@@ -243,7 +243,7 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
 <section class="slide section">
   <div class="num">A</div>
   <h2>The agent card</h2>
-  <p class="lede">The only thing the orchestrator's planner knows about you. Write it as if a careful colleague had to decide, from this text alone, whether to call you.</p>
+  <p class="lede">How the orchestrator LLM decides whether and how to call you (and your result JSON is how it decides what to do next). Write it as if a careful colleague had to decide from this text alone.</p>
 </section>
 
 <!-- 9 -->
@@ -291,17 +291,17 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
     <table class="t xs">
       <tr><th style="width:290px">Field</th><th style="width:130px">Required?</th><th>Meaning / consumer</th></tr>
       <tr><td><code>name</code></td><td>yes</td><td>Display name <b>and</b> LiteLLM route key: lowercased, spaces → hyphens (<code>/a2a/hello-world-agent</code>). Must be unique.</td></tr>
-      <tr><td><code>description</code></td><td>yes</td><td>Agent-level summary. The planner routes on the <i>skill</i> description.</td></tr>
+      <tr><td><code>description</code></td><td>yes</td><td>Agent-level summary. <b>Not shown</b> to the orchestrator LLM; it routes on the <i>skill</i> description.</td></tr>
       <tr><td><code>version</code>, <code>defaultInputModes</code>, <code>defaultOutputModes</code></td><td>defaulted</td><td><code>1.0.0</code>, <code>["text"]</code></td></tr>
       <tr><td><code>capabilities.streaming</code></td><td>no</td><td><code>true</code> → the orchestrator uses <code>SendStreamingMessage</code> and you get live status</td></tr>
       <tr class="hl"><td><code>skills[].id</code></td><td>yes</td><td>Arrives as <code>params["skill_id"]</code>. <b>Globally unique</b> across the platform.</td></tr>
-      <tr class="hl"><td><code>skills[].description</code></td><td>yes</td><td>The main routing signal for the planner LLM</td></tr>
-      <tr class="hl"><td><code>skills[].usage_notes</code></td><td>ext.</td><td>Shown to the planner: when to use this skill rather than others</td></tr>
-      <tr class="hl"><td><code>skills[].tags</code></td><td>A2A std.</td><td>Shown to the planner</td></tr>
-      <tr class="hl"><td><code>skills[].inputSchema</code></td><td>ext.</td><td>JSON Schema. <code>required</code> → follow-up questions; each property is shown as <code>name(type): description</code></td></tr>
-      <tr><td><code>skills[].requires_approval</code></td><td>ext.</td><td><code>true</code> → the plan waits for Approve/Reject in the UI (<code>plan_ready</code>)</td></tr>
-      <tr><td><code>skills[].expected_duration_seconds</code></td><td>ext.</td><td>Shown to the planner. The call timeout is a fixed 900 s.</td></tr>
-      <tr><td><code>skills[].provides</code>, <code>derivation_rules</code>, <code>execution_priority</code></td><td>optional</td><td>Read by the capability cache; <code>execution_priority</code> is <code>early</code>, <code>normal</code>, or <code>late</code></td></tr>
+      <tr class="hl"><td><code>skills[].description</code></td><td>yes</td><td>The tool description the orchestrator LLM reads: the main routing signal</td></tr>
+      <tr class="hl"><td><code>skills[].usage_notes</code></td><td>ext.</td><td>Appended to the tool description as "Usage: …": when to use this skill rather than others</td></tr>
+      <tr class="hl"><td><code>skills[].tags</code></td><td>A2A std.</td><td><b>Not shown</b> to the orchestrator LLM (discovery and A2A only)</td></tr>
+      <tr class="hl"><td><code>skills[].inputSchema</code></td><td>ext.</td><td>Sent as the tool's JSON Schema (<code>x_*</code> keys stripped) and enforced. A required input the model can't fill → follow-up form (enum → dropdown). Optional fields are never asked for by the platform.</td></tr>
+      <tr><td><code>skills[].requires_approval</code></td><td>ext.</td><td><code>true</code> → Approve/Reject before that call (<code>plan_ready</code>); covers the next call only</td></tr>
+      <tr><td><code>skills[].expected_duration_seconds</code></td><td>ext.</td><td>Only for the plan card's time estimate. The call timeout is a fixed 900 s.</td></tr>
+      <tr><td><code>skills[].provides</code>, <code>derivation_rules</code>, <code>execution_priority</code></td><td>optional</td><td>Ignored by the tool-calling loop; drop them</td></tr>
       <tr><td><code>skills[].output_format</code>, <code>skills[].examples</code></td><td>—</td><td><b>Not read</b> by the orchestrator today (<code>examples</code> is a standard A2A field). Document for humans; put routing hints in <code>description</code>.</td></tr>
       <tr><td>top-level <code>workflows</code></td><td>optional</td><td>Inline workflow definitions (or ship <code>workflows/*.yaml</code>)</td></tr>
     </table>
@@ -310,29 +310,31 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
 
 <!-- 11 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Getting routed</div><h2>Writing a card the planner will call</h2></div>
+  <div class="head"><div class="eyebrow">Getting routed</div><h2>Writing a card the orchestrator will call</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
       <div class="col">
-        <h4 class="acc">What the planner sees, per skill</h4>
-        <pre class="xs">- skill_id: geometry_meshing  (agent: Meshing Agent)
-  description: Resolve a STEP file artifact, generate a
-    first-order tetrahedral volume mesh with Gmsh, …
-  requires_approval: false
-  usage_notes: Use for solid .step or .stp artifacts …
-  tags: mesh, gmsh, meshio, step, tetrahedral, exodus
-  required: step_artifact_id  [accepts artifact id]
-  params: step_artifact_id(string): Source .step …
-          element_size(number): Optional global target …</pre>
-        <p class="small">This is from the real <code>gmsh_agent</code> card. The format is a paraphrase of <code>planner._build_capability_context</code>.</p>
+        <h4 class="acc">The tool the orchestrator LLM gets, per skill</h4>
+        <pre class="xs">tool: geometry_meshing
+description: Resolve a STEP file artifact, generate a
+  first-order tetrahedral volume mesh with Gmsh, …
+  Usage: Use for solid .step or .stp artifacts …
+parameters:
+  step_artifact_id: string  "Source .step or .stp CAD
+     geometry artifact to mesh. artifact_id of an
+     existing conversation artifact."
+  element_size: number  "Optional global target …"
+  required: [step_artifact_id]</pre>
+        <p class="small">From the real <code>gmsh_agent</code> card, as built by <code>agent_loop._skill_spec</code>. No tags, no agent description, <code>x_*</code> keys stripped.</p>
       </div>
       <div class="col">
         <ul class="b sm">
           <li><b>Lead with the verb and the object</b>: "Compute scaled-Jacobian quality metrics for an Exodus mesh artifact…"</li>
           <li><code>usage_notes</code>: when <i>not</i> to use you, and which neighbour to prefer.</li>
           <li><b>Describe every property.</b> Use <code>enum</code> for fixed choices and units in the description. Keep <code>required</code> minimal.</li>
-          <li><b>File inputs</b>: <code>"x_artifact_ref": "single"</code> (or <code>"multiple"</code>). The orchestrator fills in the artifact ID from uploads, names, or UUIDs.</li>
-          <li><b>Chained values</b> produced by an earlier step: <code>"x_input_source": "runtime"</code>, so the user is never asked for them.</li>
+          <li><b>File inputs</b>: <code>"x_artifact_ref": "single"</code> (or <code>"multiple"</code>). The orchestrator LLM passes an artifact id from an upload, an earlier result, or the catalog; unknown ids are bounced back to it.</li>
+          <li><b>Non-file values</b> produced by another skill: <code>"x_input_source": "runtime"</code>, never asked from the user.</li>
+          <li><b>Return what the next step needs</b> (ids, names, column headers) in your result dict: the model reads up to 6000 chars of it.</li>
           <li>Costly or destructive? <code>"requires_approval": true</code>.</li>
           <li>Test in the UI with <b>three phrasings</b> of the request.</li>
         </ul>
@@ -398,7 +400,7 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
         <div class="arrow-h" style="width:40px"></div>
         <div class="box navy" style="flex:1"><b>③ one tool per skill</b><span class="small">LangChain <code>StructuredTool</code>, name = skill id, args = <code>inputSchema</code>. Cached 60 s in Valkey.</span></div>
       </div>
-      <div class="arrow-v"><span>planner selects your skill, params extracted</span></div>
+      <div class="arrow-v"><span>the orchestrator LLM calls your skill as a tool</span></div>
       <div class="row" style="gap:0; align-items:stretch">
         <div class="box orange" style="flex:1.2"><b>④ call via the gateway</b><span class="mono">POST litellm:4000/a2a/hello-world-agent</span><span class="small"><code>Authorization: Bearer $LITELLM_MASTER_KEY</code> · <code>A2A-Version: 1.0</code> · <code>SendMessage</code>, or <code>SendStreamingMessage</code> if streaming</span></div>
         <div class="arrow-h" style="width:40px"></div>
@@ -408,7 +410,7 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
       </div>
     </div>
     <div class="grid g3">
-      <div class="card"><h4>Missing inputs</h4><p class="small">Required params the planner could not fill → the user gets a follow-up form (<code>needs_info</code>) before your agent is called.</p></div>
+      <div class="card"><h4>Missing inputs</h4><p class="small">Required params the model couldn't fill from the conversation → a follow-up form (<code>needs_info</code>) before your agent is called. The model is told not to invent them.</p></div>
       <div class="card"><h4>Result contract</h4><p class="small">The response must use exact <code>TASK_STATE_*</code> values and one final text part. The base class guarantees this if you just <code>return</code> a dict.</p></div>
       <div class="card"><h4>Changing your card?</h4><p class="small">Restart the agent (re-registers), then refresh discovery or restart the client-agent. Cards are cached.</p></div>
     </div>
@@ -442,7 +444,7 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
         <pre class="xs">cd hello-world
 uv sync &amp;&amp; source .venv/bin/activate
 uv pip install \
- "git+https://github.inl.gov/genesis/prometheus_api.git@23c9454"
+ "git+https://github.inl.gov/genesis/prometheus_api.git@95c32b5"
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false \
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory \
@@ -608,8 +610,8 @@ path = <span class="k">await</span> self.get_artifact_file_path(
   <div class="content">
     <div class="grid g2" style="gap:26px">
       <div class="col">
-        <div class="card"><h4>Before you run: <code>"requires_approval": true</code></h4><p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval.</p></div>
-        <div class="card"><h4>While you run: <code>send_input_required</code></h4><p class="small">Your task ends in <code>TASK_STATE_INPUT_REQUIRED</code>. The orchestrator tries to fill the inputs from context, otherwise asks the user, then <b>re-sends to you</b> with the same <code>contextId</code>/<code>taskId</code> and the answers as <code>provided_inputs</code>.</p></div>
+        <div class="card"><h4>Before you run: <code>"requires_approval": true</code></h4><p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval. Approval covers that call only; if the user types text instead of clicking, the call is dropped and the model re-plans.</p></div>
+        <div class="card"><h4>While you run: <code>send_input_required</code></h4><p class="small">Your task ends in <code>TASK_STATE_INPUT_REQUIRED</code>. Inputs with <code>resolvable_from_context=True</code> are filled from the call's arguments or earlier answers; otherwise the user gets a form (<code>options</code> → dropdown, your <code>hint</code> as the message), and you are <b>resumed</b> with the same <code>contextId</code>/<code>taskId</code> and <code>provided_inputs</code>. A typed reply instead of the form abandons the task; the model may call you again.</p></div>
         <div class="callout warn">Your Python state does <b>not</b> survive between the two calls. Save it with <code>save_context_state</code> before asking. <code>request_user_approval(…)</code>, mentioned in some docs, does not exist.</div>
       </div>
       <pre class="xs"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
@@ -836,7 +838,7 @@ answer = r.text</pre>
           <li><code>tool_choice</code> without <code>tools</code> → <code>LLMToolCallError</code>. There is no package-owned loop and no streaming deltas.</li>
           <li>Structured output = force a single tool whose schema is your output model.</li>
         </ul>
-        <div class="callout warn">Needs base image <b>≥ v0.13.0</b>: the template's default <code>latest</code> has it. The platform pin <code>23c9454</code> (v0.12.0) does not, so in-tree agents need a pin bump.</div>
+        <div class="callout warn">Needs base image <b>≥ v0.13.0</b>: the template's default <code>latest</code> has it. The platform pin <code>95c32b5</code> is v0.13.0 too; the client-agent itself runs on this API.</div>
       </div>
     </div>
   </div>
@@ -882,10 +884,11 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
       <div class="col">
         <ul class="b sm">
           <li>Files next to <code>agent_card.json</code> are merged into the card at startup (<code>AGENT_WORKFLOWS</code> overrides the directory). The template ships <code>example_workflow.yaml.example</code>.</li>
-          <li>The client-agent compiles them at discovery. Each becomes a planner tool (<code>workflow_*</code>) <b>and</b> a slash command: <code>/neutron.step_to_checked_mesh</code> or <code>/step_to_checked_mesh</code>.</li>
+          <li>The client-agent compiles them at discovery. Each becomes an orchestrator tool (<code>workflow_&lt;id slug&gt;</code>, parameters = <code>inputs.required</code>) <b>and</b> a slash command: <code>/neutron.step_to_checked_mesh</code> or <code>/step_to_checked_mesh</code>.</li>
           <li><b>Bindings</b>: <code>from: input.&lt;x&gt;</code>, <code>from: step.&lt;id&gt;.result</code>, <code>from: context.&lt;key&gt;</code>, <code>literal: &lt;v&gt;</code>, <code>optional: true</code>. <code>conversation_id</code> and <code>artifacts</code> are added automatically.</li>
           <li><code>mode</code>: <code>sequential</code>, <code>parallel</code>, or <code>dag</code> (use <code>depends_on</code>); <code>on_error</code>: <code>fail_fast</code> or <code>continue_with_partial</code>.</li>
           <li>Before starting, the client-agent calls the owning agent's <code>/health</code>.</li>
+          <li>If a step pauses for input, the whole template <b>re-runs</b> with the answers merged into its inputs: bind them as optional inputs (<code>{from: input.x_column, optional: true}</code>).</li>
         </ul>
         <p class="small">Full schema: <code>prometheus_platform/docs/docs/workflow-templates.md</code>. Examples: <code>agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml</code> and <code>agents/client-agent/workflows/comprehensive_material_analysis.yaml</code> (DAG, approval).</p>
       </div>
@@ -1007,7 +1010,7 @@ networks:
 
 <!-- 33 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Checklist</div><h2>Ship an agent the planner will call</h2></div>
+  <div class="head"><div class="eyebrow">Checklist</div><h2>Ship an agent the orchestrator will call</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
       <ul class="b sm check">

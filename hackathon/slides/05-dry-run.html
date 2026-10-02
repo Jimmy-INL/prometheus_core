@@ -49,7 +49,7 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov \
 
 cp .env.example .env
 <span class="c"># fill: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD,</span>
-<span class="c">#       CHAINLIT_AUTH_SECRET, LITELLM_MASTER_KEY,</span>
+<span class="c">#       BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,</span>
 <span class="c">#       LITELLM_DB_PASSWORD, ADMIN_DB_PASSWORD</span>
 python3 -c "import secrets; print(secrets.token_hex(32))"
 

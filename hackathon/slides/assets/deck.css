@@ -48,6 +48,7 @@ body[data-sec="dep"]     { --acc: var(--sky);     --acc-ink: var(--sky-ink);    
 body[data-sec="agt"]     { --acc: var(--orange);  --acc-ink: var(--orange-ink);  --acc-soft: #fef1e4; }
 body[data-sec="dry"]     { --acc: var(--green);   --acc-ink: var(--green-ink);   --acc-soft: #eef7e3; }
 body[data-sec="team"]    { --acc: var(--crimson); --acc-ink: var(--crimson-ink); --acc-soft: #fbe9ee; }
+body[data-sec="judge"]   { --acc: var(--teal);    --acc-ink: var(--teal-ink);    --acc-soft: #e4f5f1; }
 
 /* ---------- slide frame ---------- */
 .slide {

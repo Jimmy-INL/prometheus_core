@@ -31,7 +31,7 @@
       <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Access</h3><p class="small">A github.inl.gov account in the <code>genesis</code> org, an SSH key, and a registry token (<code>read:packages</code>).</p></div>
       <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A running platform</h3><p class="small">The full Prometheus stack running in Docker on your laptop, with a chat that answers.</p></div>
       <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A working agent</h3><p class="small">A "hello world" agent built from the template, registered with the platform, and called from the UI.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A PR and a team</h3><p class="small">One practice pull request reviewed on the sandbox branch, and a team of 4–5 with an idea and a room for Day 2.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A PR and a team</h3><p class="small">One practice pull request reviewed on the sandbox branch, and a team of 4–5 with a name and a room for Day 2.</p></div>
     </div>
     <div class="callout info" style="margin-top:8px">Each session builds on the one before it. <b>Architecture → Git → Deploy → Agent anatomy → Do it yourself → Team up.</b> If you get stuck during the dry run, that is expected; mentors will be walking the room.</div>
   </div>
@@ -47,7 +47,7 @@
     <div class="agenda-row"><span class="tm">2:30</span><div><div class="ti">Break</div></div></div>
     <div class="agenda-row"><span class="tm">2:45</span><div><div class="ti">Agent template</div><div class="de">Anatomy of the template · agent card fields · registering with the Agent Registry · how the orchestrator discovers and calls your agent · LLMClient</div></div></div>
     <div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the "hello world" agent, submit a practice PR to the sandbox branch. Mentors circulate.</div></div></div>
-    <div class="agenda-row"><span class="tm">4:30</span><div><div class="ti">Team formation</div><div class="de">Challenge tracks and example agent ideas · informal pitches · teams of 4–5 · team name and Day 2 room</div></div></div>
+    <div class="agenda-row"><span class="tm">4:30</span><div><div class="ti">The challenge &amp; team formation</div><div class="de">The Day 2 challenge (a table-and-plot agent) · practice files · teams of 4–5 · team name and Day 2 room</div></div></div>
   </div>
 </section>
 
@@ -71,34 +71,19 @@
 
 <!-- 5 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Day 2 preview</div><h2>What "done" looks like on Day 2</h2><p class="lede">Draft acceptance criteria. Organizers will confirm the final list; build toward these from the first hour.</p></div>
+  <div class="head"><div class="eyebrow">Day 2 preview</div><h2>Everyone builds the same agent</h2><p class="lede">Details at 4:30 pm. Here is the short version, so you can listen to every session with it in mind.</p></div>
   <div class="content">
-    <div class="grid g2">
-      <div class="col">
-        <h3 class="acc">Must have</h3>
-        <ol class="b sm">
-          <li>The agent is built from <code>prometheus_agent_template</code> and subclasses <code>PrometheusAgent</code>.</li>
-          <li>It <b>registers</b> with the local platform and shows up under <code>/agents</code> in the chat.</li>
-          <li>A natural-language request in the UI is <b>routed to your skill</b> by the orchestrator, not called by hand.</li>
-          <li>It returns a structured result, and at least one <b>artifact</b> (JSON, file, or DeepLynx).</li>
-          <li>Tests pass (<code>uv run pytest</code>) and lint is clean (<code>uv run ruff check .</code>).</li>
-          <li>The code is in a repo with a PR that someone outside the team has reviewed.</li>
-        </ol>
-      </div>
-      <div class="col">
-        <h3 class="acc">Stretch</h3>
-        <ol class="b sm">
-          <li>It streams live status updates (<code>capabilities.streaming: true</code>).</li>
-          <li>It uses the LLM through <code>LLMClient</code>, with the flavors that fit each task (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>), possibly with tool calling.</li>
-          <li>It asks the user for missing inputs (<code>send_input_required</code>) or needs plan approval (<code>requires_approval</code>).</li>
-          <li>An agent-owned <b>workflow YAML</b> chains your skill with an existing agent.</li>
-          <li>It consumes an uploaded file or another agent's artifact (<code>x_artifact_ref</code>).</li>
-          <li>A 5-minute demo: the chat conversation, the artifact in a viewer, and a walkthrough of the code.</li>
-        </ol>
-      </div>
+    <div class="grid g2" style="gap:30px">
+      <div class="card acc"><span class="tag">Skill 1</span><h3>Extract a table from a markdown document</h3><p class="body">The user uploads a document and says "the table with population data". Your agent finds it by its caption, parses it, and publishes it as an artifact.</p></div>
+      <div class="card acc"><span class="tag">Skill 2</span><h3>Plot tabular data</h3><p class="body">From that table, or from an uploaded CSV, your agent draws the plot the user asked for, and asks which columns to use if it doesn't know.</p></div>
     </div>
+    <div class="grid g3">
+      <div class="card"><h4>4–5 hours of building</h4><p class="small">Teams of 4–5, the same practice file for everybody, one agent per team.</p></div>
+      <div class="card"><h4>A hidden test</h4><p class="small">At the demo the judges bring a file and prompts nobody has seen: finding tables by caption, matching column names, plotting a CSV.</p></div>
+      <div class="card"><h4>Judging &amp; awards</h4><p class="small">A must-have gate, the hidden test, a rubric, and a set of "best agent in…" awards.</p></div>
+    </div>
+    <div class="callout">What you will use from today: <b>uploads and artifacts</b> (01, 03), <b>DeepLynx</b> (03), <b>the agent card and routing</b> (04), <b>input-required</b> (04), <b>LLMClient</b> (04).</div>
   </div>
-  <aside class="notes">DRAFT: these criteria were derived from what the platform supports today. Adjust before the event.</aside>
 </section>
 
 <!-- 6 ─────────────────────────────────────────── -->
@@ -116,10 +101,10 @@
       <div class="col">
         <p class="body">Nuclear engineering work spans many specialized tools: meshing (Gmsh, Cubit), CFD (OpenPronghorn), UQ (RAVEN), BIM/IFC generation, requirements, safety analysis, literature search. Each needs expert setup.</p>
         <p class="body">Prometheus wraps each tool in an <b>agent</b>: a small web service that describes what it can do (its <b>agent card</b>) and accepts requests over a standard protocol (<b>A2A</b>).</p>
-        <p class="body">An <b>orchestrator</b> (the client-agent) reads your chat message, plans which agents to call and in what order, asks you for missing inputs, and passes files (<b>artifacts</b>) between agents.</p>
+        <p class="body">An <b>orchestrator</b> (the client-agent) reads your chat message and calls agents one step at a time (an LLM tool-calling loop), choosing each next call from the previous results. It asks you for missing inputs and passes files (<b>artifacts</b>) between agents.</p>
       </div>
       <div class="col">
-        <div class="card acc"><h3>You, this hackathon</h3><p class="body">You write <b>one agent</b>. The platform handles the chat UI, planning, discovery, authentication, state, and file hand-off. Your code implements one method: <code>_execute(params, context, event_queue)</code>.</p></div>
+        <div class="card acc"><h3>You, this hackathon</h3><p class="body">You write <b>one agent</b>. The platform handles the chat UI, orchestration, discovery, authentication, state, and file hand-off. Your code implements one method: <code>_execute(params, context, event_queue)</code>.</p></div>
         <div class="card"><h3>The contract is the protocol</h3><p class="body">Any service that speaks A2A and publishes a card can join. It can live in the platform repo or in its own repo, and it registers itself at startup.</p></div>
       </div>
     </div>
@@ -150,8 +135,8 @@
     <table class="t sm">
       <tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr>
       <tr><td><b>Agent</b></td><td>A Python web service (subclass of <code>PrometheusAgent</code>) that performs one or more skills.</td></tr>
-      <tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. The orchestrator plans in terms of skills.</td></tr>
-      <tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. It is what the planner LLM reads to decide whether to call you.</td></tr>
+      <tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. Each skill is one tool for the orchestrator LLM.</td></tr>
+      <tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. Its skill descriptions, <code>usage_notes</code>, and schemas are what the orchestrator LLM reads to decide whether and how to call you.</td></tr>
       <tr><td><b>A2A</b></td><td>Agent-to-Agent protocol, v1.0: JSON-RPC 2.0 over HTTP (<code>SendMessage</code>, <code>SendStreamingMessage</code>).</td></tr>
       <tr><td><b>Client-agent</b></td><td>The orchestrator ("Nuclear Analysis Client Agent"). It plans, collects parameters, dispatches, and aggregates.</td></tr>
       <tr><td><b>Registry / gateway</b></td><td>LiteLLM. Agents <code>POST /v1/agents</code> to register; the orchestrator calls them via <code>/a2a/{agent_name}</code>.</td></tr>
@@ -179,7 +164,7 @@
         <div class="arrow-h" style="width:60px"></div>
         <div class="box sky" style="width:370px"><b>backend</b><span>FastAPI · host :8600 → :8000</span><span class="mono">auth · sessions · SSE · uploads · artifacts</span></div>
         <div class="arrow-h" style="width:60px"><span>A2A</span></div>
-        <div class="box navy" style="width:330px"><b>client-agent</b><span>orchestrator · :8000 (internal)</span><span class="mono">planner · workflows · params</span></div>
+        <div class="box navy" style="width:330px"><b>client-agent</b><span>orchestrator · :8000 (internal)</span><span class="mono">tool-calling loop · workflows</span></div>
       </div>
       <div class="row" style="justify-content:flex-end; padding-right:150px"><div class="arrow-v" style="width:40px"><span>A2A + discovery</span></div></div>
       <div class="row" style="gap:18px; align-items:stretch">
@@ -209,11 +194,11 @@
       <tr><td><b>frontend-dev</b></td><td><code>frontend-dev</code></td><td><code>frontend/Dockerfile</code> target <code>dev</code></td><td>5150</td><td>Vite dev server (profile <code>dev</code>, the default)</td></tr>
       <tr><td><b>frontend-prod</b></td><td><code>frontend-prod</code></td><td>same, target <code>prod</code> (nginx)</td><td>8080</td><td>Built SPA (profile <code>prod</code>)</td></tr>
       <tr><td><b>backend</b></td><td><code>backend</code></td><td><code>./backend</code> (FROM prometheus_api)</td><td>8600</td><td>Login, sessions, chat turn, SSE events, uploads, artifact bytes, admin UI API, mesh conversion</td></tr>
-      <tr><td><b>client-agent</b></td><td><code>client-agent</code></td><td><code>./agents/client-agent</code></td><td>(8001 in system-test mode)</td><td>Orchestrator: planning, follow-ups, approval, dispatch</td></tr>
+      <tr><td><b>client-agent</b></td><td><code>client-agent</code></td><td><code>./agents/client-agent</code></td><td>(8001 in system-test mode)</td><td>Orchestrator: tool-calling loop, follow-ups, approval, dispatch</td></tr>
       <tr><td><b>litellm</b></td><td><code>litellm-proxy</code></td><td><code>ghcr.io/berriai/litellm:v1.92.0</code></td><td>9977</td><td>Agent registry, A2A gateway, LLM proxy (<code>litellm_config.yaml</code>)</td></tr>
       <tr><td><b>litellm-db</b></td><td><code>litellm-db</code></td><td><code>postgres:16-alpine</code></td><td>—</td><td>LiteLLM state (agent registrations). <b>Wiped on every <code>make up</code>.</b></td></tr>
       <tr><td><b>admin-db</b></td><td><code>admin-db</code></td><td><code>postgres:16-alpine</code></td><td>—</td><td>Users (bcrypt), OIDC providers, RS256 signing keys</td></tr>
-      <tr><td><b>redis</b></td><td><code>agent-valkey</code></td><td><code>valkey/valkey-bundle:9.1.0</code></td><td>6379</td><td>Conversation state, artifact catalog, task graph, caches</td></tr>
+      <tr><td><b>redis</b></td><td><code>agent-valkey</code></td><td><code>valkey/valkey-bundle:9.1.0</code></td><td>6379</td><td>Conversation state, browser sessions, SSE event bus, artifact catalog, task graph, caches</td></tr>
       <tr><td><b>agents/*</b></td><td>per agent</td><td><code>agents/&lt;name&gt;/docker-compose.yml</code></td><td>— (8008 artifact-debug)</td><td>Included automatically by <code>make generate</code></td></tr>
     </table>
     <p class="tiny">Source: <code>prometheus_platform/docker-compose.yml</code> on <code>dev</code>. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in <code>frontend/</code> plus the FastAPI <code>backend/</code> replace it.</p>
@@ -228,7 +213,7 @@
       <div class="steps">
         <div class="step"><div><h4>Browser → backend</h4><p class="small"><code>POST /api/chat/messages {query, upload_ids…}</code>. The browser authenticates with its session cookie and listens on one SSE stream, <code>/api/events</code>.</p></div></div>
         <div class="step"><div><h4>Backend → client-agent</h4><p class="small">A2A <code>SendStreamingMessage</code> with <code>contextId</code> = conversation ID and <code>metadata.userToken</code> = a per-turn RS256 identity JWT.</p></div></div>
-        <div class="step"><div><h4>Plan</h4><p class="small">The planner LLM sees your query, the history, and every registered skill, and picks a skill or a workflow.</p></div></div>
+        <div class="step"><div><h4>Decide, step by step</h4><p class="small">The orchestrator LLM sees the conversation, the artifact catalog, and every skill and workflow as a tool. It calls one, reads the result, calls the next (≤ 12 steps).</p></div></div>
         <div class="step"><div><h4>Missing inputs? Approval needed?</h4><p class="small">It replies <code>needs_info</code> (follow-up form) or <code>plan_ready</code> (Approve/Reject). Your next message continues the turn.</p></div></div>
       </div>
       <div class="steps" style="counter-reset: st 4">
@@ -243,26 +228,26 @@
 
 <!-- 13 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How the client-agent plans a turn</h2><p class="lede">A multi-stage, schema-bound LLM pipeline (<code>agents/client-agent/planner.py</code>). It is a hand-written state machine; there is no LangGraph dependency despite what older docs say.</p></div>
+  <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How the client-agent runs a turn</h2><p class="lede">One tool-calling loop (<code>agents/client-agent/orchestrator/agent_loop.py</code>). Every skill, every workflow template, and an <code>ask_user</code> tool is an LLM tool. After each result the model picks the next fully parameterized call, and it stops when it answers without one.</p></div>
   <div class="content">
     <div class="row" style="align-items:stretch; gap:0">
-      <div class="box navy" style="flex:1"><b>Turn resolution</b><span class="small">standalone task, clarification, or small talk?</span></div>
+      <div class="box navy" style="flex:1"><b>Tools</b><span class="small">one per skill, one <code>workflow_*</code> per template, <code>ask_user</code></span></div>
       <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Task decomposition</b><span class="small">list required operations (without seeing capabilities)</span></div>
+      <div class="box navy" style="flex:1"><b>LLM turn</b><span class="small">sees the transcript, the artifact catalog, and all tools</span></div>
       <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1.2"><b>Routing tool loop</b><span class="small"><code>select_capabilities</code>, one <code>workflow_&lt;id&gt;</code> tool per workflow, <code>set_operation_coverage</code> … <code>finalize_plan</code></span></div>
+      <div class="box navy" style="flex:1"><b>Validate</b><span class="small">JSON Schema, known artifact ids; errors go back to the model</span></div>
       <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Dependencies</b><span class="small">order multi-step plans</span></div>
+      <div class="box navy" style="flex:1"><b>Run</b><span class="small">A2A via LiteLLM; independent calls in parallel</span></div>
       <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Parameter extraction</b><span class="small">fill <code>inputSchema</code> from the conversation</span></div>
+      <div class="box navy" style="flex:1"><b>Result</b><span class="small">summary + artifact ids back into the transcript; repeat, ≤ 12 turns</span></div>
     </div>
     <div class="grid g4" style="margin-top:6px">
-      <div class="card"><span class="tag">needs_info</span><p class="small">Required params are missing, so a follow-up form is shown. The backend gives up after 5 rounds in a row.</p></div>
-      <div class="card"><span class="tag">plan_ready</span><p class="small">A skill or workflow has <code>requires_approval</code>, so Approve/Reject is shown before anything runs.</p></div>
-      <div class="card"><span class="tag">completed</span><p class="small">Single, sequential, or parallel execution finished; the result and new artifacts are returned.</p></div>
-      <div class="card"><span class="tag">fallback / unsupported</span><p class="small">No agent covers an operation. Partial plans are <b>never</b> executed.</p></div>
+      <div class="card"><span class="tag">needs_info</span><p class="small">A required input the model couldn't fill, an <code>ask_user</code> question, or an agent's INPUT_REQUIRED: a form is shown. The backend gives up after 5 rounds in a row.</p></div>
+      <div class="card"><span class="tag">plan_ready</span><p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done.</p></div>
+      <div class="card"><span class="tag">completed / answer</span><p class="small">The model's final reply, with or without skill calls. The chat text is the orchestrator's summary; your artifacts render from the catalog.</p></div>
+      <div class="card"><span class="tag">error</span><p class="small">A loop error or the 12-step cap. If no skill fits, the model just says so; anything that could run has run.</p></div>
     </div>
-    <div class="callout">The planner only sees what your <b>agent card</b> says: skill description, <code>usage_notes</code>, tags, and parameter names, types, and descriptions. Writing a good card is half the work of getting routed.</div>
+    <div class="callout">Per skill the model sees your <b>description</b>, <code>usage_notes</code>, the approval flag, and the <code>inputSchema</code> (property descriptions, types, enums; <code>x_*</code> keys stripped). It does <b>not</b> see tags or the agent description. After each call it also reads your <b>result JSON</b>: card and result together decide whether you get chained correctly.</div>
   </div>
 </section>
 
@@ -308,7 +293,7 @@
   <div class="content">
     <table class="t sm">
       <tr><th style="width:250px">Secret</th><th style="width:330px">Used between</th><th>What it proves / where it lives</th></tr>
-      <tr><td><b>Session cookie</b> <code>prometheus_session</code></td><td>Browser → backend</td><td>An HS256 JWT signed with <code>BACKEND_JWT_SECRET</code> (falls back to <code>CHAINLIT_AUTH_SECRET</code>). The backend refuses to start if both are empty.</td></tr>
+      <tr><td><b>Session cookie</b> <code>prometheus_session</code></td><td>Browser → backend</td><td>An HS256 JWT signed with <code>BACKEND_JWT_SECRET</code>. The backend refuses to start if it is empty or still the <code>change-me…</code> placeholder. Sessions live in Valkey.</td></tr>
       <tr><td><b><code>AGENT_SECRET</code></b></td><td>Backend → client-agent; LiteLLM → every agent</td><td>A shared bearer token. Agents reject any other token with 401. It is registered as LiteLLM <code>static_headers</code>.</td></tr>
       <tr><td><b><code>LITELLM_MASTER_KEY</code></b></td><td>Agents/orchestrator → LiteLLM</td><td>Lets agents register and the orchestrator discover and call agents. The LLM proxy also requires it.</td></tr>
       <tr><td><b><code>userToken</code></b> (RS256 JWT)</td><td>Backend → orchestrator → agents</td><td>The identity of the human user, minted per turn. Agents verify it against <code>JWKS_URL</code> (the backend's <code>/.well-known/jwks.json</code>). Required by default.</td></tr>
@@ -335,7 +320,7 @@
     </div>
     <div class="grid g3">
       <div class="card"><h4>What an artifact is</h4><p class="small">An <code>ArtifactReference</code>: <code>artifact_id</code>, <code>name</code>, <code>description</code>, and a <code>uri</code> <i>or</i> inline <code>json_body</code>/<code>text_body</code>, plus <code>mime_type</code>, <code>json_type</code>, <code>tags</code> and <code>metadata</code>. Scoped to one conversation.</p></div>
-      <div class="card"><h4>How chaining works</h4><p class="small">The orchestrator passes the full catalog to every agent. Inputs marked <code>x_artifact_ref</code> in the card are filled automatically with the right artifact ID (a new upload, a name, or a UUID in the query).</p></div>
+      <div class="card"><h4>How chaining works</h4><p class="small">The orchestrator passes the full catalog to every agent. For inputs marked <code>x_artifact_ref</code>, the orchestrator LLM picks an artifact id from a new upload, an earlier result, or the catalog; unknown ids are rejected.</p></div>
       <div class="card"><h4>How the UI shows it</h4><p class="small">The backend picks a viewer from <code>json_type</code>, then <code>mime_type</code>, tags, and file extension: VTK mesh (Exodus/STL), IFC, PDF, image, Mermaid, JSON, markdown report, or download.</p></div>
     </div>
     <div class="callout warn">Without DeepLynx configured, user uploads are <b>not stored</b> and agents cannot see them; you only get a status message. We set up a local DeepLynx in the deployment session.</div>
@@ -421,7 +406,8 @@
           <tr><td>login <code>prometheus</code> / <code>prometheus</code></td><td>a setup wizard creates the first admin</td></tr>
           <tr><td>image from mooseharbor, pinned in compose</td><td><code>containers.github.inl.gov</code>, pinned in the <code>Makefile</code></td></tr>
           <tr><td><code>PROMETHEUS_DEBUG</code></td><td><code>DEBUG_AGENTS=true</code></td></tr>
-          <tr><td>pin <code>prometheus_api@2b3dbcf</code></td><td>that is v0.8.0; the platform uses <code>23c9454</code> (v0.12.0)</td></tr>
+          <tr><td><code>planner.py</code>, upload auto-binding (<code>file-uploads.md</code>)</td><td>the tool-calling loop, <code>orchestrator/agent_loop.py</code></td></tr>
+          <tr><td>pin <code>prometheus_api@2b3dbcf</code></td><td>that is v0.8.0; the platform uses <code>95c32b5</code> (v0.13.0)</td></tr>
         </table>
       </div>
       <div class="col">
@@ -431,10 +417,11 @@
           <li><code>prometheus_api/docs/agent/AGENT_MIGRATIONS.md</code>: what changed in each version</li>
           <li><code>prometheus_api/docs/ENV_SETUP.md</code>: every environment variable</li>
           <li><code>prometheus_api/specs/*.md</code>: the requirements contract (REQ-/BEH- IDs)</li>
-          <li><code>prometheus_platform/docs/docs/workflow-templates.md</code></li>
+          <li><code>…/dev-docs/agent-loop-orchestration.md</code>: how the orchestrator works</li>
+          <li><code>prometheus_platform/docs/docs/workflow-templates.md</code> (says "planner tool": read "orchestrator tool")</li>
           <li><code>…/dev-docs/multi-user-setup.md</code>, <code>encryption-and-keys.md</code></li>
           <li><code>…/docs/docs/local-deeplynx.md</code></li>
-          <li><code>agents/client-agent/README.md</code></li>
+          <li><code>agents/client-agent/README.md</code> (still lists the removed <code>matcher.py</code>)</li>
           <li><code>prometheus_agent_template/TUTORIAL.md</code>, with the caveats in this deck</li>
         </ul>
         <div class="callout warn">The published docs site (<code>gh-pages</code>) was last deployed in February 2026, and only pushes to <code>main</code> rebuild it. Read the docs in the repo on <code>dev</code>.</div>

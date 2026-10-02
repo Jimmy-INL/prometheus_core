@@ -107,7 +107,7 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov \
 
 <span class="c"># smoke test: can you pull the pinned base image?</span>
 docker pull \
-  containers.github.inl.gov/genesis/prometheus_api:23c9454</pre>
+  containers.github.inl.gov/genesis/prometheus_api:95c32b5</pre>
       <div class="col">
         <div class="card"><h4>Why the registry?</h4><p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Without a login, the first <code>make up</code> fails at the very first <code>FROM</code> line.</p></div>
         <div class="card"><h4>Where do tokens go?</h4><p class="small">Docker stores the login in your credential helper. The PAT never goes into <code>.env</code> or into a repo.</p></div>
@@ -128,7 +128,7 @@ docker pull \
         <tr><td><code>AGENT_SECRET</code></td><td>A2A bearer token: backend → client-agent, LiteLLM → agents</td></tr>
         <tr><td><code>REDIS_PASSWORD</code></td><td>Valkey <code>--requirepass</code></td></tr>
         <tr><td><code>REDIS_URL</code></td><td><code>redis://:${REDIS_PASSWORD}@redis:6379</code> (keep it as is)</td></tr>
-        <tr><td><code>CHAINLIT_AUTH_SECRET</code></td><td>Legacy name, still the <b>session-cookie secret</b> fallback. The backend won't start if both it and <code>BACKEND_JWT_SECRET</code> are empty.</td></tr>
+        <tr><td><code>BACKEND_JWT_SECRET</code></td><td><b>Session-cookie signing key.</b> The backend won't start while it is empty or still <code>change-me…</code>. (The old <code>CHAINLIT_AUTH_SECRET</code> is no longer read.)</td></tr>
         <tr><td><code>LITELLM_MASTER_KEY</code></td><td>Registry and gateway admin key (agents register with it)</td></tr>
         <tr><td><code>LITELLM_DB_PASSWORD</code></td><td>litellm-db Postgres</td></tr>
         <tr><td><code>ADMIN_DB_PASSWORD</code></td><td>admin-db Postgres</td></tr>
@@ -157,7 +157,7 @@ print(secrets.token_hex(32))"</pre>
         <tr><td><code>LLM_CONFIG_PROFILE</code></td><td><code>registry</code></td><td>Which flavor→model map agents use</td></tr>
         <tr><td><code>LLM_CONFIG_FILE</code></td><td>empty</td><td>Custom YAML inside the container; overrides the profile</td></tr>
         <tr><td><code>OPENAI_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>EMBEDDING_API_KEY</code></td><td>empty</td><td>Only what the chosen profile needs</td></tr>
-        <tr><td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td><td>commented</td><td>Override the Makefile pin (<code>23c9454</code>)</td></tr>
+        <tr><td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td><td>commented</td><td>Override the Makefile pin (<code>95c32b5</code>)</td></tr>
         <tr><td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td><td>commented</td><td>Storage for uploads and <code>deeplynx://</code></td></tr>
         <tr><td><code>PROMETHEUS_MAX_UPLOAD_BYTES</code></td><td>104857600</td><td>100 MiB upload cap</td></tr>
         <tr><td><code>HTTP(S)_PROXY</code>, <code>NO_PROXY</code></td><td>commented</td><td>Build args for Python images only</td></tr>
@@ -169,13 +169,15 @@ print(secrets.token_hex(32))"</pre>
         <tr><td><code>USER_IDENTITY_PUBLIC_KEY</code></td><td>empty</td><td>Static key for agents <i>outside</i> compose; <code>JWKS_URL</code> wins</td></tr>
         <tr><td><code>USER_IDENTITY_ISS</code> / <code>_AUD</code></td><td>prometheus-platform / -agents</td><td>JWT claims</td></tr>
         <tr><td><code>USER_IDENTITY_TTL</code></td><td>7200</td><td>Token lifetime in seconds</td></tr>
-        <tr><td><code>BACKEND_JWT_SECRET</code></td><td>empty</td><td>Session secret (preferred name)</td></tr>
+        <tr><td><code>BACKEND_WORKERS</code></td><td>1</td><td>uvicorn workers (sessions live in Valkey)</td></tr>
+        <tr><td><code>PROMETHEUS_MESH_WORKERS</code> / <code>_TIMEOUT_SECONDS</code></td><td>2 / 120</td><td>VTK mesh-conversion pool, per-mesh time budget</td></tr>
+        <tr><td><code>BACKEND_MEM_LIMIT</code></td><td>4g</td><td>backend container memory cap</td></tr>
         <tr><td><code>BACKEND_PUBLIC_URL</code></td><td>empty</td><td>Browser origin for OIDC redirects</td></tr>
         <tr><td><code>CREDENTIAL_BROKER</code></td><td><code>env</code></td><td><code>env</code> = global creds; <code>vault</code> = per user</td></tr>
         <tr><td><code>PROMETHEUS_SYSTEM_TESTING</code></td><td><code>false</code></td><td>Publish the client-agent on :8001</td></tr>
       </table>
     </div>
-    <p class="tiny">Documented but unused on <code>dev</code>: <code>FRONTEND_URL</code>, <code>OAUTH_OKTA_*</code>, <code>CHAINLIT_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
+    <p class="tiny">Documented but unused on <code>dev</code>: <code>FRONTEND_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
   </div>
 </section>
 
@@ -219,7 +221,7 @@ make ps ; make logs SERVICE=client-agent</pre>
       <div class="col"><h4 class="acc">① Makefile (the pin)</h4><pre class="sm"><span class="c"># Override this to pin a</span>
 <span class="c"># specific base image.</span>
 PROMETHEUS_API_BASE_IMAGE_HASH \
-  <span class="h">?= 23c9454</span>
+  <span class="h">?= 95c32b5</span>
 export \
   PROMETHEUS_API_BASE_IMAGE_HASH</pre><p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p></div>
       <div class="col"><h4 class="acc">② compose (build arg)</h4><pre class="sm"><span class="c"># docker-compose.yml</span>
@@ -239,7 +241,7 @@ RUN uv sync --no-dev \
   --no-install-project --inexact</pre><p class="tiny">(The <code>FROM</code> is one line in the real file.)</p></div>
     </div>
     <div class="grid g3">
-      <div class="card"><h4>Try another SDK version</h4><pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre><p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. <code>latest</code> is v0.13.0 today (LLM tool calling); <code>23c9454</code> is v0.12.0.</p></div>
+      <div class="card"><h4>Try another SDK version</h4><pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre><p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>95c32b5</code> is v0.13.0, the same as <code>latest</code> today. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p></div>
       <div class="card"><h4>Trap: an empty line in <code>.env</code></h4><p class="small">An uncommented <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> overrides the Makefile default with <b>empty</b> (make's <code>?=</code> does not apply to defined variables), which breaks the <code>FROM</code>.</p></div>
       <div class="card"><h4>Trap: plain <code>docker compose</code></h4><p class="small">Compose's default is empty. Always build through <code>make</code>, or export the variable yourself.</p></div>
     </div>
@@ -303,7 +305,7 @@ CMD ["python"]</pre>
         <tr><td><code>restart</code> / <code>restart-fg</code></td><td>same without <code>--build</code> (still a full down)</td></tr>
         <tr><td><code>ng-up</code>, <code>ng-restart</code> (+<code>-fg</code>)</td><td>without regenerating the agents file</td></tr>
         <tr><td><code>down</code></td><td>stop everything</td></tr>
-        <tr><td><code>down-v</code></td><td>stop and <b>delete volumes</b> (Valkey, both DBs, model caches)</td></tr>
+        <tr><td><code>down-v</code></td><td>stop and <b>delete volumes</b> (Valkey incl. sessions, both DBs, mesh cache, model caches)</td></tr>
         <tr><td><code>build</code></td><td>generate + build images</td></tr>
         <tr><td><code>ps</code>, <code>logs</code> [<code>SERVICE=</code>]</td><td>status, follow logs</td></tr>
         <tr><td><code>generate</code>, <code>regenerate</code>, <code>clean-generated</code></td><td>manage <code>docker-compose.agents.yml</code></td></tr>
@@ -341,7 +343,7 @@ CMD ["python"]</pre>
           <li>Local only: <code>USER_IDENTITY_REQUIRED=false</code> in <code>.env</code>, then <code>make restart</code>. Requests run as user <code>local</code>.</li>
           <li>Setting <code>USER_IDENTITY_PRIVATE_KEY</code> is <b>not</b> enough on the stock stack: agents verify through the backend's JWKS (<code>JWKS_URL</code>), which lists only keys stored in admin-db. Use the admin UI.</li>
         </ul></div>
-        <p class="small">Redo the wizard with <code>make clear-admin-users</code>. Backend session state is in memory: after a backend restart, reload the page.</p>
+        <p class="small">Redo the wizard with <code>make clear-admin-users</code>. Sessions live in Valkey: a backend restart (even <code>make restart</code>) keeps you logged in, and a reload reopens the conversation you had open.</p>
       </div>
     </div>
   </div>
@@ -353,7 +355,7 @@ CMD ["python"]</pre>
   <div class="content">
     <pre class="sm">source .env   <span class="c"># for the variables below</span>
 
-make ps                                                     <span class="c"># everything "Up"; litellm, dbs "(healthy)"</span>
+make ps                                                     <span class="c"># everything "Up"; litellm, dbs, backend "(healthy)"</span>
 docker exec agent-valkey valkey-cli -a "$REDIS_PASSWORD" ping  <span class="c"># → PONG</span>
 docker exec litellm-db pg_isready -U litellm                 <span class="c"># → accepting connections</span>
 docker exec admin-db   pg_isready -U admin
@@ -372,7 +374,7 @@ docker exec client-agent python -c "import urllib.request as u; \
     <div class="grid g3">
       <div class="card"><h4>401 from LiteLLM?</h4><p class="small">Every LiteLLM route except health needs <code>Authorization: Bearer $LITELLM_MASTER_KEY</code>.</p></div>
       <div class="card"><h4><code>/healthz</code> through :5150?</h4><p class="small">It is not under <code>/api</code>, so the frontend proxy does not forward it. Use :8600 directly.</p></div>
-      <div class="card"><h4>No agent healthchecks</h4><p class="small">Agents, the backend, and the client-agent have no Docker healthcheck. "Up" only means started; check their logs.</p></div>
+      <div class="card"><h4>No agent healthchecks</h4><p class="small">The agents and the client-agent have no Docker healthcheck (the backend does). "Up" only means started; check their logs.</p></div>
     </div>
   </div>
 </section>
@@ -398,8 +400,8 @@ docker exec client-agent python -c "import urllib.request as u; \
         <pre class="sm">make logs SERVICE=client-agent
 make logs SERVICE=osti-research-agent
 make logs SERVICE=litellm</pre>
-        <p class="small">In the client-agent log you see discovery (<code>GET /v1/agents</code>), the planner's decision, and the <code>/a2a/{agent}</code> call.</p>
-        <div class="callout">A newly registered agent reaches the planner within about 60 s (the capability-cache TTL), immediately on a skill miss, or right after <code>docker restart client-agent</code>.</div>
+        <p class="small">In the client-agent log you see discovery (<code>GET /v1/agents</code>), each tool call the loop makes (status "Next step: …"), and the <code>/a2a/{agent}</code> call.</p>
+        <div class="callout">A newly registered agent reaches the orchestrator's tool list within about 60 s (the capability-cache TTL), immediately on a skill miss, or right after <code>docker restart client-agent</code>.</div>
       </div>
     </div>
   </div>
@@ -642,11 +644,12 @@ EOF</pre>
   <div class="content">
     <table class="t sm">
       <tr><th style="width:470px">Symptom</th><th>Cause → fix</th></tr>
-      <tr><td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td><td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>23c9454</code>.</td></tr>
+      <tr><td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td><td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>95c32b5</code>.</td></tr>
       <tr><td><code>unauthorized</code> / <code>denied</code> pulling the base image</td><td>Run <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>; be on the INL network or VPN.</td></tr>
       <tr><td><code>.env not found</code> from <code>check-prerequisites</code></td><td><code>cp .env.example .env</code></td></tr>
       <tr><td>Port is already allocated (5150, 8600, 9977, 6379)</td><td>Another process or an old stack is using it. <code>make down</code>, or change <code>*_PORT</code> in <code>.env</code>.</td></tr>
-      <tr><td>Backend exits: "jwt_secret is not configured"</td><td>Set <code>BACKEND_JWT_SECRET</code> or <code>CHAINLIT_AUTH_SECRET</code>.</td></tr>
+      <tr><td>Backend exits: "jwt_secret is not configured"</td><td><code>BACKEND_JWT_SECRET</code> is empty or still <code>change-me…</code>. Generate a value (an old <code>CHAINLIT_AUTH_SECRET</code> is no longer read).</td></tr>
+      <tr><td>Backend exits during an alembic step</td><td>Migrations run in <code>backend/docker-entrypoint.sh</code> before uvicorn; <code>make logs SERVICE=backend</code>.</td></tr>
       <tr><td>SSL / certificate errors during <code>npm ci</code> or <code>pip</code> on the INL network</td><td>TLS inspection. <code>certs/INL.pem</code> is checked in (PR #100); pull the latest <code>dev</code>. Python images get the bundle from the base image.</td></tr>
       <tr><td><code>network … has active endpoints</code> on <code>make up</code></td><td>An external agent is still attached to <code>prometheus_platform_agent-network</code>. Stop it first (<code>make down</code> in the agent dir).</td></tr>
       <tr><td>Build killed / exit 137</td><td>Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy).</td></tr>
@@ -666,11 +669,11 @@ EOF</pre>
       <tr><td><code>LLMAliasError</code>: alias 'small' not available</td><td>The active profile has no model for that flavor. Under <code>registry</code>, add the alias to <code>litellm_config.yaml</code> and <code>make restart</code>, or switch <code>LLM_CONFIG_PROFILE</code>.</td></tr>
       <tr><td>HTTP 401 from <code>/v1/models</code> in an agent</td><td>The LLM client did not send the master key. Use <code>LLMConfig.from_env().with_api_key(LITELLM_MASTER_KEY)</code> (next session).</td></tr>
       <tr><td>The agent is running but not in <code>/agents</code></td><td>The registration was wiped by <code>make up</code>/<code>restart</code>. <code>docker restart &lt;agent&gt;</code> re-registers it; it is routable within about 60 s.</td></tr>
-      <tr><td>The planner never picks your agent</td><td>A weak card description, a duplicate skill id, or a card URL the client-agent cannot reach (<code>EXTERNAL_AGENT_URL</code>).</td></tr>
+      <tr><td>The orchestrator never calls your skill</td><td>A weak skill description or <code>usage_notes</code> (tags are not shown to it), a duplicate skill id, or a card URL the client-agent cannot reach (<code>EXTERNAL_AGENT_URL</code>).</td></tr>
       <tr><td>Upload ignored: "DeepLynx storage is not configured"</td><td>Set <code>DEEPLYNX_*</code> and <code>make restart</code>.</td></tr>
       <tr><td>Chat title stays as the raw first question</td><td>Title generation uses <code>llm.small</code>, which is missing under <code>registry</code>. Harmless.</td></tr>
       <tr><td>Mesh viewer error "libGL.so.1"</td><td>An old backend image. Rebuild with <code>make up</code>.</td></tr>
-      <tr><td>Current chat lost after a backend restart</td><td>Session state (bound conversation, awaited tasks) is in memory; the cookie stays valid. Reload and reopen the conversation from the history.</td></tr>
+      <tr><td>"Live updates stopped — the server is unreachable"</td><td>The backend or Valkey restarted mid-stream. Reload: the session and the open conversation come back.</td></tr>
     </table>
   </div>
 </section>
@@ -689,7 +692,8 @@ docker logs &lt;agent&gt; 2&gt;&amp;1 \
   valkey-cli -a "$REDIS_PASSWORD"
 &gt; KEYS artifacts:conv:*
 &gt; KEYS conversation:*
-&gt; KEYS capability_cache:v4:*</pre><p class="small">Conversation state, artifact catalog, capability cache (60 s TTL), task graph.</p></div>
+&gt; KEYS capability_cache:v4:*
+&gt; KEYS session:*</pre><p class="small">Conversation state, artifact catalog, capability cache (60 s TTL), task graph, browser sessions.</p></div>
       <div class="card"><h4>Inside a container</h4><pre class="xs">docker exec client-agent env \
   | grep -E '^(REGISTRY_URL|LLM_CONFIG_)'
 docker exec client-agent python -c "

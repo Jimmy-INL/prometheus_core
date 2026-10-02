@@ -55,7 +55,7 @@
           <tr><td>🗂️ JIRA project <code>PPLT</code></td><td>Issues and work items</td></tr>
           <tr><td>📦 Proposal Box</td><td>Proposal documents</td></tr>
         </table>
-        <div class="callout">27 repos in the org. All are private except <code>.github</code> (the org profile). Container images are published at <code>containers.github.inl.gov/genesis/&lt;repo&gt;</code>.</div>
+        <div class="callout">27 repos in the org. All are private except <code>.github</code> (the org profile). Container images are published at <code>containers.github.inl.gov/genesis/&lt;repo&gt;</code>. Work is tracked in JIRA project <code>PPLT</code>: <b>reference the JIRA task in every PR</b> (e.g. <code>PPLT-123</code>).</div>
       </div>
     </div>
   </div>
@@ -142,7 +142,7 @@ export GH_HOST=github.inl.gov</pre></div>
       </div>
       <div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
       <div class="row" style="gap:24px">
-        <div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 23c9454</code> (v0.12.0)</span></div>
+        <div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 95c32b5</code> (v0.13.0)</span></div>
         <div class="box orange" style="flex:1"><b>prometheus_agent_template → your agent</b><span class="small"><code>agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
       </div>
     </div>
@@ -151,7 +151,7 @@ export GH_HOST=github.inl.gov</pre></div>
       <div class="card"><h4>Not git submodules</h4><p class="small">The platform's <code>.gitmodules</code> is empty. External agents are separate repos that <b>register at runtime</b> with the platform's LiteLLM registry.</p></div>
       <div class="card"><h4>Local venvs</h4><p class="small">For IDE and tests outside Docker, install the same commit:</p><pre class="xs">uv pip install \
  "git+https://github.inl.gov/genesis/\
-prometheus_api.git@23c9454"</pre></div>
+prometheus_api.git@95c32b5"</pre></div>
     </div>
   </div>
 </section>
@@ -164,13 +164,13 @@ prometheus_api.git@23c9454"</pre></div>
       <div class="col">
         <table class="t sm">
           <tr><th>Location</th><th>Value today</th></tr>
-          <tr class="hl"><td>platform <code>Makefile:22</code></td><td><code>23c9454</code> (v0.12.0, 2026-09-01)</td></tr>
+          <tr class="hl"><td>platform <code>Makefile:22</code></td><td><code>95c32b5</code> (v0.13.0 = <code>main</code>)</td></tr>
           <tr><td>platform <code>.env.example</code></td><td><code>#PROMETHEUS_API_BASE_IMAGE_HASH=</code> (keep in sync)</td></tr>
           <tr><td>platform <code>docker-compose.yml</code></td><td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-}</code>, empty default</td></tr>
           <tr><td>template <code>docker-compose.yml</code></td><td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}</code></td></tr>
           <tr><td>template README / TUTORIAL</td><td><code>2b3dbcf</code>, <b>stale</b> (v0.8.0)</td></tr>
-          <tr><td>platform <code>backend/pyproject.toml</code></td><td><code>branch = "a2a_1.0"</code>, broken for local <code>uv sync</code></td></tr>
-          <tr><td><code>prometheus_api</code> <code>main</code></td><td><code>95c32b5</code>, v0.13.0 (adds LLM tool calling)</td></tr>
+          <tr><td>platform <code>backend/</code> and <code>tests/pyproject.toml</code></td><td><code>rev = "95c32b5…"</code>, matching the Makefile</td></tr>
+          <tr><td><code>prometheus_api</code> <code>main</code></td><td><code>95c32b5</code>, v0.13.0 (adds LLM tool calling), the platform pin</td></tr>
         </table>
       </div>
       <div class="col">
@@ -564,7 +564,9 @@ Stop a large STEP from 413ing behind the
   <div class="head"><div class="eyebrow">Opening a PR</div><h2>A description reviewers can act on</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
-      <pre class="sm"><span class="p">## What</span>
+      <pre class="sm"><span class="p">JIRA:</span> PPLT-123
+
+<span class="p">## What</span>
 Add a `mesh_quality_report` skill that reads an
 Exodus artifact and reports scaled Jacobian and
 aspect-ratio histograms.
@@ -580,10 +582,11 @@ unchecked; bad elements fail late.
 
 <span class="p">## Config / environment changes</span>
 - New env var `MESHQA_MAX_ELEMENTS` (default 2e6)
-- Base image: PROMETHEUS_API_BASE_IMAGE_HASH=23c9454</pre>
+- Base image: PROMETHEUS_API_BASE_IMAGE_HASH=95c32b5</pre>
       <div class="col">
         <ul class="b sm">
           <li><b>Title</b>: an imperative sentence, like the commit subject ("Add…", "Fix…", "Stop…").</li>
+          <li><b>Reference the JIRA task</b> (<code>PPLT-…</code>) at the top of the description.</li>
           <li><b>Small and focused.</b> One topic. Split refactors from behavior changes.</li>
           <li>List the <b>commands you ran</b>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>prometheus_api/AGENTS.md</code>).</li>
           <li><b>prometheus_api API changes</b>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li>
