@@ -1,9 +1,9 @@
 # Client Agent Developer Guide
 
 The client-agent is the central orchestrator for Prometheus. It receives frontend A2A
-requests, runs a tool-calling loop over the discovered specialist capabilities
-(each skill is an LLM tool), gathers missing inputs, tracks artifacts, and persists
-conversation state. Design: `../../docs/docs/dev-docs/agent-loop-orchestration.md`.
+requests and runs a tool-calling loop over the discovered specialist capabilities,
+with each skill as an LLM tool. It also gathers missing inputs, tracks artifacts, and
+persists conversation state. Design: `../../docs/docs/dev-docs/agent-loop-orchestration.md`.
 
 This guide documents the local code structure and the major functions you are likely
 to touch when maintaining the client-agent.
@@ -16,7 +16,7 @@ The container runs:
 python agent.py
 ```
 
-`agent.py` is only the Docker entry point; all implementation lives in `orchestrator/`.
+`agent.py` is only the Docker entry point; the implementation lives in `orchestrator/` and the top-level modules listed below.
 
 High-level runtime path:
 

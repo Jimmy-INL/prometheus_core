@@ -26,7 +26,7 @@ on simple requests, for two structural reasons:
 
 1. **Decomposition could not see the skills.** `task_decomposition_system.txt` told the
    model to split the request "without considering what tools or capabilities may be
-   available", and `planner_system.txt` then declared the operation list *immutable* and
+   available". `planner_system.txt` then declared the operation list *immutable*. It also
    required each operation to map to exactly one skill. So "Create a PNG image with the
    word Popelnase" became one operation. No single skill produces a PNG with text, so the
    request was marked unsupported, even though `create_svg_artifact` →
@@ -53,9 +53,9 @@ system prompt  +  transcript  +  tools (one per skill, one per workflow template
       └──── tool results (summary + artifact ids) appended to transcript
 ```
 
-The model sees every skill's description and input schema as a tool, plus everything that
-has happened so far: user messages, earlier tool calls, and their results with artifact
-ids. It decides the next call with fully parameterized arguments, *after* the previous
+The model sees every skill's description and input schema as a tool. It also sees
+everything that has happened so far: user messages, earlier tool calls, and their results
+with artifact ids. It decides the next call with fully parameterized arguments, *after* the previous
 call's result is known. Decomposition, chaining, parameter extraction and data flow
 between steps all become ordinary tool-calling behavior.
 
@@ -95,7 +95,9 @@ Deleted: `planner.py`, `planner_models.py`, `orchestrator/planning_flow.py`,
   skill's `input_schema`, with:
   * vendor keywords (`x_*`, `x-*`) stripped, so the provider sees plain JSON Schema;
   * artifact-reference fields (`x_artifact_ref`) described as "artifact_id of an existing
-    conversation artifact";
+    conversation artifact". The user is never asked for one on a form. A missing required
+    artifact reference is an error result that sends the model to the catalog or to the
+    upstream skill;
   * `artifacts` / `conversation_id` removed, because the orchestrator attaches them.
 * **Workflow tools**: one per compiled template (`workflow_tool_name(id)`). Parameters are
   the template's `required_input_paths`, as flat properties keyed by dotted path.
@@ -114,11 +116,12 @@ Every tool call in an assistant message becomes a **pending call** with a status
 | `waiting_input` | A specialist returned A2A `INPUT_REQUIRED`. | The user answers and the same A2A task resumes. |
 | `done` | Has a tool-result message. | — |
 
-Validation happens before anything runs:
-unknown tool, malformed JSON arguments, a schema violation (`jsonschema`), an
-unknown artifact id, or a missing *runtime* input all produce an immediate **error
-result** that goes back to the model, which can correct itself. A missing *user-input*
-parameter pauses with a typed form instead. The model is told never to invent those values.
+Validation happens before anything runs. These problems produce an immediate **error
+result** for the model: an unknown tool, malformed JSON arguments, a schema violation
+(`jsonschema`), an unknown artifact id, or a missing *runtime* input. The model can then
+correct the call. A missing *user-input* parameter pauses with a typed form instead. The
+model is told never to invent those values. Form answers go through the same validation
+before the call runs.
 
 **Batch rule:** if any call in an assistant message needs the user (args, answer,
 approval), nothing in that message runs until every call is ready. Forms come first,
@@ -150,13 +153,14 @@ How the next request is mapped:
 | `followup_answers` | Merged into `needs_args` call arguments; used as the `ask_user` answer; sent as `provided_inputs` to resume `waiting_input` A2A tasks (same context and task id, same Task Graph node). |
 | `plan_approved` | `needs_approval` → `ready`, then execute. |
 | `plan_rejected` | Every unfinished call gets the result "The user rejected this call". Reply: "Plan rejected…". No LLM call. |
-| Free-text `query` | An `ask_user` call is answered with the text. Every other unfinished call gets the result "Not executed — the user replied instead: …", and the loop continues. So "use 20 mm instead" while a plan awaits approval simply re-plans. |
+| Free-text `query` | An `ask_user` call is answered with the text. Every other unfinished call gets the result "Not executed: the user replied instead: …", and the loop continues. So "use 20 mm instead" while a plan awaits approval simply re-plans. |
 
 Without pending calls, the query is appended as a user message and the loop runs.
 An explicit workflow selection (`/workflow` slash command, catalog start endpoint)
-injects a synthetic assistant tool call to that workflow, with the form inputs as
-arguments, so it takes the same validate/pause/execute path without an LLM
-routing decision.
+with no free-text arguments injects a synthetic assistant tool call to that workflow.
+The form inputs are its arguments, so it takes the same validate/pause/execute path
+without an LLM routing decision. A `/workflow` command with free-text arguments
+instead adds a hint to the user message, and the model fills the workflow inputs.
 
 ### 3.4a Concurrent turns
 
@@ -165,34 +169,39 @@ A turn detached to the background keeps running while the user sends the next on
 The loop fits into that model as follows:
 
 * **`llm_messages` merges per turn like `conversation_history`.** Each message is tagged
-  with its turn's `turn_id` and `turn_started_at` when first stored. A store keeps every
-  other turn's messages from the stored document and takes this turn's from its own copy,
-  as one contiguous block ordered by turn start.
+  with its turn's `turn_id` and `turn_started_at` when first stored. A store keeps the
+  messages of every other turn from the stored document. It takes this turn's messages
+  from its own copy, as one contiguous block ordered by turn start.
 * **`llm_view` repairs the merged transcript before every LLM call.** A paused batch
   resumes in a later request, which is a new turn, so another turn's block can land
   between a call and its result. A superseded pending call may never get a result.
-  `llm_view` puts each call's stored result directly after its assistant message,
-  substitutes a "not executed" result where none exists, drops results with no call, and
-  strips the bookkeeping tags.
+  `llm_view` puts each call's stored result directly after its assistant message. Where a
+  call has no result, it substitutes a "not executed" one. It drops results with no call
+  and strips the bookkeeping tags.
 * **Unfinished `pending_calls` count as pending input** in the newest-turn ownership rule
-  (`_leaves_pending_input`), so a late turn's open form or plan is not overwritten by a
-  newer turn that left none.
+  (`_leaves_pending_input`). So a newer turn that left no form or plan does not overwrite
+  a late turn's open one.
 * **Restore fidelity:** a pause's `followup_questions` / `plan` history entry carries the
-  reply text as `content`, so artifacts produced before the pause are stamped on it
+  reply text as `content`. So artifacts produced before the pause are stamped on it
   (`stamp_turn_artifacts`) and restore with that reply. The `plan_approved` entry has no
-  content, so a restored chat shows no bubble the live UI never showed.
+  content, so a restored chat shows no bubble that the live UI never showed.
 
 ### 3.5 What goes back to the model
 
 A tool result is compact JSON:
 
 ```json
-{"status": "succeeded|failed|rejected|not_executed",
+{"status": "succeeded|failed|rejected|not_executed|answered",
  "summary": "<answer/message/report text, ≤ 2 000 chars>",
  "artifacts": [{"artifact_id": "...", "name": "...", "mime_type": "...", "description": "..."}],
  "result": "<remaining JSON payload, ≤ 6 000 chars>",
+ "provided_inputs": {"<name>": "<value>"},
  "error": "..."}
 ```
+
+`provided_inputs` holds the values given after the call was made: answers to a
+specialist's `INPUT_REQUIRED` form, and values resolved from context. Sensitive answers
+are never included. The same values are merged into the call's `turn_tool_inputs` entry.
 
 Artifacts produced by a call are merged into `context.artifacts` right away, so the next
 call's artifact references validate. The full raw result is kept in `turn_tool_results`
@@ -200,6 +209,11 @@ and `conversation_history` for the response and the chat-history UI.
 
 The system prompt lists the conversation's artifact catalog (id, name, mime type,
 description) on every LLM call. Files uploaded this turn are named in the user message.
+
+The system prompt also lists the newest successful inputs of each skill
+(`recent_skill_inputs`). They come from the `tool_inputs` of every `conversation_history`
+entry, so they survive the transcript window in 3.6. A follow-up such as "redo the valve
+with 6 holes" can then start from inputs the model no longer sees in the transcript.
 
 ### 3.6 LLM client and bounds
 
@@ -224,18 +238,20 @@ description) on every LLM call. Files uploaded this turn are named in the user m
 | Final text, ≥ 1 skill ran this turn | `completed` (`message` = `report` = text, `tool_results`, suggested queries) |
 | Final text, no skill ran | `answer` |
 | Paused on `needs_args` / `needs_answer` / `waiting_input` | `needs_info` with `followup_questions` |
-| Paused on `needs_approval` | `plan_ready` with `plan` = the pending batch (steps = `{name, agent, description}` per call) |
+| Paused on `needs_approval` | `plan_ready` with `plan` = the pending batch (steps = `{name, agent, description}` per call; a workflow call adds `workflow_id`, `selection_source` and any pinned `workflow_version`) |
 | Loop error or turn limit | `error` |
 
-The backend and the React frontend need no changes.
+The wire contract is unchanged except for one field. The conversation record no longer
+carries a `material_id`, so `ConversationSummary.material_id` is removed from the backend
+contract (`backend/CONTRACT.md`) and its TypeScript mirror. No frontend code read it.
 
 ## 4. Consequences
 
 * **Faster.** One LLM call per step plus one for the answer. A single-skill request takes
   2 LLM calls instead of roughly 8.
-* **More flexible.** The model chains skills that no one declared a chain for, adapts to
-  results (errors, empty data), and answers conversationally about earlier results
-  without a separate turn-resolution stage.
+* **More flexible.** The model chains skills that no one declared a chain for. It adapts
+  to results, such as errors or empty data. It also answers conversationally about
+  earlier results, without a separate turn-resolution stage.
 * **Approval scope changes.** Approval covers the *next batch* of calls, not the whole
   future plan, because later steps are decided after earlier results arrive. That is the
   honest version: the old up-front plan could not bind later inputs either.
