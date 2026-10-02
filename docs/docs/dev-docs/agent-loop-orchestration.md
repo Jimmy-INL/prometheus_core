@@ -255,8 +255,8 @@ contract (`backend/CONTRACT.md`) and its TypeScript mirror. No frontend code rea
 * **Approval scope changes.** Approval covers the *next batch* of calls, not the whole
   future plan, because later steps are decided after earlier results arrive. That is the
   honest version: the old up-front plan could not bind later inputs either.
-* **Auditability.** Every call is still a Task Graph node (`invoke_skill`), and the
-  transcript in Valkey records the exact arguments and results the model saw.
+* **Auditability.** Not provided yet. The Valkey transcript is trimmed, expiring operational
+  context, not an audit record; approvals and calls will be recorded in a durable store.
 * **Agent cards matter more.** Skill descriptions are now the model's only routing
   signal. Descriptions that fought the old planner (e.g. `convert_svg_to_png`'s "do NOT
   chain this automatically") were rewritten.

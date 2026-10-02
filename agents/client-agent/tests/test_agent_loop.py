@@ -846,6 +846,30 @@ def test_follow_up_sees_inputs_of_a_call_trimmed_from_the_transcript(harness) ->
     assert response.message == "Redoing it."  # an assertion inside the step would fail the turn
 
 
+def test_partly_supported_request_waits_for_consent_before_running(harness) -> None:
+    # Planning Operation Coverage Contract: no supported subset runs without consent.
+    harness.results.update(create_svg_artifact=svg_result)
+
+    def names_the_gap(request):
+        assert "Do not run the supported part until the user agrees" in request["messages"][0]["content"]
+        return reply("I can make the SVG, but no skill can etch it. Make only the SVG?")
+
+    harness.script(
+        [
+            names_the_gap,
+            reply(calls=[tool_call("create_svg_artifact", {"word": "valve"}, "c1")]),
+            reply("Created."),
+        ]
+    )
+
+    first = send(query="Make a valve SVG and laser-etch it")
+    assert (first.status, harness.invocations) == ("answer", [])
+    assert first.message.endswith("Make only the SVG?")  # an assertion inside the step would fail the turn
+
+    assert send(query="Yes, just the SVG").status == "completed"
+    assert [skill for skill, _ in harness.invocations] == ["create_svg_artifact"]
+
+
 def test_recent_skill_inputs_keeps_the_newest_call_per_skill() -> None:
     state = {
         "conversation_history": [
