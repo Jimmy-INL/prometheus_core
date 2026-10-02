@@ -34,7 +34,7 @@
   // Grow each slide's .content (CSS zoom, capped) until it fills the space above
   // the footer, so sparse slides don't leave an empty lower third. Dense slides
   // are shrunk slightly if they would overflow. Opt out with data-nofit.
-  const SAFE_BOTTOM = 842, MAX_ZOOM = 1.3, MIN_ZOOM = 0.8;
+  const SAFE_BOTTOM = 842, MAX_ZOOM = 1.45, MIN_ZOOM = 0.8;
   function overflows(slide, c) {
     const top = slide.getBoundingClientRect().top;
     if (c.getBoundingClientRect().bottom - top > SAFE_BOTTOM) return true;

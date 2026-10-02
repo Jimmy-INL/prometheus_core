@@ -12,7 +12,6 @@
 <body data-sec="agt" data-title="Day 1 · Agent template">
 <div id="viewport"><div id="stage">
 
-<!-- 1 -->
 <section class="slide title">
   <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
   <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
@@ -22,7 +21,6 @@
   <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">prometheus_agent_template · prometheus_api v0.13</span></div>
 </section>
 
-<!-- 2 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Mental model</div><h2>You write <code style="font-size:.8em">_execute</code>. The base class does the rest.</h2></div>
   <div class="content">
@@ -59,7 +57,6 @@
   </div>
 </section>
 
-<!-- 3 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The template repository</div><h2><code style="font-size:.8em">prometheus_agent_template</code> at a glance</h2></div>
   <div class="content">
@@ -90,7 +87,6 @@
   </div>
 </section>
 
-<!-- 4 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Scaffolding</div><h2><code style="font-size:.8em">python setup_agent.py</code></h2></div>
   <div class="content">
@@ -120,7 +116,6 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   </div>
 </section>
 
-<!-- 5 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The generated agent</div><h2>Anatomy of <code style="font-size:.8em">my-agent/</code></h2></div>
   <div class="content">
@@ -155,7 +150,6 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   </div>
 </section>
 
-<!-- 6 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">agent.py</div><h2>The hello-world <code style="font-size:.8em">_execute</code>, as generated</h2></div>
   <div class="content">
@@ -205,7 +199,6 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   </div>
 </section>
 
-<!-- 7 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Lifecycle</div><h2>What happens around your code</h2></div>
   <div class="content">
@@ -239,14 +232,12 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   </div>
 </section>
 
-<!-- 8 -->
 <section class="slide section">
   <div class="num">A</div>
   <h2>The agent card</h2>
   <p class="lede">How the orchestrator LLM decides whether and how to call you (and your result JSON is how it decides what to do next). Write it as if a careful colleague had to decide from this text alone.</p>
 </section>
 
-<!-- 9 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">agent_card.json</div><h2>The template card</h2></div>
   <div class="content">
@@ -284,38 +275,30 @@ printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   </div>
 </section>
 
-<!-- 10 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Field reference</div><h2>Every card field, and who reads it</h2></div>
+  <div class="head"><div class="eyebrow">Field reference</div><h2>Card fields (1/2): identity and routing</h2></div>
   <div class="content">
-    <table class="t xs">
-      <tr><th style="width:290px">Field</th><th style="width:130px">Required?</th><th>Meaning / consumer</th></tr>
-      <tr><td><code>name</code></td><td>yes</td><td>Display name <b>and</b> LiteLLM route key: lowercased, spaces → hyphens (<code>/a2a/hello-world-agent</code>). Must be unique.</td></tr>
-      <tr><td><code>description</code></td><td>yes</td><td>Agent-level summary. <b>Not shown</b> to the orchestrator LLM; it routes on the <i>skill</i> description.</td></tr>
-      <tr><td><code>version</code>, <code>defaultInputModes</code>, <code>defaultOutputModes</code></td><td>defaulted</td><td><code>1.0.0</code>, <code>["text"]</code></td></tr>
-      <tr><td><code>capabilities.streaming</code></td><td>no</td><td><code>true</code> → the orchestrator uses <code>SendStreamingMessage</code> and you get live status</td></tr>
-      <tr class="hl"><td><code>skills[].id</code></td><td>yes</td><td>Arrives as <code>params["skill_id"]</code>. <b>Globally unique</b> across the platform.</td></tr>
-      <tr class="hl"><td><code>skills[].description</code></td><td>yes</td><td>The tool description the orchestrator LLM reads: the main routing signal</td></tr>
-      <tr class="hl"><td><code>skills[].usage_notes</code></td><td>ext.</td><td>Appended to the tool description as "Usage: …": when to use this skill rather than others</td></tr>
-      <tr class="hl"><td><code>skills[].tags</code></td><td>A2A std.</td><td><b>Not shown</b> to the orchestrator LLM (discovery and A2A only)</td></tr>
-      <tr class="hl"><td><code>skills[].inputSchema</code></td><td>ext.</td><td>Sent as the tool's JSON Schema (<code>x_*</code> keys stripped) and enforced. A required input the model can't fill → follow-up form (enum → dropdown). Optional fields are never asked for by the platform.</td></tr>
-      <tr><td><code>skills[].requires_approval</code></td><td>ext.</td><td><code>true</code> → Approve/Reject before that call (<code>plan_ready</code>); covers the next call only</td></tr>
-      <tr><td><code>skills[].expected_duration_seconds</code></td><td>ext.</td><td>Only for the plan card's time estimate. The call timeout is a fixed 900 s.</td></tr>
-      <tr><td><code>skills[].provides</code>, <code>derivation_rules</code>, <code>execution_priority</code></td><td>optional</td><td>Ignored by the tool-calling loop; drop them</td></tr>
-      <tr><td><code>skills[].output_format</code>, <code>skills[].examples</code></td><td>—</td><td><b>Not read</b> by the orchestrator today (<code>examples</code> is a standard A2A field). Document for humans; put routing hints in <code>description</code>.</td></tr>
-      <tr><td>top-level <code>workflows</code></td><td>optional</td><td>Inline workflow definitions (or ship <code>workflows/*.yaml</code>)</td></tr>
+    <table class="t">
+<tr><th style="width:290px">Field</th><th style="width:130px">Required?</th><th>Meaning / consumer</th></tr><tr><td><code>name</code></td><td>yes</td><td>Display name <b>and</b> LiteLLM route key: lowercased, spaces → hyphens (<code>/a2a/hello-world-agent</code>). Must be unique.</td></tr><tr><td><code>description</code></td><td>yes</td><td>Agent-level summary. <b>Not shown</b> to the orchestrator LLM; it routes on the <i>skill</i> description.</td></tr><tr><td><code>version</code>, <code>defaultInputModes</code>, <code>defaultOutputModes</code></td><td>defaulted</td><td><code>1.0.0</code>, <code>["text"]</code></td></tr><tr><td><code>capabilities.streaming</code></td><td>no</td><td><code>true</code> → the orchestrator uses <code>SendStreamingMessage</code> and you get live status</td></tr><tr class="hl"><td><code>skills[].id</code></td><td>yes</td><td>Arrives as <code>params["skill_id"]</code>. <b>Globally unique</b> across the platform.</td></tr><tr class="hl"><td><code>skills[].description</code></td><td>yes</td><td>The tool description the orchestrator LLM reads: the main routing signal</td></tr><tr class="hl"><td><code>skills[].usage_notes</code></td><td>ext.</td><td>Appended to the tool description as "Usage: …": when to use this skill rather than others</td></tr><tr class="hl"><td><code>skills[].tags</code></td><td>A2A std.</td><td><b>Not shown</b> to the orchestrator LLM (discovery and A2A only)</td></tr>
     </table>
   </div>
 </section>
 
-<!-- 11 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Getting routed</div><h2>Writing a card the orchestrator will call</h2></div>
+  <div class="head"><div class="eyebrow">Field reference</div><h2>Card fields (2/2): inputs, approval, extensions</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <h4 class="acc">The tool the orchestrator LLM gets, per skill</h4>
-        <pre class="xs">tool: geometry_meshing
+    <table class="t">
+<tr><th style="width:290px">Field</th><th style="width:130px">Required?</th><th>Meaning / consumer</th></tr><tr class="hl"><td><code>skills[].inputSchema</code></td><td>ext.</td><td>Sent as the tool's JSON Schema (<code>x_*</code> keys stripped) and enforced. A required input the model can't fill → follow-up form (enum → dropdown). Optional fields are never asked for by the platform.</td></tr><tr><td><code>skills[].requires_approval</code></td><td>ext.</td><td><code>true</code> → Approve/Reject before that call (<code>plan_ready</code>); covers the next call only</td></tr><tr><td><code>skills[].expected_duration_seconds</code></td><td>ext.</td><td>Only for the plan card's time estimate. The call timeout is a fixed 900 s.</td></tr><tr><td><code>skills[].provides</code>, <code>derivation_rules</code>, <code>execution_priority</code></td><td>optional</td><td>Ignored by the tool-calling loop; drop them</td></tr><tr><td><code>skills[].output_format</code>, <code>skills[].examples</code></td><td>—</td><td><b>Not read</b> by the orchestrator today (<code>examples</code> is a standard A2A field). Document for humans; put routing hints in <code>description</code>.</td></tr><tr><td>top-level <code>workflows</code></td><td>optional</td><td>Inline workflow definitions (or ship <code>workflows/*.yaml</code>)</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Getting routed</div><h2>The tool the orchestrator LLM gets, per skill</h2></div>
+  <div class="content">
+<div class="col">
+
+<pre class="sm">tool: geometry_meshing
 description: Resolve a STEP file artifact, generate a
   first-order tetrahedral volume mesh with Gmsh, …
   Usage: Use for solid .step or .stp artifacts …
@@ -325,32 +308,33 @@ parameters:
      existing conversation artifact."
   element_size: number  "Optional global target …"
   required: [step_artifact_id]</pre>
-        <p class="small">From the real <code>gmsh_agent</code> card, as built by <code>agent_loop._skill_spec</code>. No tags, no agent description, <code>x_*</code> keys stripped.</p>
-      </div>
-      <div class="col">
-        <ul class="b sm">
-          <li><b>Lead with the verb and the object</b>: "Compute scaled-Jacobian quality metrics for an Exodus mesh artifact…"</li>
-          <li><code>usage_notes</code>: when <i>not</i> to use you, and which neighbour to prefer.</li>
-          <li><b>Describe every property.</b> Use <code>enum</code> for fixed choices and units in the description. Keep <code>required</code> minimal.</li>
-          <li><b>File inputs</b>: <code>"x_artifact_ref": "single"</code> (or <code>"multiple"</code>). The orchestrator LLM passes an artifact id from an upload, an earlier result, or the catalog; unknown ids are bounced back to it.</li>
-          <li><b>Non-file values</b> produced by another skill: <code>"x_input_source": "runtime"</code>, never asked from the user.</li>
-          <li><b>Return what the next step needs</b> (ids, names, column headers) in your result dict: the model reads up to 6000 chars of it.</li>
-          <li>Costly or destructive? <code>"requires_approval": true</code>.</li>
-          <li>Test in the UI with <b>three phrasings</b> of the request.</li>
-        </ul>
-      </div>
-    </div>
+<p class="small">From the real <code>gmsh_agent</code> card, as built by <code>agent_loop._skill_spec</code>. No tags, no agent description, <code>x_*</code> keys stripped.</p>
+</div>
   </div>
 </section>
 
-<!-- 12 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Getting routed</div><h2>Writing a card the orchestrator will call</h2></div>
+  <div class="content">
+<ul class="b">
+<li><b>Lead with the verb and the object</b>: "Compute scaled-Jacobian quality metrics for an Exodus mesh artifact…"</li>
+<li><code>usage_notes</code>: when <i>not</i> to use you, and which neighbour to prefer.</li>
+<li><b>Describe every property.</b> Use <code>enum</code> for fixed choices and units in the description. Keep <code>required</code> minimal.</li>
+<li><b>File inputs</b>: <code>"x_artifact_ref": "single"</code> (or <code>"multiple"</code>). The orchestrator LLM passes an artifact id from an upload, an earlier result, or the catalog; unknown ids are bounced back to it.</li>
+<li><b>Non-file values</b> produced by another skill: <code>"x_input_source": "runtime"</code>, never asked from the user.</li>
+<li><b>Return what the next step needs</b> (ids, names, column headers) in your result dict: the model reads up to 6000 chars of it.</li>
+<li>Costly or destructive? <code>"requires_approval": true</code>.</li>
+<li>Test in the UI with <b>three phrasings</b> of the request.</li>
+</ul>
+  </div>
+</section>
+
 <section class="slide section">
   <div class="num">B</div>
   <h2>Registry, discovery, and calls</h2>
   <p class="lede">How your agent announces itself, how the client-agent finds it, and the exact path a request takes.</p>
 </section>
 
-<!-- 13 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Registering with the Agent Registry</div><h2>One POST to LiteLLM at startup</h2></div>
   <div class="content">
@@ -388,7 +372,6 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
   </div>
 </section>
 
-<!-- 14 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Discovery and dispatch</div><h2>How the client-agent finds and calls you</h2></div>
   <div class="content">
@@ -417,7 +400,6 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
   </div>
 </section>
 
-<!-- 15 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Where to run it</div><h2>Four ways onto the platform</h2></div>
   <div class="content">
@@ -435,13 +417,11 @@ docker logs hello-world-agent 2&gt;&amp;1 | grep "Registered '"
   </div>
 </section>
 
-<!-- 16 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Running and testing locally</div><h2>Host run + a real A2A v1 request</h2></div>
+  <div class="head"><div class="eyebrow">Running and testing locally</div><h2>Run the agent on the host, call the debug route</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="col">
-        <pre class="xs">cd hello-world
+<div class="col">
+<pre class="sm">cd hello-world
 uv sync &amp;&amp; source .venv/bin/activate
 uv pip install \
  "git+https://github.inl.gov/genesis/prometheus_api.git@95c32b5"
@@ -451,15 +431,21 @@ USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory \
 AGENT_PORT=8000 python agent.py
 <span class="c"># "Loaded agent card…"  "Starting HTTP server on 0.0.0.0:8000"</span>
 <span class="c"># registration retries, then "Continuing without registration"</span></pre>
-        <pre class="xs"><span class="c"># debug shortcut: plain JSON in, result out</span>
+<pre class="sm"><span class="c"># debug shortcut: plain JSON in, result out</span>
 curl -s -X POST localhost:8000/api/chat \
   -H "Content-Type: application/json" \
   -d '{"params": {"input_data": "hi",
        "skill_id": "hello_world_analysis"},
        "conversation_id": "conv-1"}'</pre>
-        <p class="tiny">With <code>AGENT_SECRET_REQUIRED=true</code>, add <code>-H "Authorization: Bearer $AGENT_SECRET"</code> to every call except <code>/health</code> and the card routes.</p>
-      </div>
-      <pre class="xs">curl -s -X POST http://localhost:8000/ \
+<p class="tiny">With <code>AGENT_SECRET_REQUIRED=true</code>, add <code>-H "Authorization: Bearer $AGENT_SECRET"</code> to every call except <code>/health</code> and the card routes.</p>
+</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Running and testing locally</div><h2>A real A2A v1 request, and the errors you may see</h2></div>
+  <div class="content">
+<pre class="sm">curl -s -X POST http://localhost:8000/ \
   -H "Content-Type: application/json" \
   -H "A2A-Version: 1.0" \
   -d '{
@@ -485,30 +471,33 @@ curl -s -X POST localhost:8000/api/chat \
 <span class="c"># -32603 No 'userToken' …     → USER_IDENTITY_REQUIRED=true</span>
 <span class="c"># -32004 Streaming not supported → card streaming:false</span>
 <span class="c"># HTTP 401                    → missing/wrong bearer</span></pre>
-    </div>
   </div>
 </section>
 
-<!-- 17 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Built in</div><h2>Endpoints every agent serves</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <table class="t sm">
-        <tr><th>Route</th><th>Auth</th><th>What</th></tr>
-        <tr><td><code>POST /</code></td><td>bearer</td><td>A2A JSON-RPC: <code>SendMessage</code>, <code>SendStreamingMessage</code>, <code>GetTask</code>, <code>CancelTask</code>…</td></tr>
-        <tr><td><code>GET /health</code></td><td>none</td><td><code>{"ok": true, "status": "healthy", "timestamp": …}</code></td></tr>
-        <tr><td><code>GET /api/agent-card</code></td><td>none</td><td>the raw card with extensions</td></tr>
-        <tr><td><code>GET /.well-known/agent-card.json</code></td><td>none</td><td>the strict v1 card (also <code>/.well-known/agent.json</code>)</td></tr>
-        <tr><td><code>GET /.well-known/jwks.json</code></td><td>none</td><td>public keys from this agent's env</td></tr>
-        <tr><td><code>GET /api/artifacts/{conversation_id}</code></td><td>bearer</td><td>the artifact catalog</td></tr>
-        <tr><td><code>POST /api/chat</code></td><td>bearer</td><td>the debug route (runs the executor in-process)</td></tr>
-        <tr><td>your <code>add_http_endpoint(…)</code></td><td>bearer</td><td>custom routes, advertised under <code>endpoints</code> in the card</td></tr>
-        <tr><td>your <code>add_static_endpoint(…)</code></td><td>bearer</td><td>static files, e.g. viewer plugin assets</td></tr>
-      </table>
-      <div class="col">
-        <h4 class="acc">Tests without a server</h4>
-        <pre class="xs"><span class="c"># tests/conftest.py provides fixtures</span>
+<table class="t sm">
+<tr><th>Route</th><th>Auth</th><th>What</th></tr>
+<tr><td><code>POST /</code></td><td>bearer</td><td>A2A JSON-RPC: <code>SendMessage</code>, <code>SendStreamingMessage</code>, <code>GetTask</code>, <code>CancelTask</code>…</td></tr>
+<tr><td><code>GET /health</code></td><td>none</td><td><code>{"ok": true, "status": "healthy", "timestamp": …}</code></td></tr>
+<tr><td><code>GET /api/agent-card</code></td><td>none</td><td>the raw card with extensions</td></tr>
+<tr><td><code>GET /.well-known/agent-card.json</code></td><td>none</td><td>the strict v1 card (also <code>/.well-known/agent.json</code>)</td></tr>
+<tr><td><code>GET /.well-known/jwks.json</code></td><td>none</td><td>public keys from this agent's env</td></tr>
+<tr><td><code>GET /api/artifacts/{conversation_id}</code></td><td>bearer</td><td>the artifact catalog</td></tr>
+<tr><td><code>POST /api/chat</code></td><td>bearer</td><td>the debug route (runs the executor in-process)</td></tr>
+<tr><td>your <code>add_http_endpoint(…)</code></td><td>bearer</td><td>custom routes, advertised under <code>endpoints</code> in the card</td></tr>
+<tr><td>your <code>add_static_endpoint(…)</code></td><td>bearer</td><td>static files, e.g. viewer plugin assets</td></tr>
+</table>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Built in</div><h2>Tests without a server</h2></div>
+  <div class="content">
+<div class="col">
+
+<pre class="sm"><span class="c"># tests/conftest.py provides fixtures</span>
 <span class="c">#   context:     MagicMock(spec=RequestContext)</span>
 <span class="c">#                context_id="test-conversation"</span>
 <span class="c">#   event_queue: AsyncMock(spec=EventQueue)</span>
@@ -519,52 +508,41 @@ curl -s -X POST localhost:8000/api/chat \
         {<span class="s">"input_data"</span>: <span class="s">"x"</span>}, context, event_queue)
     <span class="k">assert</span> out[<span class="s">"status"</span>] == <span class="s">"success"</span>
     <span class="k">assert</span> event_queue.enqueue_event.await_count &gt;= 1</pre>
-        <pre class="xs">uv run pytest &amp;&amp; uv run ruff check .</pre>
-        <p class="small">Mock <code>self.llm_client</code> in tests; never call a real LLM from the test suite.</p>
-      </div>
-    </div>
+<pre class="sm">uv run pytest &amp;&amp; uv run ruff check .</pre>
+<p class="small">Mock <code>self.llm_client</code> in tests; never call a real LLM from the test suite.</p>
+</div>
   </div>
 </section>
 
-<!-- 18 -->
 <section class="slide section">
   <div class="num">C</div>
   <h2>The helpers on <code style="font-size:.8em">self</code></h2>
   <p class="lede">Status, artifacts, user input, state, long-running work, and DeepLynx.</p>
 </section>
 
-<!-- 19 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Reference</div><h2>Helpers on <code style="font-size:.8em">PrometheusAgent</code></h2></div>
+  <div class="head"><div class="eyebrow">Reference</div><h2>Helpers for output: status, messages, artifacts</h2></div>
   <div class="content">
-    <table class="t xs wrap-code">
-      <tr><th style="width:420px">Helper</th><th>What it does</th></tr>
-      <tr><td><code>send_status_update(context, eq, message=…)</code></td><td>Transient progress line (WORKING). Live in the UI only with <code>streaming: true</code>.</td></tr>
-      <tr><td><code>send_conversation_message(context, eq, message)</code></td><td>A <b>durable</b> chat message (a JSON artifact of kind <code>conversation_message</code>)</td></tr>
-      <tr><td><code>send_json_artifact(context, eq, payload, name=, json_type=, catalog_artifact=)</code></td><td>An inline data artifact; <code>catalog_artifact=True</code> also registers it in the catalog. Returns the id.</td></tr>
-      <tr><td><code>send_text_artifact(context, eq, text, name=, append=, last_chunk=)</code></td><td>Streaming text chunks (not cataloged)</td></tr>
-      <tr><td><code>send_artifact_reference(context, eq, name=, description=, uri=, mime_type=, tags=)</code></td><td>A file by URI (<code>http(s)://</code>, <code>file://</code>…), registered in the catalog</td></tr>
-      <tr class="hl"><td><code>send_deeplynx_artifact(context, eq, file_path=, name=, description=, storage_config=, mime_type=, json_type=, tags=, metadata=)</code></td><td>Upload to DeepLynx → <code>deeplynx://…/items/N</code>, register and emit. Reads the whole file into memory.</td></tr>
-      <tr class="hl"><td><code>await get_artifact_file_path(artifact_id, context=, artifacts=)</code></td><td>Any artifact → a local <code>Path</code>: downloads <code>deeplynx://</code>/http, materializes inline JSON/text</td></tr>
-      <tr><td><code>resolve_artifact_reference(conv_id, id)</code> · <code>resolve_artifact_by_name</code> · <code>list_artifact_references</code></td><td>Catalog lookups (Valkey <code>artifacts:conv:{id}:*</code>, 7-day TTL)</td></tr>
-      <tr><td><code>send_input_required(context, eq, missing_inputs=[MissingInput(…)], hint=)</code></td><td>Pause and ask the user (INPUT_REQUIRED); <code>return {}</code> afterwards</td></tr>
-      <tr><td><code>get_provided_inputs(context)</code></td><td>The user's answers on the resumed call</td></tr>
-      <tr><td><code>load_context_state(ctx_id)</code> / <code>save_context_state(ctx_id, state)</code></td><td>Per-agent, per-conversation JSON state in Valkey (24 h TTL)</td></tr>
-      <tr><td><code>declare_long_running(context, eq, estimate_seconds=, message=)</code></td><td>The orchestrator detaches the turn; the result is delivered later over SSE</td></tr>
-      <tr><td><code>await run_worker(PrometheusWorker(...), context, eq)</code></td><td>Run blocking code on a thread and stream its progress</td></tr>
-      <tr><td><code>llm_client(context, config=…)</code></td><td><code>AsyncLLMClient</code> (next section)</td></tr>
-      <tr><td><code>current_user_id()</code> · <code>identity_metadata()</code> · <code>get_credential(resource)</code></td><td>Who is asking; forward the token downstream; per-user secrets</td></tr>
+    <table class="t sm wrap-code">
+<tr><th style="width:420px">Helper</th><th>What it does</th></tr><tr><td><code>send_status_update(context, eq, message=…)</code></td><td>Transient progress line (WORKING). Live in the UI only with <code>streaming: true</code>.</td></tr><tr><td><code>send_conversation_message(context, eq, message)</code></td><td>A <b>durable</b> chat message (a JSON artifact of kind <code>conversation_message</code>)</td></tr><tr><td><code>send_json_artifact(context, eq, payload, name=, json_type=, catalog_artifact=)</code></td><td>An inline data artifact; <code>catalog_artifact=True</code> also registers it in the catalog. Returns the id.</td></tr><tr><td><code>send_text_artifact(context, eq, text, name=, append=, last_chunk=)</code></td><td>Streaming text chunks (not cataloged)</td></tr><tr><td><code>send_artifact_reference(context, eq, name=, description=, uri=, mime_type=, tags=)</code></td><td>A file by URI (<code>http(s)://</code>, <code>file://</code>…), registered in the catalog</td></tr><tr class="hl"><td><code>send_deeplynx_artifact(context, eq, file_path=, name=, description=, storage_config=, mime_type=, json_type=, tags=, metadata=)</code></td><td>Upload to DeepLynx → <code>deeplynx://…/items/N</code>, register and emit. Reads the whole file into memory.</td></tr><tr class="hl"><td><code>await get_artifact_file_path(artifact_id, context=, artifacts=)</code></td><td>Any artifact → a local <code>Path</code>: downloads <code>deeplynx://</code>/http, materializes inline JSON/text</td></tr><tr><td><code>resolve_artifact_reference(conv_id, id)</code> · <code>resolve_artifact_by_name</code> · <code>list_artifact_references</code></td><td>Catalog lookups (Valkey <code>artifacts:conv:{id}:*</code>, 7-day TTL)</td></tr>
     </table>
   </div>
 </section>
 
-<!-- 20 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Artifacts in practice</div><h2>Produce, consume, and get rendered</h2></div>
+  <div class="head"><div class="eyebrow">Reference</div><h2>Helpers for input, state, long work, and LLMs</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="col">
-        <pre class="xs"><span class="c"># produce: from gmsh_agent/agent.py</span>
+    <table class="t sm wrap-code">
+<tr><th style="width:420px">Helper</th><th>What it does</th></tr><tr><td><code>send_input_required(context, eq, missing_inputs=[MissingInput(…)], hint=)</code></td><td>Pause and ask the user (INPUT_REQUIRED); <code>return {}</code> afterwards</td></tr><tr><td><code>get_provided_inputs(context)</code></td><td>The user's answers on the resumed call</td></tr><tr><td><code>load_context_state(ctx_id)</code> / <code>save_context_state(ctx_id, state)</code></td><td>Per-agent, per-conversation JSON state in Valkey (24 h TTL)</td></tr><tr><td><code>declare_long_running(context, eq, estimate_seconds=, message=)</code></td><td>The orchestrator detaches the turn; the result is delivered later over SSE</td></tr><tr><td><code>await run_worker(PrometheusWorker(...), context, eq)</code></td><td>Run blocking code on a thread and stream its progress</td></tr><tr><td><code>llm_client(context, config=…)</code></td><td><code>AsyncLLMClient</code> (next section)</td></tr><tr><td><code>current_user_id()</code> · <code>identity_metadata()</code> · <code>get_credential(resource)</code></td><td>Who is asking; forward the token downstream; per-user secrets</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Artifacts in practice</div><h2>Produce and consume artifacts</h2></div>
+  <div class="content">
+<div class="col">
+<pre class="sm"><span class="c"># produce: from gmsh_agent/agent.py</span>
 <span class="k">from</span> prometheus_api.storage_client <span class="k">import</span> ConnectionConfig
 artifact = <span class="k">await</span> self.send_deeplynx_artifact(
     context=context, event_queue=event_queue,
@@ -578,43 +556,52 @@ artifact = <span class="k">await</span> self.send_deeplynx_artifact(
     metadata={<span class="s">"tetrahedron_count"</span>: n})
 <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"success"</span>,
         <span class="s">"artifact_id"</span>: artifact.artifact_id, …}</pre>
-        <pre class="xs"><span class="c"># consume: card property uses "x_artifact_ref": "single"</span>
+<pre class="sm"><span class="c"># consume: card property uses "x_artifact_ref": "single"</span>
 path = <span class="k">await</span> self.get_artifact_file_path(
     params[<span class="s">"step_artifact_id"</span>], context=context,
     artifacts=params.get(<span class="s">"artifacts"</span>))
 <span class="c"># → /tmp/prometheus-artifact-cache/&lt;id&gt;/…-part.step</span></pre>
-      </div>
-      <div class="col">
-        <h4 class="acc">Which viewer? (backend <code>render_hint</code>)</h4>
-        <table class="t xs">
-          <tr><th>Your artifact has…</th><th>Viewer</th></tr>
-          <tr><td><code>application/x-exodus</code>, STL MIME, <code>.exo</code> <code>.e</code> <code>.stl</code></td><td>VTK.js mesh (with timesteps)</td></tr>
-          <tr><td><code>model/ifc</code>, <code>.ifc</code></td><td>IFC / BIM viewer</td></tr>
-          <tr><td><code>image/*</code>, <code>.png</code> <code>.svg</code></td><td>image</td></tr>
-          <tr><td><code>application/pdf</code></td><td>PDF</td></tr>
-          <tr><td><code>text/x-mermaid</code></td><td>Mermaid diagram</td></tr>
-          <tr><td><code>text/markdown</code>, <code>text/plain</code></td><td>report</td></tr>
-          <tr><td><code>application/json</code> / inline <code>json_body</code></td><td>JSON tree</td></tr>
-          <tr><td>csv, zip, ipynb, STEP, octet-stream…</td><td>download</td></tr>
-          <tr><td><code>json_type</code> <code>prometheus.thermal_analysis.result.v1</code></td><td>thermal (custom)</td></tr>
-        </table>
-        <p class="small">Priority: <code>json_type</code> → MIME → tags → extension. <b>Set <code>mime_type</code>.</b> <code>file://</code> URIs only render if the path exists <i>inside the backend container</i>, so prefer DeepLynx or inline JSON.</p>
-      </div>
-    </div>
+</div>
   </div>
 </section>
 
-<!-- 21 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Artifacts in practice</div><h2>Which viewer renders it? (backend <code style="font-size:.8em">render_hint</code>)</h2></div>
+  <div class="content">
+<div class="col">
+
+<table class="t">
+<tr><th>Your artifact has…</th><th>Viewer</th></tr>
+<tr><td><code>application/x-exodus</code>, STL MIME, <code>.exo</code> <code>.e</code> <code>.stl</code></td><td>VTK.js mesh (with timesteps)</td></tr>
+<tr><td><code>model/ifc</code>, <code>.ifc</code></td><td>IFC / BIM viewer</td></tr>
+<tr><td><code>image/*</code>, <code>.png</code> <code>.svg</code></td><td>image</td></tr>
+<tr><td><code>application/pdf</code></td><td>PDF</td></tr>
+<tr><td><code>text/x-mermaid</code></td><td>Mermaid diagram</td></tr>
+<tr><td><code>text/markdown</code>, <code>text/plain</code></td><td>report</td></tr>
+<tr><td><code>application/json</code> / inline <code>json_body</code></td><td>JSON tree</td></tr>
+<tr><td>csv, zip, ipynb, STEP, octet-stream…</td><td>download</td></tr>
+<tr><td><code>json_type</code> <code>prometheus.thermal_analysis.result.v1</code></td><td>thermal (custom)</td></tr>
+</table>
+<p class="small">Priority: <code>json_type</code> → MIME → tags → extension. <b>Set <code>mime_type</code>.</b> <code>file://</code> URIs only render if the path exists <i>inside the backend container</i>, so prefer DeepLynx or inline JSON.</p>
+</div>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Asking the user</div><h2>Plan approval and input-required</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <div class="col">
-        <div class="card"><h4>Before you run: <code>"requires_approval": true</code></h4><p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval. Approval covers that call only; if the user types text instead of clicking, the call is dropped and the model re-plans.</p></div>
-        <div class="card"><h4>While you run: <code>send_input_required</code></h4><p class="small">Your task ends in <code>TASK_STATE_INPUT_REQUIRED</code>. Inputs with <code>resolvable_from_context=True</code> are filled from the call's arguments or earlier answers; otherwise the user gets a form (<code>options</code> → dropdown, your <code>hint</code> as the message), and you are <b>resumed</b> with the same <code>contextId</code>/<code>taskId</code> and <code>provided_inputs</code>. A typed reply instead of the form abandons the task; the model may call you again.</p></div>
-        <div class="callout warn">Your Python state does <b>not</b> survive between the two calls. Save it with <code>save_context_state</code> before asking. <code>request_user_approval(…)</code>, mentioned in some docs, does not exist.</div>
-      </div>
-      <pre class="xs"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
+<div class="col">
+<div class="card"><h4>Before you run: <code>"requires_approval": true</code></h4><p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval. Approval covers that call only; if the user types text instead of clicking, the call is dropped and the model re-plans.</p></div>
+<div class="card"><h4>While you run: <code>send_input_required</code></h4><p class="small">Your task ends in <code>TASK_STATE_INPUT_REQUIRED</code>. Inputs with <code>resolvable_from_context=True</code> are filled from the call's arguments or earlier answers; otherwise the user gets a form (<code>options</code> → dropdown, your <code>hint</code> as the message), and you are <b>resumed</b> with the same <code>contextId</code>/<code>taskId</code> and <code>provided_inputs</code>. A typed reply instead of the form abandons the task; the model may call you again.</p></div>
+<div class="callout warn">Your Python state does <b>not</b> survive between the two calls. Save it with <code>save_context_state</code> before asking. <code>request_user_approval(…)</code>, mentioned in some docs, does not exist.</div>
+</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Asking the user</div><h2>Input-required in code</h2></div>
+  <div class="content">
+<pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
 
 <span class="k">async def</span> _execute(self, params, context, event_queue):
     ctx = str(context.context_id)
@@ -638,11 +625,9 @@ path = <span class="k">await</span> self.get_artifact_file_path(
     <span class="k">if not</span> answers[<span class="s">"confirm"</span>]:
         <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"cancelled"</span>}
     …</pre>
-    </div>
   </div>
 </section>
 
-<!-- 22 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Long-running work</div><h2>Never block the event loop</h2></div>
   <div class="content">
@@ -686,14 +671,12 @@ result = <span class="k">await</span> self.run_worker(
   </div>
 </section>
 
-<!-- 23 -->
 <section class="slide section">
   <div class="num">D</div>
   <h2>LLMClient</h2>
   <p class="lede">The one LLM interface in the base image: flavors in code, profiles in deployment, tool calling per call.</p>
 </section>
 
-<!-- 24 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">prometheus_api.llm_client</div><h2>The API</h2></div>
   <div class="content">
@@ -730,7 +713,6 @@ cfg = LLMConfig.from_env()
   </div>
 </section>
 
-<!-- 25 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Flavors and profiles</div><h2>Code picks a flavor; deployment picks the model</h2></div>
   <div class="content">
@@ -766,12 +748,10 @@ cfg = LLMConfig.from_env()
   </div>
 </section>
 
-<!-- 26 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Adding configurations</div><h2>Three ways to change what a flavor means</h2></div>
+  <div class="head"><div class="eyebrow">Adding configurations</div><h2>Option A: a custom YAML for one agent</h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:20px">
-      <div class="card"><span class="tag">A · custom YAML (per agent)</span><pre class="xs"><span class="c"># llm_config.yaml (add to .gitignore)</span>
+<div class="card"><span class="tag">A · custom YAML (per agent)</span><pre class="sm"><span class="c"># llm_config.yaml (add to .gitignore)</span>
 model_list:
   - model_name: medium
     litellm_params:
@@ -783,23 +763,26 @@ model_list:
       model: openai/claude-opus-4-8-awsgov
       api_base: https://litellm.inl.gov/v1
       api_key: os.environ/INL_LITELLM_API_KEY</pre>
-        <p class="small">Start from <code>prometheus_api/llm_config.example.yaml</code>. Mount it into the container and set <code>LLM_CONFIG_FILE=/app/llm_config.yaml</code>. The keys must be in the <b>process</b> env: add them to compose <code>environment:</code>.</p></div>
-      <div class="card"><span class="tag">B · new installed profile</span><ol class="b xs">
-        <li>Add <code>prometheus_api/llm_configs/&lt;name&gt;.yaml</code> with <b>all six</b> flavors</li>
-        <li>Add the name to <code>LLM_CONFIG_PROFILES</code> in <code>llm_configs/__init__.py</code></li>
-        <li>Update <code>tests/test_llm_configs.py</code>, <code>specs/005</code>, README/ENV_SETUP</li>
-        <li>Bump the version, and note it in <code>AGENT_MIGRATIONS.md</code></li>
-        <li>After merge: a new base image, then bump the platform pin</li>
-        <li>Select it with <code>LLM_CONFIG_PROFILE=&lt;name&gt;</code></li>
-      </ol><p class="small">A PR to <code>prometheus_api</code> (base <code>main</code>).</p></div>
-      <div class="card"><span class="tag">C · platform proxy alias</span><p class="small">Add <code>small</code>/<code>large</code>/<code>vision</code>/<code>embedding</code>/<code>default</code> entries to <code>prometheus_platform/litellm_config.yaml</code>, then <code>make restart</code>. Every agent on the <code>registry</code> profile gets them, with no agent change.</p>
-        <p class="small">Other profiles need their key forwarded: the template compose forwards <code>ANTHROPIC</code>, <code>OPENAI</code>, and <code>AMSC</code> keys but <b>not</b> <code>INL_LITELLM_API_KEY</code>, <code>INL_HPC_API_KEY</code>, or <code>EMBEDDING_API_KEY</code>. Add them to <code>environment:</code>.</p>
-        <p class="small">Model strings follow LiteLLM: <code>openai/…</code> + <code>api_base</code> for OpenAI-compatible gateways, <code>hosted_vllm/…</code>, <code>anthropic/…</code>.</p></div>
-    </div>
+<p class="small">Start from <code>prometheus_api/llm_config.example.yaml</code>. Mount it into the container and set <code>LLM_CONFIG_FILE=/app/llm_config.yaml</code>. The keys must be in the <b>process</b> env: add them to compose <code>environment:</code>.</p></div>
   </div>
 </section>
 
-<!-- 27 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Adding configurations</div><h2>Options B and C: a new profile, or a proxy alias</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:24px"><div class="card"><span class="tag">B · new installed profile</span><ol class="b sm">
+<li>Add <code>prometheus_api/llm_configs/&lt;name&gt;.yaml</code> with <b>all six</b> flavors</li>
+<li>Add the name to <code>LLM_CONFIG_PROFILES</code> in <code>llm_configs/__init__.py</code></li>
+<li>Update <code>tests/test_llm_configs.py</code>, <code>specs/005</code>, README/ENV_SETUP</li>
+<li>Bump the version, and note it in <code>AGENT_MIGRATIONS.md</code></li>
+<li>After merge: a new base image, then bump the platform pin</li>
+<li>Select it with <code>LLM_CONFIG_PROFILE=&lt;name&gt;</code></li>
+</ol><p class="small">A PR to <code>prometheus_api</code> (base <code>main</code>).</p></div><div class="card"><span class="tag">C · platform proxy alias</span><p class="small">Add <code>small</code>/<code>large</code>/<code>vision</code>/<code>embedding</code>/<code>default</code> entries to <code>prometheus_platform/litellm_config.yaml</code>, then <code>make restart</code>. Every agent on the <code>registry</code> profile gets them, with no agent change.</p>
+<p class="small">Other profiles need their key forwarded: the template compose forwards <code>ANTHROPIC</code>, <code>OPENAI</code>, and <code>AMSC</code> keys but <b>not</b> <code>INL_LITELLM_API_KEY</code>, <code>INL_HPC_API_KEY</code>, or <code>EMBEDDING_API_KEY</code>. Add them to <code>environment:</code>.</p>
+<p class="small">Model strings follow LiteLLM: <code>openai/…</code> + <code>api_base</code> for OpenAI-compatible gateways, <code>hosted_vllm/…</code>, <code>anthropic/…</code>.</p></div></div>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">New in v0.13.0</div><h2>Tool calling with LLMClient</h2></div>
   <div class="content">
@@ -844,19 +827,16 @@ answer = r.text</pre>
   </div>
 </section>
 
-<!-- 28 -->
 <section class="slide section">
   <div class="num">E</div>
   <h2>Workflows and worked examples</h2>
   <p class="lede">Chaining your skill with others, and two real agents to borrow from.</p>
 </section>
 
-<!-- 29 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Agent-owned workflows</div><h2><code style="font-size:.8em">workflows/*.yaml</code> chain skills across agents</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <pre class="xs">id: neutron.step_to_checked_mesh     <span class="c"># globally unique; prefix it</span>
+<pre class="sm">id: neutron.step_to_checked_mesh     <span class="c"># globally unique; prefix it</span>
 name: STEP to checked mesh
 version: "1.0.0"
 description: Mesh a STEP file, then report mesh quality.  <span class="c"># required!</span>
@@ -881,22 +861,26 @@ metadata: {requires_approval: false, estimated_duration_seconds: 90,
            owner: neutron-mesh-qa-agent}
 ui: {category: Meshing, display_name: STEP → checked mesh,
      summary: Mesh and quality-check a STEP file}</pre>
-      <div class="col">
-        <ul class="b sm">
-          <li>Files next to <code>agent_card.json</code> are merged into the card at startup (<code>AGENT_WORKFLOWS</code> overrides the directory). The template ships <code>example_workflow.yaml.example</code>.</li>
-          <li>The client-agent compiles them at discovery. Each becomes an orchestrator tool (<code>workflow_&lt;id slug&gt;</code>, parameters = <code>inputs.required</code>) <b>and</b> a slash command: <code>/neutron.step_to_checked_mesh</code> or <code>/step_to_checked_mesh</code>.</li>
-          <li><b>Bindings</b>: <code>from: input.&lt;x&gt;</code>, <code>from: step.&lt;id&gt;.result</code>, <code>from: context.&lt;key&gt;</code>, <code>literal: &lt;v&gt;</code>, <code>optional: true</code>. <code>conversation_id</code> and <code>artifacts</code> are added automatically.</li>
-          <li><code>mode</code>: <code>sequential</code>, <code>parallel</code>, or <code>dag</code> (use <code>depends_on</code>); <code>on_error</code>: <code>fail_fast</code> or <code>continue_with_partial</code>.</li>
-          <li>Before starting, the client-agent calls the owning agent's <code>/health</code>.</li>
-          <li>If a step pauses for input, the whole template <b>re-runs</b> with the answers merged into its inputs: bind them as optional inputs (<code>{from: input.x_column, optional: true}</code>).</li>
-        </ul>
-        <p class="small">Full schema: <code>prometheus_platform/docs/docs/workflow-templates.md</code>. Examples: <code>agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml</code> and <code>agents/client-agent/workflows/comprehensive_material_analysis.yaml</code> (DAG, approval).</p>
-      </div>
-    </div>
   </div>
 </section>
 
-<!-- 30 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Agent-owned workflows</div><h2>How workflows are found, started, and bound</h2></div>
+  <div class="content">
+<div class="col">
+<ul class="b sm">
+<li>Files next to <code>agent_card.json</code> are merged into the card at startup (<code>AGENT_WORKFLOWS</code> overrides the directory). The template ships <code>example_workflow.yaml.example</code>.</li>
+<li>The client-agent compiles them at discovery. Each becomes an orchestrator tool (<code>workflow_&lt;id slug&gt;</code>, parameters = <code>inputs.required</code>) <b>and</b> a slash command: <code>/neutron.step_to_checked_mesh</code> or <code>/step_to_checked_mesh</code>.</li>
+<li><b>Bindings</b>: <code>from: input.&lt;x&gt;</code>, <code>from: step.&lt;id&gt;.result</code>, <code>from: context.&lt;key&gt;</code>, <code>literal: &lt;v&gt;</code>, <code>optional: true</code>. <code>conversation_id</code> and <code>artifacts</code> are added automatically.</li>
+<li><code>mode</code>: <code>sequential</code>, <code>parallel</code>, or <code>dag</code> (use <code>depends_on</code>); <code>on_error</code>: <code>fail_fast</code> or <code>continue_with_partial</code>.</li>
+<li>Before starting, the client-agent calls the owning agent's <code>/health</code>.</li>
+<li>If a step pauses for input, the whole template <b>re-runs</b> with the answers merged into its inputs: bind them as optional inputs (<code>{from: input.x_column, optional: true}</code>).</li>
+</ul>
+<p class="small">Full schema: <code>prometheus_platform/docs/docs/workflow-templates.md</code>. Examples: <code>agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml</code> and <code>agents/client-agent/workflows/comprehensive_material_analysis.yaml</code> (DAG, approval).</p>
+</div>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Worked example 1</div><h2><code style="font-size:.8em">gmsh_agent</code> (main): a deterministic tool wrapper</h2></div>
   <div class="content">
@@ -926,7 +910,6 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
   </div>
 </section>
 
-<!-- 31 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Worked example 2</div><h2><code style="font-size:.8em">agentic-hex-meshing</code>: an LLM driving a sandboxed kernel</h2></div>
   <div class="content">
@@ -965,7 +948,6 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
   </div>
 </section>
 
-<!-- 32 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Building block</div><h2><code style="font-size:.8em">agent-sandbox-mcp</code>: safe execution of LLM-written code</h2></div>
   <div class="content">
@@ -1008,7 +990,6 @@ networks:
   </div>
 </section>
 
-<!-- 33 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Checklist</div><h2>Ship an agent the orchestrator will call</h2></div>
   <div class="content">

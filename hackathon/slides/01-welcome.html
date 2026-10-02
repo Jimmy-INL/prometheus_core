@@ -12,7 +12,6 @@
 <body data-sec="welcome" data-title="Day 1 · Welcome &amp; kickoff">
 <div id="viewport"><div id="stage">
 
-<!-- 1 ─────────────────────────────────────────── -->
 <section class="slide title">
   <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
   <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
@@ -23,21 +22,19 @@
   <aside class="notes">ANL welcoming address goes first. Then walk the agenda, the architecture overview, mentors, and the Day 2 acceptance criteria preview.</aside>
 </section>
 
-<!-- 2 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Welcome</div><h2>By 4:30 pm today, every participant has…</h2></div>
+  <div class="head"><div class="eyebrow">Welcome</div><h2>You did the homework. Today you add…</h2></div>
   <div class="content">
     <div class="grid g4" style="margin-top:10px">
-      <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Access</h3><p class="small">A github.inl.gov account in the <code>genesis</code> org, an SSH key, and a registry token (<code>read:packages</code>).</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A running platform</h3><p class="small">The full Prometheus stack running in Docker on your laptop, with a chat that answers.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A working agent</h3><p class="small">A "hello world" agent built from the template, registered with the platform, and called from the UI.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A PR and a team</h3><p class="small">One practice pull request reviewed on the sandbox branch, and a team of 4–5 with a name and a room for Day 2.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Understanding</h3><p class="small">How the platform, the repos, and an agent fit together, and why.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A working agent</h3><p class="small">A "hello world" agent from the template, registered and called from the chat.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request on the <code>sandbox</code> branch.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A team</h3><p class="small">4–5 people, a name, and a room for Day 2.</p></div>
     </div>
-    <div class="callout info" style="margin-top:8px">Each session builds on the one before it. <b>Architecture → Git → Deploy → Agent anatomy → Do it yourself → Team up.</b> If you get stuck during the dry run, that is expected; mentors will be walking the room.</div>
+    <div class="callout info">We assume your platform already starts with <code>make up-fg</code> and DeepLynx is set up. Not quite there? Each deck ends with <b>bonus catch-up slides</b>, and mentors will help.</div>
   </div>
 </section>
 
-<!-- 3 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Agenda</div><h2>Day 1</h2></div>
   <div class="content" style="gap:0">
@@ -51,7 +48,6 @@
   </div>
 </section>
 
-<!-- 4 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Your hosts</div><h2>Mentors</h2><p class="lede">Ask any of these people when you are blocked. During the dry run they will be walking the room.</p></div>
   <div class="content">
@@ -69,7 +65,6 @@
   <aside class="notes">Fill in mentor names before the event. The platform repo admins on github.inl.gov are the people who can grant write access and merge.</aside>
 </section>
 
-<!-- 5 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Day 2 preview</div><h2>Everyone builds the same agent</h2><p class="lede">Details at 4:30 pm. Here is the short version, so you can listen to every session with it in mind.</p></div>
   <div class="content">
@@ -86,14 +81,12 @@
   </div>
 </section>
 
-<!-- 6 ─────────────────────────────────────────── -->
 <section class="slide section">
   <div class="num">01</div>
   <h2>Platform architecture overview</h2>
   <p class="lede">From the big picture to one concrete chat turn: which services exist, what each does, and how a question becomes work done by specialist agents.</p>
 </section>
 
-<!-- 7 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Why Prometheus</div><h2>A chat front door to a team of specialist agents</h2></div>
   <div class="content">
@@ -111,7 +104,6 @@
   </div>
 </section>
 
-<!-- 8 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The big picture</div><h2>Tiers of the platform</h2></div>
   <div class="content">
@@ -128,29 +120,24 @@
   </div>
 </section>
 
-<!-- 9 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day</h2></div>
+  <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day (1/2)</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr>
-      <tr><td><b>Agent</b></td><td>A Python web service (subclass of <code>PrometheusAgent</code>) that performs one or more skills.</td></tr>
-      <tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. Each skill is one tool for the orchestrator LLM.</td></tr>
-      <tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. Its skill descriptions, <code>usage_notes</code>, and schemas are what the orchestrator LLM reads to decide whether and how to call you.</td></tr>
-      <tr><td><b>A2A</b></td><td>Agent-to-Agent protocol, v1.0: JSON-RPC 2.0 over HTTP (<code>SendMessage</code>, <code>SendStreamingMessage</code>).</td></tr>
-      <tr><td><b>Client-agent</b></td><td>The orchestrator ("Nuclear Analysis Client Agent"). It plans, collects parameters, dispatches, and aggregates.</td></tr>
-      <tr><td><b>Registry / gateway</b></td><td>LiteLLM. Agents <code>POST /v1/agents</code> to register; the orchestrator calls them via <code>/a2a/{agent_name}</code>.</td></tr>
-      <tr><td><b>Artifact</b></td><td>An output (JSON, text, or a file by URI) recorded in the per-conversation catalog so later steps and the UI can use it.</td></tr>
-      <tr><td><b>DeepLynx</b></td><td>INL's data warehouse. It stores uploads and agent files and resolves <code>deeplynx://organizations/…/items/N</code>.</td></tr>
-      <tr><td><b>Workflow</b></td><td>A YAML template that chains skills (sequential, parallel, or DAG) with parameter bindings between steps.</td></tr>
-      <tr><td><b>contextId</b></td><td>The conversation ID. It scopes artifacts, state, and ownership across all agents in one chat.</td></tr>
-      <tr><td><b>Flavor / profile</b></td><td>An LLM <i>flavor</i> (<code>small</code>, <code>medium</code>, <code>large</code>…) is chosen in code; a <i>profile</i> chosen by deployment maps flavors to real models. With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy (<code>litellm_config.yaml</code>).</td></tr>
-      <tr><td><b>Base image</b></td><td><code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td></tr>
+    <table class="t">
+<tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr><tr><td><b>Agent</b></td><td>A Python web service (subclass of <code>PrometheusAgent</code>) that performs one or more skills.</td></tr><tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. Each skill is one tool for the orchestrator LLM.</td></tr><tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. Its skill descriptions, <code>usage_notes</code>, and schemas are what the orchestrator LLM reads to decide whether and how to call you.</td></tr><tr><td><b>A2A</b></td><td>Agent-to-Agent protocol, v1.0: JSON-RPC 2.0 over HTTP (<code>SendMessage</code>, <code>SendStreamingMessage</code>).</td></tr><tr><td><b>Client-agent</b></td><td>The orchestrator ("Nuclear Analysis Client Agent"). It plans, collects parameters, dispatches, and aggregates.</td></tr><tr><td><b>Registry / gateway</b></td><td>LiteLLM. Agents <code>POST /v1/agents</code> to register; the orchestrator calls them via <code>/a2a/{agent_name}</code>.</td></tr>
     </table>
   </div>
 </section>
 
-<!-- 10 ─────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day (2/2)</h2></div>
+  <div class="content">
+    <table class="t">
+<tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr><tr><td><b>Artifact</b></td><td>An output (JSON, text, or a file by URI) recorded in the per-conversation catalog so later steps and the UI can use it.</td></tr><tr><td><b>DeepLynx</b></td><td>INL's data warehouse. It stores uploads and agent files and resolves <code>deeplynx://organizations/…/items/N</code>.</td></tr><tr><td><b>Workflow</b></td><td>A YAML template that chains skills (sequential, parallel, or DAG) with parameter bindings between steps.</td></tr><tr><td><b>contextId</b></td><td>The conversation ID. It scopes artifacts, state, and ownership across all agents in one chat.</td></tr><tr><td><b>Flavor / profile</b></td><td>An LLM <i>flavor</i> (<code>small</code>, <code>medium</code>, <code>large</code>…) is chosen in code; a <i>profile</i> chosen by deployment maps flavors to real models. With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy (<code>litellm_config.yaml</code>).</td></tr><tr><td><b>Base image</b></td><td><code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td></tr>
+    </table>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Concrete architecture</div><h2>What actually runs: <code style="font-size:.8em">docker compose</code> on branch <code style="font-size:.8em">dev</code></h2></div>
   <div class="content">
@@ -185,7 +172,6 @@
   </div>
 </section>
 
-<!-- 11 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Service inventory</div><h2>Every service in <code style="font-size:.8em">docker-compose.yml</code></h2></div>
   <div class="content">
@@ -205,7 +191,6 @@
   </div>
 </section>
 
-<!-- 12 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">One chat turn, end to end</div><h2>From "Mesh this STEP file" to a mesh in the viewer</h2></div>
   <div class="content">
@@ -226,32 +211,37 @@
   </div>
 </section>
 
-<!-- 13 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How the client-agent runs a turn</h2><p class="lede">One tool-calling loop (<code>agents/client-agent/orchestrator/agent_loop.py</code>). Every skill, every workflow template, and an <code>ask_user</code> tool is an LLM tool. After each result the model picks the next fully parameterized call, and it stops when it answers without one.</p></div>
   <div class="content">
-    <div class="row" style="align-items:stretch; gap:0">
-      <div class="box navy" style="flex:1"><b>Tools</b><span class="small">one per skill, one <code>workflow_*</code> per template, <code>ask_user</code></span></div>
-      <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>LLM turn</b><span class="small">sees the transcript, the artifact catalog, and all tools</span></div>
-      <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Validate</b><span class="small">JSON Schema, known artifact ids; errors go back to the model</span></div>
-      <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Run</b><span class="small">A2A via LiteLLM; independent calls in parallel</span></div>
-      <div class="arrow-h" style="width:34px"></div>
-      <div class="box navy" style="flex:1"><b>Result</b><span class="small">summary + artifact ids back into the transcript; repeat, ≤ 12 turns</span></div>
-    </div>
-    <div class="grid g4" style="margin-top:6px">
-      <div class="card"><span class="tag">needs_info</span><p class="small">A required input the model couldn't fill, an <code>ask_user</code> question, or an agent's INPUT_REQUIRED: a form is shown. The backend gives up after 5 rounds in a row.</p></div>
-      <div class="card"><span class="tag">plan_ready</span><p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done.</p></div>
-      <div class="card"><span class="tag">completed / answer</span><p class="small">The model's final reply, with or without skill calls. The chat text is the orchestrator's summary; your artifacts render from the catalog.</p></div>
-      <div class="card"><span class="tag">error</span><p class="small">A loop error or the 12-step cap. If no skill fits, the model just says so; anything that could run has run.</p></div>
-    </div>
-    <div class="callout">Per skill the model sees your <b>description</b>, <code>usage_notes</code>, the approval flag, and the <code>inputSchema</code> (property descriptions, types, enums; <code>x_*</code> keys stripped). It does <b>not</b> see tags or the agent description. After each call it also reads your <b>result JSON</b>: card and result together decide whether you get chained correctly.</div>
+<div class="row" style="align-items:stretch; gap:0">
+<div class="box navy" style="flex:1"><b>Tools</b><span class="small">one per skill, one <code>workflow_*</code> per template, <code>ask_user</code></span></div>
+<div class="arrow-h" style="width:34px"></div>
+<div class="box navy" style="flex:1"><b>LLM turn</b><span class="small">sees the transcript, the artifact catalog, and all tools</span></div>
+<div class="arrow-h" style="width:34px"></div>
+<div class="box navy" style="flex:1"><b>Validate</b><span class="small">JSON Schema, known artifact ids; errors go back to the model</span></div>
+<div class="arrow-h" style="width:34px"></div>
+<div class="box navy" style="flex:1"><b>Run</b><span class="small">A2A via LiteLLM; independent calls in parallel</span></div>
+<div class="arrow-h" style="width:34px"></div>
+<div class="box navy" style="flex:1"><b>Result</b><span class="small">summary + artifact ids back into the transcript; repeat, ≤ 12 turns</span></div>
+</div>
+<div class="callout">Per skill the model sees your <b>description</b>, <code>usage_notes</code>, the approval flag, and the <code>inputSchema</code> (property descriptions, types, enums; <code>x_*</code> keys stripped). It does <b>not</b> see tags or the agent description. After each call it also reads your <b>result JSON</b>: card and result together decide whether you get chained correctly.</div>
   </div>
 </section>
 
-<!-- 14 ─────────────────────────────────────────── -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How a turn ends</h2></div>
+  <div class="content">
+<div class="grid g4">
+<div class="card"><span class="tag">needs_info</span><p class="small">A required input the model couldn't fill, an <code>ask_user</code> question, or an agent's INPUT_REQUIRED: a form is shown. The backend gives up after 5 rounds in a row.</p></div>
+<div class="card"><span class="tag">plan_ready</span><p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done.</p></div>
+<div class="card"><span class="tag">completed / answer</span><p class="small">The model's final reply, with or without skill calls. The chat text is the orchestrator's summary; your artifacts render from the catalog.</p></div>
+<div class="card"><span class="tag">error</span><p class="small">A loop error or the 12-step cap. If no skill fits, the model just says so; anything that could run has run.</p></div>
+</div>
+    <p class="small">Every turn ends in one of these states. The chat text is written by the orchestrator LLM; your agent's output shows up as artifacts and status updates.</p>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Protocol</div><h2>A2A v1 in one slide</h2></div>
   <div class="content">
@@ -287,7 +277,6 @@
   </div>
 </section>
 
-<!-- 15 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Trust boundaries</div><h2>Who proves what to whom</h2></div>
   <div class="content">
@@ -305,7 +294,6 @@
   </div>
 </section>
 
-<!-- 16 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Moving data between agents</div><h2>Artifacts and DeepLynx</h2></div>
   <div class="content">
@@ -327,7 +315,6 @@
   </div>
 </section>
 
-<!-- 17 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">What is already there</div><h2>Agents that ship with the platform</h2></div>
   <div class="content">
@@ -347,7 +334,6 @@
   </div>
 </section>
 
-<!-- 18 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The wider ecosystem</div><h2>Agents living in their own repos (github.inl.gov/genesis)</h2></div>
   <div class="content">
@@ -365,7 +351,6 @@
   </div>
 </section>
 
-<!-- 19 ─────────────────────────────────────────── -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Three core repositories</div><h2>How the code is organized</h2></div>
   <div class="content">
@@ -390,71 +375,86 @@
   </div>
 </section>
 
-<!-- 20 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">A warning about documentation</div><h2>The code moves fast. When docs disagree, trust the code.</h2></div>
+  <div class="head"><div class="eyebrow">A warning about documentation</div><h2>The code moves fast: stale claims you may read</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:28px">
-      <div class="col">
-        <h3 class="acc">Stale in places</h3>
-        <table class="t xs">
-          <tr><th>You may read…</th><th>Reality on dev / main</th></tr>
-          <tr><td>Chainlit UI on :8500</td><td>React SPA :5150 + FastAPI backend :8600</td></tr>
-          <tr><td><code>message/send</code>, <code>params.context.skillId</code></td><td><code>SendMessage</code>, <code>metadata.skillId</code>, <code>contextId</code></td></tr>
-          <tr><td>implement <code>process_analysis()</code></td><td>implement <code>_execute(params, context, event_queue)</code></td></tr>
-          <tr><td><code>request_user_approval(...)</code></td><td>does not exist; use <code>requires_approval</code> or <code>send_input_required</code></td></tr>
-          <tr><td>login <code>prometheus</code> / <code>prometheus</code></td><td>a setup wizard creates the first admin</td></tr>
-          <tr><td>image from mooseharbor, pinned in compose</td><td><code>containers.github.inl.gov</code>, pinned in the <code>Makefile</code></td></tr>
-          <tr><td><code>PROMETHEUS_DEBUG</code></td><td><code>DEBUG_AGENTS=true</code></td></tr>
-          <tr><td><code>planner.py</code>, upload auto-binding (<code>file-uploads.md</code>)</td><td>the tool-calling loop, <code>orchestrator/agent_loop.py</code></td></tr>
-          <tr><td>pin <code>prometheus_api@2b3dbcf</code></td><td>that is v0.8.0; the platform uses <code>95c32b5</code> (v0.13.0)</td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <h3 class="acc">Current and reliable</h3>
-        <ul class="b sm">
-          <li><code>prometheus_api/docs/agent/GUIDE.md</code>: the full agent developer guide</li>
-          <li><code>prometheus_api/docs/agent/AGENT_MIGRATIONS.md</code>: what changed in each version</li>
-          <li><code>prometheus_api/docs/ENV_SETUP.md</code>: every environment variable</li>
-          <li><code>prometheus_api/specs/*.md</code>: the requirements contract (REQ-/BEH- IDs)</li>
-          <li><code>…/dev-docs/agent-loop-orchestration.md</code>: how the orchestrator works</li>
-          <li><code>prometheus_platform/docs/docs/workflow-templates.md</code> (says "planner tool": read "orchestrator tool")</li>
-          <li><code>…/dev-docs/multi-user-setup.md</code>, <code>encryption-and-keys.md</code></li>
-          <li><code>…/docs/docs/local-deeplynx.md</code></li>
-          <li><code>agents/client-agent/README.md</code> (still lists the removed <code>matcher.py</code>)</li>
-          <li><code>prometheus_agent_template/TUTORIAL.md</code>, with the caveats in this deck</li>
-        </ul>
-        <div class="callout warn">The published docs site (<code>gh-pages</code>) was last deployed in February 2026, and only pushes to <code>main</code> rebuild it. Read the docs in the repo on <code>dev</code>.</div>
-      </div>
-    </div>
+<div class="col">
+
+<table class="t">
+<tr><th>You may read…</th><th>Reality on dev / main</th></tr>
+<tr><td>Chainlit UI on :8500</td><td>React SPA :5150 + FastAPI backend :8600</td></tr>
+<tr><td><code>message/send</code>, <code>params.context.skillId</code></td><td><code>SendMessage</code>, <code>metadata.skillId</code>, <code>contextId</code></td></tr>
+<tr><td>implement <code>process_analysis()</code></td><td>implement <code>_execute(params, context, event_queue)</code></td></tr>
+<tr><td><code>request_user_approval(...)</code></td><td>does not exist; use <code>requires_approval</code> or <code>send_input_required</code></td></tr>
+<tr><td>login <code>prometheus</code> / <code>prometheus</code></td><td>a setup wizard creates the first admin</td></tr>
+<tr><td>image from mooseharbor, pinned in compose</td><td><code>containers.github.inl.gov</code>, pinned in the <code>Makefile</code></td></tr>
+<tr><td><code>PROMETHEUS_DEBUG</code></td><td><code>DEBUG_AGENTS=true</code></td></tr>
+<tr><td><code>planner.py</code>, upload auto-binding (<code>file-uploads.md</code>)</td><td>the tool-calling loop, <code>orchestrator/agent_loop.py</code></td></tr>
+<tr><td>pin <code>prometheus_api@2b3dbcf</code></td><td>that is v0.8.0; the platform uses <code>95c32b5</code> (v0.13.0)</td></tr>
+</table>
+</div>
   </div>
 </section>
 
-<!-- 21 ─────────────────────────────────────────── -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Where to find things</div><h2>Links and help</h2></div>
+  <div class="head"><div class="eyebrow">A warning about documentation</div><h2>When docs disagree, trust the code. These are current:</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:28px">
-      <table class="t">
-        <tr><th>What</th><th>Where</th></tr>
-        <tr><td>Org and repos</td><td><code>https://github.inl.gov/genesis</code></td></tr>
-        <tr><td>Container images</td><td><code>https://github.inl.gov/orgs/genesis/packages</code></td></tr>
-        <tr><td>Wiki (design and planning)</td><td>Confluence, space "Prometheus"</td></tr>
-        <tr><td>Issues and tasks</td><td>JIRA project <code>PPLT</code></td></tr>
-        <tr><td>Proposal documents</td><td>Box folder (linked from the org profile)</td></tr>
-        <tr><td>Chat support</td><td>Teams, and the mentors in the room</td></tr>
-      </table>
-      <div class="col">
-        <div class="card acc"><h3>Next: GitHub &amp; PR workflow (1:00 pm)</h3><p class="body">Get your laptop ready now:</p>
-          <ul class="b sm">
-            <li>Log in at <code>github.inl.gov</code> and check that you can see <code>genesis/prometheus_platform</code>.</li>
-            <li>Check Docker: <code>docker info</code></li>
-            <li>Check uv: <code>uv --version</code> (or install it: <code>curl -LsSf https://astral.sh/uv/install.sh | sh</code>)</li>
-            <li>Have an LLM API key ready (Anthropic, or an INL LiteLLM key).</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+<div class="col">
+
+<ul class="b">
+<li><code>prometheus_api/docs/agent/GUIDE.md</code>: the full agent developer guide</li>
+<li><code>prometheus_api/docs/agent/AGENT_MIGRATIONS.md</code>: what changed in each version</li>
+<li><code>prometheus_api/docs/ENV_SETUP.md</code>: every environment variable</li>
+<li><code>prometheus_api/specs/*.md</code>: the requirements contract (REQ-/BEH- IDs)</li>
+<li><code>…/dev-docs/agent-loop-orchestration.md</code>: how the orchestrator works</li>
+<li><code>prometheus_platform/docs/docs/workflow-templates.md</code> (says "planner tool": read "orchestrator tool")</li>
+<li><code>…/dev-docs/multi-user-setup.md</code>, <code>encryption-and-keys.md</code></li>
+<li><code>…/docs/docs/local-deeplynx.md</code></li>
+<li><code>agents/client-agent/README.md</code> (still lists the removed <code>matcher.py</code>)</li>
+<li><code>prometheus_agent_template/TUTORIAL.md</code>, with the caveats in this deck</li>
+</ul>
+<div class="callout warn">The published docs site (<code>gh-pages</code>) was last deployed in February 2026, and only pushes to <code>main</code> rebuild it. Read the docs in the repo on <code>dev</code>.</div>
+</div>
+  </div>
+</section>
+
+<section class="slide">
+<div class="head"><div class="eyebrow">Where to find things</div><h2>Links and help</h2></div>
+<div class="content">
+<div class="grid g2" style="gap:28px">
+<table class="t">
+<tr><th>What</th><th>Where</th></tr>
+<tr><td>Org and repos</td><td><code>https://github.inl.gov/genesis</code></td></tr>
+<tr><td>Container images</td><td><code>https://github.inl.gov/orgs/genesis/packages</code></td></tr>
+<tr><td>Wiki (design and planning)</td><td>Confluence, space "Prometheus"</td></tr>
+<tr><td>Issues and tasks</td><td>JIRA project <code>PPLT</code></td></tr>
+<tr><td>Proposal documents</td><td>Box folder (linked from the org profile)</td></tr>
+<tr><td>Chat support</td><td>Teams, and the mentors in the room</td></tr>
+</table>
+<div class="col"><div class="card acc"><h3>Next: GitHub &amp; PR workflow (1:00 pm)</h3><p class="body">Branching, the rebase workflow, opening a PR, and what reviewers expect. Keep your platform running during the break.</p></div></div>
+</div>
+</div>
+</section>
+
+<section class="slide section bonus">
+  <div class="num">+</div>
+  <h2>Bonus: catch-up slides</h2>
+  <p class="lede">For participants who could not finish the homework. Work through these with a mentor while the session goes on.</p>
+</section>
+
+<section class="slide bonus">
+  <div class="head"><div class="eyebrow">Bonus · Homework check</div><h2>Is your laptop ready?</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:330px">Homework item</th><th style="width:430px">Quick check</th><th>If it fails</th></tr>
+      <tr><td>Access to <code>github.inl.gov/genesis</code></td><td>open <code>github.inl.gov/genesis/prometheus_platform</code> in the browser</td><td>ask the organizer to add you to the org; deck 02 bonus</td></tr>
+      <tr><td>Docker installed and running</td><td><code>docker info</code>, <code>docker compose version</code> (≥ 2.20)</td><td>install Docker Desktop and start it</td></tr>
+      <tr><td>Both repos cloned</td><td><code>ls ~/prometheus</code> shows <code>prometheus_platform</code> and <code>prometheus_agent_template</code></td><td>deck 02 bonus (clone commands)</td></tr>
+      <tr><td>PAT created, Docker logged in</td><td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:95c32b5</code></td><td>deck 03 bonus (registry login)</td></tr>
+      <tr><td>Platform starts</td><td><code>make up-fg</code> in <code>prometheus_platform</code>, then <code>http://localhost:5150</code></td><td>deck 03 bonus (<code>.env</code>, "the stack won't start")</td></tr>
+      <tr><td>DeepLynx (if no <code>deeplynx.inl.gov</code> access)</td><td><code>http://localhost:3000</code> shows the DeepLynx UI</td><td>deck 03 bonus (local DeepLynx)</td></tr>
+      <tr><td><code>uv</code> (for the agent session)</td><td><code>uv --version</code></td><td><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></td></tr>
+    </table>
   </div>
 </section>
 

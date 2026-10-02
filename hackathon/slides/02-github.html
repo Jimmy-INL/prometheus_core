@@ -12,7 +12,6 @@
 <body data-sec="gh" data-title="Day 1 · GitHub &amp; PR workflow">
 <div id="viewport"><div id="stage">
 
-<!-- 1 -->
 <section class="slide title">
   <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
   <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
@@ -22,7 +21,6 @@
   <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">github.inl.gov/genesis</span></div>
 </section>
 
-<!-- 2 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">This session</div><h2>What you will be able to do afterwards</h2></div>
   <div class="content">
@@ -35,7 +33,6 @@
   </div>
 </section>
 
-<!-- 3 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The organization</div><h2><code style="font-size:.8em">github.inl.gov/genesis</code></h2><p class="lede">INL's GitHub Enterprise Server. The org profile (<code>genesis/.github</code> → <code>profile/README.md</code>) lists what matters most.</p></div>
   <div class="content">
@@ -61,23 +58,6 @@
   </div>
 </section>
 
-<!-- 4 -->
-<section class="slide">
-  <div class="head"><div class="eyebrow">Access</div><h2>Getting in: org, git, and registry</h2></div>
-  <div class="content">
-    <div class="grid g3">
-      <div class="card"><span class="tag">1 · org membership</span><h4>Read access through the <code>open</code> team</h4><p class="small">The org default permission is <b>none</b>. Team <code>open</code> (about 57 members) gives read access to 19 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents… Some agent repos need extra access. <b>Write access is granted per repo</b> by repo admins.</p><p class="small">With read access you <b>fork</b> and open PRs from your fork.</p></div>
-      <div class="card"><span class="tag">2 · git transport</span><h4>SSH key or gh credential helper</h4><p class="small">Add a key at <code>github.inl.gov/settings/keys</code>, then:</p><pre class="xs">ssh -T git@github.inl.gov</pre><p class="small">Or use HTTPS and let <code>gh</code> handle credentials:</p><pre class="xs">gh auth login --hostname github.inl.gov
-export GH_HOST=github.inl.gov</pre></div>
-      <div class="card"><span class="tag">3 · container registry</span><h4>PAT with <code>read:packages</code></h4><p class="small">Needed to pull the <code>prometheus_api</code> base image. Create a classic token at <code>github.inl.gov/settings/tokens/new</code>:</p><pre class="xs">echo $GITHUB_PAT | docker login \
-  containers.github.inl.gov \
-  --username &lt;you&gt; --password-stdin</pre></div>
-    </div>
-    <div class="callout warn">No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm will cost you the dry run.</div>
-  </div>
-</section>
-
-<!-- 5 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Repository map</div><h2>What is in the org</h2></div>
   <div class="content">
@@ -130,7 +110,6 @@ export GH_HOST=github.inl.gov</pre></div>
   </div>
 </section>
 
-<!-- 6 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">How the repositories relate</div><h2>One SDK, delivered as a base image</h2></div>
   <div class="content">
@@ -156,7 +135,6 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 7 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Base image tags</div><h2>Where the pin lives, and what tags exist</h2></div>
   <div class="content">
@@ -187,7 +165,6 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 8 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Inside the repos</div><h2>Where things live</h2></div>
   <div class="content">
@@ -248,14 +225,12 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 9 -->
 <section class="slide section">
   <div class="num">02</div>
   <h2>Branching strategy</h2>
   <p class="lede">Git Flow: a production branch, an integration branch, short-lived feature branches, and release/hotfix lanes.</p>
 </section>
 
-<!-- 10 -->
 <section class="slide" data-nofit style="gap:10px">
   <div class="head"><div class="eyebrow">Our model · develop = dev in prometheus_platform</div></div>
   <div class="content center" style="flex:1; min-height:0">
@@ -263,7 +238,6 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 11 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Branch roles</div><h2>Five kinds of branches</h2></div>
   <div class="content">
@@ -279,7 +253,6 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 12 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Applied to our repos</div><h2>Which base branch do I target?</h2></div>
   <div class="content">
@@ -307,47 +280,44 @@ prometheus_api.git@95c32b5"</pre></div>
   </div>
 </section>
 
-<!-- 13 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Fork &amp; clone conventions</div><h2>One-time setup: <code style="font-size:.8em">origin</code> is yours, <code style="font-size:.8em">upstream</code> is genesis</h2></div>
+  <div class="head"><div class="eyebrow">Fork &amp; clone conventions</div><h2>You cloned <code style="font-size:.8em">genesis</code> directly. Now add your fork.</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
-      <pre class="sm"><span class="c"># 1. fork in the web UI, or:</span>
+      <pre class="sm"><span class="c"># in your existing clone of genesis/prometheus_platform</span>
+cd ~/prometheus/prometheus_platform
 export GH_HOST=github.inl.gov
+
+<span class="c"># 1. the org repo becomes "upstream"</span>
+git remote rename origin upstream
+
+<span class="c"># 2. create your fork and make it "origin"</span>
 gh repo fork genesis/prometheus_platform --clone=false
-
-<span class="c"># 2. clone YOUR fork</span>
-git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
-cd prometheus_platform
-
-<span class="c"># 3. add the org repo as "upstream"</span>
-git remote add upstream \
-  git@github.inl.gov:genesis/prometheus_platform.git
-git fetch upstream
+git remote add origin \
+  git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
+git fetch --all
 git remote -v
 <span class="c">#   origin    …:&lt;you&gt;/prometheus_platform  (push here)</span>
 <span class="c">#   upstream  …:genesis/prometheus_platform (PR target)</span>
 
-<span class="c"># 4. make rebase the default for pull</span>
+<span class="c"># 3. make rebase the default for pull</span>
 git config pull.rebase true
 git config rebase.autoStash true</pre>
-      <div class="col">
-        <div class="card"><h4>Why fork?</h4><p class="small">Most participants have <b>read</b> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p></div>
-        <div class="card"><h4>Clone side by side</h4><p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p><pre class="xs">~/prometheus/
+<div class="col">
+<div class="card"><h4>Why fork?</h4><p class="small">Most participants have <b>read</b> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p></div>
+<div class="card"><h4>Clone side by side</h4><p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p><pre class="xs">~/prometheus/
 ├── prometheus_platform/
 ├── prometheus_agent_template/
 └── my-agent/            <span class="c"># generated</span></pre></div>
-      </div>
+</div>
     </div>
   </div>
 </section>
 
-<!-- 14 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Day-to-day loop</div><h2>Feature branch → rebase → push → PR</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <pre class="sm"><span class="c"># start from the latest integration branch</span>
+<pre class="sm"><span class="c"># start from the latest integration branch</span>
 git fetch upstream
 git switch -c feature/<span class="p">mesh-qa-agent</span> upstream/dev
 
@@ -367,16 +337,18 @@ gh pr create --repo genesis/prometheus_platform \
   --base dev --head <span class="p">&lt;you&gt;</span>:feature/mesh-qa-agent \
   --title "Add mesh quality report skill" \
   --body-file pr.md</pre>
-      <div class="col">
-        <div class="card acc"><h4>Why rebase, not merge?</h4><p class="small">Your branch stays a straight line of <i>your</i> commits on top of the current <code>dev</code>. Reviewers see only your change, the history has no "Merge branch 'dev' into …" noise, and conflicts are resolved once, commit by commit.</p></div>
-        <div class="card"><h4><code>--force-with-lease</code>, never <code>--force</code></h4><p class="small">A rebase rewrites your branch, so the push must be forced. <code>--force-with-lease</code> refuses if the remote has commits you have not seen, for example a reviewer's suggestion you accepted in the web UI.</p></div>
-        <div class="callout warn">Force-pushing is only for <b>your own feature branch</b>. The protected branches (platform <code>dev</code>, api and template <code>main</code>) reject force-pushes, and nobody force-pushes shared branches anyway.</div>
-      </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Day-to-day loop</div><h2>Why rebase, and how to push after one</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:22px">
+<div class="card acc"><h4>Why rebase, not merge?</h4><p class="small">Your branch stays a straight line of <i>your</i> commits on top of the current <code>dev</code>. Reviewers see only your change, the history has no "Merge branch 'dev' into …" noise, and conflicts are resolved once, commit by commit.</p></div><div class="card"><h4><code>--force-with-lease</code>, never <code>--force</code></h4><p class="small">A rebase rewrites your branch, so the push must be forced. <code>--force-with-lease</code> refuses if the remote has commits you have not seen, for example a reviewer's suggestion you accepted in the web UI.</p></div><div class="callout warn">Force-pushing is only for <b>your own feature branch</b>. The protected branches (platform <code>dev</code>, api and template <code>main</code>) reject force-pushes, and nobody force-pushes shared branches anyway.</div>
     </div>
   </div>
 </section>
 
-<!-- 15 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">What rebase does</div><h2><code style="font-size:.8em">git pull --rebase upstream dev</code>, visually</h2></div>
   <div class="content">
@@ -430,7 +402,6 @@ git rebase -i --autosquash …</pre><p class="tiny">Interactive rebase needs a t
   </div>
 </section>
 
-<!-- 16 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Rebase and review</div><h2>When to rebase an open PR</h2></div>
   <div class="content">
@@ -458,7 +429,6 @@ git rebase -i --autosquash …</pre><p class="tiny">Interactive rebase needs a t
   </div>
 </section>
 
-<!-- 17 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Commits</div><h2>Commit messages people can read later</h2></div>
   <div class="content">
@@ -490,7 +460,6 @@ Stop a large STEP from 413ing behind the
   </div>
 </section>
 
-<!-- 18 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Before you push</div><h2>Local checks per repo</h2></div>
   <div class="content">
@@ -508,7 +477,6 @@ Stop a large STEP from 413ing behind the
   </div>
 </section>
 
-<!-- 19 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Continuous integration</div><h2>What runs where</h2></div>
   <div class="content">
@@ -539,7 +507,6 @@ Stop a large STEP from 413ing behind the
   </div>
 </section>
 
-<!-- 20 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Branch protection</div><h2>Rulesets on the protected branches</h2></div>
   <div class="content">
@@ -559,12 +526,11 @@ Stop a large STEP from 413ing behind the
   </div>
 </section>
 
-<!-- 21 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Opening a PR</div><h2>A description reviewers can act on</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <pre class="sm"><span class="p">JIRA:</span> PPLT-123
+    <div class="grid" style="grid-template-columns: 1.3fr 1fr; gap:30px">
+<pre class="sm"><span class="p">JIRA:</span> PPLT-123
 
 <span class="p">## What</span>
 Add a `mesh_quality_report` skill that reads an
@@ -583,53 +549,57 @@ unchecked; bad elements fail late.
 <span class="p">## Config / environment changes</span>
 - New env var `MESHQA_MAX_ELEMENTS` (default 2e6)
 - Base image: PROMETHEUS_API_BASE_IMAGE_HASH=95c32b5</pre>
-      <div class="col">
-        <ul class="b sm">
-          <li><b>Title</b>: an imperative sentence, like the commit subject ("Add…", "Fix…", "Stop…").</li>
-          <li><b>Reference the JIRA task</b> (<code>PPLT-…</code>) at the top of the description.</li>
-          <li><b>Small and focused.</b> One topic. Split refactors from behavior changes.</li>
-          <li>List the <b>commands you ran</b>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>prometheus_api/AGENTS.md</code>).</li>
-          <li><b>prometheus_api API changes</b>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li>
-          <li>UI change? Add a screenshot.</li>
-          <li>Open as <b>draft</b> (<code>gh pr create --draft</code>) while it is still in progress.</li>
-        </ul>
-        <pre class="xs">gh pr view --web          <span class="c"># open in browser</span>
-gh pr checks              <span class="c"># CI status (api only)</span>
-gh pr ready               <span class="c"># draft → ready</span></pre>
-      </div>
+      <ul class="b"><li><b>Title</b>: an imperative sentence, like the commit subject ("Add…", "Fix…", "Stop…").</li><li><b>Reference the JIRA task</b> (<code>PPLT-…</code>) at the top of the description.</li><li><b>Small and focused.</b> One topic. Split refactors from behavior changes.</li></ul>
     </div>
   </div>
 </section>
 
-<!-- 22 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Opening a PR</div><h2>More PR conventions</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <ul class="b"><li>List the <b>commands you ran</b>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>prometheus_api/AGENTS.md</code>).</li><li><b>prometheus_api API changes</b>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li><li>UI change? Add a screenshot.</li><li>Open as <b>draft</b> (<code>gh pr create --draft</code>) while it is still in progress.</li></ul>
+      <div class="col"><h4 class="acc">Handy commands</h4><pre class="xs">gh pr view --web          <span class="c"># open in browser</span>
+gh pr checks              <span class="c"># CI status (api only)</span>
+gh pr ready               <span class="c"># draft → ready</span></pre></div>
+    </div>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Code review</div><h2>What reviewers look for, and how to respond</h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:20px">
-      <div class="card"><h3>As an author</h3><ul class="b xs">
-        <li>Reply to <b>every</b> thread. "Fixed in 8e46a68: …" with the commit SHA and a sentence of explanation.</li>
-        <li>Disagree with reasons. Maintainers push back too, sometimes with a table of cases.</li>
-        <li>Resolve threads only when the reviewer is satisfied, or after replying.</li>
-        <li>Accepted a GitHub suggestion in the web UI? <code>git pull --rebase</code> before your next push.</li>
-      </ul></div>
-      <div class="card"><h3>As a reviewer</h3><ul class="b xs">
-        <li>Be concrete: file:line, the scenario that breaks, ideally a failing test.</li>
-        <li>Check the tests enforce what they claim. In the api repo, reviewers check that tests citing a <code>REQ-…</code> ID actually test it.</li>
-        <li>Check the lockfile, the version bump, and the migration note.</li>
-        <li>Separate "must fix" from "nit".</li>
-      </ul></div>
-      <div class="card"><h3>Project stance</h3><p class="tiny">From the Prometheus project philosophy.</p><ul class="b xs">
-        <li>Experimental project: <b>breaking changes are fine</b>.</li>
-        <li>No backward-compatibility shims, deprecation warnings, or workarounds. Fix root causes.</li>
-        <li>When docs and code disagree, fix the docs in the same PR.</li>
-        <li>Agent-authored review text is marked with 🤖.</li>
-      </ul></div>
+    <div class="grid g2" style="gap:24px">
+<div class="card"><h3>As an author</h3><ul class="b sm">
+<li>Reply to <b>every</b> thread. "Fixed in 8e46a68: …" with the commit SHA and a sentence of explanation.</li>
+<li>Disagree with reasons. Maintainers push back too, sometimes with a table of cases.</li>
+<li>Resolve threads only when the reviewer is satisfied, or after replying.</li>
+<li>Accepted a GitHub suggestion in the web UI? <code>git pull --rebase</code> before your next push.</li>
+</ul></div><div class="card"><h3>As a reviewer</h3><ul class="b sm">
+<li>Be concrete: file:line, the scenario that breaks, ideally a failing test.</li>
+<li>Check the tests enforce what they claim. In the api repo, reviewers check that tests citing a <code>REQ-…</code> ID actually test it.</li>
+<li>Check the lockfile, the version bump, and the migration note.</li>
+<li>Separate "must fix" from "nit".</li>
+</ul></div>
     </div>
-    <div class="callout">A real example: platform PR #98 had about 10 inline findings, each reproduced with a small test. The author answered each one with the fixing commit. That is the bar.</div>
   </div>
 </section>
 
-<!-- 23 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Code review</div><h2>The project stance, and the bar</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:24px">
+<div class="card"><h3>Project stance</h3><p class="tiny">From the Prometheus project philosophy.</p><ul class="b sm">
+<li>Experimental project: <b>breaking changes are fine</b>.</li>
+<li>No backward-compatibility shims, deprecation warnings, or workarounds. Fix root causes.</li>
+<li>When docs and code disagree, fix the docs in the same PR.</li>
+<li>Agent-authored review text is marked with 🤖.</li>
+</ul></div>
+      <div class="col"><div class="callout">A real example: platform PR #98 had about 10 inline findings, each reproduced with a small test. The author answered each one with the fixing commit. That is the bar.</div></div>
+    </div>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Practice at 3:30</div><h2>Your practice PR against <code style="font-size:.8em">sandbox</code></h2></div>
   <div class="content">
@@ -664,7 +634,6 @@ gh pr create --repo genesis/prometheus_platform \
   <aside class="notes">Organizers: the sandbox branch does not exist yet. Create "sandbox" from dev in genesis/prometheus_platform before the event (ruleset 35 only covers the default branch, so sandbox will be unprotected; maintainers merge).</aside>
 </section>
 
-<!-- 24 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Cheat sheet</div><h2>Git &amp; gh commands on one page</h2></div>
   <div class="content">
@@ -703,7 +672,74 @@ git switch -d upstream/dev
 git branch -D feature/&lt;desc&gt;
 git push origin --delete feature/&lt;desc&gt;</pre>
     </div>
-    <div class="callout">Next: <b>Local platform deployment</b> (1:45 pm). Have your PAT with <code>read:packages</code> and an LLM API key ready.</div>
+    <div class="callout">Next: <b>Local platform deployment</b> (1:45 pm). Keep your platform running; we look under the hood.</div>
+  </div>
+</section>
+
+<section class="slide section bonus">
+  <div class="num">+</div>
+  <h2>Bonus: catch-up slides</h2>
+  <p class="lede">For participants who could not finish the homework: GitHub access, tokens, and fresh clones.</p>
+</section>
+
+<section class="slide bonus">
+  <div class="head"><div class="eyebrow">Bonus · Access</div><h2>Getting in: org, git, and registry</h2></div>
+  <div class="content">
+    <div class="grid g3">
+      <div class="card"><span class="tag">1 · org membership</span><h4>Read access through the <code>open</code> team</h4><p class="small">The org default permission is <b>none</b>. Team <code>open</code> (about 57 members) gives read access to 19 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents… Some agent repos need extra access. <b>Write access is granted per repo</b> by repo admins.</p><p class="small">With read access you <b>fork</b> and open PRs from your fork.</p></div>
+      <div class="card"><span class="tag">2 · git transport</span><h4>SSH key or gh credential helper</h4><p class="small">Add a key at <code>github.inl.gov/settings/keys</code>, then:</p><pre class="xs">ssh -T git@github.inl.gov</pre><p class="small">Or use HTTPS and let <code>gh</code> handle credentials:</p><pre class="xs">gh auth login --hostname github.inl.gov
+export GH_HOST=github.inl.gov</pre></div>
+      <div class="card"><span class="tag">3 · container registry</span><h4>PAT with <code>read:packages</code></h4><p class="small">Needed to pull the <code>prometheus_api</code> base image. Create a classic token at <code>github.inl.gov/settings/tokens/new</code>:</p><pre class="xs">echo $GITHUB_PAT | docker login \
+  containers.github.inl.gov \
+  --username &lt;you&gt; --password-stdin</pre></div>
+    </div>
+    <div class="callout warn">No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm will cost you the dry run.</div>
+  </div>
+</section>
+
+<section class="slide bonus">
+  <div class="head"><div class="eyebrow">Bonus · Fork &amp; clone conventions</div><h2>Fresh start: fork, then clone <code style="font-size:.8em">origin</code> is yours, <code style="font-size:.8em">upstream</code> is genesis</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm"><span class="c"># 1. fork in the web UI, or:</span>
+export GH_HOST=github.inl.gov
+gh repo fork genesis/prometheus_platform --clone=false
+
+<span class="c"># 2. clone YOUR fork</span>
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
+cd prometheus_platform
+
+<span class="c"># 3. add the org repo as "upstream"</span>
+git remote add upstream \
+  git@github.inl.gov:genesis/prometheus_platform.git
+git fetch upstream
+git remote -v
+<span class="c">#   origin    …:&lt;you&gt;/prometheus_platform  (push here)</span>
+<span class="c">#   upstream  …:genesis/prometheus_platform (PR target)</span>
+
+<span class="c"># 4. make rebase the default for pull</span>
+git config pull.rebase true
+git config rebase.autoStash true</pre>
+      <div class="col">
+        <div class="card"><h4>Why fork?</h4><p class="small">Most participants have <b>read</b> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p></div>
+        <div class="card"><h4>Clone side by side</h4><p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p><pre class="xs">~/prometheus/
+├── prometheus_platform/
+├── prometheus_agent_template/
+└── my-agent/            <span class="c"># generated</span></pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide bonus">
+  <div class="head"><div class="eyebrow">Bonus · Homework</div><h2>Clone the agent template</h2></div>
+  <div class="content">
+    <pre>cd ~/prometheus
+git clone git@github.inl.gov:genesis/prometheus_agent_template.git
+<span class="c"># no SSH key? use HTTPS and let gh handle credentials:</span>
+gh auth login --hostname github.inl.gov
+git clone https://github.inl.gov/genesis/prometheus_agent_template.git</pre>
+    <div class="callout">Keep it next to <code>prometheus_platform</code>: <code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy the platform secrets into your new agent.</div>
   </div>
 </section>
 

@@ -285,3 +285,14 @@ body.overview #overview { display: grid; }
 ul.b.check { list-style: none; padding-left: 0; }
 .arrow-h.left { transform: scaleX(-1); }
 .arrow-v.at-right { align-self: flex-end; width: calc((100% - 80px) / 3); }
+
+/* ---------- bonus (catch-up) slides ---------- */
+.slide.bonus::before { background: repeating-linear-gradient(180deg, var(--acc) 0 18px, transparent 18px 30px); }
+.slide.bonus:not(.section)::after {
+  content: "BONUS · CATCH-UP"; position: absolute; top: 26px; right: 84px;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: .14em;
+  color: var(--acc-ink); border: 1.5px dashed var(--acc); border-radius: 99px; padding: 3px 12px;
+}
+.slide.section.bonus { background: repeating-linear-gradient(135deg, #fff 0 22px, var(--acc-soft) 22px 44px); }
+table.t td code { white-space: normal; overflow-wrap: anywhere; }
+pre { flex-shrink: 0; }

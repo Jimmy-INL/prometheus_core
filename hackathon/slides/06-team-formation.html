@@ -12,7 +12,6 @@
 <body data-sec="team" data-title="Day 1 · The challenge &amp; team formation">
 <div id="viewport"><div id="stage">
 
-<!-- 1 -->
 <section class="slide title">
   <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
   <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
@@ -22,7 +21,6 @@
   <div class="meta"><span class="pill acc">All participants</span><span class="pill">teams of 4–5</span><span class="pill">4–5 h of building</span></div>
 </section>
 
-<!-- 2 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">How this works</div><h2>From announcement to teams in 30 minutes</h2></div>
   <div class="content">
@@ -46,7 +44,6 @@
   </div>
 </section>
 
-<!-- 3 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">The challenge</div><h2>One agent, at least two skills</h2></div>
   <div class="content">
@@ -62,7 +59,6 @@
   </div>
 </section>
 
-<!-- 4 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">What you get now</div><h2>The practice files</h2></div>
   <div class="content">
@@ -95,7 +91,6 @@
   </div>
 </section>
 
-<!-- 5 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Demo time</div><h2>A file your agent has never seen</h2><p class="lede">At the demo, judges upload a <b>new markdown file</b> and a <b>new CSV file</b> and type two or three prompts. The files follow the same conventions as the practice file.</p></div>
   <div class="content">
@@ -108,7 +103,6 @@
   </div>
 </section>
 
-<!-- 6 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">A suggested design</div><h2>Two skills, connected by artifacts</h2></div>
   <div class="content">
@@ -137,12 +131,10 @@
   </div>
 </section>
 
-<!-- 7 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">The card</div><h2>Two skills in <code style="font-size:.8em">agent_card.json</code></h2></div>
+  <div class="head"><div class="eyebrow">The card</div><h2>Skill 1 in <code style="font-size:.8em">agent_card.json</code>: extract</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:24px">
-      <pre class="xs">{ <span class="s">"id"</span>: <span class="p">"neutron_extract_table"</span>,
+<pre class="sm">{ <span class="s">"id"</span>: <span class="p">"neutron_extract_table"</span>,
   <span class="s">"name"</span>: <span class="s">"Extract table from markdown"</span>,
   <span class="s">"description"</span>: <span class="s">"Find one table in an uploaded markdown
     document by matching the user's description against the
@@ -161,7 +153,13 @@
         <span class="s">"description"</span>: <span class="s">"How the user referred to the table,
           e.g. 'the table with population data'."</span> } },
     <span class="s">"required"</span>: [<span class="s">"document_artifact_id"</span>, <span class="s">"table_description"</span>] } }</pre>
-      <pre class="xs">{ <span class="s">"id"</span>: <span class="p">"neutron_plot_table"</span>,
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">The card</div><h2>Skill 2 in <code style="font-size:.8em">agent_card.json</code>: plot</h2></div>
+  <div class="content">
+<pre class="sm">{ <span class="s">"id"</span>: <span class="p">"neutron_plot_table"</span>,
   <span class="s">"name"</span>: <span class="s">"Plot tabular data"</span>,
   <span class="s">"description"</span>: <span class="s">"Plot columns of a table artifact or an
     uploaded CSV file as a PNG line, scatter, or bar chart.
@@ -183,31 +181,34 @@
         <span class="s">"description"</span>: <span class="s">"Column(s) for the y axis (approximate ok)."</span> },
       <span class="s">"kind"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"enum"</span>: [<span class="s">"line"</span>, <span class="s">"scatter"</span>, <span class="s">"bar"</span>] } },
     <span class="s">"required"</span>: [<span class="s">"table_artifact_id"</span>] } }</pre>
-    </div>
-    <p class="small">These go in the card's <code>skills</code> array, with <code>"capabilities": {"streaming": true}</code> at the top level. Prefix the IDs with your team name: every team builds the same skills.</p>
+<p class="small">These go in the card's <code>skills</code> array, with <code>"capabilities": {"streaming": true}</code> at the top level. Prefix the IDs with your team name: every team builds the same skills.</p>
   </div>
 </section>
 
-<!-- 8 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Implementation hints</div><h2>The pieces you need</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:24px">
-      <div class="col">
-        <table class="t sm wrap-code">
-          <tr><th>Step</th><th>Options</th></tr>
-          <tr><td><b>Get the file</b></td><td><code>path = await self.get_artifact_file_path(params["document_artifact_id"], context=context, artifacts=params.get("artifacts"))</code></td></tr>
-          <tr><td><b>Find tables</b></td><td>Regex over <code>|</code>-rows plus the separator line, or a markdown parser (<code>markdown-it-py</code>). Keep the bold line above as the caption.</td></tr>
-          <tr><td><b>Pick the table</b></td><td>An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. LLMs handle "center line" vs "centerline" well.</td></tr>
-          <tr><td><b>Clean values</b></td><td><code>1,020</code> → 1020; <code>—</code>, <code>-</code>, empty → missing; keep text columns as text</td></tr>
-          <tr><td><b>Match columns</b></td><td>The LLM with the header list and the user's words; parse units in <code>[…]</code> or <code>(…)</code>; mind <code>t</code> vs <code>T</code></td></tr>
-          <tr><td><b>Plot</b></td><td><code>matplotlib</code> with the <code>Agg</code> backend; label axes with units; title from the caption</td></tr>
-          <tr><td><b>Publish</b></td><td><code>send_json_artifact(..., catalog_artifact=True)</code> for the table; <code>send_deeplynx_artifact(..., mime_type="image/png")</code> for the plot</td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <h4 class="acc">Asking for the columns</h4>
-        <pre class="xs"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
+<div class="col">
+<table class="t wrap-code">
+<tr><th>Step</th><th>Options</th></tr>
+<tr><td><b>Get the file</b></td><td><code>path = await self.get_artifact_file_path(params["document_artifact_id"], context=context, artifacts=params.get("artifacts"))</code></td></tr>
+<tr><td><b>Find tables</b></td><td>Regex over <code>|</code>-rows plus the separator line, or a markdown parser (<code>markdown-it-py</code>). Keep the bold line above as the caption.</td></tr>
+<tr><td><b>Pick the table</b></td><td>An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. LLMs handle "center line" vs "centerline" well.</td></tr>
+<tr><td><b>Clean values</b></td><td><code>1,020</code> → 1020; <code>—</code>, <code>-</code>, empty → missing; keep text columns as text</td></tr>
+<tr><td><b>Match columns</b></td><td>The LLM with the header list and the user's words; parse units in <code>[…]</code> or <code>(…)</code>; mind <code>t</code> vs <code>T</code></td></tr>
+<tr><td><b>Plot</b></td><td><code>matplotlib</code> with the <code>Agg</code> backend; label axes with units; title from the caption</td></tr>
+<tr><td><b>Publish</b></td><td><code>send_json_artifact(..., catalog_artifact=True)</code> for the table; <code>send_deeplynx_artifact(..., mime_type="image/png")</code> for the plot</td></tr>
+</table>
+</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Implementation hints</div><h2>Asking for the columns</h2></div>
+  <div class="content">
+<div class="col">
+
+<pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
 
 columns = list(df.columns)
 <span class="k">if not</span> x_col <span class="k">or not</span> y_cols:
@@ -227,31 +228,29 @@ columns = list(df.columns)
     <span class="k">return</span> {}
 <span class="c"># resumed call: self.get_provided_inputs(context)</span>
 <span class="c">#   → {"x_column": "...", "y_column": "..."} → y_columns=[...]</span></pre>
-        <p class="small">A string list in <code>options</code> becomes a dropdown in the chat's follow-up form, with your <code>hint</code> as the message. With <code>resolvable_from_context=False</code> (the default) the user is asked. If they type a reply instead, the orchestrator calls you again with new arguments.</p>
-      </div>
-    </div>
+<p class="small">A string list in <code>options</code> becomes a dropdown in the chat's follow-up form, with your <code>hint</code> as the message. With <code>resolvable_from_context=False</code> (the default) the user is asked. If they type a reply instead, the orchestrator calls you again with new arguments.</p>
+</div>
   </div>
 </section>
 
-<!-- 9 -->
 <section class="slide">
-  <div class="head"><div class="eyebrow">Before you start</div><h2>Prerequisites and pitfalls</h2></div>
+  <div class="head"><div class="eyebrow">Before you start</div><h2>Prerequisites</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:420px">Make sure…</th><th>Why</th></tr>
-      <tr class="hl"><td><b>DeepLynx is configured</b> on your platform (local or the shared instance)</td><td>Chat uploads are stored in DeepLynx and passed to agents as artifacts. Without it your agent never sees the file, and a PNG cannot render.</td></tr>
-      <tr><td><code>matplotlib</code>, <code>pandas</code>… are in <code>pyproject.toml</code></td><td>The base image has none of them. Set <code>MPLBACKEND=Agg</code> (no display in the container).</td></tr>
-      <tr><td>Extra modules have <code>COPY</code> lines in the Dockerfile</td><td>The template copies only <code>agent.py</code>, the card, <code>prompts/</code>, and <code>workflows/</code>.</td></tr>
-      <tr><td>Card name and skill IDs carry your <b>team prefix</b></td><td>Every team builds an "extract table" skill. Same name → the registry replaces one agent with the other.</td></tr>
-      <tr><td><code>"streaming": true</code></td><td>So "Parsing 4 tables…" and "Plotting T [K] vs t [min]…" appear live</td></tr>
-      <tr><td>LLM calls attach the master key; pick the flavor per call</td><td><code>LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY"))</code>. Under the <code>registry</code> profile every flavor you use must exist in the platform's <code>litellm_config.yaml</code>.</td></tr>
-      <tr><td>Results stay small</td><td>Return the artifact ID, caption, and column names, not 10,000 rows. The data lives in the artifact.</td></tr>
-      <tr><td>You test with a <b>fresh conversation</b> each time</td><td>Earlier uploads and results stay in the catalog and transcript the orchestrator LLM sees, and can make it pick the wrong file.</td></tr>
+    <table class="t">
+<tr><th style="width:420px">Make sure…</th><th>Why</th></tr><tr class="hl"><td><b>DeepLynx is configured</b> on your platform (local or the shared instance)</td><td>Chat uploads are stored in DeepLynx and passed to agents as artifacts. Without it your agent never sees the file, and a PNG cannot render.</td></tr><tr><td><code>matplotlib</code>, <code>pandas</code>… are in <code>pyproject.toml</code></td><td>The base image has none of them. Set <code>MPLBACKEND=Agg</code> (no display in the container).</td></tr><tr><td>Extra modules have <code>COPY</code> lines in the Dockerfile</td><td>The template copies only <code>agent.py</code>, the card, <code>prompts/</code>, and <code>workflows/</code>.</td></tr><tr><td>Card name and skill IDs carry your <b>team prefix</b></td><td>Every team builds an "extract table" skill. Same name → the registry replaces one agent with the other.</td></tr>
     </table>
   </div>
 </section>
 
-<!-- 10 -->
+<section class="slide">
+  <div class="head"><div class="eyebrow">Before you start</div><h2>Pitfalls</h2></div>
+  <div class="content">
+    <table class="t">
+<tr><th style="width:420px">Make sure…</th><th>Why</th></tr><tr><td><code>"streaming": true</code></td><td>So "Parsing 4 tables…" and "Plotting T [K] vs t [min]…" appear live</td></tr><tr><td>LLM calls attach the master key; pick the flavor per call</td><td><code>LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY"))</code>. Under the <code>registry</code> profile every flavor you use must exist in the platform's <code>litellm_config.yaml</code>.</td></tr><tr><td>Results stay small</td><td>Return the artifact ID, caption, and column names, not 10,000 rows. The data lives in the artifact.</td></tr><tr><td>You test with a <b>fresh conversation</b> each time</td><td>Earlier uploads and results stay in the catalog and transcript the orchestrator LLM sees, and can make it pick the wrong file.</td></tr>
+    </table>
+  </div>
+</section>
+
 <section class="slide">
   <div class="head"><div class="eyebrow">Going further</div><h2>Once the basics work</h2></div>
   <div class="content">
@@ -264,7 +263,6 @@ columns = list(df.columns)
   </div>
 </section>
 
-<!-- 11 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Planning the day</div><h2>Roles and a timeline for 4–5 hours</h2></div>
   <div class="content">
@@ -287,7 +285,6 @@ columns = list(df.columns)
   </div>
 </section>
 
-<!-- 12 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Acceptance criteria</div><h2>What the judges will check</h2><p class="lede">The full rubric and the awards are in the Judging &amp; awards deck.</p></div>
   <div class="content">
@@ -313,7 +310,6 @@ columns = list(df.columns)
   </div>
 </section>
 
-<!-- 13 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Sign-up</div><h2>Teams and rooms</h2></div>
   <div class="content">
@@ -333,7 +329,6 @@ columns = list(df.columns)
   <aside class="notes">Placeholder table: fill in live or replace with the room list.</aside>
 </section>
 
-<!-- 14 -->
 <section class="slide">
   <div class="head"><div class="eyebrow">Hacking starts now</div><h2>Your first hour</h2></div>
   <div class="content">
