@@ -15,8 +15,10 @@ or a specialist's INPUT_REQUIRED and resume on a later request. See
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -56,6 +58,8 @@ from workflow_library import (
 from . import runtime
 from .skills import invoke_skill
 from .utils import extract_result_text
+
+logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 SYSTEM_PROMPT_TEMPLATE = load_prompt("orchestrator_system.txt", prompts_dir=PROMPTS_DIR)
@@ -369,14 +373,14 @@ def begin_user_turn(
         content += "\n\n[Files received but not stored: " + ", ".join(filter(None, unstored)) + "]"
     messages = state.setdefault("llm_messages", [])
     messages.append({"role": "user", "content": content or "(empty message)"})
-    state["llm_messages"] = _trim_transcript(messages)
+    state["llm_messages"] = trim_transcript(messages)
     state["pending_calls"] = []
     state["pending_note"] = ""
     state["turn_tool_results"] = {}
     state["turn_tool_inputs"] = {}
 
 
-def _trim_transcript(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def trim_transcript(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Drop the oldest turns, cutting only at user messages so no tool result is orphaned."""
     if len(messages) <= MAX_TRANSCRIPT_MESSAGES:
         return messages
@@ -393,6 +397,8 @@ def inject_tool_call(
     spec: ToolSpec,
     arguments: Dict[str, Any],
     note: str,
+    *,
+    workflow_version: Optional[str] = None,
 ) -> None:
     """Record a platform-chosen call (explicit workflow start) as if the model made it."""
     call_id = f"call_{uuid.uuid4().hex[:16]}"
@@ -410,13 +416,14 @@ def inject_tool_call(
         }
     )
     state["pending_note"] = note
-    state["pending_calls"] = [
-        _new_call(
-            {"id": call_id, "name": spec.name, "arguments": arguments, "arguments_error": None},
-            catalog,
-            state,
-        )
-    ]
+    call = _new_call(
+        {"id": call_id, "name": spec.name, "arguments": arguments, "arguments_error": None},
+        catalog,
+        state,
+    )
+    if workflow_version:
+        call["workflow_version"] = workflow_version
+    state["pending_calls"] = [call]
 
 
 # Bookkeeping keys conversation_store adds to persisted messages; never sent to the LLM.
@@ -601,10 +608,13 @@ def coerce_answer(value: Any, value_type: Any) -> Any:
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
     kind = str(value_type or "").strip().lower()
-    if kind in {"number", "float"}:
-        return float(value)
-    if kind == "integer":
-        return int(value)
+    try:
+        if kind in {"number", "float"}:
+            return float(value)
+        if kind == "integer":
+            return int(value)
+    except (TypeError, ValueError):
+        return None  # unparseable: treat as absent so the form asks again
     if kind in {"boolean", "checkbox"} and not isinstance(value, bool):
         return str(value).strip().lower() in {"true", "yes", "1", "on"}
     return value
@@ -736,6 +746,17 @@ def _compact_result(result: Any, status: str) -> Dict[str, Any]:
     return payload
 
 
+def _result_key(state: Dict[str, Any], base: str) -> str:
+    """A turn-unique result key: ``base`` first, then ``base#2``, ``base#3``..."""
+    taken = state.setdefault("turn_tool_results", {})
+    if base not in taken:
+        return base
+    index = 2
+    while f"{base}#{index}" in taken:
+        index += 1
+    return f"{base}#{index}"
+
+
 def _record_result(state: Dict[str, Any], key: str, arguments: Dict[str, Any], result: Any) -> None:
     artifacts = result.get("artifacts") if isinstance(result, dict) else None
     state["context"] = merge_artifacts_into_context(state.get("context") or {}, artifacts or [])
@@ -826,11 +847,11 @@ async def _settle_skill_item(
         call["status"] = "waiting_input"
         return
     if "error" in item:
-        state.setdefault("turn_tool_results", {})[skill_id] = {"error": item["error"]}
+        state.setdefault("turn_tool_results", {})[_result_key(state, skill_id)] = {"error": item["error"]}
         _finish(call, {"status": "failed", "error": str(item["error"])})
         return
     result = item.get("result")
-    _record_result(state, skill_id, call["arguments"], result)
+    _record_result(state, _result_key(state, skill_id), call["arguments"], result)
     _finish(call, _compact_result(result, "succeeded"))
 
 
@@ -850,7 +871,7 @@ async def _run_skill(call: Dict[str, Any], state: Dict[str, Any]) -> None:
 
 async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
     conversation_id = str(state.get("conversation_id") or "")
-    workflow = get_workflow_registry().get(call["target"])
+    workflow = get_workflow_registry().get(call["target"], version=call.get("workflow_version"))
     if workflow is None:
         _finish(call, {"status": "failed", "error": f"Workflow '{call['target']}' is unavailable."})
         return
@@ -898,10 +919,15 @@ async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
         invoke_skill=invoke_skill,
         conversation_id=conversation_id,
     )
-    state["context"] = context
+    # Siblings in the same batch may have merged artifacts into state meanwhile.
+    state["context"] = merge_artifacts_into_context(context, (state.get("context") or {}).get("artifacts") or [])
+    # A resumed workflow re-runs its template: keep each step under the key it got first.
+    step_keys = call.setdefault("step_result_keys", {})
     for step_id, payload in (execution.get("step_results") or {}).items():
         if isinstance(payload, dict):
-            _record_result(state, str(payload.get("skill_id") or step_id), inputs, payload.get("result"))
+            key = step_keys.get(step_id) or _result_key(state, str(payload.get("skill_id") or step_id))
+            step_keys[step_id] = key
+            _record_result(state, key, inputs, payload.get("result"))
 
     blocked = [
         _blocked_record(
@@ -944,6 +970,7 @@ async def _run_call(call: Dict[str, Any], state: Dict[str, Any]) -> None:
         else:
             await _run_skill(call, state)
     except Exception as exc:  # one failing call must not sink its siblings
+        logger.exception("Tool call %s (%s %s) failed", call["id"], call["kind"], call["target"])
         _finish(call, {"status": "failed", "error": str(exc)})
 
 
@@ -1099,7 +1126,17 @@ async def _drive_batch(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -
 
 async def advance(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> LoopOutcome:
     """Drive pending calls and LLM turns until a final answer or a user pause."""
+    async with contextlib.AsyncExitStack() as stack:
+        return await _advance(state, catalog, stack)
+
+
+async def _advance(
+    state: Dict[str, Any],
+    catalog: Mapping[str, ToolSpec],
+    stack: contextlib.AsyncExitStack,
+) -> LoopOutcome:
     conversation_id = str(state.get("conversation_id") or "")
+    llm: Any = None  # created on the first LLM turn, reused for the rest of this advance
     turns = 0
     while True:
         if state.get("pending_calls"):
@@ -1114,15 +1151,17 @@ async def advance(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> Loo
             )
         turns += 1
         runtime.store_status_update(conversation_id, "Deciding the next step.")
+        state["llm_messages"] = trim_transcript(state["llm_messages"])
         messages = [{"role": "system", "content": _system_prompt(state)}, *llm_view(state["llm_messages"])]
-        async with runtime.create_llm() as llm:
-            response = await llm.medium(
-                messages,
-                tools=[spec.definition() for spec in catalog.values()],
-                tool_choice="auto",
-                temperature=0,
-                max_tokens=4096,
-            )
+        if llm is None:
+            llm = await stack.enter_async_context(runtime.create_llm())
+        response = await llm.medium(
+            messages,
+            tools=[spec.definition() for spec in catalog.values()],
+            tool_choice="auto",
+            temperature=0,
+            max_tokens=4096,
+        )
         # The absence of tool calls is the only terminator (never finish_reason).
         if not response.tool_calls:
             answer = response.text.strip()
@@ -1130,11 +1169,17 @@ async def advance(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> Loo
                 return LoopOutcome("error", message="The orchestrator returned an empty answer.")
             state["llm_messages"].append(assistant_message(response))
             return LoopOutcome("final", message=answer)
-        state["llm_messages"].append(assistant_message(response))
+        records = [_call_record(tool_call) for tool_call in response.tool_calls]
+        message = assistant_message(response)
+        stored_calls = message.get("tool_calls") or []
+        if len(stored_calls) == len(records):
+            # Generated ids must match in the transcript, or llm_view drops the real result.
+            for stored, record in zip(stored_calls, records):
+                if not stored.get("id"):
+                    stored["id"] = record["id"]
+        state["llm_messages"].append(message)
         state["pending_note"] = response.text.strip()
-        state["pending_calls"] = [
-            _new_call(_call_record(tool_call), catalog, state) for tool_call in response.tool_calls
-        ]
+        state["pending_calls"] = [_new_call(record, catalog, state) for record in records]
         for call in state["pending_calls"]:
             if call["status"] in {"ready", "needs_args", "needs_approval"}:
                 runtime.store_status_update(conversation_id, f"Next step: '{call['target']}'.")

@@ -131,6 +131,8 @@ def merge_conversation(
     If both left pending input, the newer one wins, and the older form is lost. A
     title is never cleared.
     """
+    from orchestrator.agent_loop import trim_transcript
+
     if not stored:
         merged = dict(local)
         merged["state_turn_id"] = turn_id
@@ -173,8 +175,9 @@ def merge_conversation(
         if not merged.get("title") and stored.get("title"):
             merged["title"] = stored["title"]
     merged["conversation_history"] = history
-    merged["llm_messages"] = _merge_messages(
-        _messages(stored), _messages(local), turn_id=turn_id, started_at=started_at
+    # Other turns' messages come back from storage, so bound the merged transcript too.
+    merged["llm_messages"] = trim_transcript(
+        _merge_messages(_messages(stored), _messages(local), turn_id=turn_id, started_at=started_at)
     )
     return merged
 

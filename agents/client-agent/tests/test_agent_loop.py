@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import json
+import logging
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import pytest
 
@@ -93,18 +95,16 @@ class ScriptedLLM:
     def __init__(self, script: List[Any]):
         self.script = list(script)
         self.requests: List[Dict[str, Any]] = []
+        self.medium_clients: List[int] = []  # which created client served each medium call
+        self._created = 0
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "ScriptedLLM":
-        return self
+    def __call__(self, *args: Any, **kwargs: Any) -> "_ScriptedClient":
+        self._created += 1
+        return _ScriptedClient(self, self._created)
 
-    async def __aenter__(self) -> "ScriptedLLM":
-        return self
-
-    async def __aexit__(self, *args: Any) -> None:
-        return None
-
-    async def medium(self, messages: List[Dict[str, Any]], **kwargs: Any) -> ChatResponse:
+    async def medium(self, client: int, messages: List[Dict[str, Any]], **kwargs: Any) -> ChatResponse:
         assert kwargs.get("tool_choice") == "auto"
+        self.medium_clients.append(client)
         request = {
             "messages": copy.deepcopy(messages),
             "tools": {tool.name: tool for tool in kwargs.get("tools", [])},
@@ -122,6 +122,21 @@ class ScriptedLLM:
             finish_reason=parse_finish_reason(raw),
         )
 
+
+class _ScriptedClient:
+    def __init__(self, llm: ScriptedLLM, index: int):
+        self.llm = llm
+        self.index = index
+
+    async def __aenter__(self) -> "_ScriptedClient":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+    async def medium(self, messages: List[Dict[str, Any]], **kwargs: Any) -> ChatResponse:
+        return await self.llm.medium(self.index, messages, **kwargs)
+
     async def small(self, *args: Any, **kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(text="Test title")
 
@@ -130,18 +145,23 @@ class ScriptedLLM:
 def harness(monkeypatch):
     store: Dict[str, Any] = {}
     invocations: List[tuple] = []
-    results: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
+    results: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
+    capabilities = list(CAPABILITIES)
+    llms: List[ScriptedLLM] = []
 
     def save(conv_id: str, state: Dict[str, Any]) -> None:
         # Round-trip through JSON: persisted state must be serializable.
         store[conv_id] = json.loads(json.dumps(state))
 
     async def get_capabilities():
-        return CAPABILITIES
+        return capabilities
 
     async def fake_invoke(skill_id, params, conversation_id, emit_status=True):
         invocations.append((skill_id, copy.deepcopy(params)))
-        return {"skill_id": skill_id, **results[skill_id](params)}
+        outcome = results[skill_id](params)  # may raise, like a broken transport
+        if inspect.isawaitable(outcome):
+            outcome = await outcome
+        return {"skill_id": skill_id, **outcome}
 
     monkeypatch.setattr(chat_flow, "get_conversation", lambda conv_id: copy.deepcopy(store.get(conv_id)))
     monkeypatch.setattr(chat_flow, "store_conversation", save)
@@ -154,10 +174,15 @@ def harness(monkeypatch):
 
     def script(steps: List[Any]) -> ScriptedLLM:
         llm = ScriptedLLM(steps)
+        llms.append(llm)
         monkeypatch.setattr(runtime, "create_llm", llm)
         return llm
 
-    return SimpleNamespace(store=store, invocations=invocations, results=results, script=script)
+    yield SimpleNamespace(
+        store=store, invocations=invocations, results=results, capabilities=capabilities, script=script
+    )
+    for llm in llms:
+        assert llm.script == [], f"{len(llm.script)} scripted LLM step(s) never ran"
 
 
 def send(**kwargs: Any):
@@ -247,6 +272,7 @@ def test_png_request_chains_two_skills_through_produced_artifact(harness) -> Non
     assert [a["artifact_id"] for a in png_params["artifacts"]] == ["svg-1"]
     assert set(response.tool_results) == {"create_svg_artifact", "convert_svg_to_png"}
     assert len(llm.requests) == 3
+    assert len(set(llm.medium_clients)) == 1  # one client for all three LLM turns
 
     state = harness.store[CONV]
     assert_transcript_valid(state["llm_messages"])
@@ -304,6 +330,106 @@ def test_independent_calls_in_one_turn_all_run_and_answer_in_order(harness) -> N
     assert sorted(params["material_id"] for _, params in harness.invocations) == ["SS316", "SS347"]
     tool_messages = [m for m in llm.requests[1]["messages"] if m["role"] == "tool"]
     assert [m["tool_call_id"] for m in tool_messages] == ["a", "b"]
+    assert sorted(
+        (key, result["answer"]) for key, result in response.tool_results.items()
+    ) == [("analyze_thermal", "SS316 ok"), ("analyze_thermal#2", "SS347 ok")]
+    assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def test_independent_calls_run_concurrently(harness) -> None:
+    barrier = asyncio.Barrier(2)
+
+    async def meet(params):
+        # A sequential batch would leave the first call waiting here forever.
+        await asyncio.wait_for(barrier.wait(), timeout=2)
+        return {"result": {"answer": f"{params['material_id']} ok"}}
+
+    harness.results.update(analyze_thermal=meet)
+    harness.script(
+        [
+            reply(
+                calls=[
+                    tool_call("analyze_thermal", {"material_id": "SS316", "temperature_c": 500}, "a"),
+                    tool_call("analyze_thermal", {"material_id": "SS347", "temperature_c": 500}, "b"),
+                ]
+            ),
+            reply("Both analyzed."),
+        ]
+    )
+
+    assert send(query="Compare SS316 and SS347 at 500 C").status == "completed"
+
+
+def test_one_failing_call_does_not_sink_its_sibling(harness, caplog) -> None:
+    def thermal(params):
+        if params["material_id"] == "SS347":
+            raise KeyError("transport lost")
+        return {"result": {"answer": "SS316 ok"}}
+
+    def sees_both(request):
+        results = {m["tool_call_id"]: json.loads(m["content"]) for m in request["messages"] if m["role"] == "tool"}
+        assert results["a"]["status"] == "succeeded"
+        assert results["b"]["status"] == "failed"
+        assert "transport lost" in results["b"]["error"]
+        return reply("SS316 is fine; SS347 could not be analyzed.")
+
+    harness.results.update(analyze_thermal=thermal)
+    harness.script(
+        [
+            reply(
+                calls=[
+                    tool_call("analyze_thermal", {"material_id": "SS316", "temperature_c": 500}, "a"),
+                    tool_call("analyze_thermal", {"material_id": "SS347", "temperature_c": 500}, "b"),
+                ]
+            ),
+            sees_both,
+        ]
+    )
+
+    with caplog.at_level(logging.ERROR, logger="orchestrator.agent_loop"):
+        response = send(query="Compare SS316 and SS347 at 500 C")
+
+    assert response.status == "completed"
+    assert response.tool_results == {"analyze_thermal": {"answer": "SS316 ok"}}
+    failures = [r for r in caplog.records if r.name == "orchestrator.agent_loop" and r.levelno == logging.ERROR]
+    assert len(failures) == 1 and failures[0].exc_info is not None
+    assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def test_repeated_skill_keeps_every_result_in_the_turn(harness) -> None:
+    outcomes = iter([{"result": {"answer": "SS316 ok"}}, {"error": "agent unavailable"}])
+    harness.results.update(analyze_thermal=lambda params: next(outcomes))
+    harness.script(
+        [
+            reply(calls=[tool_call("analyze_thermal", {"material_id": "SS316", "temperature_c": 500}, "a")]),
+            reply(calls=[tool_call("analyze_thermal", {"material_id": "SS347", "temperature_c": 500}, "b")]),
+            reply("SS316 is fine; SS347 failed."),
+        ]
+    )
+
+    response = send(query="Analyze SS316, then SS347")
+
+    assert response.tool_results == {
+        "analyze_thermal": {"answer": "SS316 ok"},
+        "analyze_thermal#2": {"error": "agent unavailable"},
+    }
+
+
+def test_call_without_a_provider_id_keeps_its_result(harness) -> None:
+    harness.results.update(create_svg_artifact=svg_result)
+
+    def sees_result(request):
+        assistant = next(m for m in request["messages"] if m.get("tool_calls"))
+        call_id = assistant["tool_calls"][0]["id"]
+        assert call_id
+        tool_message = request["messages"][-1]
+        assert tool_message["tool_call_id"] == call_id
+        assert json.loads(tool_message["content"])["status"] == "succeeded"
+        return reply("Created the SVG.")
+
+    harness.script([reply(calls=[tool_call("create_svg_artifact", {"word": "x"}, "")]), sees_result])
+
+    assert send(query="Make an SVG").status == "completed"
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
 
 
@@ -354,6 +480,37 @@ def test_schema_violation_is_returned_to_the_model(harness) -> None:
     assert harness.invocations == []
 
 
+def test_missing_runtime_input_sends_the_model_upstream_instead_of_asking(harness) -> None:
+    harness.capabilities.append(
+        _capability(
+            "generate_mesh",
+            {
+                "type": "object",
+                "properties": {
+                    "geometry_id": {"type": "string", "x_input_source": "runtime"},
+                    "element_size": {"type": "number"},
+                },
+                "required": ["geometry_id", "element_size"],
+            },
+        )
+    )
+
+    def sees_error(request):
+        content = json.loads(request["messages"][-1]["content"])
+        assert content["status"] == "failed"
+        assert "geometry_id" in content["error"]
+        assert "call the upstream skill first" in content["error"]
+        return reply("I need a geometry first.")
+
+    harness.script([reply(calls=[tool_call("generate_mesh", {"element_size": 0.5}, "c1")]), sees_error])
+
+    response = send(query="Mesh it at 0.5")
+
+    assert response.status == "answer"
+    assert not response.followup_questions
+    assert harness.invocations == []
+
+
 def test_unknown_tool_and_bad_json_are_returned_to_the_model(harness) -> None:
     def sees_errors(request):
         first, second = [json.loads(m["content"]) for m in request["messages"] if m["role"] == "tool"]
@@ -396,6 +553,46 @@ def test_missing_user_input_pauses_for_a_typed_form_then_runs(harness) -> None:
     assert len(llm.requests) == 2
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
     assert harness.store[CONV]["missing_info"] == []
+
+
+def test_unparseable_number_asks_again(harness) -> None:
+    harness.script([reply(calls=[tool_call("analyze_thermal", {"material_id": "SS316"}, "c1")])])
+
+    send(query="Analyze thermal fatigue for SS316")
+    response = send(followup_answers={"temperature_c": "ten"})
+
+    assert response.status == "needs_info"
+    assert [q["field"] for q in response.followup_questions] == ["temperature_c"]
+    assert harness.invocations == []
+
+
+def test_coerce_answer_treats_unparseable_values_as_absent() -> None:
+    assert agent_loop.coerce_answer("550", "number") == 550.0
+    assert agent_loop.coerce_answer("ten", "number") is None
+    assert agent_loop.coerce_answer("2.5", "integer") is None
+    assert agent_loop.coerce_answer("3", "integer") == 3
+
+
+def test_resume_sends_a_bounded_transcript(harness) -> None:
+    harness.results.update(analyze_thermal=lambda params: {"result": {"answer": "OK."}})
+    llm = harness.script(
+        [reply(calls=[tool_call("analyze_thermal", {"material_id": "SS316"}, "c1")]), reply("OK at 550 C.")]
+    )
+    send(query="Analyze SS316")
+    # Earlier turns pile up in storage (other turns' messages merge back in).
+    old_turns = [
+        message
+        for index in range(60)
+        for message in ({"role": "user", "content": f"q{index}"}, {"role": "assistant", "content": f"a{index}"})
+    ]
+    harness.store[CONV]["llm_messages"] = old_turns + harness.store[CONV]["llm_messages"]
+
+    assert send(followup_answers={"temperature_c": "550"}).status == "completed"
+
+    sent = llm.requests[-1]["messages"]
+    assert len(sent) <= agent_loop.MAX_TRANSCRIPT_MESSAGES + 1  # plus the system prompt
+    assert sent[1]["role"] == "user"
+    assert_transcript_valid(sent[1:])
 
 
 def test_approval_required_skill_waits_for_approval(harness) -> None:
@@ -578,45 +775,73 @@ def test_catalog_advertises_plain_schemas(harness) -> None:
     assert agent_loop.ASK_USER_TOOL in catalog
 
 
-def test_explicit_workflow_start_collects_inputs_then_runs(harness, monkeypatch) -> None:
+WORKFLOW_ID = "thermal.quick_check"
+
+
+def _workflow(version: str) -> SimpleNamespace:
     definition = SimpleNamespace(
-        id="thermal.quick_check",
-        version="1.0.0",
+        id=WORKFLOW_ID,
+        version=version,
         name="Quick Thermal Check",
         description="Thermal screening.",
         steps=[SimpleNamespace(id="s1", skill_id="analyze_thermal")],
         metadata=SimpleNamespace(requires_approval=False, estimated_duration_seconds=60),
         ui=SimpleNamespace(display_name="Quick Thermal Check"),
     )
-    workflow = SimpleNamespace(definition=definition, required_input_paths=["material_id"])
+    return SimpleNamespace(definition=definition, required_input_paths=["material_id"])
+
+
+def _screened(**extra: Any) -> Dict[str, Any]:
+    return {
+        "step_statuses": {"s1": "succeeded"},
+        "step_results": {"s1": {"skill_id": "analyze_thermal", "result": {"answer": "Screened."}}},
+        "final_output": {"answer": "Screened."},
+        "input_required_steps": [],
+        "errors": [],
+        **extra,
+    }
+
+
+def _install_workflow(
+    monkeypatch,
+    *,
+    versions: Sequence[str] = ("1.0.0",),
+    execute: Optional[Callable[..., Any]] = None,
+    health_error: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Install a one-step workflow registry; returns the recorded execute_workflow calls."""
+    workflows = {version: _workflow(version) for version in versions}
+    newest = workflows[versions[-1]]
     form_field = {"field": "material_id", "label": "Material", "description": "Material id", "type": "string"}
     registry = SimpleNamespace(
-        list_all=lambda: [workflow],
-        get=lambda workflow_id, version=None: workflow,
+        list_all=lambda: [newest],
+        get=lambda workflow_id, version=None: workflows.get(version) if version else newest,
         build_input_form=lambda **kwargs: {"fields": [form_field]},
     )
-    executed = {}
+    executed: List[Dict[str, Any]] = []
 
     async def fake_execute_workflow(workflow, input_params, context, invoke_skill, conversation_id):
-        executed["inputs"] = input_params
-        return {
-            "step_statuses": {"s1": "succeeded"},
-            "step_results": {"s1": {"skill_id": "analyze_thermal", "result": {"answer": "Screened."}}},
-            "final_output": {"answer": "Screened."},
-            "input_required_steps": [],
-            "errors": [],
-        }
+        executed.append({"version": workflow.definition.version, "inputs": copy.deepcopy(input_params)})
+        if execute is None:
+            return _screened()
+        outcome = execute(context)
+        return await outcome if inspect.isawaitable(outcome) else outcome
 
-    async def healthy(workflow):
-        return None
+    async def health(workflow):
+        return health_error
 
     monkeypatch.setattr(runtime, "ENABLE_WORKFLOW_LIBRARY", True)
     monkeypatch.setattr(agent_loop, "get_workflow_registry", lambda: registry)
     monkeypatch.setattr(agent_loop, "execute_workflow", fake_execute_workflow)
-    monkeypatch.setattr(agent_loop, "verify_workflow_source_health", healthy)
+    monkeypatch.setattr(agent_loop, "verify_workflow_source_health", health)
+    return executed
+
+
+def test_explicit_workflow_start_collects_inputs_then_runs(harness, monkeypatch) -> None:
+    executed = _install_workflow(monkeypatch)
     llm = harness.script([reply("Screening passed.")])
 
-    first = send(workflow_id="thermal.quick_check")
+    first = send(workflow_id=WORKFLOW_ID)
 
     assert first.status == "needs_info"
     assert first.followup_questions[0]["field"] == "material_id"
@@ -625,9 +850,133 @@ def test_explicit_workflow_start_collects_inputs_then_runs(harness, monkeypatch)
     second = send(followup_answers={"material_id": "SS316"})
 
     assert second.status == "completed"
-    assert executed["inputs"]["material_id"] == "SS316"
+    assert executed[0]["inputs"]["material_id"] == "SS316"
     assert "analyze_thermal" in second.tool_results
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def test_explicit_workflow_start_runs_the_requested_version(harness, monkeypatch) -> None:
+    executed = _install_workflow(monkeypatch, versions=("1.0.0", "2.0.0"))
+    harness.script([reply("Screening passed.")])
+
+    response = send(workflow_id=WORKFLOW_ID, workflow_version="1.0.0", followup_answers={"material_id": "SS316"})
+
+    assert response.status == "completed"
+    assert [run["version"] for run in executed] == ["1.0.0"]
+
+
+def test_unhealthy_workflow_source_fails_the_call_without_running(harness, monkeypatch) -> None:
+    executed = _install_workflow(monkeypatch, health_error="Workflow source repo is unreachable.")
+
+    def sees_error(request):
+        content = json.loads(request["messages"][-1]["content"])
+        assert content == {"status": "failed", "error": "Workflow source repo is unreachable."}
+        return reply("The workflow source is down right now.")
+
+    harness.script([sees_error])
+
+    response = send(workflow_id=WORKFLOW_ID, followup_answers={"material_id": "SS316"})
+
+    assert response.status == "answer"
+    assert executed == []
+
+
+def test_workflow_input_required_resumes_each_blocked_step(harness, monkeypatch) -> None:
+    runs = iter(
+        [
+            _screened(
+                step_statuses={"s1": "input_required", "s2": "input_required"},
+                step_results={},
+                input_required_steps=[
+                    {
+                        "skill_id": "analyze_thermal",
+                        "input_required": {"missing_inputs": [{"name": "units", "type": "string"}], "hint": "Units?"},
+                        "_a2a_task_id": "task-thermal",
+                        "_a2a_context_id": "ctx-thermal",
+                    },
+                    {
+                        "skill_id": "create_svg_artifact",
+                        "input_required": {"missing_inputs": [{"name": "color", "type": "string"}]},
+                        "_a2a_task_id": "task-svg",
+                    },
+                ],
+            ),
+            _screened(),
+        ]
+    )
+    executed = _install_workflow(monkeypatch, execute=lambda context: next(runs))
+    svg_replies = iter(
+        [
+            {
+                "input_required": {"missing_inputs": [{"name": "word", "type": "string"}]},
+                "_a2a_task_id": "task-svg-2",
+            },
+            svg_result({"word": "x"}),
+        ]
+    )
+    harness.results.update(
+        analyze_thermal=lambda params: {"result": {"answer": "SI it is."}},
+        create_svg_artifact=lambda params: next(svg_replies),
+    )
+    harness.script([reply("Screening passed.")])
+
+    first = send(workflow_id=WORKFLOW_ID, followup_answers={"material_id": "SS316"})
+    assert first.status == "needs_info"
+    assert first.message == "Units?"
+    assert sorted(q["field"] for q in first.followup_questions) == ["color", "units"]
+
+    second = send(followup_answers={"units": "SI", "color": "red"})
+    # Each blocked task gets only its own inputs, on its own A2A task.
+    resumed = {skill: params for skill, params in harness.invocations}
+    assert resumed["analyze_thermal"]["provided_inputs"] == {"units": "SI"}
+    assert resumed["analyze_thermal"]["_a2a_task_id"] == "task-thermal"
+    assert resumed["analyze_thermal"]["_a2a_context_id"] == "ctx-thermal"
+    assert resumed["create_svg_artifact"]["provided_inputs"] == {"color": "red"}
+    assert resumed["create_svg_artifact"]["_a2a_task_id"] == "task-svg"
+    # The SVG step is still blocked, so the template does not re-run yet.
+    assert second.status == "needs_info"
+    assert [q["field"] for q in second.followup_questions] == ["word"]
+    assert len(executed) == 1
+
+    third = send(followup_answers={"word": "x"})
+
+    last_skill, last_params = harness.invocations[-1]
+    assert (last_skill, last_params["provided_inputs"]) == ("create_svg_artifact", {"word": "x"})
+    assert last_params["_a2a_task_id"] == "task-svg-2"
+    assert third.status == "completed"
+    assert len(executed) == 2
+    assert {"material_id": "SS316", "units": "SI", "color": "red", "word": "x"}.items() <= executed[1]["inputs"].items()
+    assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def test_workflow_keeps_artifacts_a_sibling_call_produced_meanwhile(harness, monkeypatch) -> None:
+    async def slow_screen(context):
+        for _ in range(5):  # let the sibling SVG call finish while this "runs"
+            await asyncio.sleep(0)
+        return _screened()
+
+    _install_workflow(monkeypatch, execute=slow_screen)
+    harness.results.update(create_svg_artifact=svg_result, convert_svg_to_png=png_result)
+    workflow_tool = agent_loop.workflow_tool_for(asyncio.run(agent_loop.build_tool_catalog()), WORKFLOW_ID)
+    harness.script(
+        [
+            reply(
+                calls=[
+                    tool_call(workflow_tool.name, {"material_id": "SS316"}, "w1"),
+                    tool_call("create_svg_artifact", {"word": "x"}, "c1"),
+                ]
+            ),
+            reply(calls=[tool_call("convert_svg_to_png", {"artifact_id": "svg-1"}, "c2")]),
+            reply("Screened and converted."),
+        ]
+    )
+
+    response = send(query="Screen SS316 and make an SVG, then convert it")
+
+    assert response.status == "completed"
+    assert [skill for skill, _ in harness.invocations] == ["create_svg_artifact", "convert_svg_to_png"]
+    artifacts = [a["artifact_id"] for a in harness.store[CONV]["context"]["artifacts"]]
+    assert artifacts == ["svg-1", "png-1"]
 
 
 # --------------------------------------------------------------------------- #

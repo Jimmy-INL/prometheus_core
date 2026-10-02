@@ -187,6 +187,26 @@ def test_llm_messages_keep_each_turns_block_ordered_by_turn_start():
     assert merged["state_turn_id"] == "F"
 
 
+def test_merged_llm_messages_stay_bounded():
+    from orchestrator.agent_loop import MAX_TRANSCRIPT_MESSAGES
+
+    # Earlier turns' messages come back from storage on every merge.
+    earlier = [
+        _msg(f"{role} {i}", f"T{i}", float(i), role) for i in range(60) for role in ("user", "assistant")
+    ]
+    stored = {"conversation_history": [], "llm_messages": earlier}
+    local = {
+        "conversation_history": [],
+        "llm_messages": [_msg("new question", "N", 100.0), _msg("new answer", "N", 100.0, "assistant")],
+    }
+
+    merged = merge_conversation(stored, local, turn_id="N", started_at=100.0)
+
+    assert len(merged["llm_messages"]) <= MAX_TRANSCRIPT_MESSAGES
+    assert merged["llm_messages"][0]["role"] == "user"  # cut only at a user message
+    assert [m["content"] for m in merged["llm_messages"][-2:]] == ["new question", "new answer"]
+
+
 def test_when_both_turns_leave_pending_input_the_newer_one_wins():
     stored = {"conversation_history": [], "state_turn_id": "F", "state_turn_started_at": 200.0, "awaiting_approval": True}
     b_local = {"conversation_history": [], "missing_info": ["width"]}

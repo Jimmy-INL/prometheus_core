@@ -4,7 +4,7 @@ import copy
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from artifact_handling import merge_artifacts_into_context, summarize_artifacts_for_context
 from conversation_store import get_conversation, store_conversation
@@ -90,7 +90,7 @@ def _new_state(conv_id: str, existing: Optional[Dict[str, Any]]) -> AgentState:
     state.setdefault("missing_info", [])
     state.setdefault("awaiting_approval", False)
     state.setdefault("final_report", None)
-    return state  # type: ignore[return-value]
+    return cast(AgentState, state)
 
 
 def _append_history(state: AgentState, entry: Dict[str, Any]) -> None:
@@ -273,6 +273,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     spec,
                     dict(request.followup_answers or {}),
                     f"Running workflow '{workflow_id}'.",
+                    workflow_version=request.workflow_version,
                 )
         elif request.followup_answers and has_pending:
             _append_history(
