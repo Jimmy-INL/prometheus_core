@@ -22,3 +22,7 @@ When the goal is achieved, stop calling tools and reply to the user:
 
 CONVERSATION ARTIFACT CATALOG
 {artifact_catalog}
+
+NEWEST INPUTS PER SKILL
+The inputs of the most recent successful call to each skill in this conversation, including calls from turns no longer shown above. When the user refers to an earlier run ("redo it with 6 holes"), start from these inputs and change only what the user asks.
+{recent_skill_inputs}

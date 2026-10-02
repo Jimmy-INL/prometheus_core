@@ -463,6 +463,39 @@ def test_unknown_artifact_reference_is_returned_to_the_model(harness) -> None:
     assert harness.invocations == []
 
 
+def test_missing_artifact_reference_is_returned_to_the_model_not_asked(harness) -> None:
+    def sees_error(request):
+        content = json.loads(request["messages"][-1]["content"])
+        assert content["status"] == "failed"
+        assert "artifact_id" in content["error"] and "artifact catalog" in content["error"]
+        return reply("There is no SVG to convert yet.")
+
+    harness.script([reply(calls=[tool_call("convert_svg_to_png", {}, "c1")]), sees_error])
+
+    response = send(query="Convert it to PNG")
+
+    assert response.status == "answer"
+    assert harness.invocations == []
+
+
+def test_form_answers_are_validated_before_the_call_runs() -> None:
+    # A form field that names an artifact (as a workflow form may) is checked like a model argument.
+    spec = agent_loop._skill_spec("convert_svg_to_png", CONVERT_PNG)
+    spec = agent_loop.ToolSpec(**{**spec.__dict__, "user_required": ("artifact_id",), "runtime_required": ()})
+    state: Dict[str, Any] = {
+        "context": {},
+        "pending_calls": [
+            {"id": "c1", "name": spec.name, "kind": "skill", "arguments": {}, "status": "needs_args", "missing": ["artifact_id"]}
+        ],
+    }
+
+    agent_loop.apply_answers(state, {spec.name: spec}, {"artifact_id": "not-a-real-artifact"})
+
+    call = state["pending_calls"][0]
+    assert call["status"] == "done"
+    assert "Unknown artifact_id not-a-real-artifact" in json.loads(call["content"])["error"]
+
+
 def test_schema_violation_is_returned_to_the_model(harness) -> None:
     def sees_error(request):
         content = json.loads(request["messages"][-1]["content"])
@@ -686,6 +719,45 @@ def test_specialist_input_required_resumes_the_same_task(harness) -> None:
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
 
 
+def test_specialist_form_answers_are_recorded_and_shown_to_the_model(harness) -> None:
+    replies = iter(
+        [
+            {
+                "input_required": {
+                    "missing_inputs": [
+                        {"name": "rod_diameter_mm", "type": "number"},
+                        {"name": "api_token", "type": "string", "sensitive": True},
+                    ],
+                },
+                "_a2a_task_id": "task-1",
+            },
+            {"result": {"answer": "Done."}},
+        ]
+    )
+    harness.results.update(analyze_thermal=lambda params: next(replies))
+
+    def sees_inputs(request):
+        content = json.loads(request["messages"][-1]["content"])
+        assert content["provided_inputs"] == {"rod_diameter_mm": 9.5}  # never the sensitive value
+        return reply("Analysis complete.")
+
+    harness.script(
+        [
+            reply(calls=[tool_call("analyze_thermal", {"material_id": "SS316", "temperature_c": 500}, "c1")]),
+            sees_inputs,
+        ]
+    )
+
+    send(query="Analyze SS316 at 500 C")
+    response = send(followup_answers={"rod_diameter_mm": "9.5", "api_token": "s3cret"})
+
+    assert response.status == "completed"
+    assert harness.invocations[1][1]["provided_inputs"] == {"rod_diameter_mm": 9.5, "api_token": "s3cret"}
+    recorded = harness.store[CONV]["conversation_history"][-1]["tool_inputs"]["analyze_thermal"]
+    assert recorded == {"material_id": "SS316", "temperature_c": 500, "rod_diameter_mm": 9.5}
+    assert "s3cret" not in json.dumps(harness.store[CONV]["llm_messages"])
+
+
 def test_ask_user_accepts_a_free_text_answer(harness) -> None:
     def sees_answer(request):
         assert json.loads(request["messages"][-1]["content"]) == {"status": "answered", "reply": "Option B"}
@@ -748,6 +820,54 @@ def test_next_user_turn_sees_previous_results(harness) -> None:
     assert any(m["role"] == "tool" and "svg-1" in m["content"] for m in history)
 
 
+def test_follow_up_sees_inputs_of_a_call_trimmed_from_the_transcript(harness) -> None:
+    harness.results.update(create_svg_artifact=svg_result)
+    unrelated = 40  # 80 messages: the authoring call falls out of the transcript
+
+    def sees_old_inputs(request):
+        assert not any("create_svg_artifact" in json.dumps(m.get("tool_calls")) for m in request["messages"][1:])
+        assert '- create_svg_artifact: {"word": "valve", "color": "chartreuse"}' in request["messages"][0]["content"]
+        return reply("Redoing it.")
+
+    harness.script(
+        [
+            reply(calls=[tool_call("create_svg_artifact", {"word": "valve", "color": "chartreuse"}, "c1")]),
+            reply("Created."),
+            *[reply(f"Answer {i}.") for i in range(unrelated)],
+            sees_old_inputs,
+        ]
+    )
+
+    send(query="Make a chartreuse valve SVG")
+    for i in range(unrelated):
+        send(query=f"Unrelated question {i}")
+    response = send(query="Redo the valve with 6 holes")
+
+    assert response.message == "Redoing it."  # an assertion inside the step would fail the turn
+
+
+def test_recent_skill_inputs_keeps_the_newest_call_per_skill() -> None:
+    state = {
+        "conversation_history": [
+            {"role": "assistant", "tool_inputs": {"create_svg_artifact": {"word": "old"}}},
+            {"role": "user", "content": "again"},
+            {
+                "role": "assistant",
+                "tool_inputs": {
+                    "create_svg_artifact": {"word": "first"},
+                    "create_svg_artifact#2": {"word": "second", "artifacts": [{"artifact_id": "a"}]},
+                    "analyze_thermal": {"material_id": "SS316"},
+                },
+            },
+        ]
+    }
+
+    assert agent_loop.recent_skill_inputs(state) == [
+        '- create_svg_artifact: {"word": "second"}',
+        '- analyze_thermal: {"material_id": "SS316"}',
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Tool catalog
 # --------------------------------------------------------------------------- #
@@ -778,14 +898,14 @@ def test_catalog_advertises_plain_schemas(harness) -> None:
 WORKFLOW_ID = "thermal.quick_check"
 
 
-def _workflow(version: str) -> SimpleNamespace:
+def _workflow(version: str, *, approval: bool = False) -> SimpleNamespace:
     definition = SimpleNamespace(
         id=WORKFLOW_ID,
         version=version,
         name="Quick Thermal Check",
         description="Thermal screening.",
         steps=[SimpleNamespace(id="s1", skill_id="analyze_thermal")],
-        metadata=SimpleNamespace(requires_approval=False, estimated_duration_seconds=60),
+        metadata=SimpleNamespace(requires_approval=approval, estimated_duration_seconds=60),
         ui=SimpleNamespace(display_name="Quick Thermal Check"),
     )
     return SimpleNamespace(definition=definition, required_input_paths=["material_id"])
@@ -808,9 +928,10 @@ def _install_workflow(
     versions: Sequence[str] = ("1.0.0",),
     execute: Optional[Callable[..., Any]] = None,
     health_error: Optional[str] = None,
+    approval: bool = False,
 ) -> List[Dict[str, Any]]:
     """Install a one-step workflow registry; returns the recorded execute_workflow calls."""
-    workflows = {version: _workflow(version) for version in versions}
+    workflows = {version: _workflow(version, approval=approval) for version in versions}
     newest = workflows[versions[-1]]
     form_field = {"field": "material_id", "label": "Material", "description": "Material id", "type": "string"}
     registry = SimpleNamespace(
@@ -863,6 +984,23 @@ def test_explicit_workflow_start_runs_the_requested_version(harness, monkeypatch
 
     assert response.status == "completed"
     assert [run["version"] for run in executed] == ["1.0.0"]
+
+
+def test_approval_gate_for_a_workflow_names_the_workflow(harness, monkeypatch) -> None:
+    _install_workflow(monkeypatch, versions=("1.0.0", "2.0.0"), approval=True)
+    harness.script([])
+
+    response = send(
+        workflow_id=WORKFLOW_ID,
+        workflow_version="1.0.0",
+        selection_source="catalog",
+        followup_answers={"material_id": "SS316"},
+    )
+
+    assert response.status == "plan_ready"
+    assert response.plan["workflow_id"] == WORKFLOW_ID
+    assert response.plan["workflow_version"] == "1.0.0"
+    assert response.plan["selection_source"] == "catalog"
 
 
 def test_unhealthy_workflow_source_fails_the_call_without_running(harness, monkeypatch) -> None:

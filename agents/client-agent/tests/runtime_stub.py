@@ -1,9 +1,10 @@
 """Stub the heavy prometheus_api agent runtime for client-agent unit tests.
 
-Importing this module installs minimal stand-ins for ``langchain_core.tools``
-and ``prometheus_api.agent`` (a2a-sdk / starlette are not needed by the
-orchestrator logic under test) only when the real modules cannot be imported, so
-an environment with the agent runtime (the container) tests against the real one.
+Importing this module installs a minimal stand-in for ``prometheus_api.agent``
+(a2a-sdk / starlette are not needed by the orchestrator logic under test) only
+when the real module cannot be imported, so an environment with the agent
+runtime (the container) tests against the real one. ``conftest.py`` owns the
+``langchain_core.tools`` stub.
 """
 from __future__ import annotations
 
@@ -20,16 +21,6 @@ def _importable(name: str) -> bool:
         return False
     return True
 
-if not _importable("langchain_core.tools"):
-    tools_module = types.ModuleType("langchain_core.tools")
-
-    class _StructuredTool:
-        @staticmethod
-        def from_function(*args, **kwargs):
-            return SimpleNamespace(name=kwargs.get("name", "tool"), invoke=lambda tool_args: {})
-
-    tools_module.StructuredTool = _StructuredTool
-    sys.modules["langchain_core.tools"] = tools_module
 
 if not _importable("prometheus_api.agent"):
     prometheus_api_module = sys.modules.get(

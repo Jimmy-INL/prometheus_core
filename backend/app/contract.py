@@ -412,7 +412,6 @@ class ConversationSummary(BaseModel):
     title: str = ""
     query: str = ""
     status: str = "unknown"
-    material_id: Optional[str] = None
     timestamp: str = ""
     pending: bool = False
 

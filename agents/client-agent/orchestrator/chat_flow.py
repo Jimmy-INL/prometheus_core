@@ -274,6 +274,7 @@ async def chat(request: ConversationRequest) -> ConversationResponse:
                     dict(request.followup_answers or {}),
                     f"Running workflow '{workflow_id}'.",
                     workflow_version=request.workflow_version,
+                    selection_source=request.selection_source or ("slash_command" if workflow_slash else None),
                 )
         elif request.followup_answers and has_pending:
             _append_history(

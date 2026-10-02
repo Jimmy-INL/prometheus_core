@@ -68,6 +68,9 @@ MAX_LLM_TURNS = 12
 MAX_TRANSCRIPT_MESSAGES = 80
 SUMMARY_CHARS = 2000
 RESULT_CHARS = 6000
+# Newest-inputs digest in the system prompt: skills listed, chars per skill.
+MAX_DIGEST_SKILLS = 20
+DIGEST_INPUT_CHARS = 400
 ASK_USER_TOOL = "ask_user"
 # Attached by the orchestrator on every invocation; never model-authored.
 ORCHESTRATOR_PARAMS = {"artifacts", "conversation_id"}
@@ -191,20 +194,11 @@ def _clean_schema(node: Any) -> Any:
     return cleaned
 
 
-def _schema_property(schema: Dict[str, Any], path: str) -> Optional[Dict[str, Any]]:
-    node: Any = schema
-    for segment in path.split("."):
-        properties = node.get("properties") if isinstance(node, dict) else None
-        if not isinstance(properties, dict) or not isinstance(properties.get(segment), dict):
-            return None
-        node = properties[segment]
-    return node
-
-
 def _advertised_parameters(input_schema: Dict[str, Any]) -> Dict[str, Any]:
     schema = copy.deepcopy(input_schema) if isinstance(input_schema, dict) else {}
+    properties_by_path = flatten_schema_properties(schema)
     for path, mode in extract_artifact_field_paths(schema).items():
-        prop = _schema_property(schema, path)
+        prop = properties_by_path.get(path)
         if prop is None:
             continue
         hint = (
@@ -229,9 +223,11 @@ def _advertised_parameters(input_schema: Dict[str, Any]) -> Dict[str, Any]:
 
 def _skill_spec(name: str, capability: AgentCapability) -> ToolSpec:
     input_schema = capability.input_schema if isinstance(capability.input_schema, dict) else {}
+    # Users never type artifact ids: a missing artifact reference is the model's to fill.
+    artifact_paths = extract_artifact_field_paths(input_schema)
     user_required = [
         path for path in extract_required_param_paths(input_schema)
-        if path.split(".", 1)[0] not in ORCHESTRATOR_PARAMS
+        if path.split(".", 1)[0] not in ORCHESTRATOR_PARAMS and path not in artifact_paths
     ]
     all_required = [
         path for path in extract_required_param_paths(input_schema, include_internal=True)
@@ -399,6 +395,7 @@ def inject_tool_call(
     note: str,
     *,
     workflow_version: Optional[str] = None,
+    selection_source: Optional[str] = None,
 ) -> None:
     """Record a platform-chosen call (explicit workflow start) as if the model made it."""
     call_id = f"call_{uuid.uuid4().hex[:16]}"
@@ -423,6 +420,8 @@ def inject_tool_call(
     )
     if workflow_version:
         call["workflow_version"] = workflow_version
+    if selection_source:
+        call["selection_source"] = selection_source
     state["pending_calls"] = [call]
 
 
@@ -470,7 +469,43 @@ def _system_prompt(state: Dict[str, Any]) -> str:
         + (f" — {artifact['description']}" if artifact.get("description") else "")
         for artifact in artifacts
     ]
-    return SYSTEM_PROMPT_TEMPLATE.replace("{artifact_catalog}", "\n".join(lines) or "(none)")
+    return (
+        SYSTEM_PROMPT_TEMPLATE
+        .replace("{artifact_catalog}", "\n".join(lines) or "(none)")
+        .replace("{recent_skill_inputs}", "\n".join(recent_skill_inputs(state)) or "(none)")
+    )
+
+
+def recent_skill_inputs(state: Dict[str, Any]) -> List[str]:
+    """The newest successful inputs of each skill across the whole conversation.
+
+    The transcript is trimmed (``trim_transcript``), so a follow-up such as "redo
+    it with 6 holes" can refer to a call the model no longer sees. The history
+    keeps every turn's ``tool_inputs``; the newest entry per skill wins.
+    """
+    newest: Dict[str, Dict[str, Any]] = {}
+    for entry in reversed(state.get("conversation_history") or []):
+        tool_inputs = entry.get("tool_inputs") if isinstance(entry, dict) else None
+        if not isinstance(tool_inputs, dict):
+            continue
+        # Within one turn, the highest repeat (skill#3) is the newest call.
+        for key in sorted(tool_inputs, key=_repeat_index, reverse=True):
+            skill_id = key.split("#", 1)[0]
+            if skill_id not in newest and isinstance(tool_inputs[key], dict):
+                newest[skill_id] = {
+                    name: value for name, value in tool_inputs[key].items() if name not in ORCHESTRATOR_PARAMS
+                }
+        if len(newest) >= MAX_DIGEST_SKILLS:
+            break
+    return [
+        f"- {skill_id}: {_truncate(json.dumps(inputs, default=str), DIGEST_INPUT_CHARS)}"
+        for skill_id, inputs in list(newest.items())[:MAX_DIGEST_SKILLS]
+    ]
+
+
+def _repeat_index(key: str) -> int:
+    _, _, index = key.partition("#")
+    return int(index) if index.isdigit() else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -498,7 +533,8 @@ def _validation_problem(spec: ToolSpec, arguments: Dict[str, Any], state: Dict[s
     if missing_runtime:
         return (
             f"Missing required input(s) {', '.join(missing_runtime)}. These are produced by other "
-            "skills; call the upstream skill first and pass its result."
+            "skills; call the upstream skill first and pass its result, or pass an artifact_id "
+            "from the artifact catalog."
         )
     try:
         errors = list(Draft202012Validator(_clean_schema(spec.input_schema)).iter_errors(arguments))
@@ -651,6 +687,10 @@ def apply_answers(
                     set_nested_value(call["arguments"], path, value)
                 else:
                     call["arguments"][path] = value
+            problem = _validation_problem(spec, call["arguments"], state)
+            if problem:
+                _finish(call, {"status": "failed", "error": problem})
+                continue
             _refresh_status(call, spec)
         elif status == "needs_answer":
             provided = {
@@ -672,6 +712,7 @@ def apply_answers(
                 provided[name] = value
                 if not item.get("sensitive"):
                     context[name] = value
+                    call.setdefault("recorded_inputs", {})[name] = value
             if provided:
                 call["provided_inputs"] = provided
                 call["status"] = "resume"
@@ -834,6 +875,7 @@ async def _settle_skill_item(
         resolved, unresolved = _resolve_from_context(missing, call["arguments"], state.get("context") or {})
         if resolved and not call.get("auto_resumed"):
             call["auto_resumed"] = True
+            call.setdefault("recorded_inputs", {}).update(resolved)
             resumed = await invoke_skill(
                 skill_id,
                 {**params, "provided_inputs": resolved, **_a2a_resume_fields(_blocked_record(skill_id, item, [], None))},
@@ -851,8 +893,14 @@ async def _settle_skill_item(
         _finish(call, {"status": "failed", "error": str(item["error"])})
         return
     result = item.get("result")
-    _record_result(state, _result_key(state, skill_id), call["arguments"], result)
-    _finish(call, _compact_result(result, "succeeded"))
+    # Inputs given after the call was made (form answers, values resolved from
+    # context) belong to the invocation's record, and the model must see them.
+    recorded = call.pop("recorded_inputs", {})
+    _record_result(state, _result_key(state, skill_id), {**call["arguments"], **recorded}, result)
+    payload = _compact_result(result, "succeeded")
+    if recorded:
+        payload["provided_inputs"] = recorded
+    _finish(call, payload)
 
 
 async def _run_skill(call: Dict[str, Any], state: Dict[str, Any]) -> None:
@@ -1074,7 +1122,7 @@ def _plan(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> Dict[str, A
                 "description": _truncate(f"{spec.target}({arguments})", 400),
             }
         )
-    return {
+    plan: Dict[str, Any] = {
         "intent": state.get("pending_note") or "Review the next step(s) before they run.",
         "steps": steps,
         "skills": [call["target"] for call in calls],
@@ -1083,6 +1131,14 @@ def _plan(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> Dict[str, A
         "required_params": [],
         "param_metadata": {},
     }
+    workflow_call = next((call for call in calls if call.get("kind") == "workflow"), None)
+    if workflow_call is not None:
+        # PlanViewerElement's details panel shows which workflow runs and who chose it.
+        plan["workflow_id"] = workflow_call["target"]
+        plan["selection_source"] = workflow_call.get("selection_source") or "model"
+        if workflow_call.get("workflow_version"):
+            plan["workflow_version"] = workflow_call["workflow_version"]
+    return plan
 
 
 def _pause_message(state: Dict[str, Any], default: str) -> str:

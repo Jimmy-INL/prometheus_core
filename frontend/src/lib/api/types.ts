@@ -290,7 +290,6 @@ export interface ConversationSummary {
   title: string;
   query: string;
   status: string;
-  material_id?: string | null;
   timestamp: string;
   pending: boolean;
 }

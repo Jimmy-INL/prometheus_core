@@ -357,7 +357,6 @@ currently viewing may still have work in flight.
       "title": "Corrosion rate of SS316 in seawater",
       "query": "What is the corrosion rate of SS316 in seawater?",
       "status": "completed",
-      "material_id": "SS316",
       "timestamp": "2026-09-01T12:00:00Z",
       "pending": false
     }
