@@ -32,7 +32,8 @@ class AgentState(TypedDict):
     pending_calls: List[Dict[str, Any]]
     # Assistant text that accompanied the pending calls, shown with forms/plans.
     pending_note: str
-    # skill_id -> raw result / arguments for every call in the current user turn.
+    # Result key (skill_id, then skill_id#2, ... for repeats) -> raw result / arguments
+    # of every call in the current user turn.
     turn_tool_results: Dict[str, Any]
     turn_tool_inputs: Dict[str, Any]
 

@@ -91,6 +91,7 @@ def test_recent_returns_conversations(monkeypatch):
     assert body["available"] is True
     assert [c["conversation_id"] for c in body["conversations"]] == ["c2", "c1"]
     assert [c["status"] for c in body["conversations"]] == ["completed", "unknown"]
+    assert all("material_id" not in c for c in body["conversations"])
 
 
 def test_recent_scopes_by_authenticated_user(monkeypatch):

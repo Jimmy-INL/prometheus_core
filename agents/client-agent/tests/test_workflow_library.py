@@ -681,3 +681,49 @@ def test_executor_stops_sequential_workflow_on_input_required() -> None:
         "mesh": "blocked",
     }
     assert result["input_required_steps"][0]["skill_id"] == "author_equipment_geometry"
+
+
+def test_executor_continues_from_completed_steps() -> None:
+    invoked: list[tuple[str, Dict[str, Any]]] = []
+
+    async def invoke(skill_id: str, params: Dict[str, Any], conversation_id: str) -> Dict[str, Any]:
+        invoked.append((skill_id, params))
+        return {"result": {"ok": skill_id}}
+
+    workflow = _compile(
+        {
+            "id": "continue_run",
+            "name": "Continue Run",
+            "version": "1.0.0",
+            "description": "test",
+            "matching": {"patterns": ["x"]},
+            "execution": {"mode": "dag", "on_error": "continue_with_partial"},
+            "steps": [
+                {"id": "author", "skill_id": "author_skill", "outputs": [{"from": "result", "to_context": "authored"}]},
+                {"id": "broken", "skill_id": "broken_skill"},
+                {"id": "mesh", "skill_id": "mesh_skill", "depends_on": ["author"], "params": {"shape": {"from": "context.authored.shape"}}},
+                {"id": "report", "skill_id": "report_skill", "depends_on": ["broken"]},
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        execute_workflow(
+            workflow=workflow,
+            input_params={},
+            context={},
+            invoke_skill=invoke,
+            conversation_id="conv-1",
+            completed_steps={
+                "author": {"status": "succeeded", "result": {"shape": "cylinder"}},
+                "broken": {"status": "failed", "error": "boom"},
+            },
+        )
+    )
+
+    # Finished steps are not invoked again; their outputs still feed dependents.
+    assert [skill for skill, _ in invoked] == ["mesh_skill"]
+    assert invoked[0][1]["shape"] == "cylinder"
+    assert result["step_results"]["mesh"]["params"] == {"shape": "cylinder"}
+    assert result["step_statuses"] == {"author": "succeeded", "broken": "failed", "mesh": "succeeded", "report": "blocked"}
+    assert result["errors"] == [{"step_id": "broken", "skill_id": "broken_skill", "error": "boom"}]

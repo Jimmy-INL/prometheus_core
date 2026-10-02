@@ -461,7 +461,7 @@ def llm_view(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return view
 
 
-def _system_prompt(state: Dict[str, Any]) -> str:
+def _system_prompt(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> str:
     artifacts = summarize_artifacts_for_context((state.get("context") or {}).get("artifacts"))
     lines = [
         f"- {artifact['artifact_id']}: {artifact['name']}"
@@ -472,17 +472,32 @@ def _system_prompt(state: Dict[str, Any]) -> str:
     return (
         SYSTEM_PROMPT_TEMPLATE
         .replace("{artifact_catalog}", "\n".join(lines) or "(none)")
-        .replace("{recent_skill_inputs}", "\n".join(recent_skill_inputs(state)) or "(none)")
+        .replace("{recent_skill_inputs}", "\n".join(recent_skill_inputs(state, catalog)) or "(none)")
     )
 
 
-def recent_skill_inputs(state: Dict[str, Any]) -> List[str]:
+def _restrict_to_schema(value: Any, schema: Any) -> Any:
+    """Keep only the fields ``schema`` declares; parts without declared properties pass through."""
+    if not isinstance(schema, dict):
+        return value
+    properties = schema.get("properties")
+    if isinstance(value, dict) and isinstance(properties, dict):
+        return {key: _restrict_to_schema(item, properties[key]) for key, item in value.items() if key in properties}
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [_restrict_to_schema(item, schema["items"]) for item in value]
+    return value
+
+
+def recent_skill_inputs(state: Dict[str, Any], catalog: Mapping[str, ToolSpec]) -> List[str]:
     """The newest successful inputs of each skill across the whole conversation.
 
     The transcript is trimmed (``trim_transcript``), so a follow-up such as "redo
     it with 6 holes" can refer to a call the model no longer sees. The history
-    keeps every turn's ``tool_inputs``; the newest entry per skill wins.
+    keeps every turn's ``tool_inputs``; the newest entry per skill wins. Entries
+    are cut to the skill's current input schema, and skills no longer in the
+    catalog are left out, so the model never copies a field a skill dropped.
     """
+    schemas = {spec.target: spec.input_schema for spec in catalog.values() if spec.kind == "skill"}
     newest: Dict[str, Dict[str, Any]] = {}
     for entry in reversed(state.get("conversation_history") or []):
         tool_inputs = entry.get("tool_inputs") if isinstance(entry, dict) else None
@@ -491,10 +506,9 @@ def recent_skill_inputs(state: Dict[str, Any]) -> List[str]:
         # Within one turn, the highest repeat (skill#3) is the newest call.
         for key in sorted(tool_inputs, key=_repeat_index, reverse=True):
             skill_id = key.split("#", 1)[0]
-            if skill_id not in newest and isinstance(tool_inputs[key], dict):
-                newest[skill_id] = {
-                    name: value for name, value in tool_inputs[key].items() if name not in ORCHESTRATOR_PARAMS
-                }
+            if skill_id not in newest and skill_id in schemas and isinstance(tool_inputs[key], dict):
+                inputs = {name: value for name, value in tool_inputs[key].items() if name not in ORCHESTRATOR_PARAMS}
+                newest[skill_id] = _restrict_to_schema(inputs, schemas[skill_id])
         if len(newest) >= MAX_DIGEST_SKILLS:
             break
     return [
@@ -718,6 +732,16 @@ def apply_answers(
                 call["status"] = "resume"
 
 
+def sensitive_fields(state: Dict[str, Any]) -> set[str]:
+    """Names of the inputs pending calls asked for as sensitive; never persisted."""
+    return {
+        str(item.get("name") or "")
+        for call in state.get("pending_calls") or []
+        for item in call.get("missing_inputs") or []
+        if item.get("sensitive")
+    }
+
+
 def apply_reply(state: Dict[str, Any], text: str) -> None:
     """A free-text reply answers ask_user and supersedes every other unfinished call."""
     for call in state.get("pending_calls") or []:
@@ -924,12 +948,17 @@ async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
         _finish(call, {"status": "failed", "error": f"Workflow '{call['target']}' is unavailable."})
         return
 
+    # step_id -> outcome of every finished step; a resumed run never invokes them again.
+    completed = call.setdefault("completed_steps", {})
+    step_keys = call.setdefault("step_result_keys", {})
     if call["status"] == "resume":
-        # Finish the blocked specialist tasks first; then re-run the template so
-        # downstream steps see the answers (they are merged into its inputs).
+        # Finish the blocked specialist tasks first, then continue the template
+        # from where it stopped. Non-sensitive answers also reach later steps.
         provided = call.pop("provided_inputs", {})
+        sensitive = {str(item.get("name") or "") for item in call.get("missing_inputs") or [] if item.get("sensitive")}
         still_blocked: List[Dict[str, Any]] = []
         for record in call.get("blocked_steps") or []:
+            step_id = str(record.get("step_id") or record["skill_id"])
             names = {str(item.get("name") or "") for item in record.get("missing_inputs") or []}
             step_inputs = {name: value for name, value in provided.items() if name in names}
             resumed = await invoke_skill(
@@ -940,9 +969,22 @@ async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
             if resumed.get("input_required"):
                 payload = resumed.get("input_required") or {}
                 still_blocked.append(
-                    _blocked_record(record["skill_id"], resumed, payload.get("missing_inputs") or [], payload.get("hint"))
+                    {
+                        **_blocked_record(
+                            record["skill_id"], resumed, payload.get("missing_inputs") or [], payload.get("hint")
+                        ),
+                        "step_id": step_id,
+                        "params": record.get("params") or {},
+                    }
                 )
-        call["arguments"].update(provided)
+            elif "error" in resumed:
+                completed[step_id] = {"status": "failed", "error": str(resumed["error"])}
+            else:
+                recorded = {name: value for name, value in step_inputs.items() if name not in sensitive}
+                params = {**(record.get("params") or {}), **recorded}
+                completed[step_id] = {"status": "succeeded", "result": resumed.get("result"), "params": params}
+                _record_step(state, step_keys, step_id, record["skill_id"], params, resumed.get("result"))
+        call["arguments"].update({name: value for name, value in provided.items() if name not in sensitive})
         if still_blocked:
             _pause_workflow(call, still_blocked)
             return
@@ -966,24 +1008,30 @@ async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
         context=context,
         invoke_skill=invoke_skill,
         conversation_id=conversation_id,
+        completed_steps=completed,
     )
     # Siblings in the same batch may have merged artifacts into state meanwhile.
     state["context"] = merge_artifacts_into_context(context, (state.get("context") or {}).get("artifacts") or [])
-    # A resumed workflow re-runs its template: keep each step under the key it got first.
-    step_keys = call.setdefault("step_result_keys", {})
     for step_id, payload in (execution.get("step_results") or {}).items():
-        if isinstance(payload, dict):
-            key = step_keys.get(step_id) or _result_key(state, str(payload.get("skill_id") or step_id))
-            step_keys[step_id] = key
-            _record_result(state, key, inputs, payload.get("result"))
+        if isinstance(payload, dict) and step_id not in completed:
+            params = payload.get("params") or {}
+            completed[step_id] = {"status": "succeeded", "result": payload.get("result"), "params": params}
+            _record_step(state, step_keys, step_id, str(payload.get("skill_id") or step_id), params, payload.get("result"))
+    for error in execution.get("errors") or []:
+        if error.get("step_id") and error["step_id"] not in completed:
+            completed[error["step_id"]] = {"status": "failed", "error": error.get("error")}
 
     blocked = [
-        _blocked_record(
-            str(step["skill_id"]),
-            step,
-            (step.get("input_required") or {}).get("missing_inputs") or [],
-            (step.get("input_required") or {}).get("hint"),
-        )
+        {
+            **_blocked_record(
+                str(step["skill_id"]),
+                step,
+                (step.get("input_required") or {}).get("missing_inputs") or [],
+                (step.get("input_required") or {}).get("hint"),
+            ),
+            "step_id": step.get("step_id"),
+            "params": step.get("params") or {},
+        }
         for step in execution.get("input_required_steps") or []
     ]
     if blocked:
@@ -1002,6 +1050,20 @@ async def _run_workflow(call: Dict[str, Any], state: Dict[str, Any]) -> None:
             "final_output": _truncate(json.dumps(execution.get("final_output"), default=str), RESULT_CHARS),
         },
     )
+
+
+def _record_step(
+    state: Dict[str, Any],
+    step_keys: Dict[str, str],
+    step_id: str,
+    skill_id: str,
+    params: Dict[str, Any],
+    result: Any,
+) -> None:
+    """Record one workflow step's result under its skill, keeping the key it got first."""
+    key = step_keys.get(step_id) or _result_key(state, skill_id)
+    step_keys[step_id] = key
+    _record_result(state, key, params, result)
 
 
 def _pause_workflow(call: Dict[str, Any], blocked: List[Dict[str, Any]]) -> None:
@@ -1208,7 +1270,7 @@ async def _advance(
         turns += 1
         runtime.store_status_update(conversation_id, "Deciding the next step.")
         state["llm_messages"] = trim_transcript(state["llm_messages"])
-        messages = [{"role": "system", "content": _system_prompt(state)}, *llm_view(state["llm_messages"])]
+        messages = [{"role": "system", "content": _system_prompt(state, catalog)}, *llm_view(state["llm_messages"])]
         if llm is None:
             llm = await stack.enter_async_context(runtime.create_llm())
         response = await llm.medium(

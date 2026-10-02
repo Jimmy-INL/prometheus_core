@@ -870,7 +870,8 @@ def test_partly_supported_request_waits_for_consent_before_running(harness) -> N
     assert [skill for skill, _ in harness.invocations] == ["create_svg_artifact"]
 
 
-def test_recent_skill_inputs_keeps_the_newest_call_per_skill() -> None:
+def test_recent_skill_inputs_keeps_the_newest_call_per_skill(harness) -> None:
+    catalog = asyncio.run(agent_loop.build_tool_catalog())
     state = {
         "conversation_history": [
             {"role": "assistant", "tool_inputs": {"create_svg_artifact": {"word": "old"}}},
@@ -886,9 +887,48 @@ def test_recent_skill_inputs_keeps_the_newest_call_per_skill() -> None:
         ]
     }
 
-    assert agent_loop.recent_skill_inputs(state) == [
+    assert agent_loop.recent_skill_inputs(state, catalog) == [
         '- create_svg_artifact: {"word": "second"}',
         '- analyze_thermal: {"material_id": "SS316"}',
+    ]
+
+
+def test_recent_skill_inputs_keep_only_fields_the_current_schema_declares(harness) -> None:
+    harness.capabilities.append(
+        _capability(
+            "mesh_part",
+            {
+                "type": "object",
+                "properties": {
+                    "geometry": {"type": "object", "properties": {"radius": {"type": "number"}}},
+                    "holes": {"type": "array", "items": {"type": "object", "properties": {"d": {"type": "number"}}}},
+                    "options": {"type": "object"},
+                },
+            },
+        )
+    )
+    catalog = asyncio.run(agent_loop.build_tool_catalog())
+    state = {
+        "conversation_history": [
+            {
+                "role": "assistant",
+                "tool_inputs": {
+                    # The skill has since dropped step_artifact_id.
+                    "convert_svg_to_png": {"artifact_id": "svg-1", "step_artifact_id": "svg-0"},
+                    "retired_skill": {"x": 1},
+                    "mesh_part": {
+                        "geometry": {"radius": 2, "units": "mm"},
+                        "holes": [{"d": 1, "depth": 3}],
+                        "options": {"refine": True},
+                    },
+                },
+            },
+        ]
+    }
+
+    assert agent_loop.recent_skill_inputs(state, catalog) == [
+        '- convert_svg_to_png: {"artifact_id": "svg-1"}',
+        '- mesh_part: {"geometry": {"radius": 2}, "holes": [{"d": 1}], "options": {"refine": true}}',
     ]
 
 
@@ -965,8 +1005,14 @@ def _install_workflow(
     )
     executed: List[Dict[str, Any]] = []
 
-    async def fake_execute_workflow(workflow, input_params, context, invoke_skill, conversation_id):
-        executed.append({"version": workflow.definition.version, "inputs": copy.deepcopy(input_params)})
+    async def fake_execute_workflow(workflow, input_params, context, invoke_skill, conversation_id, completed_steps=None):
+        executed.append(
+            {
+                "version": workflow.definition.version,
+                "inputs": copy.deepcopy(input_params),
+                "completed_steps": copy.deepcopy(completed_steps),
+            }
+        )
         if execute is None:
             return _screened()
         outcome = execute(context)
@@ -1051,12 +1097,14 @@ def test_workflow_input_required_resumes_each_blocked_step(harness, monkeypatch)
                 step_results={},
                 input_required_steps=[
                     {
+                        "step_id": "s1",
                         "skill_id": "analyze_thermal",
                         "input_required": {"missing_inputs": [{"name": "units", "type": "string"}], "hint": "Units?"},
                         "_a2a_task_id": "task-thermal",
                         "_a2a_context_id": "ctx-thermal",
                     },
                     {
+                        "step_id": "s2",
                         "skill_id": "create_svg_artifact",
                         "input_required": {"missing_inputs": [{"name": "color", "type": "string"}]},
                         "_a2a_task_id": "task-svg",
@@ -1095,7 +1143,7 @@ def test_workflow_input_required_resumes_each_blocked_step(harness, monkeypatch)
     assert resumed["analyze_thermal"]["_a2a_context_id"] == "ctx-thermal"
     assert resumed["create_svg_artifact"]["provided_inputs"] == {"color": "red"}
     assert resumed["create_svg_artifact"]["_a2a_task_id"] == "task-svg"
-    # The SVG step is still blocked, so the template does not re-run yet.
+    # The SVG step is still blocked, so the template does not continue yet.
     assert second.status == "needs_info"
     assert [q["field"] for q in second.followup_questions] == ["word"]
     assert len(executed) == 1
@@ -1106,9 +1154,149 @@ def test_workflow_input_required_resumes_each_blocked_step(harness, monkeypatch)
     assert (last_skill, last_params["provided_inputs"]) == ("create_svg_artifact", {"word": "x"})
     assert last_params["_a2a_task_id"] == "task-svg-2"
     assert third.status == "completed"
+    # The template continues past both finished steps instead of running them again.
     assert len(executed) == 2
+    assert {step: done["status"] for step, done in executed[1]["completed_steps"].items()} == {
+        "s1": "succeeded",
+        "s2": "succeeded",
+    }
     assert {"material_id": "SS316", "units": "SI", "color": "red", "word": "x"}.items() <= executed[1]["inputs"].items()
     assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def _install_compiled_workflow(monkeypatch, steps: List[Dict[str, Any]]) -> None:
+    """A real compiled template, run by the real executor."""
+    from pathlib import Path
+
+    from workflow_library.compiler import compile_workflow
+
+    raw = {
+        "id": WORKFLOW_ID,
+        "name": "Quick Thermal Check",
+        "version": "1.0.0",
+        "description": "Thermal screening.",
+        "matching": {"patterns": ["x"]},
+        "inputs": {"required": ["material_id", "word"]},
+        "execution": {"mode": "sequential", "on_error": "fail_fast"},
+        "steps": steps,
+    }
+    workflow = compile_workflow(
+        raw=raw, source_path=Path("test.yaml"), capabilities_by_skill={c.skill_id: c for c in CAPABILITIES}
+    )
+    fields = [{"field": name, "label": name, "type": "string"} for name in ("material_id", "word")]
+    registry = SimpleNamespace(
+        list_all=lambda: [workflow],
+        get=lambda workflow_id, version=None: workflow,
+        build_input_form=lambda **kwargs: {"fields": fields},
+    )
+
+    async def health(workflow):
+        return None
+
+    monkeypatch.setattr(runtime, "ENABLE_WORKFLOW_LIBRARY", True)
+    monkeypatch.setattr(agent_loop, "get_workflow_registry", lambda: registry)
+    monkeypatch.setattr(agent_loop, "verify_workflow_source_health", health)
+
+
+SVG_THEN_THERMAL = [
+    {"id": "svg", "skill_id": "create_svg_artifact", "params": {"word": {"from": "input.word"}}},
+    {
+        "id": "thermal",
+        "skill_id": "analyze_thermal",
+        "depends_on": ["svg"],
+        "params": {"material_id": {"from": "input.material_id"}, "temperature_c": {"literal": 300}},
+    },
+]
+
+
+def _thermal_asks(missing: Dict[str, Any], then: Dict[str, Any]) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    replies = iter([{"input_required": {"missing_inputs": [missing]}, "_a2a_task_id": "task-thermal"}, then])
+    return lambda params: next(replies)
+
+
+def test_resumed_workflow_continues_without_rerunning_finished_steps(harness, monkeypatch) -> None:
+    _install_compiled_workflow(monkeypatch, SVG_THEN_THERMAL)
+    harness.results.update(
+        create_svg_artifact=svg_result,
+        analyze_thermal=_thermal_asks({"name": "units", "type": "string"}, {"result": {"answer": "SI it is."}}),
+    )
+    harness.script([reply("Screened.")])
+
+    first = send(workflow_id=WORKFLOW_ID, followup_answers={"material_id": "SS316", "word": "x"})
+    assert first.status == "needs_info"
+    assert [q["field"] for q in first.followup_questions] == ["units"]
+
+    second = send(followup_answers={"units": "SI"})
+
+    assert second.status == "completed"
+    # The SVG step ran once; the thermal step was resumed on its own task, not restarted.
+    assert [skill for skill, _ in harness.invocations] == ["create_svg_artifact", "analyze_thermal", "analyze_thermal"]
+    resumed = harness.invocations[-1][1]
+    assert (resumed["_a2a_task_id"], resumed["provided_inputs"]) == ("task-thermal", {"units": "SI"})
+    assert [a["artifact_id"] for a in harness.store[CONV]["context"]["artifacts"]] == ["svg-1"]
+    # Each step records the inputs it was actually given.
+    report = harness.store[CONV]["conversation_history"][-1]
+    assert report["tool_inputs"] == {
+        "create_svg_artifact": {"word": "x"},
+        "analyze_thermal": {"material_id": "SS316", "temperature_c": 300, "units": "SI"},
+    }
+    assert report["tool_results"]["analyze_thermal"] == {"answer": "SI it is."}
+    assert_transcript_valid(harness.store[CONV]["llm_messages"])
+
+
+def test_an_error_from_a_resumed_workflow_step_fails_it_and_blocks_its_dependents(harness, monkeypatch) -> None:
+    steps = {step["id"]: step for step in SVG_THEN_THERMAL}
+    _install_compiled_workflow(
+        monkeypatch,
+        [{**steps["thermal"], "depends_on": []}, {**steps["svg"], "depends_on": ["thermal"]}],
+    )
+    harness.results.update(
+        create_svg_artifact=svg_result,
+        analyze_thermal=_thermal_asks({"name": "units", "type": "string"}, {"error": "Unsupported units."}),
+    )
+    llm = harness.script([reply("The screening failed.")])
+
+    assert send(workflow_id=WORKFLOW_ID, followup_answers={"material_id": "SS316", "word": "x"}).status == "needs_info"
+    response = send(followup_answers={"units": "furlongs"})
+
+    assert response.status == "answer"
+    assert [skill for skill, _ in harness.invocations] == ["analyze_thermal", "analyze_thermal"]
+    result = json.loads(llm.requests[0]["messages"][-1]["content"])
+    assert result["status"] == "failed"
+    assert result["step_statuses"] == {"thermal": "failed", "svg": "blocked"}
+    assert result["errors"] == [{"step_id": "thermal", "skill_id": "analyze_thermal", "error": "Unsupported units."}]
+
+
+def test_a_sensitive_workflow_answer_reaches_only_its_step(harness, monkeypatch) -> None:
+    convert = {
+        "id": "png",
+        "skill_id": "convert_svg_to_png",
+        "depends_on": ["thermal"],
+        "params": {"artifact_id": {"literal": "svg-1"}},
+    }
+    _install_compiled_workflow(monkeypatch, [*SVG_THEN_THERMAL, convert])
+    png_replies = iter([{"input_required": {"missing_inputs": [{"name": "dpi", "type": "number"}]}}, png_result({})])
+    harness.results.update(
+        create_svg_artifact=svg_result,
+        analyze_thermal=_thermal_asks(
+            {"name": "api_token", "type": "string", "sensitive": True}, {"result": {"answer": "Authorized."}}
+        ),
+        convert_svg_to_png=lambda params: next(png_replies),
+    )
+    llm = harness.script([reply("Screened.")])
+
+    assert send(workflow_id=WORKFLOW_ID, followup_answers={"material_id": "SS316", "word": "x"}).status == "needs_info"
+    # The next step pauses too, so the workflow call (and its arguments) is persisted.
+    assert send(followup_answers={"api_token": "s3cret-token"}).status == "needs_info"
+    assert "s3cret-token" not in json.dumps(harness.store[CONV])
+    response = send(followup_answers={"dpi": 300})
+
+    assert response.status == "completed"
+    tokens = [params.get("provided_inputs") for skill, params in harness.invocations if skill == "analyze_thermal"]
+    assert tokens == [None, {"api_token": "s3cret-token"}]
+    assert "s3cret-token" not in json.dumps(harness.invocations[-2:])  # later steps never see it
+    assert "s3cret-token" not in json.dumps(harness.store[CONV])
+    assert "s3cret-token" not in llm.requests[0]["messages"][0]["content"]
 
 
 def test_workflow_keeps_artifacts_a_sibling_call_produced_meanwhile(harness, monkeypatch) -> None:
