@@ -302,6 +302,26 @@ def test_store_tags_this_turns_entries_and_reads_untagged_ones_as_legacy(client)
     assert saved["state_turn_id"] == turn_id
 
 
+def test_early_and_final_store_keep_one_user_entry(client):
+    """A store at turn start, then the final store of the same turn, leave one user
+    entry tagged with that turn and keep the title the final store sets."""
+    task_tracking.begin_turn("c1", "q")
+    turn_id = task_tracking.current_turn_id()
+    state = {"conversation_history": [{"role": "user", "content": "q", "timestamp": "t1"}]}
+    store_conversation("c1", state)
+
+    state["conversation_history"].append({"role": "assistant", "content": "the reply", "timestamp": "t2"})
+    state["title"] = "Q chat"
+    store_conversation("c1", state)
+
+    saved = json.loads(client.store["conversation:c1"])
+    assert [(e["content"], e["turn_id"]) for e in saved["conversation_history"]] == [
+        ("q", turn_id),
+        ("the reply", turn_id),
+    ]
+    assert saved["title"] == "Q chat"
+
+
 def test_store_tags_this_turns_llm_messages_and_reads_untagged_ones_as_legacy(client):
     client.store["conversation:c1"] = json.dumps(
         {"conversation_history": [], "llm_messages": [{"role": "user", "content": "old"}]}

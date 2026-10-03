@@ -1376,3 +1376,69 @@ def test_pause_entries_carry_the_reply_text_and_approval_adds_no_bubble(harness)
     send(plan_approved=True)
     approval = next(e for e in harness.store[CONV]["conversation_history"] if e.get("type") == "plan_approved")
     assert "content" not in approval
+
+
+# --------------------------------------------------------------------------- #
+# Turn-start store: Chat History lists a new chat while its first turn runs
+# --------------------------------------------------------------------------- #
+
+
+def test_new_turn_stored_before_planning(harness, monkeypatch) -> None:
+    """When a new user turn starts, chat() stores the conversation with the user's entry
+    before it generates the title or runs the orchestration loop."""
+    seen_at_title: list[dict[str, Any] | None] = []
+
+    async def small(self, *args: Any, **kwargs: Any) -> SimpleNamespace:
+        # Title errors are swallowed, so record here and assert after the turn.
+        seen_at_title.append(copy.deepcopy(harness.store.get(CONV)))
+        return SimpleNamespace(text="Test title")
+
+    monkeypatch.setattr(_ScriptedClient, "small", small)
+    harness.script([reply("Hello! How can I help?")])
+
+    response = send(query="Start a new chat")
+
+    assert response.status == "answer"
+    assert len(seen_at_title) == 1
+    early = seen_at_title[0]
+    assert early is not None, "the conversation was not stored before the title call"
+    assert early["user_query"] == "Start a new chat"
+    assert [(e["role"], e.get("content")) for e in early["conversation_history"]] == [("user", "Start a new chat")]
+
+    final = harness.store[CONV]
+    assert [(e["role"], e.get("content")) for e in final["conversation_history"]] == [
+        ("user", "Start a new chat"),
+        ("assistant", "Hello! How can I help?"),
+    ]
+    assert final["title"] == "Test title"
+
+
+def test_early_store_failure_keeps_the_turn(harness, monkeypatch, caplog) -> None:
+    """When the turn-start store raises, chat() logs a warning and still completes the
+    turn and stores its result: the turn-start store is best-effort."""
+    import redis
+
+    save = chat_flow.store_conversation  # the harness's in-memory store
+    calls: list[str] = []
+
+    def flaky_save(conv_id: str, state: dict[str, Any]) -> None:
+        calls.append(conv_id)
+        if len(calls) == 1:
+            raise redis.ConnectionError("Valkey is down")
+        save(conv_id, state)
+
+    monkeypatch.setattr(chat_flow, "store_conversation", flaky_save)
+    harness.script([reply("Hello! How can I help?")])
+
+    with caplog.at_level(logging.WARNING, logger="orchestrator.chat_flow"):
+        response = send(query="Start a new chat")
+
+    assert response.status == "answer"
+    assert [(e["role"], e.get("content")) for e in harness.store[CONV]["conversation_history"]] == [
+        ("user", "Start a new chat"),
+        ("assistant", "Hello! How can I help?"),
+    ]
+    warnings = [
+        r for r in caplog.records if r.name == "orchestrator.chat_flow" and r.levelno == logging.WARNING
+    ]
+    assert any(CONV in r.getMessage() for r in warnings), "no warning names the conversation id"

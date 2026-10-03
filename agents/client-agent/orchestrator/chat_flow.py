@@ -97,9 +97,20 @@ def _append_history(state: AgentState, entry: Dict[str, Any]) -> None:
     state["conversation_history"] = [*state.get("conversation_history", []), {**entry, "timestamp": _now()}]
 
 
+def _store_turn_start(state: AgentState) -> None:
+    """Best-effort store as a user turn starts, so Chat History lists the conversation
+    while the turn runs. The final store merges over it by turn (conversation_store)."""
+    conv_id = state["conversation_id"] or ""
+    try:
+        store_conversation(conv_id, state)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Turn-start store failed for conversation %s: %s", conv_id, exc)
+
+
 async def _start_user_turn(state: AgentState, request: ConversationRequest, query: str) -> None:
     _append_history(state, {"role": "user", "content": query})
     state["user_query"] = query
+    _store_turn_start(state)
     await _maybe_generate_title(state, state["conversation_id"] or "")
     agent_loop.begin_user_turn(
         state,
