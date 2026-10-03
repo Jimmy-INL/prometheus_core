@@ -296,3 +296,19 @@ ul.b.check { list-style: none; padding-left: 0; }
 .slide.section.bonus { background: repeating-linear-gradient(135deg, #fff 0 22px, var(--acc-soft) 22px 44px); }
 table.t td code { white-space: normal; overflow-wrap: anywhere; }
 pre { flex-shrink: 0; }
+
+/* ---------- appendix (reference) slides: skipped in the talk ---------- */
+.slide.appendix::before { background: repeating-linear-gradient(180deg, var(--ink-3) 0 4px, transparent 4px 10px); }
+.slide.appendix:not(.section)::after {
+  content: "APPENDIX · REFERENCE"; position: absolute; top: 26px; right: 84px;
+  font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: .14em;
+  color: var(--ink-3); border: 1.5px dotted var(--ink-3); border-radius: 99px; padding: 3px 12px;
+}
+.slide.section.appendix { background: repeating-linear-gradient(90deg, #fff 0 2px, var(--panel) 2px 14px); }
+.slide.section.appendix .num { color: var(--ink-3); }
+/* takeaway slide */
+.takeaways { display: flex; flex-direction: column; gap: 18px; }
+.takeaways .tk { display: grid; grid-template-columns: 64px 1fr; gap: 20px; align-items: start; }
+.takeaways .tk .n { font-family: var(--display); font-size: 48px; font-weight: 800; color: var(--acc); line-height: 1; }
+.takeaways .tk h3 { font-size: 30px; }
+.takeaways .tk p { font-size: 21px; color: var(--ink-2); line-height: 1.4; margin-top: 4px; }

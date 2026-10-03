@@ -1,5 +1,5 @@
 // Minimal slide engine: ←/→/space/PgUp/PgDn navigate, Home/End jump,
-// N toggles speaker notes, O toggles the overview grid, I goes back to the index,
+// N toggles speaker notes, O toggles the overview grid, A jumps to the appendix, I goes back to the index,
 // F toggles fullscreen. The URL hash (#12) tracks the current slide.
 (function () {
   const stage = document.getElementById("stage");
@@ -8,11 +8,16 @@
   const footLogo = document.body.dataset.logo || "assets/prometheus_logo.png";
   let cur = 0;
 
-  slides.forEach((s, i) => {
+  // Talk (and bonus) slides are numbered on their own; appendix slides get "A n / m".
+  const main = slides.filter((s) => !s.classList.contains("appendix"));
+  const appx = slides.filter((s) => s.classList.contains("appendix"));
+  slides.forEach((s) => {
     if (s.classList.contains("title") || s.dataset.nofoot !== undefined) return;
+    const inAppx = s.classList.contains("appendix");
+    const num = inAppx ? `A ${appx.indexOf(s) + 1} / ${appx.length}` : `${main.indexOf(s) + 1} / ${main.length}`;
     const f = document.createElement("div");
     f.className = "foot";
-    f.innerHTML = `<span class="fl"><img src="${footLogo}" alt=""><span>${deckTitle}</span></span><span>${i + 1} / ${slides.length}</span>`;
+    f.innerHTML = `<span class="fl"><img src="${footLogo}" alt=""><span>${deckTitle}</span></span><span>${num}</span>`;
     s.appendChild(f);
   });
 
@@ -26,7 +31,7 @@
     const t = document.createElement("div");
     t.className = "thumb";
     const h = s.querySelector("h1, h2");
-    t.innerHTML = `<b>${i + 1}</b>${h ? h.textContent : "(untitled)"}`;
+    t.innerHTML = `<b>${s.classList.contains("appendix") ? "Appendix · " : ""}${i + 1}</b>${h ? h.textContent : "(untitled)"}`;
     t.onclick = () => { document.body.classList.remove("overview"); go(i); };
     overview.appendChild(t);
   });
@@ -89,6 +94,7 @@
     else if (k === "End") go(slides.length - 1);
     else if (k === "n" || k === "N") document.body.classList.toggle("show-notes");
     else if (k === "o" || k === "O") document.body.classList.toggle("overview");
+    else if (k === "a" || k === "A") { const j = slides.findIndex((x) => x.classList.contains("appendix")); if (j >= 0) go(j); }
     else if (k === "i" || k === "I") location.href = "index.html";
     else if (k === "f" || k === "F") {
       if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();

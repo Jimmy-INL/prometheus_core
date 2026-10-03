@@ -1,0 +1,413 @@
+<section class="slide title">
+  <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
+  <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
+  <div class="kicker">Day 1 · 2:45 pm</div>
+  <h1>Building an agent</h1>
+  <p class="sub">Everything you need for tomorrow's Table &amp; Plot agent: the code you write, the card that gets you called, files in and artifacts out, asking the user, LLMs, and how to run and test it.</p>
+  <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">reference material in the appendix</span></div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">The big picture</div><h2>Your agent in one picture</h2></div>
+  <div class="content">
+    <div class="row" style="align-items:stretch; gap:0">
+      <div class="box gray" style="flex:1"><b>User</b><span class="small">uploads <code>report.md</code>: "plot the population of Brie Basin"</span></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box navy" style="flex:1.1"><b>Orchestrator LLM</b><span class="small">reads your <b>card</b>, picks a skill, fills its parameters</span></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box orange" style="flex:1.1"><b>Your <code>_execute</code></b><span class="small">reads the file, does the work, publishes results</span></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box green" style="flex:1"><b>Artifacts</b><span class="small">a table, a PNG. The UI renders them; the next skill uses them.</span></div>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h4>You write</h4><p class="small">One Python class with one method, plus <code>agent_card.json</code>.</p></div>
+      <div class="card"><h4>The platform gives you</h4><p class="small">Server, auth, registration, file storage (DeepLynx), the chat UI, follow-up forms, LLM access, background tasks.</p></div>
+      <div class="card"><h4>You never</h4><p class="small">parse the chat, call other agents, or manage HTTP. The orchestrator chains your skills.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">The code you write</div><h2>One class, one method</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> PrometheusAgent
+
+<span class="k">class</span> <span class="p">NeutronAgent</span>(PrometheusAgent):
+    <span class="k">async def</span> <span class="p">_execute</span>(self, params, context, event_queue):
+        <span class="k">if</span> params[<span class="s">"skill_id"</span>] == <span class="s">"neutron_extract_table"</span>:
+            <span class="k">return await</span> self.extract(params, context, event_queue)
+        <span class="k">if</span> params[<span class="s">"skill_id"</span>] == <span class="s">"neutron_plot_table"</span>:
+            <span class="k">return await</span> self.plot(params, context, event_queue)
+        <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"error"</span>, <span class="s">"error"</span>: <span class="s">"unknown skill"</span>}
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    NeutronAgent(agent_name=<span class="s">"Neutron Table Plot Agent"</span>).run()</pre>
+      <div class="col">
+        <ul class="b">
+          <li><code>params</code>: the arguments the orchestrator chose, plus <code>skill_id</code></li>
+          <li><code>context.context_id</code>: the conversation, your key for state</li>
+          <li><b>Return a dict.</b> It becomes the result the orchestrator reads.</li>
+          <li>User mistake → <code>return {"status": "error", …}</code>. Broken infrastructure → let it raise.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Getting started</div><h2>Scaffold it from the template</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="col">
+        <pre class="sm">cd ~/prometheus/prometheus_agent_template
+python3 setup_agent.py
+<span class="c">#  name:      Neutron Table Plot   (" Agent" is appended)</span>
+<span class="c">#  skill id:  neutron_extract_table</span>
+<span class="c">#  output:    ../hackathon/agents/neutron</span>
+<span class="c">#  copy secrets from ../prometheus_platform/.env? yes</span></pre>
+        <div class="callout bad">Prefix the <b>card name and every skill ID</b> with your team name. All teams build the same skills; same names overwrite each other in the registry.</div>
+      </div>
+      <table class="t">
+        <tr><th>File</th><th>You edit it to…</th></tr>
+        <tr class="hl"><td><code>agent.py</code></td><td>implement the skills</td></tr>
+        <tr class="hl"><td><code>agent_card.json</code></td><td>describe the skills to the orchestrator</td></tr>
+        <tr><td><code>pyproject.toml</code></td><td>add <i>your</i> imports (pandas, matplotlib)</td></tr>
+        <tr><td><code>Dockerfile</code></td><td>add a <code>COPY</code> line per extra module</td></tr>
+        <tr><td><code>tests/</code></td><td>test with a mocked context</td></tr>
+        <tr><td><code>.env</code></td><td>nothing. Never commit it.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="num">A</div>
+  <h2>The card gets you called</h2>
+  <p class="lede">The orchestrator LLM decides from your card alone whether to call you, and with what.</p>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">agent_card.json</div><h2>Each skill becomes a tool for the orchestrator LLM</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm">{ <span class="s">"id"</span>: <span class="p">"neutron_extract_table"</span>,
+  <span class="s">"description"</span>: <span class="s">"Find one table in an uploaded markdown
+     document by matching the user's description
+     against the captions; publish it as a table."</span>,
+  <span class="s">"usage_notes"</span>: <span class="s">"Not for CSV files: plot those directly."</span>,
+  <span class="s">"inputSchema"</span>: { <span class="s">"type"</span>: <span class="s">"object"</span>,
+    <span class="s">"properties"</span>: {
+      <span class="s">"document_artifact_id"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="h">"x_artifact_ref": "single"</span>,
+        <span class="s">"description"</span>: <span class="s">"The markdown document."</span> },
+      <span class="s">"table_description"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span>,
+        <span class="s">"description"</span>: <span class="s">"How the user named the table."</span> } },
+    <span class="s">"required"</span>: [<span class="s">"document_artifact_id"</span>, <span class="s">"table_description"</span>] } }</pre>
+      <div class="col">
+        <h4 class="acc">The LLM sees</h4>
+        <ul class="b sm"><li><code>description</code> + <code>usage_notes</code></li><li>parameter names, types, descriptions</li><li>which parameters are <code>required</code></li></ul>
+        <h4 class="acc">It does not see</h4>
+        <ul class="b sm"><li>the agent description, <code>tags</code>, <code>output_format</code>, <code>examples</code></li></ul>
+        <div class="callout"><code>x_artifact_ref</code> marks a file input: the orchestrator passes the id of an upload or an earlier result.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Getting routed</div><h2>Five rules for a card that works</h2></div>
+  <div class="content">
+    <div class="takeaways">
+      <div class="tk"><span class="n">1</span><div><h3>Verb and object first</h3><p>"Find one table in an uploaded markdown document…", not "Table tool".</p></div></div>
+      <div class="tk"><span class="n">2</span><div><h3>Say when <i>not</i> to use it</h3><p><code>usage_notes</code> steers the LLM away from the wrong skill.</p></div></div>
+      <div class="tk"><span class="n">3</span><div><h3>Describe every parameter; require few</h3><p>A missing <i>required</i> parameter makes the platform ask the user with a form.</p></div></div>
+      <div class="tk"><span class="n">4</span><div><h3>Return what the next step needs</h3><p><code>artifact_id</code>, the caption, the exact column names. The orchestrator reads your result to plan the next call.</p></div></div>
+      <div class="tk"><span class="n">5</span><div><h3>Test three phrasings in the chat</h3><p>"plot the census", "chart residents per year", "graph this". Fix the card, not the prompt.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="num">B</div>
+  <h2>Files in, artifacts out</h2>
+  <p class="lede">Uploads arrive as artifacts in DeepLynx; your results go back the same way.</p>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Input</div><h2>Read the uploaded file</h2></div>
+  <div class="content">
+    <div class="row" style="align-items:stretch; gap:0">
+      <div class="box gray" style="flex:1"><b>Chat upload</b></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box sky" style="flex:1"><b>DeepLynx</b><span class="small">stores the file</span></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box teal" style="flex:1"><b>Artifact catalog</b><span class="small">gets an artifact id</span></div>
+      <div class="arrow-h" style="width:44px"></div>
+      <div class="box orange" style="flex:1"><b>Your skill</b><span class="small"><code>params["document_artifact_id"]</code></span></div>
+    </div>
+    <pre class="sm">path = <span class="k">await</span> self.get_artifact_file_path(
+    params[<span class="s">"document_artifact_id"</span>],
+    context=context, artifacts=params.get(<span class="s">"artifacts"</span>))
+text = path.read_text()          <span class="c"># a local file, whatever the source</span></pre>
+    <div class="callout warn">No DeepLynx configured → uploads never reach your agent. Check it before you start (deck 03).</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Output</div><h2>Publish a table and a plot</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="c"># the table: inline JSON, in the catalog</span>
+table_id = <span class="k">await</span> self.send_json_artifact(
+    context, event_queue,
+    {<span class="s">"caption"</span>: caption, <span class="s">"columns"</span>: cols, <span class="s">"rows"</span>: rows},
+    name=<span class="s">"population_table"</span>, catalog_artifact=True)
+
+<span class="c"># the plot: a PNG file, via DeepLynx</span>
+ref = <span class="k">await</span> self.send_deeplynx_artifact(
+    context=context, event_queue=event_queue,
+    file_path=png_path, name=<span class="s">"population.png"</span>,
+    description=<span class="s">"Brie Basin population vs year"</span>,
+    storage_config=ConnectionConfig.from_env(),
+    mime_type=<span class="s">"image/png"</span>)
+
+<span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"success"</span>, <span class="s">"artifact_id"</span>: ref.artifact_id}</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li><b><code>mime_type</code> picks the viewer</b>: <code>image/png</code> → image, JSON → JSON tree, <code>text/markdown</code> → report.</li>
+          <li>Return <b>ids and names</b>, not the data. The data lives in the artifact.</li>
+          <li><code>ConnectionConfig</code> comes from <code>prometheus_api.storage_client</code> and reads <code>DEEPLYNX_*</code> from your <code>.env</code>.</li>
+        </ul>
+        <div class="callout">Working example: the platform's <code>agents/debug-agents/artifact-debug-agent</code> publishes images exactly like this.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Feedback</div><h2>Tell the user what is happening</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="k">await</span> self.send_status_update(
+    context, event_queue,
+    message=<span class="s">"Found 3 tables; matching captions…"</span>)
+
+<span class="k">await</span> self.send_conversation_message(
+    context, event_queue,
+    <span class="s">"Note: 2 missing values were skipped."</span>)</pre>
+      <table class="t">
+        <tr><th>Helper</th><th>Shows up as</th></tr>
+        <tr><td><code>send_status_update</code></td><td>a live progress line, gone when the turn ends</td></tr>
+        <tr><td><code>send_conversation_message</code></td><td>a message that stays in the chat history</td></tr>
+      </table>
+    </div>
+    <div class="callout warn">Status lines appear live only with <code>"capabilities": {"streaming": true}</code> in the card. The template ships <code>false</code>.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Asking the user</div><h2>Ask which columns to plot</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
+
+answers = self.get_provided_inputs(context)
+x = params.get(<span class="s">"x_column"</span>) <span class="k">or</span> answers.get(<span class="s">"x_column"</span>)
+<span class="k">if not</span> x:
+    self.save_context_state(ctx, {<span class="s">"table"</span>: table_id})
+    <span class="k">await</span> self.send_input_required(
+        context, event_queue,
+        missing_inputs=[MissingInput(
+            name=<span class="s">"x_column"</span>, type=<span class="s">"enum"</span>,
+            options=list(df.columns),
+            description=<span class="s">"Column for the x axis"</span>,
+            user_prompt=<span class="s">"Which column goes on the x axis?"</span>)],
+        hint=<span class="s">"Choose the columns to plot."</span>)
+    <span class="k">return</span> {}</pre>
+      <div class="col">
+        <ol class="b sm">
+          <li>Your task pauses; the chat shows a form with a <b>dropdown</b> of the real column names.</li>
+          <li>The user picks; the platform calls you <b>again</b> with the answers.</li>
+          <li>Read them with <code>get_provided_inputs(context)</code>. Python variables don't survive, so save what you need with <code>save_context_state</code>.</li>
+        </ol>
+        <p class="small">Need a yes/no before something costly? Put <code>"requires_approval": true</code> on the skill: the user approves before you are called.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Background tasks</div><h2>Long-running work</h2></div>
+  <div class="content">
+    <p class="lede">Your agent sends a heartbeat every 15 s from its event loop. Blocking code (a solver, <code>time.sleep</code>, a sync SDK) freezes it.</p>
+    <table class="t">
+      <tr><th>Your work is…</th><th>Use</th></tr>
+      <tr><td>async I/O, LLM calls</td><td><code>await</code> it</td></tr>
+      <tr><td>a blocking call (pandas, matplotlib, a CLI)</td><td><code>await asyncio.to_thread(fn, …)</code></td></tr>
+      <tr><td>blocking, with progress messages</td><td>a <code>PrometheusWorker</code> run with <code>self.run_worker(...)</code></td></tr>
+      <tr class="hl"><td>minutes to hours</td><td><code>await self.declare_long_running(context, event_queue, estimate_seconds=1800)</code>: the chat turn ends, and the result arrives later as a background task (<code>/tasks</code>)</td></tr>
+    </table>
+    <p class="small">Working example: the platform's <code>agents/debug-agents/thread-pattern-agent</code>. Details in the appendix.</p>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="num">C</div>
+  <h2>Using an LLM</h2>
+  <p class="lede">One client in the base image. You pick a flavor; the platform picks the model.</p>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">LLMClient</div><h2>Call the platform's LLM</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="k">import</span> os
+<span class="k">from</span> prometheus_api.llm_client <span class="k">import</span> LLMConfig
+
+cfg = LLMConfig.from_env().with_api_key(
+    os.getenv(<span class="s">"LITELLM_MASTER_KEY"</span>))
+
+<span class="k">async with</span> self.llm_client(context, config=cfg) <span class="k">as</span> llm:
+    r = <span class="k">await</span> llm.small(
+        <span class="s">f"Which caption matches '{desc}'? {captions}"</span>)
+answer = r.text</pre>
+      <div class="col">
+        <table class="t sm">
+          <tr><th>Flavor</th><th>Good for</th></tr>
+          <tr><td><code>small</code></td><td>quick classification, picking a caption</td></tr>
+          <tr><td><code>medium</code></td><td>general reasoning, column matching</td></tr>
+          <tr><td><code>large</code></td><td>hard reasoning</td></tr>
+          <tr><td><code>vision</code></td><td>checking your own plot image</td></tr>
+          <tr><td><code>embedding</code></td><td>similarity search</td></tr>
+        </table>
+        <div class="callout warn">Without <code>with_api_key(LITELLM_MASTER_KEY)</code> the platform's proxy answers <b>401</b>. Each flavor you use must exist in the platform's <code>litellm_config.yaml</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Structured answers</div><h2>Get a value back, not prose: a forced tool call</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="k">from</span> pydantic <span class="k">import</span> BaseModel
+<span class="k">from</span> prometheus_api.llm_client <span class="k">import</span> (
+    ToolDefinition, acall_tool)
+
+<span class="k">class</span> <span class="p">Pick</span>(BaseModel):
+    index: int          <span class="c"># which caption matches</span>
+
+PICK = ToolDefinition.from_pydantic(
+    <span class="s">"pick_table"</span>, Pick,
+    description=<span class="s">"Choose the table whose caption matches"</span>)
+
+<span class="k">async with</span> self.llm_client(context, config=cfg) <span class="k">as</span> llm:
+    call = <span class="k">await</span> acall_tool(llm, prompt, tool=PICK,
+                            model=<span class="s">"small"</span>)
+idx = call.arguments[<span class="s">"index"</span>]</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li>The model <b>must</b> answer by calling your tool, so you get a dict that matches your schema.</li>
+          <li>Ideal for "which table?" and "which columns?".</li>
+          <li>Validate the value anyway (an index within range, a real column name).</li>
+          <li>Multi-step tool loops are possible too; see the appendix.</li>
+        </ul>
+        <p class="small">Needs <code>prometheus_api</code> ≥ v0.13.0, which the template's base image (<code>latest</code>) has.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="num">D</div>
+  <h2>Run, register, test</h2>
+  <p class="lede">Get your agent onto the platform, find out why it isn't called, and test it without a server.</p>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Running it</div><h2>Next to your platform, in Docker</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm">cd ~/prometheus/hackathon/agents/neutron
+make up                  <span class="c"># build + join the platform network</span>
+make logs                <span class="c"># "Registered 'neutron-table-plot-agent'"</span>
+
+<span class="c"># in the chat</span>
+/agents                  <span class="c"># your agent is listed</span>
+
+<span class="c"># after you change code or the card</span>
+make up                  <span class="c"># rebuilds and restarts</span>
+
+<span class="c"># after the PLATFORM restarted (registry wiped)</span>
+docker restart neutron-table-plot-agent</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li>At startup the agent <b>registers itself</b> with the platform's registry. Nothing to configure beyond the <code>.env</code>.</li>
+          <li>The orchestrator notices new or changed agents within about a minute.</li>
+          <li>Every platform <code>make up</code>/<code>make restart</code> empties the registry: restart your agent afterwards.</li>
+        </ul>
+        <div class="callout">Start a <b>fresh conversation</b> for each test. Old uploads and results stay visible to the orchestrator and can confuse it.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">When it doesn't work</div><h2>Not called? Called wrong? Look here</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:420px">Symptom</th><th>Look at / fix</th></tr>
+      <tr><td>Not in <code>/agents</code></td><td><code>make logs</code> in your agent dir; restart it if the platform restarted</td></tr>
+      <tr><td>Listed, but never called</td><td>the skill <code>description</code> and <code>usage_notes</code>; try other phrasings</td></tr>
+      <tr><td>Called with the wrong arguments</td><td>parameter descriptions; what your previous result returned</td></tr>
+      <tr><td>Crashes on the file</td><td><code>make logs</code>: your traceback is there</td></tr>
+      <tr><td>The plot doesn't render</td><td><code>mime_type="image/png"</code>, DeepLynx configured</td></tr>
+      <tr><td>LLM call fails with 401</td><td>attach <code>LITELLM_MASTER_KEY</code></td></tr>
+      <tr><td><code>ModuleNotFoundError</code> in the container</td><td>add it to <code>pyproject.toml</code>, and a <code>COPY</code> line for your own modules</td></tr>
+    </table>
+    <p class="small">What the orchestrator decided, and why: <code>docker logs -f client-agent</code> in the platform.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Testing</div><h2>Test without a platform</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm"><span class="c"># tests/conftest.py already provides `context` and</span>
+<span class="c"># `event_queue` fixtures (mocks)</span>
+<span class="k">async def</span> test_finds_census(context, event_queue, monkeypatch):
+    agent = NeutronAgent(agent_name=<span class="s">"Neutron Table Plot Agent"</span>)
+    monkeypatch.setattr(agent, <span class="s">"get_artifact_file_path"</span>,
+                        fake_path(<span class="s">"fixtures/report.md"</span>))
+    out = <span class="k">await</span> agent._execute(
+        {<span class="s">"skill_id"</span>: <span class="s">"neutron_extract_table"</span>,
+         <span class="s">"document_artifact_id"</span>: <span class="s">"a1"</span>,
+         <span class="s">"table_description"</span>: <span class="s">"population"</span>},
+        context, event_queue)
+    <span class="k">assert</span> <span class="s">"Census"</span> <span class="k">in</span> out[<span class="s">"caption"</span>]</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li>Most of your logic (parsing, cleaning, plotting) is plain Python: test it as functions.</li>
+          <li><b>Mock the LLM</b> in tests; never call a real one.</li>
+          <li>Keep your own test files in <code>tests/fixtures/</code>.</li>
+        </ul>
+        <pre class="sm">uv run pytest
+uv run ruff check .</pre>
+        <p class="small">Both must pass for the gate. <code>fake_path</code> is your own small helper.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Takeaways</div><h2>Remember three things</h2></div>
+  <div class="content">
+    <div class="takeaways">
+      <div class="tk"><span class="n">1</span><div><h3>The card is the interface</h3><p>The orchestrator LLM knows only your skill descriptions and parameters, and reads your result to plan the next step.</p></div></div>
+      <div class="tk"><span class="n">2</span><div><h3>Files travel as artifacts</h3><p><code>get_artifact_file_path</code> in, <code>send_json_artifact</code> / <code>send_deeplynx_artifact</code> out. Return ids, not data.</p></div></div>
+      <div class="tk"><span class="n">3</span><div><h3>The platform does the plumbing</h3><p>Forms for missing inputs, status in the chat, LLM access, background tasks. Use them instead of building your own.</p></div></div>
+    </div>
+    <div class="callout good">Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every detail behind these slides.</div>
+  </div>
+</section>
