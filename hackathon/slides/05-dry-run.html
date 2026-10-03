@@ -16,7 +16,7 @@
 <div class="head"><div class="eyebrow">3:30 pm · hands-on · 60 min</div><h2>End-to-end dry run</h2><p class="lede">Do everything from today yourself. Mentors circulate to unblock environment problems; raise your hand early.</p></div>
 <div class="content">
 <div class="grid g4">
-<div class="card acc"><div class="kpi"><span class="v">1</span><span class="l">~10 min</span></div><h3>Check</h3><p class="small">Your platform from the homework is up, you are logged in with an active signing key, and your clone has your fork as <code>origin</code>.</p></div>
+<div class="card acc"><div class="kpi"><span class="v">1</span><span class="l">~10 min</span></div><h3>Check</h3><p class="small">Your platform from the homework is up and current, and you are logged in with an active signing key.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">2</span><span class="l">~15 min</span></div><h3>Scaffold</h3><p class="small">Clone <code>prometheus_agent_template</code> and run <code>setup_agent.py</code> with a <b>unique</b> name (<code>hello-&lt;you&gt;</code>).</p></div>
 <div class="card acc"><div class="kpi"><span class="v">3</span><span class="l">~15 min</span></div><h3>Edit &amp; call</h3><p class="small">Change the skill so it greets by name. <code>make up</code>, check it registered, and get the chat to route to it.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div><h3>Practice PR</h3><p class="small">Fork <code>genesis/hackathon</code>, commit your agent under <code>practice/&lt;you&gt;/</code>, open a PR to <code>main</code>, get a review.</p></div>
@@ -33,25 +33,16 @@
   <div class="head"><div class="eyebrow">Refresh · 1</div><h2>Platform: is it ready?</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:26px">
-      <pre class="sm">cd ~/prometheus/prometheus_platform
-<span class="c"># 1. your fork as origin (deck 02), then update</span>
-git remote rename origin upstream
-gh repo fork genesis/prometheus_platform --clone=false
-git remote add origin \
-  git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
-git pull --rebase upstream dev
-
-<span class="c"># 2. the stack from the homework</span>
+      <pre class="xs">cd ~/prometheus/prometheus_platform
+git pull                      <span class="c"># latest dev</span>
 make up
 make ps
 
-<span class="c"># 3. verify (bottom-up)</span>
+<span class="c"># verify</span>
 set -a; source .env; set +a
-curl -s localhost:9977/health/liveliness
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-     localhost:9977/v1/agents | python3 -m json.tool
 curl -s localhost:8600/healthz
-</pre>
+curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     localhost:9977/v1/agents | python3 -m json.tool</pre>
       <div class="col">
         <ol class="b">
           <li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
@@ -222,6 +213,48 @@ curl -s localhost:8600/healthz</pre>
           <tr><td>"No 'userToken' found"</td><td>activate a signing key</td></tr>
           <tr><td>port already in use</td><td><code>make down</code>, or change <code>*_PORT</code> in <code>.env</code></td></tr>
         </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide section appendix">
+  <div class="num">A</div>
+  <h2>Appendix: reference</h2>
+  <p class="lede">The original refresher slide, kept for reference.</p>
+</section>
+
+<section class="slide appendix">
+  <div class="head"><div class="eyebrow">Refresh · 1</div><h2>Platform: is it ready?</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:26px">
+      <pre class="sm">cd ~/prometheus/prometheus_platform
+<span class="c"># 1. your fork as origin (deck 02), then update</span>
+git remote rename origin upstream
+gh repo fork genesis/prometheus_platform --clone=false
+git remote add origin \
+  git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
+git pull --rebase upstream dev
+
+<span class="c"># 2. the stack from the homework</span>
+make up
+make ps
+
+<span class="c"># 3. verify (bottom-up)</span>
+set -a; source .env; set +a
+curl -s localhost:9977/health/liveliness
+curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     localhost:9977/v1/agents | python3 -m json.tool
+curl -s localhost:8600/healthz
+</pre>
+      <div class="col">
+        <ol class="b">
+          <li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
+          <li>Admin › Signing Keys → <b>generate + activate</b></li>
+          <li>Chat: <code>/agents</code>, then ask a question</li>
+          <li>Upload any small file: it should appear in DeepLynx</li>
+        </ol>
+        <div class="callout warn">Platform not up yet? Use the <b>bonus slide</b> at the end of this deck, and the bonus section of deck 03.</div>
       </div>
     </div>
   </div>
