@@ -38,11 +38,11 @@
 <section class="slide">
   <div class="head"><div class="eyebrow">Agenda</div><h2>Day 1</h2></div>
   <div class="content" style="gap:0">
-    <div class="agenda-row now"><span class="tm">12:15</span><div><div class="ti">Welcome &amp; kickoff</div><div class="de">ANL welcome · agenda · platform architecture overview · mentors · Day 2 acceptance criteria preview</div></div></div>
-    <div class="agenda-row"><span class="tm">1:00</span><div><div class="ti">GitHub overview &amp; PR workflow</div><div class="de">Repo structure and org access · fork/clone conventions · branching strategy · opening a PR · CI checks · code review expectations</div></div></div>
-    <div class="agenda-row"><span class="tm">1:45</span><div><div class="ti">Local platform deployment</div><div class="de">Docker/Compose · env vars and secrets · starting the platform · health checks · DeepLynx · common failure modes and fixes</div></div></div>
+    <div class="agenda-row now"><span class="tm">12:15</span><div><div class="ti">Welcome &amp; kickoff</div><div class="de">ANL welcome · agenda · mentors · Day 2 preview · how Prometheus works</div></div></div>
+    <div class="agenda-row"><span class="tm">1:00</span><div><div class="ti">GitHub overview &amp; PR workflow</div><div class="de">The repos · branching · fork, branch, rebase · opening a PR · review</div></div></div>
+    <div class="agenda-row"><span class="tm">1:45</span><div><div class="ti">Your local platform</div><div class="de">What runs where · logs and health checks · LLM flavors · DeepLynx for files · when things break</div></div></div>
     <div class="agenda-row"><span class="tm">2:30</span><div><div class="ti">Break</div></div></div>
-    <div class="agenda-row"><span class="tm">2:45</span><div><div class="ti">Agent template</div><div class="de">Anatomy of the template · agent card fields · registering with the Agent Registry · how the orchestrator discovers and calls your agent · LLMClient</div></div></div>
+    <div class="agenda-row"><span class="tm">2:45</span><div><div class="ti">Building an agent</div><div class="de">The code you write · the card that gets you called · files in, artifacts out · asking the user · LLMs · running and testing</div></div></div>
     <div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the "hello world" agent, submit a practice PR to <code>genesis/hackathon</code>. Mentors circulate.</div></div></div>
     <div class="agenda-row"><span class="tm">4:30</span><div><div class="ti">The challenge &amp; team formation</div><div class="de">The Day 2 challenge (a table-and-plot agent) · practice files · teams of 4–5 · team name and Day 2 room</div></div></div>
   </div>
@@ -82,11 +82,168 @@
 
 <section class="slide section">
   <div class="num">01</div>
+  <h2>How Prometheus works</h2>
+  <p class="lede">Just enough of the platform to build an agent tomorrow: what it does for you, and what happens when someone types into the chat.</p>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Why Prometheus</div><h2>A chat front door to a team of specialist agents</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:36px">
+      <div class="col">
+        <p class="body">Engineering work needs many specialized tools: meshing, CFD, uncertainty quantification, requirements, literature search.</p>
+        <p class="body">Prometheus wraps each tool in an <b>agent</b>. A user just asks in a chat, and an <b>orchestrator</b> decides which agents to call, in what order, and with which files.</p>
+      </div>
+      <div class="card acc"><h3>Your part this hackathon</h3><p class="body">Write <b>one agent</b>: a Python class with a method that does the work, and a card that says what it can do. The platform handles everything around it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">The big picture</div><h2>The platform at a glance</h2></div>
+  <div class="content">
+    <div class="dg">
+      <div class="row" style="align-items:stretch; gap:0">
+        <div class="box sky" style="flex:1"><b>Chat UI</b><span class="small">localhost:5150</span><span class="small">uploads, plots, forms</span></div>
+        <div class="arrow-h" style="width:50px"></div>
+        <div class="box navy" style="flex:1.3"><b>Orchestrator</b><span class="small">an LLM that calls agents' skills step by step, reading each result</span></div>
+        <div class="arrow-h" style="width:50px"></div>
+        <div class="box orange" style="flex:1.3"><b>Agents</b><span class="small">form-filler, OSTI research, synthesis… and <b>yours</b></span></div>
+      </div>
+      <div class="arrow-v"><span>supporting services</span></div>
+      <div class="row" style="gap:20px; align-items:stretch">
+        <div class="box gray" style="flex:1"><b>Registry</b><span class="small">agents announce themselves at startup</span></div>
+        <div class="box gray" style="flex:1"><b>LLM gateway</b><span class="small">one key, many models</span></div>
+        <div class="box teal" style="flex:1"><b>DeepLynx</b><span class="small">stores uploads and result files</span></div>
+        <div class="box gray" style="flex:1"><b>State store</b><span class="small">conversations, artifacts, background tasks</span></div>
+      </div>
+    </div>
+    <p class="small">All of it runs on your laptop in Docker. The registry and the LLM gateway are one service, LiteLLM. The appendix lists every container.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">One chat turn</div><h2>"Plot the population of Brie Basin from this report"</h2></div>
+  <div class="content">
+    <div class="steps">
+      <div class="step"><div><h4>The upload is stored</h4><p class="small"><code>report.md</code> goes to DeepLynx and becomes an <b>artifact</b> in the conversation.</p></div></div>
+      <div class="step"><div><h4>The orchestrator picks a skill</h4><p class="small">Its LLM sees every registered skill as a tool, and calls your <code>extract_table</code> with the artifact id and "population".</p></div></div>
+      <div class="step"><div><h4>Your agent works</h4><p class="small">It reads the file, finds the table, publishes it as a new artifact, and returns its id.</p></div></div>
+      <div class="step"><div><h4>The orchestrator chains</h4><p class="small">It reads your result and calls <code>plot_table</code> with the new id. Missing a column? The user gets a form.</p></div></div>
+      <div class="step"><div><h4>The chat shows the plot</h4><p class="small">The PNG artifact renders in the conversation, with the orchestrator's summary.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Vocabulary</div><h2>Eight words you will hear all day</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:230px">Term</th><th>Meaning</th></tr>
+      <tr><td><b>Agent</b></td><td>A small Python service, a subclass of <code>PrometheusAgent</code></td></tr>
+      <tr><td><b>Skill</b></td><td>One thing an agent can do. Each skill is one tool for the orchestrator.</td></tr>
+      <tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: the skills, described for the orchestrator's LLM</td></tr>
+      <tr><td><b>Orchestrator</b></td><td>The client agent: an LLM loop that calls skills and chains them</td></tr>
+      <tr><td><b>Artifact</b></td><td>A file or data result in the conversation (an upload, a table, a plot)</td></tr>
+      <tr><td><b>DeepLynx</b></td><td>INL's data store, where uploads and result files live</td></tr>
+      <tr><td><b>Registry</b></td><td>Where running agents announce themselves (LiteLLM)</td></tr>
+      <tr><td><b>Flavor</b></td><td>The kind of LLM you ask for in code: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>…</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">What you get for free</div><h2>What the platform does for your agent</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:470px">Service</th><th>You use it via</th></tr>
+      <tr><td>Registration and discovery</td><td>nothing: it happens at startup</td></tr>
+      <tr><td>Routing the user's request to your skill</td><td>a good card</td></tr>
+      <tr><td>File storage, upload handling, viewers</td><td>artifacts, DeepLynx</td></tr>
+      <tr><td>Forms for missing inputs and follow-up questions</td><td><code>required</code> parameters, <code>send_input_required</code></td></tr>
+      <tr><td>Live progress in the chat</td><td><code>send_status_update</code></td></tr>
+      <tr><td>Approval before costly steps</td><td><code>"requires_approval": true</code></td></tr>
+      <tr><td>Background tasks for long jobs</td><td><code>declare_long_running</code></td></tr>
+      <tr><td>LLM access with one key</td><td><code>self.llm_client(...)</code></td></tr>
+      <tr><td>Per-conversation memory</td><td><code>load_context_state</code> / <code>save_context_state</code></td></tr>
+    </table>
+    <p class="small">How to use each one: the agent session at 2:45 pm.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">The code</div><h2>Four repositories you will touch</h2></div>
+  <div class="content">
+    <div class="grid g2">
+      <div class="card"><span class="tag">run it</span><h3>prometheus_platform</h3><p class="small">The whole stack. You start it with <code>make up</code> and leave it alone.</p></div>
+      <div class="card"><span class="tag">start from it</span><h3>prometheus_agent_template</h3><p class="small"><code>setup_agent.py</code> creates your agent's files.</p></div>
+      <div class="card"><span class="tag">read its docs</span><h3>prometheus_api</h3><p class="small">The SDK: <code>PrometheusAgent</code>, LLMClient, DeepLynx client. Already inside your agent's Docker image.</p></div>
+      <div class="card acc"><span class="tag">your code</span><h3>hackathon</h3><p class="small"><code>genesis/hackathon</code>: practice PRs today, your team's agent in <code>agents/&lt;team_name&gt;/</code> tomorrow.</p></div>
+    </div>
+    <div class="callout warn">The code moves fast and some docs lag behind. When a doc disagrees with these slides or the code, trust the code and ask a mentor. The appendix lists the known stale spots.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Where to find things</div><h2>Help</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <table class="t">
+        <tr><th>What</th><th>Where</th></tr>
+        <tr><td>The mentors</td><td>in the room, all day</td></tr>
+        <tr><td>Agent developer guide</td><td><code>prometheus_api/docs/agent/GUIDE.md</code></td></tr>
+        <tr><td>These slides</td><td><code>index.html</code>; every deck has an appendix (key <code>A</code>)</td></tr>
+        <tr><td>Org and repos</td><td><code>github.inl.gov/genesis</code></td></tr>
+        <tr><td>Issues and tasks</td><td>JIRA project <code>PPLT</code></td></tr>
+        <tr><td>Chat</td><td>Teams</td></tr>
+      </table>
+      <div class="col">
+        <div class="takeaways">
+          <div class="tk"><span class="n">1</span><div><h3>You write one agent</h3><p>The platform does the rest.</p></div></div>
+          <div class="tk"><span class="n">2</span><div><h3>The orchestrator chains skills</h3><p>Your card decides whether you get called.</p></div></div>
+          <div class="tk"><span class="n">3</span><div><h3>Files are artifacts</h3><p>Stored in DeepLynx, passed by id.</p></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout good">Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
+  </div>
+</section>
+
+<section class="slide section bonus">
+  <div class="num">+</div>
+  <h2>Bonus: catch-up slides</h2>
+  <p class="lede">For participants who could not finish the homework. Work through these with a mentor while the session goes on.</p>
+</section>
+
+<section class="slide bonus">
+  <div class="head"><div class="eyebrow">Bonus · Homework check</div><h2>Is your laptop ready?</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:330px">Homework item</th><th style="width:430px">Quick check</th><th>If it fails</th></tr>
+      <tr><td>Access to <code>github.inl.gov/genesis</code></td><td>open <code>github.inl.gov/genesis/prometheus_platform</code> in the browser</td><td>ask the organizer to add you to the org; deck 02 bonus</td></tr>
+      <tr><td>Docker installed and running</td><td><code>docker info</code>, <code>docker compose version</code> (≥ 2.20)</td><td>install Docker Desktop and start it</td></tr>
+      <tr><td>Both repos cloned</td><td><code>ls ~/prometheus</code> shows <code>prometheus_platform</code> and <code>prometheus_agent_template</code></td><td>deck 02 bonus (clone commands)</td></tr>
+      <tr><td>PAT created, Docker logged in</td><td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:95c32b5</code></td><td>deck 03 bonus (registry login)</td></tr>
+      <tr><td>Platform starts</td><td><code>make up-fg</code> in <code>prometheus_platform</code>, then <code>http://localhost:5150</code></td><td>deck 03 bonus (<code>.env</code>, "the stack won't start")</td></tr>
+      <tr><td>DeepLynx (if no <code>deeplynx.inl.gov</code> access)</td><td><code>http://localhost:3000</code> shows the DeepLynx UI</td><td>deck 03 bonus (local DeepLynx)</td></tr>
+      <tr><td><code>uv</code> (for the agent session)</td><td><code>uv --version</code></td><td><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide section appendix">
+  <div class="num">A</div>
+  <h2>Appendix: reference</h2>
+  <p class="lede">Reference material behind the talk. Skipped in the session; use it when you need the details.</p>
+</section>
+
+<section class="slide section appendix">
+  <div class="num">01</div>
   <h2>Platform architecture overview</h2>
   <p class="lede">From the big picture to one concrete chat turn: which services exist, what each does, and how a question becomes work done by specialist agents.</p>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Why Prometheus</div><h2>A chat front door to a team of specialist agents</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:36px">
@@ -103,7 +260,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">The big picture</div><h2>Tiers of the platform</h2></div>
   <div class="content">
     <div class="grid" style="grid-template-columns: 470px 1fr; gap:40px; flex:1; min-height:0">
@@ -119,7 +276,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day (1/2)</h2></div>
   <div class="content">
     <table class="t">
@@ -128,7 +285,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day (2/2)</h2></div>
   <div class="content">
     <table class="t">
@@ -137,7 +294,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Concrete architecture</div><h2>What actually runs: <code style="font-size:.8em">docker compose</code> on branch <code style="font-size:.8em">dev</code></h2></div>
   <div class="content">
     <div class="dg" style="gap:0">
@@ -171,7 +328,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Service inventory</div><h2>Every service in <code style="font-size:.8em">docker-compose.yml</code></h2></div>
   <div class="content">
     <table class="t sm">
@@ -190,7 +347,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">One chat turn, end to end</div><h2>From "Mesh this STEP file" to a mesh in the viewer</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:28px">
@@ -210,7 +367,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How the client-agent runs a turn</h2><p class="lede">One tool-calling loop (<code>agents/client-agent/orchestrator/agent_loop.py</code>). Every skill, every workflow template, and an <code>ask_user</code> tool is an LLM tool. After each result the model picks the next fully parameterized call, and it stops when it answers without one.</p></div>
   <div class="content">
 <div class="row" style="align-items:stretch; gap:0">
@@ -228,7 +385,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Inside the orchestrator</div><h2>How a turn ends</h2></div>
   <div class="content">
 <div class="grid g4">
@@ -241,7 +398,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Protocol</div><h2>A2A v1 in one slide</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
@@ -276,7 +433,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Trust boundaries</div><h2>Who proves what to whom</h2></div>
   <div class="content">
     <table class="t sm">
@@ -293,7 +450,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Moving data between agents</div><h2>Artifacts and DeepLynx</h2></div>
   <div class="content">
     <div class="row" style="align-items:stretch; gap:0">
@@ -314,7 +471,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">What is already there</div><h2>Agents that ship with the platform</h2></div>
   <div class="content">
     <table class="t sm">
@@ -333,7 +490,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">The wider ecosystem</div><h2>Agents living in their own repos (github.inl.gov/genesis)</h2></div>
   <div class="content">
     <div class="grid g3" style="gap:14px">
@@ -350,7 +507,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">Three core repositories</div><h2>How the code is organized</h2></div>
   <div class="content">
     <div class="dg">
@@ -374,7 +531,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">A warning about documentation</div><h2>The code moves fast: stale claims you may read</h2></div>
   <div class="content">
 <div class="col">
@@ -395,7 +552,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
   <div class="head"><div class="eyebrow">A warning about documentation</div><h2>When docs disagree, trust the code. These are current:</h2></div>
   <div class="content">
 <div class="col">
@@ -417,7 +574,7 @@
   </div>
 </section>
 
-<section class="slide">
+<section class="slide appendix">
 <div class="head"><div class="eyebrow">Where to find things</div><h2>Links and help</h2></div>
 <div class="content">
 <div class="grid g2" style="gap:28px">
@@ -433,28 +590,6 @@
 <div class="col"><div class="card acc"><h3>Next: GitHub &amp; PR workflow (1:00 pm)</h3><p class="body">Branching, the rebase workflow, opening a PR, and what reviewers expect. Keep your platform running during the break.</p></div></div>
 </div>
 </div>
-</section>
-
-<section class="slide section bonus">
-  <div class="num">+</div>
-  <h2>Bonus: catch-up slides</h2>
-  <p class="lede">For participants who could not finish the homework. Work through these with a mentor while the session goes on.</p>
-</section>
-
-<section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Homework check</div><h2>Is your laptop ready?</h2></div>
-  <div class="content">
-    <table class="t">
-      <tr><th style="width:330px">Homework item</th><th style="width:430px">Quick check</th><th>If it fails</th></tr>
-      <tr><td>Access to <code>github.inl.gov/genesis</code></td><td>open <code>github.inl.gov/genesis/prometheus_platform</code> in the browser</td><td>ask the organizer to add you to the org; deck 02 bonus</td></tr>
-      <tr><td>Docker installed and running</td><td><code>docker info</code>, <code>docker compose version</code> (≥ 2.20)</td><td>install Docker Desktop and start it</td></tr>
-      <tr><td>Both repos cloned</td><td><code>ls ~/prometheus</code> shows <code>prometheus_platform</code> and <code>prometheus_agent_template</code></td><td>deck 02 bonus (clone commands)</td></tr>
-      <tr><td>PAT created, Docker logged in</td><td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:95c32b5</code></td><td>deck 03 bonus (registry login)</td></tr>
-      <tr><td>Platform starts</td><td><code>make up-fg</code> in <code>prometheus_platform</code>, then <code>http://localhost:5150</code></td><td>deck 03 bonus (<code>.env</code>, "the stack won't start")</td></tr>
-      <tr><td>DeepLynx (if no <code>deeplynx.inl.gov</code> access)</td><td><code>http://localhost:3000</code> shows the DeepLynx UI</td><td>deck 03 bonus (local DeepLynx)</td></tr>
-      <tr><td><code>uv</code> (for the agent session)</td><td><code>uv --version</code></td><td><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></td></tr>
-    </table>
-  </div>
 </section>
 
 </div></div>
