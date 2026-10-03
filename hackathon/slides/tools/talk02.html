@@ -1,0 +1,357 @@
+<section class="slide title">
+  <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
+  <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
+  <div class="kicker">Day 1 · 1:00 pm</div>
+  <h1>GitHub overview &amp;<br>PR workflow</h1>
+  <p class="sub">Where your code goes, how to branch and rebase, and how to get a PR reviewed and merged.</p>
+  <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">github.inl.gov/genesis</span></div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">This session</div><h2>By the end you can…</h2></div>
+  <div class="content">
+    <div class="grid g3">
+      <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Find your repo</h3><p class="small">Know where your code goes (<code>genesis/hackathon</code>) and why you fork it.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>Work on a branch</h3><p class="small">Branch, commit, stay current with <code>git pull --rebase</code>, and push safely.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>Get merged</h3><p class="small">Open a PR reviewers can act on, and review someone else's.</p></div>
+    </div>
+    <div class="callout info">You'll do all three for real at 3:30 pm, with a practice PR. On Day 2 every team works the same way.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Where your code goes</div><h2><code style="font-size:.8em">genesis/hackathon</code>: one repo, one folder per team</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm">hackathon/                <span class="c"># github.inl.gov/genesis/hackathon</span>
+├── practice/
+│   └── <span class="p">&lt;you&gt;</span>/            <span class="c"># today: your hello-world agent</span>
+├── agents/
+│   ├── <span class="p">&lt;team_name&gt;</span>/      <span class="c"># Day 2: your team's agent</span>
+│   │   ├── agent.py
+│   │   ├── agent_card.json
+│   │   └── tests/
+│   └── …
+└── hollowmere_almanac.md</pre>
+      <div class="col">
+        <ul class="b">
+          <li>Everyone has <b>read</b> access, so you work in your own <b>fork</b> and open PRs to <code>genesis/hackathon</code>.</li>
+          <li>Changes reach <code>main</code> only through reviewed PRs.</li>
+          <li>The platform repos (<code>prometheus_platform</code>, <code>prometheus_api</code>, the template) are read-only for this hackathon.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide section">
+  <div class="num">02</div>
+  <h2>Branching strategy</h2>
+  <p class="lede">Git Flow: a production branch, an integration branch, short-lived feature branches, and release/hotfix lanes.</p>
+</section>
+
+<section class="slide" data-nofit style="gap:10px">
+  <div class="head"><div class="eyebrow">Our model · develop = dev in prometheus_platform</div></div>
+  <div class="content center" style="flex:1; min-height:0">
+    <img class="fit" src="assets/git_branches.png" alt="Git Flow branching strategy diagram" style="max-height:740px">
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">What it means for you</div><h2>You work on feature branches</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <table class="t">
+        <tr><th>Branch</th><th>Who touches it</th></tr>
+        <tr class="hl"><td><code>feature/&lt;desc&gt;</code></td><td><b>you</b>: one per piece of work, in your fork</td></tr>
+        <tr><td><code>main</code> (hackathon, api, template)<br><code>dev</code> (platform)</td><td>the integration branch: PRs only</td></tr>
+        <tr><td><code>release/*</code>, <code>hotfix/*</code>, platform <code>main</code></td><td>maintainers, for releases</td></tr>
+      </table>
+      <div class="col">
+        <ul class="b">
+          <li>Name branches <code>feature/&lt;team&gt;-&lt;what&gt;</code>: <code>feature/neutron-plot-skill</code>.</li>
+          <li>Branch from the latest integration branch, keep it short-lived, delete it after the merge.</li>
+          <li>Never commit to <code>main</code> or <code>dev</code> directly.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Once</div><h2>Fork and clone: <code style="font-size:.8em">origin</code> is yours, <code style="font-size:.8em">upstream</code> is genesis</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm">export GH_HOST=github.inl.gov
+gh repo fork genesis/hackathon --clone=false
+
+cd ~/prometheus
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
+cd hackathon
+git remote add upstream \
+  git@github.inl.gov:genesis/hackathon.git
+
+git config pull.rebase true
+git config rebase.autoStash true</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li><code>origin</code> = your fork: you push here.</li>
+          <li><code>upstream</code> = genesis: PRs go here, and you pull updates from here.</li>
+          <li>Check with <code>git remote -v</code>.</li>
+        </ul>
+        <div class="callout">Each teammate forks separately. Everyone's PRs meet in <code>genesis/hackathon</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Every piece of work</div><h2>The daily loop</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
+      <pre class="sm">git fetch upstream
+git switch -c feature/neutron-plot-skill upstream/main
+
+<span class="c"># edit, test, commit small steps</span>
+git add -p
+git commit -m "Add the plot skill with a column form"
+
+<span class="h">git pull --rebase upstream main</span>   <span class="c"># stay current</span>
+git push -u origin HEAD
+
+gh pr create --repo genesis/hackathon --base main \
+  --head <span class="p">&lt;you&gt;</span>:feature/neutron-plot-skill</pre>
+      <div class="col">
+        <ol class="b sm">
+          <li><b>Branch</b> from the latest <code>upstream/main</code></li>
+          <li><b>Commit</b> small, logical steps</li>
+          <li><b>Rebase</b> onto upstream before pushing</li>
+          <li><b>Push</b> to your fork</li>
+          <li><b>Open a PR</b> to genesis</li>
+        </ol>
+        <p class="small">For the platform repo the integration branch is <code>dev</code>: <code>git pull --rebase upstream dev</code>, <code>--base dev</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">What rebase does</div><h2><code style="font-size:.8em">git pull --rebase upstream dev</code>, visually</h2></div>
+  <div class="content">
+    <svg viewBox="0 0 1400 380" width="1400" height="380" role="img" aria-label="Rebase diagram">
+      <style>
+        .ln{stroke:#9aa8ba;stroke-width:4;fill:none}
+        .dv{fill:#d8c93a;stroke:#fff;stroke-width:3}
+        .ft{fill:#6b4fbb;stroke:#fff;stroke-width:3}
+        .ftn{fill:#fff;stroke:#6b4fbb;stroke-width:3;stroke-dasharray:4 3}
+        .lb{font:600 17px 'JetBrains Mono',monospace;fill:#35455b}
+        .tt{font:700 22px Archivo,sans-serif;fill:#0e1b2c}
+        .cm{font:15px 'JetBrains Mono',monospace;fill:#66768c}
+      </style>
+      <text class="tt" x="20" y="34">Before</text>
+      <path class="ln" d="M60 110 H600"/>
+      <path class="ln" d="M200 110 C240 110 240 180 280 180 H440" style="stroke:#6b4fbb"/>
+      <circle class="dv" cx="100" cy="110" r="15"/><circle class="dv" cx="200" cy="110" r="15"/>
+      <circle class="dv" cx="400" cy="110" r="15"/><circle class="dv" cx="520" cy="110" r="15"/>
+      <circle class="ft" cx="320" cy="180" r="15"/><circle class="ft" cx="430" cy="180" r="15"/>
+      <text class="lb" x="560" y="94">upstream/dev</text>
+      <text class="lb" x="460" y="186">feature/x</text>
+      <text class="cm" x="300" y="224">A</text><text class="cm" x="422" y="224">B</text>
+      <text class="cm" x="385" y="80">C</text><text class="cm" x="507" y="80">D</text>
+
+      <text class="tt" x="720" y="34">After</text>
+      <path class="ln" d="M760 110 H1260"/>
+      <path class="ln" d="M1220 110 C1250 110 1250 180 1280 180 H1340" style="stroke:#6b4fbb"/>
+      <circle class="dv" cx="800" cy="110" r="15"/><circle class="dv" cx="900" cy="110" r="15"/>
+      <circle class="dv" cx="1060" cy="110" r="15"/><circle class="dv" cx="1220" cy="110" r="15"/>
+      <circle class="ft" cx="1290" cy="180" r="15"/><circle class="ft" cx="1345" cy="180" r="15"/>
+      <text class="lb" x="1040" y="80">upstream/dev</text>
+      <text class="cm" x="1045" y="150">C</text><text class="cm" x="1207" y="150">D</text>
+      <text class="cm" x="1266" y="224">A′</text><text class="cm" x="1330" y="224">B′</text>
+      <text class="lb" x="1150" y="258">feature/x</text>
+
+      <text class="cm" x="20" y="300">Your commits A and B are replayed on top of the new tip D as new commits A′ and B′ (new SHAs).</text>
+      <text class="cm" x="20" y="328">That is why the next push needs --force-with-lease, and why rebasing an open PR restarts review.</text>
+    </svg>
+    <div class="grid g3">
+      <div class="card"><h4>Conflict?</h4><pre class="xs">git status              <span class="c"># see files</span>
+<span class="c"># edit, then</span>
+git add &lt;file&gt;
+git rebase --continue
+git rebase --abort      <span class="c"># bail out</span></pre></div>
+      <div class="card"><h4>Tidy before review</h4><pre class="xs">git rebase -i upstream/dev
+<span class="c"># squash fixups, reword</span>
+git commit --fixup &lt;sha&gt;
+git rebase -i --autosquash …</pre><p class="tiny">Interactive rebase needs a terminal editor.</p></div>
+      <div class="card"><h4>Repeated conflicts</h4><pre class="xs">git config rerere.enabled true</pre><p class="small">git remembers how you resolved a conflict and reapplies it on the next rebase.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">After a rebase</div><h2>Conflicts and force-pushes</h2></div>
+  <div class="content">
+    <div class="grid g3">
+      <div class="card"><h4>A conflict during rebase</h4><pre class="xs">git status          <span class="c"># which files</span>
+<span class="c"># fix them, then</span>
+git add &lt;file&gt;
+git rebase --continue
+git rebase --abort  <span class="c"># start over</span></pre></div>
+      <div class="card"><h4>Pushing a rebased branch</h4><pre class="xs">git push --force-with-lease</pre><p class="small">A rebase rewrites your commits, so the push must be forced. <code>--force-with-lease</code> refuses if someone else pushed in the meantime. Never plain <code>--force</code>.</p></div>
+      <div class="card"><h4>Rebasing an open PR</h4><p class="small">Any new push clears existing approvals. Rebase <b>before</b> asking for review; during review, push new commits instead.</p></div>
+    </div>
+    <div class="callout warn">Force-push only <b>your own</b> feature branch, never a branch a teammate also works on.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Commits</div><h2>Commit messages people can read later</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <ul class="b">
+        <li><b>Imperative subject, under 72 characters</b>: "Add…", "Fix…", "Handle…".</li>
+        <li><b>The body explains why</b>; the diff shows what.</li>
+        <li>One topic per commit.</li>
+        <li><b>Never commit <code>.env</code></b>, keys, or tokens. Check <code>git status</code> before every commit.</li>
+      </ul>
+      <div class="col">
+        <h4 class="acc">Good</h4>
+        <pre class="sm">Handle thousands separators in table cells
+Ask for the x column when none was given
+Return the matched caption with the table id</pre>
+        <h4 class="acc">Not helpful</h4>
+        <pre class="sm">wip
+fix
+changes</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Opening a PR</div><h2>A description reviewers can act on</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1.2fr 1fr; gap:28px">
+      <pre class="sm"><span class="p">JIRA:</span> PPLT-123            <span class="c"># project convention</span>
+
+<span class="p">## What</span>
+Plot skill asks for columns when none are given.
+
+<span class="p">## Why</span>
+"plot this" on a CSV used to fail.
+
+<span class="p">## How it was tested</span>
+- uv run pytest, uv run ruff check .
+- Chat: uploaded the CSV, said "plot this",
+  picked columns in the form, plot rendered.</pre>
+      <div class="col">
+        <ul class="b sm">
+          <li><b>Title</b> like a commit subject.</li>
+          <li><b>Small and focused</b>: one topic per PR.</li>
+          <li>Say <b>how you tested</b> it.</li>
+          <li>In project work, reference the <b>JIRA task</b> (<code>PPLT-…</code>).</li>
+          <li>Still in progress? <code>gh pr create --draft</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Code review</div><h2>Reviewing, and being reviewed</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <div class="card"><h3>As an author</h3><ul class="b sm">
+        <li>Reply to every comment: "Fixed in <code>a1b2c3d</code>", or why not.</li>
+        <li>Push fixes as new commits during review.</li>
+        <li>Never approve your own PR (you can't).</li>
+      </ul></div>
+      <div class="card"><h3>As a reviewer</h3><ul class="b sm">
+        <li>Be concrete: which line, which input breaks it.</li>
+        <li>Separate "must fix" from "nit".</li>
+        <li>Check the tests test what they claim.</li>
+      </ul></div>
+    </div>
+    <div class="callout good">The Day 2 gate needs one PR <b>approved by someone outside your team</b>. Pair up with another team early.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Practice at 3:30</div><h2>Your practice PR to <code style="font-size:.8em">genesis/hackathon</code></h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="xs">cd ~/prometheus
+export GH_HOST=github.inl.gov
+gh repo fork genesis/hackathon --clone=false
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
+cd hackathon
+git remote add upstream git@github.inl.gov:genesis/hackathon.git
+git fetch upstream
+git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
+
+mkdir -p practice/<span class="p">&lt;you&gt;</span>
+cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
+   practice/<span class="p">&lt;you&gt;</span>/
+git status                     <span class="c"># NO .env in the list!</span>
+git add practice/<span class="p">&lt;you&gt;</span>
+git commit -m "Add hello-world agent for &lt;you&gt;"
+
+git push -u origin HEAD
+gh pr create --repo genesis/hackathon --base main \
+  --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> \
+  --title "Practice: hello from &lt;you&gt;" --body "Dry run PR."</pre>
+      <div class="col">
+        <ol class="b sm">
+          <li>Open the PR to <b><code>genesis/hackathon</code></b>, base <code>main</code>. Practice agents go in <code>practice/&lt;you&gt;/</code>; on Day 2 your team's agent goes in <code>agents/&lt;team_name&gt;/</code>.</li>
+          <li>Ask a neighbour to review. Leave one comment, answer it, and resolve it.</li>
+          <li>The reviewer approves; a mentor merges.</li>
+          <li>Rebase exercise: after someone else's PR merges, run <code>git pull --rebase upstream main</code> on your next branch.</li>
+        </ol>
+        <div class="callout warn">Double-check <code>git status</code> before committing: your agent directory contains a <code>.env</code> with the platform secrets. Copy only the files listed; never commit a <code>.env</code>.</div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">genesis/hackathon: main only, unprotected, forking allowed, readable through team open. Consider a .gitignore with .env at the repo root and a ruleset requiring one approval on main.</aside>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Cheat sheet</div><h2>Git &amp; gh commands on one page</h2></div>
+  <div class="content">
+    <div class="grid g3" style="gap:18px">
+      <pre class="xs"><span class="c"># setup (once)</span>
+export GH_HOST=github.inl.gov
+gh auth login --hostname github.inl.gov
+gh repo fork genesis/&lt;repo&gt; --clone=false
+git clone git@github.inl.gov:&lt;you&gt;/&lt;repo&gt;.git
+git remote add upstream \
+  git@github.inl.gov:genesis/&lt;repo&gt;.git
+git config pull.rebase true
+git config rebase.autoStash true
+git config rerere.enabled true</pre>
+      <pre class="xs"><span class="c"># every feature</span>
+git fetch upstream
+git switch -c feature/&lt;desc&gt; upstream/main
+<span class="c">#   (upstream/dev for the platform)</span>
+git commit -m "Imperative subject"
+git pull --rebase upstream main
+git push -u origin HEAD
+git push --force-with-lease
+gh pr create --repo genesis/&lt;repo&gt; \
+  --base main --head &lt;you&gt;:feature/&lt;desc&gt;</pre>
+      <pre class="xs"><span class="c"># during review</span>
+gh pr status
+gh pr view --comments
+gh pr checks
+gh pr diff
+git rebase --continue | --abort
+git log --oneline --graph \
+  upstream/main..HEAD
+
+<span class="c"># after merge</span>
+git switch -d upstream/main
+git branch -D feature/&lt;desc&gt;
+git push origin --delete feature/&lt;desc&gt;</pre>
+    </div>
+    <div class="callout">Next: <b>Your local platform</b> (1:45 pm). Keep your platform running; we look at what it runs for you.</div>
+  </div>
+</section>
