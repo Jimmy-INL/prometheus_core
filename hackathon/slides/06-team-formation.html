@@ -334,10 +334,10 @@ columns = list(df.columns)
   <div class="content">
     <div class="grid g2" style="gap:30px">
       <div class="steps">
-        <div class="step"><div><h4>Create the repo</h4><p class="small">One teammate creates <code>&lt;team&gt;-table-plot-agent</code> and adds everyone. Commit the practice files under <code>tests/fixtures/</code>.</p></div></div>
-        <div class="step"><div><h4>Scaffold with two stub skills</h4><p class="small"><code>setup_agent.py</code>, then add the second skill to the card and a dispatch on <code>params["skill_id"]</code>. Push.</p></div></div>
+        <div class="step"><div><h4>Claim your folder</h4><p class="small">Your agent lives in <code>genesis/hackathon</code> under <code>agents/&lt;team_name&gt;/</code>. Everyone forks the repo; one teammate opens the first PR with the scaffold. Practice files go in <code>agents/&lt;team_name&gt;/tests/fixtures/</code>.</p></div></div>
+        <div class="step"><div><h4>Scaffold with two stub skills</h4><p class="small"><code>setup_agent.py</code> with output directory <code>../hackathon/agents/&lt;team_name&gt;</code>, then add the second skill to the card and a dispatch on <code>params["skill_id"]</code>. Push.</p></div></div>
         <div class="step"><div><h4>Check routing first</h4><p class="small">Upload the practice report, try the example prompt, and see both stubs called in order. The extract stub must already emit a real artifact, or the orchestrator has no id to pass to plot.</p></div></div>
-        <div class="step"><div><h4>Split by role</h4><p class="small">Everyone works on a <code>feature/…</code> branch, runs <code>git pull --rebase origin main</code> often, and opens small PRs.</p></div></div>
+        <div class="step"><div><h4>Split by role</h4><p class="small">Everyone works on a <code>feature/…</code> branch, runs <code>git pull --rebase upstream main</code> often, and opens small PRs to <code>genesis/hackathon</code>.</p></div></div>
       </div>
       <div class="col">
         <div class="card acc"><h3>Keep these open</h3><ul class="b sm">

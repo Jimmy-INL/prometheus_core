@@ -29,7 +29,7 @@
       <div class="card acc"><h3>Work safely</h3><ul class="b sm"><li>Fork, clone, add <code>upstream</code></li><li>Branch <code>feature/&lt;desc&gt;</code> from the integration branch</li><li>Stay current with <code>git pull --rebase upstream dev</code></li><li>Push with <code>--force-with-lease</code> to <i>your fork</i></li></ul></div>
       <div class="card acc"><h3>Get merged</h3><ul class="b sm"><li>Run the local checks (they <i>are</i> the CI for most repos)</li><li>Open a PR with <code>gh pr create</code> against the right base</li><li>Pass review: 1 approval, all threads resolved</li></ul></div>
     </div>
-    <div class="callout info">Hands-on is at 3:30 pm: you will open a practice PR against the <code>sandbox</code> branch. Nothing today touches <code>dev</code> or <code>main</code>.</div>
+    <div class="callout info">Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</code>, the repo where every team's agent lands on Day 2. Nothing today touches the platform's <code>dev</code> or <code>main</code>.</div>
   </div>
 </section>
 
@@ -264,7 +264,7 @@ prometheus_api.git@95c32b5"</pre></div>
           <tr><td><b>prometheus_api</b></td><td><code>main</code></td><td><code>--base main</code></td></tr>
           <tr><td><b>prometheus_agent_template</b></td><td><code>main</code></td><td><code>--base main</code></td></tr>
           <tr><td>agent repos (gmsh_agent…)</td><td><code>main</code></td><td><code>--base main</code></td></tr>
-          <tr><td><b>Hackathon practice</b></td><td><code>sandbox</code> (platform)</td><td><code>--base sandbox</code></td></tr>
+          <tr class="hl"><td><b>genesis/hackathon</b> (practice + team agents)</td><td><code>main</code></td><td><code>--base main</code></td></tr>
         </table>
         <p class="small">In the commands on the next slides, substitute <code>main</code> for <code>dev</code> when you work on a repo without a <code>dev</code> branch.</p>
       </div>
@@ -421,7 +421,7 @@ git rebase -i --autosquash …</pre><p class="tiny">Interactive rebase needs a t
           <tr><th>Repo</th><th>Allowed merge methods</th></tr>
           <tr><td>prometheus_platform</td><td>merge commit, squash, rebase</td></tr>
           <tr><td>prometheus_api</td><td>merge commit, squash (rebase-merge <b>off</b>); head branch auto-deleted</td></tr>
-          <tr><td>template, gmsh, sandbox</td><td>all three</td></tr>
+          <tr><td>template, gmsh, agent-sandbox-mcp, hackathon</td><td>all three</td></tr>
         </table>
         <p class="small">In practice most PRs land as <b>merge commits</b> ("Merge pull request #N from …"). A rebased feature branch makes that merge commit clean: the history shows your commits intact, followed by one merge.</p>
       </div>
@@ -515,7 +515,7 @@ Stop a large STEP from 413ing behind the
       <tr class="hl"><td><b>platform <code>dev</code></b></td><td>1</td><td>dismiss stale · last-push approval · threads resolved</td><td>—</td><td>no force-push, no delete</td></tr>
       <tr><td><b>api <code>main</code></b></td><td>1</td><td>same, plus code-owner review (CODEOWNERS covers only <code>/.github</code>)</td><td>6 jobs, strict</td><td>no force-push, no delete</td></tr>
       <tr><td><b>template <code>main</code></b></td><td>1</td><td>dismiss stale · last-push approval · threads resolved</td><td>—</td><td>no force-push, no delete</td></tr>
-      <tr><td>gmsh_agent, sandbox <code>main</code></td><td>—</td><td>unprotected</td><td>—</td><td>—</td></tr>
+      <tr><td>gmsh_agent, agent-sandbox-mcp, hackathon <code>main</code></td><td>—</td><td>unprotected</td><td>—</td><td>—</td></tr>
       <tr><td>platform <code>main</code></td><td>—</td><td>its ruleset targets no branch yet</td><td>—</td><td>—</td></tr>
     </table>
     <div class="grid g3">
@@ -601,37 +601,41 @@ gh pr ready               <span class="c"># draft → ready</span></pre></div>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Practice at 3:30</div><h2>Your practice PR against <code style="font-size:.8em">sandbox</code></h2></div>
+  <div class="head"><div class="eyebrow">Practice at 3:30</div><h2>Your practice PR to <code style="font-size:.8em">genesis/hackathon</code></h2></div>
   <div class="content">
     <div class="grid g2" style="gap:30px">
-      <pre class="sm">cd prometheus_platform
+      <pre class="xs">cd ~/prometheus
+export GH_HOST=github.inl.gov
+gh repo fork genesis/hackathon --clone=false
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
+cd hackathon
+git remote add upstream git@github.inl.gov:genesis/hackathon.git
 git fetch upstream
-git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/sandbox
+git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
 
-<span class="c"># add your generated hello-world agent (not under</span>
-<span class="c"># agents/, so it is not auto-included in the stack)</span>
-mkdir -p hackathon/<span class="p">&lt;you&gt;</span>
-cp -r ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
-      hackathon/<span class="p">&lt;you&gt;</span>/
-git add hackathon/<span class="p">&lt;you&gt;</span>
+mkdir -p practice/<span class="p">&lt;you&gt;</span>
+cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
+   practice/<span class="p">&lt;you&gt;</span>/
+git status                     <span class="c"># NO .env in the list!</span>
+git add practice/<span class="p">&lt;you&gt;</span>
 git commit -m "Add hello-world agent for &lt;you&gt;"
 
 git push -u origin HEAD
-gh pr create --repo genesis/prometheus_platform \
-  --base sandbox --title "Practice: hello from &lt;you&gt;" \
-  --body "Dry run PR."</pre>
+gh pr create --repo genesis/hackathon --base main \
+  --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> \
+  --title "Practice: hello from &lt;you&gt;" --body "Dry run PR."</pre>
       <div class="col">
         <ol class="b sm">
-          <li>Open the PR against <b><code>sandbox</code></b>, never <code>dev</code>.</li>
+          <li>Open the PR to <b><code>genesis/hackathon</code></b>, base <code>main</code>. Practice agents go in <code>practice/&lt;you&gt;/</code>; on Day 2 your team's agent goes in <code>agents/&lt;team_name&gt;/</code>.</li>
           <li>Ask a neighbour to review. Leave one comment, answer it, and resolve it.</li>
           <li>The reviewer approves; a mentor merges.</li>
-          <li>Rebase exercise: after someone else's PR merges, run <code>git pull --rebase upstream sandbox</code> on your next branch.</li>
+          <li>Rebase exercise: after someone else's PR merges, run <code>git pull --rebase upstream main</code> on your next branch.</li>
         </ol>
-        <div class="callout warn">Double-check <code>git status</code> before committing: your agent directory contains a <code>.env</code> with the platform secrets. It is gitignored inside the agent directory; do not copy it.</div>
+        <div class="callout warn">Double-check <code>git status</code> before committing: your agent directory contains a <code>.env</code> with the platform secrets. Copy only the files listed; never commit a <code>.env</code>.</div>
       </div>
     </div>
   </div>
-  <aside class="notes">Organizers: the sandbox branch does not exist yet. Create "sandbox" from dev in genesis/prometheus_platform before the event (ruleset 35 only covers the default branch, so sandbox will be unprotected; maintainers merge).</aside>
+  <aside class="notes">genesis/hackathon: main only, unprotected, forking allowed, readable through team open. Consider a .gitignore with .env at the repo root and a ruleset requiring one approval on main.</aside>
 </section>
 
 <section class="slide">

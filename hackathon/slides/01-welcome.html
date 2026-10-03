@@ -28,7 +28,7 @@
     <div class="grid g4" style="margin-top:10px">
       <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Understanding</h3><p class="small">How the platform, the repos, and an agent fit together, and why.</p></div>
       <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A working agent</h3><p class="small">A "hello world" agent from the template, registered and called from the chat.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request on the <code>sandbox</code> branch.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request to <code>genesis/hackathon</code>, where the team agents go on Day 2.</p></div>
       <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A team</h3><p class="small">4–5 people, a name, and a room for Day 2.</p></div>
     </div>
     <div class="callout info">We assume your platform already starts with <code>make up-fg</code> and DeepLynx is set up. Not quite there? Each deck ends with <b>bonus catch-up slides</b>, and mentors will help.</div>
@@ -43,7 +43,7 @@
     <div class="agenda-row"><span class="tm">1:45</span><div><div class="ti">Local platform deployment</div><div class="de">Docker/Compose · env vars and secrets · starting the platform · health checks · DeepLynx · common failure modes and fixes</div></div></div>
     <div class="agenda-row"><span class="tm">2:30</span><div><div class="ti">Break</div></div></div>
     <div class="agenda-row"><span class="tm">2:45</span><div><div class="ti">Agent template</div><div class="de">Anatomy of the template · agent card fields · registering with the Agent Registry · how the orchestrator discovers and calls your agent · LLMClient</div></div></div>
-    <div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the "hello world" agent, submit a practice PR to the sandbox branch. Mentors circulate.</div></div></div>
+    <div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the "hello world" agent, submit a practice PR to <code>genesis/hackathon</code>. Mentors circulate.</div></div></div>
     <div class="agenda-row"><span class="tm">4:30</span><div><div class="ti">The challenge &amp; team formation</div><div class="de">The Day 2 challenge (a table-and-plot agent) · practice files · teams of 4–5 · team name and Day 2 room</div></div></div>
   </div>
 </section>
@@ -123,7 +123,7 @@
   <div class="head"><div class="eyebrow">Vocabulary</div><h2>Twelve words you will hear all day (1/2)</h2></div>
   <div class="content">
     <table class="t">
-<tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr><tr><td><b>Agent</b></td><td>A Python web service (subclass of <code>PrometheusAgent</code>) that performs one or more skills.</td></tr><tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. Each skill is one tool for the orchestrator LLM.</td></tr><tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. Its skill descriptions, <code>usage_notes</code>, and schemas are what the orchestrator LLM reads to decide whether and how to call you.</td></tr><tr><td><b>A2A</b></td><td>Agent-to-Agent protocol, v1.0: JSON-RPC 2.0 over HTTP (<code>SendMessage</code>, <code>SendStreamingMessage</code>).</td></tr><tr><td><b>Client-agent</b></td><td>The orchestrator ("Nuclear Analysis Client Agent"). It plans, collects parameters, dispatches, and aggregates.</td></tr><tr><td><b>Registry / gateway</b></td><td>LiteLLM. Agents <code>POST /v1/agents</code> to register; the orchestrator calls them via <code>/a2a/{agent_name}</code>.</td></tr>
+<tr><th style="width:230px">Term</th><th>Meaning in Prometheus</th></tr><tr><td><b>Agent</b></td><td>A Python web service (subclass of <code>PrometheusAgent</code>) that performs one or more skills.</td></tr><tr><td><b>Skill</b></td><td>One capability of an agent, with an <code>id</code>, description, and JSON <code>inputSchema</code>. Each skill is one tool for the orchestrator LLM.</td></tr><tr><td><b>Agent card</b></td><td><code>agent_card.json</code>: name, description, capabilities, skills. Its skill descriptions, <code>usage_notes</code>, and schemas are what the orchestrator LLM reads to decide whether and how to call you.</td></tr><tr><td><b>A2A</b></td><td>Agent-to-Agent protocol, v1.0: JSON-RPC 2.0 over HTTP (<code>SendMessage</code>, <code>SendStreamingMessage</code>).</td></tr><tr><td><b>Client agent</b></td><td>The orchestrator / planner. It plans, collects parameters, dispatches, and aggregates.</td></tr><tr><td><b>Registry / gateway</b></td><td>LiteLLM. Agents <code>POST /v1/agents</code> to register; the orchestrator calls them via <code>/a2a/{agent_name}</code>.</td></tr>
     </table>
   </div>
 </section>
@@ -233,7 +233,7 @@
   <div class="content">
 <div class="grid g4">
 <div class="card"><span class="tag">needs_info</span><p class="small">A required input the model couldn't fill, an <code>ask_user</code> question, or an agent's INPUT_REQUIRED: a form is shown. The backend gives up after 5 rounds in a row.</p></div>
-<div class="card"><span class="tag">plan_ready</span><p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done.</p></div>
+<div class="card"><span class="tag">plan_ready</span><p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done. <i>Planned: one up-front approval when a plan contains such skills.</i></p></div>
 <div class="card"><span class="tag">completed / answer</span><p class="small">The model's final reply, with or without skill calls. The chat text is the orchestrator's summary; your artifacts render from the catalog.</p></div>
 <div class="card"><span class="tag">error</span><p class="small">A loop error or the 12-step cap. If no skill fits, the model just says so; anything that could run has run.</p></div>
 </div>
@@ -367,7 +367,7 @@
         <div class="arrow-v" style="width:520px"><span>scaffolds</span></div>
       </div>
       <div class="row" style="justify-content:center">
-        <div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b></span><span>Separate repos. Run them next to the platform (joining its Docker network), or clone them into <code>prometheus_platform/agents/&lt;name&gt;/</code>.</span></div>
+        <div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in <code>genesis/hackathon</code>, under <code>agents/&lt;team_name&gt;/</code>)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or clone them into <code>prometheus_platform/agents/&lt;name&gt;/</code>.</span></div>
       </div>
     </div>
     <div class="callout">No git submodules and no pip dependency between platform and agents. The <b>base Docker image</b> delivers the SDK; the <b>registry</b> connects services at runtime. More on this at 1:00 pm.</div>

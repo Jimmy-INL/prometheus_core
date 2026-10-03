@@ -19,7 +19,7 @@
 <div class="card acc"><div class="kpi"><span class="v">1</span><span class="l">~10 min</span></div><h3>Check</h3><p class="small">Your platform from the homework is up, you are logged in with an active signing key, and your clone has your fork as <code>origin</code>.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">2</span><span class="l">~15 min</span></div><h3>Scaffold</h3><p class="small">Clone <code>prometheus_agent_template</code> and run <code>setup_agent.py</code> with a <b>unique</b> name (<code>hello-&lt;you&gt;</code>).</p></div>
 <div class="card acc"><div class="kpi"><span class="v">3</span><span class="l">~15 min</span></div><h3>Edit &amp; call</h3><p class="small">Change the skill so it greets by name. <code>make up</code>, check it registered, and get the chat to route to it.</p></div>
-<div class="card acc"><div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div><h3>Practice PR</h3><p class="small">Branch from <code>upstream/sandbox</code>, commit your agent under <code>hackathon/&lt;you&gt;/</code>, open a PR with <code>--base sandbox</code>, get a review.</p></div>
+<div class="card acc"><div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div><h3>Practice PR</h3><p class="small">Fork <code>genesis/hackathon</code>, commit your agent under <code>practice/&lt;you&gt;/</code>, open a PR to <code>main</code>, get a review.</p></div>
 </div>
 <div class="grid g3 wrap-code">
 <div class="callout good"><b>Done</b> = <code>/agents</code> lists your agent, a chat message returns your greeting, and your PR has an approval.</div>
@@ -124,26 +124,31 @@ docker restart client-agent</pre>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Practice PR to <code style="font-size:.8em">sandbox</code>, with a rebase</h2></div>
+  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Practice PR to <code style="font-size:.8em">genesis/hackathon</code>, with a rebase</h2></div>
   <div class="content">
     <div class="grid g2" style="gap:24px">
-      <pre class="xs">cd ~/prometheus/prometheus_platform
+      <pre class="xs">cd ~/prometheus
+export GH_HOST=github.inl.gov
+gh repo fork genesis/hackathon --clone=false
+git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
+cd hackathon
+git remote add upstream git@github.inl.gov:genesis/hackathon.git
 git fetch upstream
-git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/sandbox
+git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
 
-mkdir -p hackathon/<span class="p">&lt;you&gt;</span>
+mkdir -p practice/<span class="p">&lt;you&gt;</span>
 cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
-   hackathon/<span class="p">&lt;you&gt;</span>/
+   practice/<span class="p">&lt;you&gt;</span>/
 git status                     <span class="c"># NO .env in the list!</span>
-git add hackathon/<span class="p">&lt;you&gt;</span>
+git add practice/<span class="p">&lt;you&gt;</span>
 git commit -m "Add hello-world agent for &lt;you&gt;"
 
 <span class="c"># someone else merged first? replay on top</span>
-<span class="h">git pull --rebase upstream sandbox</span>
+<span class="h">git pull --rebase upstream main</span>
 
 git push -u origin HEAD        <span class="c"># later: git push --force-with-lease</span>
-gh pr create --repo genesis/prometheus_platform \
-  --base sandbox --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> \
+gh pr create --repo genesis/hackathon \
+  --base main --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> \
   --title "Practice: hello from &lt;you&gt;" \
   --body "Dry-run PR. Tested: uv run pytest, routed in UI."</pre>
       <div class="col">
@@ -154,10 +159,10 @@ gh pr create --repo genesis/prometheus_platform \
           <li>Reviewer: resolve the thread and <b>approve</b></li>
           <li>A mentor merges</li>
         </ol>
-        <div class="callout warn">Base is <b><code>sandbox</code></b>, never <code>dev</code>. <code>--force-with-lease</code> only on your own feature branch.</div>
+        <div class="callout warn">Repo <b><code>genesis/hackathon</code></b>, base <code>main</code>. <code>--force-with-lease</code> only on your own feature branch.</div>
         <table class="t xs wrap-code">
           <tr><th>If…</th><th>then</th></tr>
-          <tr><td><code>upstream/sandbox</code> not found</td><td><code>git fetch upstream</code>; ask a mentor</td></tr>
+          <tr><td>cannot fork or see <code>genesis/hackathon</code></td><td>org access (team <code>open</code>); ask a mentor</td></tr>
           <tr><td>rebase conflict</td><td>edit → <code>git add</code> → <code>git rebase --continue</code> (or <code>--abort</code>)</td></tr>
           <tr><td>push rejected (non-fast-forward)</td><td>after a rebase: <code>git push --force-with-lease</code></td></tr>
           <tr><td><code>gh</code> talks to github.com</td><td><code>export GH_HOST=github.inl.gov</code></td></tr>
@@ -165,7 +170,7 @@ gh pr create --repo genesis/prometheus_platform \
       </div>
     </div>
   </div>
-  <aside class="notes">Requires a "sandbox" branch in genesis/prometheus_platform, created from dev before the event.</aside>
+  <aside class="notes">Practice PRs go to genesis/hackathon main under practice/&lt;user&gt;/; team agents on Day 2 go under agents/&lt;team_name&gt;/.</aside>
 </section>
 
 <section class="slide section bonus">
