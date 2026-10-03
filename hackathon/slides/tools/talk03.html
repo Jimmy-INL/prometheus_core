@@ -1,0 +1,192 @@
+<section class="slide title">
+  <div class="logos"><img src="assets/INL-logo.png" alt="INL"><img src="assets/genesis_logo.png" alt="Genesis"></div>
+  <img src="assets/prometheus_logo.png" alt="Prometheus" style="width:560px; margin-left:-18px">
+  <div class="kicker">Day 1 · 1:45 pm</div>
+  <h1>Your local platform</h1>
+  <p class="sub">You started it at home. Now: what it runs for your agent, how to tell it is healthy, the LLM models it offers, DeepLynx for your files, and what to do when something is off.</p>
+  <div class="meta"><span class="pill acc">All participants</span><span class="pill">45 min</span><span class="pill">internals in the appendix</span></div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Goal</div><h2>By the break, your platform is ready for an agent</h2></div>
+  <div class="content">
+    <div class="grid g4">
+      <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Healthy</h3><p class="small">All services up, and you know where to look when one isn't.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>Logged in</h3><p class="small">An admin user and an active signing key.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>LLMs answer</h3><p class="small">The flavors your agent will use exist.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>Files work</h3><p class="small">An upload lands in DeepLynx.</p></div>
+    </div>
+    <div class="callout info">Platform not starting yet? Work through the bonus slides at the end of this deck with a mentor.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">What runs</div><h2>Three addresses you need</h2></div>
+  <div class="content">
+    <table class="t">
+      <tr><th style="width:330px">Address</th><th>What it is</th><th>You use it to…</th></tr>
+      <tr class="hl"><td><code>http://localhost:5150</code></td><td>the chat UI</td><td>test your agent like a user</td></tr>
+      <tr><td><code>http://localhost:9977</code></td><td>LiteLLM: the agent registry and the LLM gateway</td><td>see registered agents and available models</td></tr>
+      <tr><td><code>http://localhost:8600</code></td><td>the backend</td><td>check health (<code>/healthz</code>)</td></tr>
+    </table>
+    <p class="body">Behind them: the orchestrator (<code>client-agent</code>), three agents, a state store, and two databases. They talk to each other on the Docker network <code>prometheus_platform_agent-network</code>, which your agent joins too.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Day to day</div><h2>Four commands, one trap</h2></div>
+  <div class="content">
+    <div class="grid g2" style="gap:30px">
+      <pre class="sm">cd ~/prometheus/prometheus_platform
+make up                     <span class="c"># build and start</span>
+make restart                <span class="c"># restart, no rebuild</span>
+make logs SERVICE=client-agent
+make down                   <span class="c"># stop</span></pre>
+      <div class="callout bad"><b>Every <code>make up</code> or <code>make restart</code> empties the agent registry.</b> The platform's own agents re-register by themselves. <b>Your agent doesn't</b>: restart it afterwards with <code>docker restart &lt;your-agent&gt;</code>.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">First login</div><h2>An admin user, then a signing key</h2></div>
+  <div class="content">
+    <div class="steps">
+      <div class="step"><div><h4>Open <code>http://localhost:5150</code></h4><p class="small">On first start a setup wizard creates your admin user.</p></div></div>
+      <div class="step"><div><h4>Admin › Signing Keys → generate, then activate</h4><p class="small">The platform signs every chat turn with it, so agents know which user is asking.</p></div></div>
+      <div class="step"><div><h4>Type <code>/agents</code> in the chat</h4><p class="small">You should see form-filler, OSTI research, and synthesis.</p></div></div>
+    </div>
+    <div class="callout warn">No active key → every chat turn fails with "No 'userToken' found…".</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Health checks</div><h2>Is it healthy?</h2></div>
+  <div class="content">
+    <pre class="sm">make ps                                     <span class="c"># all "Up"; most also "(healthy)"</span>
+curl -s localhost:8600/healthz              <span class="c"># {"status":"ok"}</span>
+
+set -a; source .env; set +a                 <span class="c"># for the key below</span>
+curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     localhost:9977/v1/agents | python3 -m json.tool     <span class="c"># registered agents</span>
+curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     localhost:9977/v1/models                            <span class="c"># available LLM flavors</span></pre>
+    <div class="grid g2">
+      <div class="callout">Then ask the chat something real: "Find recent OSTI papers on SiC cladding". Watch it with <code>make logs SERVICE=client-agent</code>.</div>
+      <div class="callout warn">A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> header.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Learn from working code</div><h2>Reference agents for tomorrow</h2></div>
+  <div class="content">
+    <pre class="sm">make DEBUG_AGENTS=true up        <span class="c"># adds the reference agents</span></pre>
+    <table class="t">
+      <tr><th style="width:330px">Agent</th><th>Shows you how to…</th><th>Try</th></tr>
+      <tr class="hl"><td><code>artifact-debug-agent</code></td><td>publish an image through DeepLynx</td><td>"Make an image with the word Success"</td></tr>
+      <tr><td><code>corrosion-agent</code></td><td>ask the user for missing inputs</td><td>"Corrosion analysis of SS316"</td></tr>
+      <tr><td><code>thread-pattern-agent</code></td><td>run long work in the background</td><td>"Run a background task"</td></tr>
+    </table>
+    <p class="small">Read them in <code>prometheus_platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">LLMs</div><h2>Which models your platform offers</h2></div>
+  <div class="content">
+    <div class="grid" style="grid-template-columns: 1fr 1.1fr; gap:30px">
+      <div class="col">
+        <p class="body">Agents ask for a <b>flavor</b> (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>). By default every flavor is looked up in the platform's LiteLLM, configured in <code>litellm_config.yaml</code>.</p>
+        <div class="callout warn">On <code>dev</code> that file defines only <code>medium</code>. Add the flavors your agent uses, then <code>make restart</code> and check <code>/v1/models</code>.</div>
+        <p class="small">Prefer INL's LiteLLM or another provider? Set <code>LLM_CONFIG_PROFILE</code> (e.g. <code>inl_litellm</code>) and its key in <code>.env</code>. Details in the appendix.</p>
+      </div>
+      <pre class="sm"><span class="c"># prometheus_platform/litellm_config.yaml</span>
+model_list:
+  - model_name: medium
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+<span class="h">  - model_name: small</span>
+<span class="h">    litellm_params:</span>
+<span class="h">      model: anthropic/claude-haiku-4-5</span>
+<span class="h">      api_key: os.environ/ANTHROPIC_API_KEY</span>
+<span class="h">  # …likewise large, vision</span></pre>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">DeepLynx</div><h2>Where your files live</h2></div>
+  <div class="content">
+    <div class="row" style="align-items:stretch; gap:0">
+      <div class="box gray" style="flex:1"><b>Chat upload</b></div>
+      <div class="arrow-h" style="width:50px"></div>
+      <div class="box teal" style="flex:1.2"><b>DeepLynx</b><span class="small">stores the file</span></div>
+      <div class="arrow-h" style="width:50px"></div>
+      <div class="box orange" style="flex:1"><b>Your agent</b><span class="small">reads it, writes results back</span></div>
+      <div class="arrow-h" style="width:50px"></div>
+      <div class="box sky" style="flex:1"><b>Chat UI</b><span class="small">renders the plot</span></div>
+    </div>
+    <ul class="b">
+      <li>Every upload and every result file goes through DeepLynx, INL's data store.</li>
+      <li><b>Without it, your agent never sees uploads and a PNG cannot render.</b></li>
+      <li>Use the shared instance (<code>deeplynx.inl.gov</code>) or a local one (bonus slides). The settings are the <code>DEEPLYNX_*</code> lines in <code>.env</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">DeepLynx</div><h2>Check that the platform can reach DeepLynx</h2></div>
+  <div class="content">
+<div class="col">
+<pre class="sm"><span class="c"># from inside the backend container (has DEEPLYNX_* env)</span>
+docker exec -i backend python - &lt;&lt;'EOF'
+from prometheus_api.storage_client import (
+    ConnectionConfig, StorageClient)
+cfg = ConnectionConfig.from_env()
+with StorageClient(cfg) as c:
+    page = c.items.list(page_size=5)
+    print("OK", cfg.base_url, len(page.items), "items")
+EOF</pre>
+<p class="small">Then upload a file in the chat. It should appear in the DeepLynx UI under your project, and <code>/artifacts</code> lists it.</p>
+</div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">Something is off</div><h2>The six problems you are most likely to hit</h2></div>
+  <div class="content">
+    <table class="t sm">
+      <tr><th style="width:470px">Symptom</th><th>Fix</th></tr>
+      <tr><td>Every chat turn fails: "No 'userToken' found…"</td><td>Admin › Signing Keys: generate and <b>activate</b> a key</td></tr>
+      <tr><td>Your agent disappeared from <code>/agents</code></td><td>the platform restarted: <code>docker restart &lt;your-agent&gt;</code></td></tr>
+      <tr><td><code>LLMAliasError</code>: alias 'small' not available</td><td>add that flavor to <code>litellm_config.yaml</code>, <code>make restart</code></td></tr>
+      <tr><td>LLM call gets HTTP 401</td><td>attach <code>LITELLM_MASTER_KEY</code> to the LLM config</td></tr>
+      <tr><td>"DeepLynx storage is not configured"</td><td>set the <code>DEEPLYNX_*</code> lines, <code>make restart</code></td></tr>
+      <tr><td>Something else</td><td><code>make logs SERVICE=&lt;name&gt;</code>; the appendix has the full troubleshooting tables</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide">
+<div class="head"><div class="eyebrow">Checkpoint</div><h2>Before the break</h2></div>
+<div class="content">
+<div class="grid g2" style="gap:30px">
+<div class="col">
+<ul class="b check">
+<li>☐ <code>make ps</code>: all services up</li>
+<li>☐ <code>curl localhost:8600/healthz</code> → <code>{"status":"ok"}</code></li>
+<li>☐ <code>/v1/agents</code> lists 4 agents (client + 3)</li>
+<li>☐ Logged in, signing key active</li>
+<li>☐ <code>/agents</code> in the chat works</li>
+<li>☐ A question gets an LLM answer</li>
+<li>☐ (optional) DeepLynx: an upload appears in the DeepLynx UI</li>
+</ul>
+</div>
+<div class="col">
+<div class="card acc"><h3>Stuck?</h3><p class="body">Raise your hand now. Mentors fix environment problems during the break, so that at 2:45 pm everyone can follow the agent session with a running stack.</p></div>
+<div class="card"><h3>Next: Building an agent (2:45 pm)</h3><p class="body">Have your clone of <code>prometheus_agent_template</code> next to the platform, and <code>uv --version</code> working.</p></div>
+</div>
+</div>
+</div>
+</section>
