@@ -1,9 +1,9 @@
 # Client Agent Developer Guide
 
 The client-agent is the central orchestrator for Prometheus. It receives frontend A2A
-requests, plans work from discovered specialist capabilities, gathers missing inputs,
-executes one or more specialist skills, tracks artifacts, and persists conversation
-state.
+requests and runs a tool-calling loop over the discovered specialist capabilities,
+with each skill as an LLM tool. It also gathers missing inputs, tracks artifacts, and
+persists conversation state. Design: `../../docs/docs/dev-docs/agent-loop-orchestration.md`.
 
 This guide documents the local code structure and the major functions you are likely
 to touch when maintaining the client-agent.
@@ -16,9 +16,7 @@ The container runs:
 python agent.py
 ```
 
-`agent.py` is intentionally small. It is a compatibility entry point for Docker,
-tests, and external callers that still import `agent` directly. New implementation
-work should generally go into `orchestrator/`, not `agent.py`.
+`agent.py` is only the Docker entry point; the implementation lives in `orchestrator/` and the top-level modules listed below.
 
 High-level runtime path:
 
@@ -26,9 +24,8 @@ High-level runtime path:
 A2A POST /
   -> orchestrator.service.OrchestratorAgent._execute()
   -> orchestrator.chat_flow.chat()
-  -> orchestrator.planning_flow.compile_query_plan()
-  -> orchestrator.execution.execute_current_plan()
-  -> orchestrator.skills.invoke_skill()
+  -> orchestrator.agent_loop.advance()        (LLM turn ↔ tool calls, until an answer or a pause)
+  -> orchestrator.skills.invoke_skill()       (or workflow_library.execute_workflow)
   -> tool_discovery-created A2A StructuredTool
   -> specialist agent
 ```
@@ -40,51 +37,26 @@ and file upload pre-processing also enter through `OrchestratorAgent`.
 
 ```text
 agents/client-agent/
-  agent.py                         Stable executable and import compatibility module
+  agent.py                         Docker entry point
   orchestrator/
     models.py                      Conversation request/response/state models
     runtime.py                     Environment config, caches, status updates
     service.py                     PrometheusAgent subclass and HTTP/A2A endpoints
-    chat_flow.py                   Multi-turn conversation state machine
-    planning_flow.py               Planner integration and plan display shaping
-    execution.py                   Skill/workflow execution and follow-up handling
+    chat_flow.py                   Maps requests onto the loop, outcomes onto responses
+    agent_loop.py                  Tool-calling orchestration loop
     skills.py                      Skill lookup and invocation
-    parameters.py                  Parameter, context, and artifact resolution
     debug_commands.py              Slash command handlers
     utils.py                       Pure parsing/formatting helpers
-  artifact_handling.py             Artifact catalog normalization and input binding
+  artifact_handling.py             Artifact catalog normalization, artifact-ref schema paths
   capability_cache.py              Redis-backed discovered capability cache
   conversation_store.py            Redis-backed conversation state persistence
   file_upload_handler.py           Uploaded file description and DeepLynx storage
   param_schema.py                  JSON-schema path helpers
-  planner.py                       LLM planner tool-calling implementation
   tool_discovery.py                Agent discovery and A2A transport wrapping
   workflow_library/                Declarative workflow template compiler/executor
   workflows/                       Built-in workflow YAML definitions
   tests/                           Focused client-agent tests
 ```
-
-## Compatibility Module: `agent.py`
-
-`agent.py` re-exports the public names that older tests and callers expect, including
-`ConversationRequest`, `ConversationResponse`, `chat`, `execute_current_plan`,
-`invoke_skill`, and `OrchestratorAgent`.
-
-It also contains `_sync_compat()`, which propagates monkeypatches made against
-`agent` into the split modules. This exists mostly for existing tests and legacy
-imports. Avoid adding new orchestration logic here.
-
-Use `agent.py` for:
-
-- Keeping the container command stable.
-- Preserving `import agent` compatibility.
-- Exporting a new public helper only when existing callers need it.
-
-Do not use `agent.py` for:
-
-- New request flow logic.
-- New parameter resolution behavior.
-- New A2A/service endpoint behavior.
 
 ## Core Models: `orchestrator/models.py`
 
@@ -113,9 +85,11 @@ Pydantic model returned to the frontend/A2A caller. Major statuses:
 
 ### `AgentState`
 
-TypedDict for persisted conversation orchestration state. It carries messages,
-history, routing decisions, plans, pending subagent `INPUT_REQUIRED` requests,
-resolved context, tool results, and final reports.
+TypedDict for the persisted conversation record: the LLM transcript (`llm_messages`),
+the unfinished tool calls of the latest assistant turn (`pending_calls`), the
+user-visible `conversation_history`, the artifact catalog in `context`, per-turn tool
+results, and pause bookkeeping (`plan`, `missing_info`, `awaiting_approval`,
+`final_report`) that the backend also reads.
 
 ## Runtime Support: `orchestrator/runtime.py`
 
@@ -123,7 +97,7 @@ Owns environment-driven runtime state and process-wide caches.
 
 Major functions:
 
-- `create_llm()`: Builds the request-scoped `AsyncLLMClient` used by planner/refinement helpers.
+- `create_llm()`: Builds the request-scoped `AsyncLLMClient` used by the orchestration loop and title generation.
 - `_get_status_redis_client()`: Lazily creates the Redis client used for status history.
 - `status_stream(emitter)`: Registers a request-local A2A status emitter.
 - `wait_for_status_stream(tasks)`: Waits for queued status emission tasks.
@@ -165,67 +139,43 @@ Major methods:
 - `configure_app(app)`: Adds client-agent-specific HTTP routes.
 
 Service-layer rule of thumb: keep HTTP/A2A concerns here. Planning and execution
-belong in `chat_flow.py`, `planning_flow.py`, and `execution.py`.
+belong in `chat_flow.py` and `agent_loop.py`.
 
 ## Conversation Flow: `orchestrator/chat_flow.py`
 
-Owns the top-level multi-turn state machine.
+Maps one `ConversationRequest` onto the loop and the resulting `LoopOutcome` onto a
+`ConversationResponse`.
 
-Major functions:
+- `chat(request)`: handles slash commands first (no LLM), then:
+  - with pending calls: `plan_rejected` → `agent_loop.reject_pending`, `plan_approved` →
+    `approve_pending`, `followup_answers` → `apply_answers`, free text → `apply_reply`;
+  - an explicit workflow (slash command or catalog start) → `inject_tool_call`, or, with
+    free-text arguments, a hint in the user message;
+  - otherwise a new user turn (`begin_user_turn`).
 
-- `chat(request)`: Canonical conversation endpoint. It handles slash commands, existing conversation continuations, follow-up answers, plan approvals, new queries, workflow selections, fallback answers, and execution dispatch.
-- `_needs_info_response(conv_id, state, hint=...)`: Persists state and returns a `needs_info` response with generated form questions.
-- `_completed_response(conv_id, state)`: Persists final state and returns a `completed` response.
-- `_error_response(conv_id, log_msg, user_msg)`: Stores an error status and returns an error-shaped response.
+  Then `agent_loop.advance()` runs and `_respond()` persists state and builds the response
+  (`completed` / `answer` / `needs_info` / `plan_ready` / `error`).
+- `_maybe_generate_title(state, conv_id)`: one-time chat-history title via the `small` flavor.
 
-Main branches inside `chat()`:
+## Orchestration Loop: `orchestrator/agent_loop.py`
 
-1. Slash command path, handled before planner/execution work.
-2. Existing conversation continuation.
-3. Plan approval.
-4. Follow-up answer processing.
-5. New query or explicit workflow selection.
-6. Fallback answer, `needs_info`, `plan_ready`, or immediate execution.
+Every registered skill and workflow template is a tool; the LLM (`medium` flavor, via the
+`prometheus_api.llm_client` tool-calling API) decides each next call with the whole
+transcript in view.
 
-## Planning Flow: `orchestrator/planning_flow.py`
-
-Turns a query plus discovered capabilities into an executable routing decision and
-UI-facing plan.
-
-Major functions:
-
-- `_unique_workflow_skills(workflow)`: Returns ordered unique skill IDs in a workflow template.
-- `compile_query_plan(state, explicit_workflow_id=None, explicit_workflow_version=None, selection_source=None, seed_params=None)`: Canonical planning function. It loads capabilities, matches workflow templates, calls `planner.compile_plan_with_tools()` when needed, resolves metadata-derived params, computes missing inputs, and returns a state update.
-- `extract_refinement_param_updates(query, routing_decision, conversation_history=None)`: Uses the LLM to extract parameter changes from a user refinement while a plan is awaiting approval.
-- `plan_analysis(state)`: Builds or preserves the user-visible plan object from routing metadata.
-- `show_plan(state)`: Marks state as awaiting approval.
-
-The LLM tool-calling planner itself lives in `planner.py`; `planning_flow.py` is the
-orchestrator-facing adapter around it.
-
-## Execution Flow: `orchestrator/execution.py`
-
-Runs selected capabilities or workflow templates and handles mid-execution input
-requirements.
-
-Major functions:
-
-- `invoke_agent_generic(state)`: Executes non-template routing decisions. Supports `single`, `parallel`, and `sequential` workflow types.
-- `ask_followup_dynamic(state)`: Converts missing required params or pending subagent `INPUT_REQUIRED` payloads into frontend form questions.
-- `extract_followup_answers_from_query(state, query)`: Extracts missing required params from a natural-language follow-up response.
-- `apply_followup_answers_to_state(state, followup_answers, query="")`: Merges user follow-up answers into routing params and recomputes missing inputs.
-- `execute_current_plan(state, start_message)`: Canonical execution path for approved and auto-executed plans. It dispatches either to workflow template execution or direct skill execution.
-- `execute_approved_plan(state)`: Convenience wrapper for approved plans.
-- `_format_plan_for_response(state)`: Normalizes internal plan state for frontend display.
-- `_latest_conversation_entry(state)`: Safe helper for retrieving the most recent history entry.
-- `_coerce_followup_value(value, value_type)`: Converts form values into requested primitive types.
-- `_lookup_context_value(state, name)`: Finds a missing-input value in routing params or shared context.
-- `resolve_missing_inputs_from_state(state, missing_inputs)`: Splits subagent missing inputs into auto-resolved and unresolved sets.
-- `_questions_from_pending_subagent_requests(state)`: Builds frontend questions from pending subagent requests.
-- `resume_pending_subagent_requests(state, followup_answers)`: Resumes blocked subagent tasks with user-provided inputs.
-
-Execution output is written back into `conversation_history`, `tool_results`,
-`context`, `missing_info`, and `final_report` in `AgentState`.
+- `build_tool_catalog()`: `ToolSpec` per skill (cleaned input schema, artifact-ref hints,
+  approval flag) and per workflow, plus `ask_user`.
+- `advance(state, catalog)`: drives the pending batch, then LLM turns, until a final answer
+  (no tool calls) or a pause; bounded by `MAX_LLM_TURNS`.
+- `_new_call(...)`: validates one tool call (unknown tool, bad JSON, schema errors, unknown
+  artifact ids, missing runtime inputs → error result back to the model) and assigns a
+  status (`needs_args`, `needs_answer`, `needs_approval`, `ready`).
+- `_drive_batch(...)`: pauses for forms/approval, otherwise runs ready calls concurrently;
+  specialist `INPUT_REQUIRED` becomes `waiting_input` and resumes the same A2A task.
+- `apply_answers` / `apply_reply` / `approve_pending` / `reject_pending`: user input on
+  pending calls. `commit_batch` appends one tool result per call, in order.
+- `_compact_result(...)`: what the model sees of a result: summary, artifact ids, a
+  bounded JSON payload.
 
 ## Skill Invocation: `orchestrator/skills.py`
 
@@ -240,30 +190,9 @@ Major functions:
 `invoke_skill()` is intentionally generic. Specialist-specific behavior should be
 expressed in agent-card metadata, schemas, workflow templates, or downstream agents.
 
-## Parameter and Context Resolution: `orchestrator/parameters.py`
-
-Owns data-driven parameter resolution using capability metadata, workflow metadata,
-conversation context, artifacts, and previous tool results.
-
-Major functions:
-
-- `get_selected_skills(routing_decision)`: Returns the primary and supporting skill IDs in stable order.
-- `resolve_user_required_params(routing_decision)`: Computes user-facing required params from workflow or capability schemas.
-- `order_skills_for_workflow(routing_decision)`: Orders selected skills for sequential workflows using metadata such as `execution_priority`, `provides`, and `derivation_rules`.
-- `build_plan_param_metadata(selected_skills, capabilities_by_skill, selected_workflow=None)`: Builds labels, descriptions, types, and units for frontend plan forms.
-- `merge_context_map(target_context, context_key, entries)`: Merges context-map entries, including dotted context paths.
-- `extract_provided_context_maps(result_data, provides)`: Applies capability `provides` rules to tool results.
-- `collect_context_maps_from_history(conversation_history, capabilities_by_skill)`: Rebuilds context maps from previous turns.
-- `attach_artifact_context(params, context)`: Adds summarized artifact catalog metadata to skill params.
-- `derive_params_from_rules(query, params, rules, context, history_context_maps)`: Applies capability `derivation_rules` to populate missing params.
-- `resolve_params_via_capability_metadata(query, extracted_params, selected_skills, context, conversation_history)`: Main metadata-driven parameter resolver. It carries forward context, binds artifact inputs, prefetches provider skills when safe, and applies derivation rules.
-
-This is the right module for changes involving metadata semantics, context maps,
-artifact binding, or automatic parameter derivation.
-
 ## Slash Commands: `orchestrator/debug_commands.py`
 
-Implements deterministic debug commands that bypass planner LLM calls.
+Implements deterministic debug commands that bypass the LLM.
 
 Major functions:
 
@@ -279,21 +208,8 @@ Add new slash commands here and keep them side-effect-light.
 
 ## Utility Helpers: `orchestrator/utils.py`
 
-Pure helpers used across planning and execution.
-
-Major functions:
-
-- `extract_json_from_text(text)`: Extracts JSON from raw or markdown-wrapped LLM output.
-- `extract_material_ids_from_text(text)`: Pulls material IDs such as `SS316` from user text.
-- `enrich_material_params(query, extracted_params)`: Normalizes material IDs into `material_id` and `material_ids`.
-- `extract_result_text(result_data)`: Converts common agent result shapes into response text.
-- `normalize_suggested_queries(raw, limit=3)`: Normalizes suggested follow-up query payloads.
-- `collect_suggested_queries(tool_results, limit=3)`: Aggregates suggestions from tool results.
-- `build_comparison_summary(user_query, by_material)`: Builds deterministic comparison summaries for common material comparison questions.
-- `normalize_by_mode(value, mode)`: Applies metadata normalizers such as `upper_no_space_hyphen`.
-- `get_value_by_path(data, path)`: Reads dotted paths from dict/list structures.
-- `set_param_path(params, path, value)`: Writes nested and dotted parameter forms.
-- `rule_matches_query(query, rule)`: Evaluates simple phrase-based derivation-rule conditions.
+Pure helpers: `extract_result_text(result_data)` (response text from common result
+shapes), `normalize_suggested_queries(raw, limit=3)` and `collect_suggested_queries(tool_results, limit=3)`.
 
 Keep this module free of Redis, HTTP, A2A, or LLM side effects.
 
@@ -301,7 +217,7 @@ Keep this module free of Redis, HTTP, A2A, or LLM side effects.
 
 ### `artifact_handling.py`
 
-Normalizes artifact catalog entries and binds artifact references into skill inputs.
+Normalizes artifact catalog entries and finds artifact-reference fields in skill schemas.
 
 Major functions:
 
@@ -309,7 +225,6 @@ Major functions:
 - `merge_artifacts_into_context(context, artifacts)`: Adds artifact summaries to `context["artifacts"]`.
 - `merge_artifact_catalogs(primary, secondary)`: Deduplicates artifact lists while preserving order.
 - `extract_artifact_field_paths(input_schema)`: Finds artifact-reference fields in an input schema.
-- `resolve_artifact_inputs(params, query, context, input_schemas)`: Resolves artifact fields from explicit params, newly uploaded IDs, query mentions, and artifact catalog metadata.
 
 ### `capability_cache.py`
 
@@ -357,19 +272,6 @@ Major functions:
 - `extract_required_param_paths(schema, include_internal=False)`: Extracts required input paths.
 - `flatten_schema_properties(schema)`: Flattens nested schema properties into dotted paths.
 - `normalize_params_for_input_schema(params, input_schema)`: Converts dotted params into the nested shape expected by a skill schema.
-
-### `planner.py`
-
-Implements the LLM tool-calling planner.
-
-Major classes/functions:
-
-- `PlanningResult`: Structured planning output consumed by `planning_flow.py`.
-- `WorkflowPlanningCandidate`: Candidate workflow metadata passed into planner prompts.
-- `_build_capability_context(capabilities)`: Formats capability metadata for the planner.
-- `_build_prompt(...)`: Builds the planner system/user prompt.
-- `_build_planning_tools(...)`: Defines planner-side tools such as selecting capabilities, setting params, and fallback responses.
-- `compile_plan_with_tools(...)`: Main planner entry point.
 
 ### `tool_discovery.py`
 
@@ -424,8 +326,8 @@ semantics, a new artifact-binding mode, or workflow-template support.
 
 1. Add parser/handler behavior in `orchestrator/debug_commands.py`.
 2. Return `ConversationResponse(status="answer", ...)`.
-3. Add a focused test in `tests/test_execution_path.py`.
-4. Keep the command deterministic and avoid planner LLM calls.
+3. Add a focused test in `tests/test_service.py`.
+4. Keep the command deterministic and avoid LLM calls.
 
 ### Add a new workflow template
 
@@ -434,21 +336,18 @@ semantics, a new artifact-binding mode, or workflow-template support.
 3. Update or add workflow tests under `tests/test_workflow_library.py`.
 4. Verify `/workflows/catalog` and `/workflows/{workflow_id}/input-form`.
 
-### Change parameter resolution
+### Change orchestration behavior
 
-Use `orchestrator/parameters.py` for generic metadata-driven behavior. Use
-`param_schema.py` only for schema path mechanics.
-
-Avoid hardcoding domain-specific skill names unless there is no metadata-based
-alternative.
+The model fills parameters from the conversation; there is no separate extraction
+stage. Tune behavior through `prompts/orchestrator_system.txt`, the tool advertisement
+in `agent_loop.build_tool_catalog`, or call validation in `agent_loop._new_call`. Prefer
+improving skill descriptions in agent cards over special-casing skills here.
 
 ### Change execution behavior
 
-Use `orchestrator/execution.py` for orchestration execution mechanics and
-`orchestrator/skills.py` for individual skill invocation mechanics.
-
-Avoid putting HTTP/A2A request handling in `execution.py`; that belongs in
-`service.py`.
+Use `orchestrator/agent_loop.py` for call lifecycle and pausing, and
+`orchestrator/skills.py` for individual skill invocation mechanics. HTTP/A2A request
+handling belongs in `service.py`.
 
 ### Change uploaded file behavior
 
@@ -476,7 +375,7 @@ environment instead of an ambient executable on PATH.
 Useful focused runs:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_execution_path.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_agent_loop.py
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_tool_discovery.py
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_workflow_library.py
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests/test_artifact_handling.py
@@ -496,12 +395,11 @@ running image uses the new files.
 
 ## Design Rules
 
-- Keep `agent.py` as a compatibility wrapper.
+- Keep `agent.py` a bare entry point.
 - Keep request transport concerns in `service.py`.
 - Keep conversation state transitions in `chat_flow.py`.
-- Keep planner adaptation in `planning_flow.py`.
-- Keep skill execution mechanics in `execution.py` and `skills.py`.
-- Keep metadata semantics in `parameters.py`.
+- Keep orchestration decisions with the model (`agent_loop.py`); keep the code generic.
+- Keep skill invocation mechanics in `skills.py`.
 - Prefer agent-card metadata, workflow templates, and schemas over hardcoded
   skill-specific behavior.
 - Preserve the public response contracts used by the frontend and A2A client.

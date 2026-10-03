@@ -12,36 +12,33 @@ from prometheus_api.contract import (  # noqa: F401
 
 
 class AgentState(TypedDict):
-    """State for a conversation's orchestration lifecycle."""
-    messages: List[Dict[str, Any]]
+    """Persisted conversation record (Valkey key ``conversation:{id}``)."""
 
-    # Conversation tracking
     conversation_id: Optional[str]
+    # Latest user query; the backend's chat history falls back to it as a title.
     user_query: Optional[str]
-    conversation_history: List[Dict]
-    prior_capability_params: Dict[str, Dict[str, Any]]
-
     # Short LLM-generated title for chat history (set once, on the first turn).
     title: Optional[str]
 
-    # Dynamic routing decision
-    routing_decision: Optional[Dict[str, Any]]  # Full RoutingDecision.to_dict()
+    # User-visible transcript plus evidence (tool inputs/results, forms, plans).
+    # The backend's chat history renders the user/assistant entries with content.
+    conversation_history: List[Dict[str, Any]]
+    # Conversation-scoped context; ``artifacts`` is the artifact catalog.
+    context: Dict[str, Any]
 
-    # Planning phase
-    plan: Optional[Dict]
+    # Orchestration transcript replayed to the LLM (OpenAI message format).
+    llm_messages: List[Dict[str, Any]]
+    # Unfinished tool calls of the latest assistant message (agent_loop call records).
+    pending_calls: List[Dict[str, Any]]
+    # Assistant text that accompanied the pending calls, shown with forms/plans.
+    pending_note: str
+    # Result key (skill_id, then skill_id#2, ... for repeats) -> raw result / arguments
+    # of every call in the current user turn.
+    turn_tool_results: Dict[str, Any]
+    turn_tool_inputs: Dict[str, Any]
+
+    # Pause bookkeeping, also read by the backend to infer conversation status.
+    plan: Optional[Dict[str, Any]]
     missing_info: List[str]
     awaiting_approval: bool
-
-    # All pending INPUT_REQUIRED requests from subagents in the current invocation.
-    # Each entry has: skill_id, A2A IDs, Task Graph IDs, missing_inputs, and hint.
-    pending_subagent_requests: List[Dict[str, Any]]
-
-    # Query parameters (extracted from routing decision)
-    material_id: Optional[str]
-    analysis_types: Optional[List[str]]
-    context: Optional[Dict[str, Any]]
-    question: Optional[str]
-
-    # Results
-    tool_results: Dict[str, Any]
     final_report: Optional[str]

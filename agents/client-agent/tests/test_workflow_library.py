@@ -1,4 +1,4 @@
-"""Unit tests for workflow library compile/match/execute behavior."""
+"""Unit tests for workflow library compile/execute behavior."""
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +16,6 @@ if str(CLIENT_AGENT_DIR) not in sys.path:
 
 from workflow_library.compiler import WorkflowCompileError, compile_workflow
 from workflow_library.executor import execute_workflow
-from workflow_library.matcher import match_workflows
 from workflow_library.naming import find_workflow_by_command, workflow_tool_name
 from workflow_library.registry import WorkflowRegistry
 
@@ -51,56 +50,8 @@ def _compile(raw: Dict[str, Any]) -> Any:
     return compile_workflow(raw=raw, source_path=Path("test.yaml"), capabilities_by_skill=capabilities, strict=True)
 
 
-def test_matcher_preserves_underscore_placeholders() -> None:
-    workflow = _compile(
-        {
-            "id": "w1",
-            "name": "W1",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["full safety analysis of {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-
-    matches = match_workflows("Full safety analysis of SS316", [workflow])
-    assert matches
-    assert matches[0].extracted_params.get("material_id") == "SS316"
-    assert "material.id" not in matches[0].extracted_params
 
 
-def test_matcher_tie_break_is_deterministic_lexical_id() -> None:
-    workflow_a = _compile(
-        {
-            "id": "alpha_workflow",
-            "name": "Alpha",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["analyze {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-    workflow_b = _compile(
-        {
-            "id": "beta_workflow",
-            "name": "Beta",
-            "version": "1.0.0",
-            "description": "test",
-            "matching": {"priority": 10, "patterns": ["analyze {material_id}"]},
-            "inputs": {"required": ["material_id"]},
-            "execution": {"mode": "sequential", "on_error": "fail_fast"},
-            "steps": [{"id": "s1", "skill_id": "get_material_data"}],
-        }
-    )
-
-    matches = match_workflows("analyze SS347", [workflow_b, workflow_a])
-    assert len(matches) == 2
-    assert matches[0].workflow_id == "alpha_workflow"
-    assert matches[1].workflow_id == "beta_workflow"
 
 
 def test_compile_detects_dependency_cycles() -> None:
@@ -730,3 +681,49 @@ def test_executor_stops_sequential_workflow_on_input_required() -> None:
         "mesh": "blocked",
     }
     assert result["input_required_steps"][0]["skill_id"] == "author_equipment_geometry"
+
+
+def test_executor_continues_from_completed_steps() -> None:
+    invoked: list[tuple[str, Dict[str, Any]]] = []
+
+    async def invoke(skill_id: str, params: Dict[str, Any], conversation_id: str) -> Dict[str, Any]:
+        invoked.append((skill_id, params))
+        return {"result": {"ok": skill_id}}
+
+    workflow = _compile(
+        {
+            "id": "continue_run",
+            "name": "Continue Run",
+            "version": "1.0.0",
+            "description": "test",
+            "matching": {"patterns": ["x"]},
+            "execution": {"mode": "dag", "on_error": "continue_with_partial"},
+            "steps": [
+                {"id": "author", "skill_id": "author_skill", "outputs": [{"from": "result", "to_context": "authored"}]},
+                {"id": "broken", "skill_id": "broken_skill"},
+                {"id": "mesh", "skill_id": "mesh_skill", "depends_on": ["author"], "params": {"shape": {"from": "context.authored.shape"}}},
+                {"id": "report", "skill_id": "report_skill", "depends_on": ["broken"]},
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        execute_workflow(
+            workflow=workflow,
+            input_params={},
+            context={},
+            invoke_skill=invoke,
+            conversation_id="conv-1",
+            completed_steps={
+                "author": {"status": "succeeded", "result": {"shape": "cylinder"}},
+                "broken": {"status": "failed", "error": "boom"},
+            },
+        )
+    )
+
+    # Finished steps are not invoked again; their outputs still feed dependents.
+    assert [skill for skill, _ in invoked] == ["mesh_skill"]
+    assert invoked[0][1]["shape"] == "cylinder"
+    assert result["step_results"]["mesh"]["params"] == {"shape": "cylinder"}
+    assert result["step_statuses"] == {"author": "succeeded", "broken": "failed", "mesh": "succeeded", "report": "blocked"}
+    assert result["errors"] == [{"step_id": "broken", "skill_id": "broken_skill", "error": "boom"}]

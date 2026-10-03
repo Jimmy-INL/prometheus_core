@@ -73,14 +73,12 @@ def test_recent_returns_conversations(monkeypatch):
             "conversation_id": "c2",
             "query": "corrosion rate?",
             "status": "completed",
-            "material_id": "SS316",
             "timestamp": "2026-08-11T10:00:00Z",
         },
         {
             "conversation_id": "c1",
             "query": "hello",
             "status": "unknown",
-            "material_id": None,
             "timestamp": "2026-08-10T09:00:00Z",
         },
     ]
@@ -92,8 +90,8 @@ def test_recent_returns_conversations(monkeypatch):
     body = resp.json()
     assert body["available"] is True
     assert [c["conversation_id"] for c in body["conversations"]] == ["c2", "c1"]
-    assert body["conversations"][0]["material_id"] == "SS316"
-    assert body["conversations"][1]["material_id"] is None
+    assert [c["status"] for c in body["conversations"]] == ["completed", "unknown"]
+    assert all("material_id" not in c for c in body["conversations"])
 
 
 def test_recent_scopes_by_authenticated_user(monkeypatch):

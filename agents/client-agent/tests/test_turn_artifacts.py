@@ -141,13 +141,70 @@ def test_other_turns_come_from_the_stored_copy():
 def test_a_late_turn_that_leaves_a_form_takes_the_fields_from_one_that_left_none():
     # The user answers B's form next; chat() resumes it from the top-level fields.
     stored = {"conversation_history": [], "state_turn_id": "F", "state_turn_started_at": 200.0, "missing_info": []}
-    b_local = {"conversation_history": [], "missing_info": ["width"], "routing_decision": {"skill": "b"}}
+    b_local = {"conversation_history": [], "missing_info": ["width"], "pending_calls": [{"id": "c1"}]}
 
     merged = merge_conversation(stored, b_local, turn_id="B", started_at=100.0)
 
     assert merged["missing_info"] == ["width"]
-    assert merged["routing_decision"] == {"skill": "b"}
+    assert merged["pending_calls"] == [{"id": "c1"}]
     assert merged["state_turn_id"] == "B"
+
+
+def test_unfinished_pending_calls_alone_count_as_pending_input():
+    stored = {"conversation_history": [], "state_turn_id": "F", "state_turn_started_at": 200.0}
+    b_local = {"conversation_history": [], "pending_calls": [{"id": "c1", "status": "waiting_input"}]}
+
+    merged = merge_conversation(stored, b_local, turn_id="B", started_at=100.0)
+
+    assert merged["pending_calls"] == [{"id": "c1", "status": "waiting_input"}]
+    assert merged["state_turn_id"] == "B"
+
+
+# --- llm_messages merge ----------------------------------------------------------
+
+
+def _msg(content, turn, started_at, role="user"):
+    return {"role": role, "content": content, "turn_id": turn, "turn_started_at": started_at}
+
+
+def test_llm_messages_keep_each_turns_block_ordered_by_turn_start():
+    # A (started 100) runs in the background; F (started 200) stored first.
+    stored = {
+        "conversation_history": [],
+        "state_turn_id": "F",
+        "state_turn_started_at": 200.0,
+        "llm_messages": [_msg("old", "legacy", 0.0), _msg("f question", "F", 200.0), _msg("f answer", "F", 200.0, "assistant")],
+    }
+    a_local = {
+        "conversation_history": [],
+        "llm_messages": [_msg("old", "legacy", 0.0), _msg("a question", "A", 100.0), _msg("a answer", "A", 100.0, "assistant")],
+    }
+
+    merged = merge_conversation(stored, a_local, turn_id="A", started_at=100.0)
+
+    assert [m["content"] for m in merged["llm_messages"]] == ["old", "a question", "a answer", "f question", "f answer"]
+    # F still owns the other fields; only the transcripts merged.
+    assert merged["state_turn_id"] == "F"
+
+
+def test_merged_llm_messages_stay_bounded():
+    from orchestrator.agent_loop import MAX_TRANSCRIPT_MESSAGES
+
+    # Earlier turns' messages come back from storage on every merge.
+    earlier = [
+        _msg(f"{role} {i}", f"T{i}", float(i), role) for i in range(60) for role in ("user", "assistant")
+    ]
+    stored = {"conversation_history": [], "llm_messages": earlier}
+    local = {
+        "conversation_history": [],
+        "llm_messages": [_msg("new question", "N", 100.0), _msg("new answer", "N", 100.0, "assistant")],
+    }
+
+    merged = merge_conversation(stored, local, turn_id="N", started_at=100.0)
+
+    assert len(merged["llm_messages"]) <= MAX_TRANSCRIPT_MESSAGES
+    assert merged["llm_messages"][0]["role"] == "user"  # cut only at a user message
+    assert [m["content"] for m in merged["llm_messages"][-2:]] == ["new question", "new answer"]
 
 
 def test_when_both_turns_leave_pending_input_the_newer_one_wins():
@@ -243,6 +300,23 @@ def test_store_tags_this_turns_entries_and_reads_untagged_ones_as_legacy(client)
         ("new", turn_id),
     ]
     assert saved["state_turn_id"] == turn_id
+
+
+def test_store_tags_this_turns_llm_messages_and_reads_untagged_ones_as_legacy(client):
+    client.store["conversation:c1"] = json.dumps(
+        {"conversation_history": [], "llm_messages": [{"role": "user", "content": "old"}]}
+    )
+    state = conversation_store.get_conversation("c1")
+    assert state["llm_messages"][0]["turn_id"] == LEGACY_TURN_ID
+
+    task_tracking.begin_turn("c1", "next")
+    turn = task_tracking.current_turn()
+    state["llm_messages"].append({"role": "user", "content": "new"})
+    store_conversation("c1", state)
+
+    stored = json.loads(client.store["conversation:c1"])["llm_messages"]
+    assert [m["turn_id"] for m in stored] == [LEGACY_TURN_ID, turn.turn_id]
+    assert stored[1]["turn_started_at"] == turn.started_at
 
 
 def test_record_turn_artifacts_stamps_the_stored_reply(client):

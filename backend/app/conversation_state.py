@@ -290,7 +290,6 @@ class ConversationStateClient:
                     "title": title,
                     "query": query,
                     "status": self._infer_status(conv),
-                    "material_id": conv.get("material_id"),
                     "timestamp": latest_entry.get("timestamp", ""),
                     "pending": self.is_pending(conv_id),
                 })
@@ -308,6 +307,4 @@ class ConversationStateClient:
             return "plan_ready"
         if conversation.get("missing_info"):
             return "needs_info"
-        if conversation.get("routing_decision"):
-            return "executing"
         return "unknown"

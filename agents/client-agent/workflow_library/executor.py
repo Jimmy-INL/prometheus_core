@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from .binding import get_path, resolve_step_params, set_path
 from .schema import CompiledWorkflow, WorkflowStep
@@ -19,6 +19,7 @@ class StepRuntimeResult:
     status: str
     result: Any = None
     error: str | None = None
+    params: Dict[str, Any] | None = None
     input_required: Dict[str, Any] | None = None
     a2a_context_id: str | None = None
     a2a_task_id: str | None = None
@@ -68,6 +69,12 @@ async def _run_step(
         context=context,
         step_results=step_results,
     )
+    # What the template bound for this step, without the conversation-wide additions.
+    params = {
+        key: value
+        for key, value in payload.items()
+        if not key.startswith("_") and key not in {"artifacts", "conversation_id"}
+    }
     if "artifacts" not in payload and isinstance(context.get("artifacts"), list):
         payload["artifacts"] = context["artifacts"]
     payload["conversation_id"] = conversation_id
@@ -77,6 +84,7 @@ async def _run_step(
         return StepRuntimeResult(
             step_id=step.id,
             status="input_required",
+            params=params,
             input_required=invoked.get("input_required"),
             a2a_context_id=invoked.get("_a2a_context_id"),
             a2a_task_id=invoked.get("_a2a_task_id"),
@@ -87,11 +95,13 @@ async def _run_step(
         return StepRuntimeResult(
             step_id=step.id,
             status="failed",
+            params=params,
             error=str(invoked.get("error")),
         )
     return StepRuntimeResult(
         step_id=step.id,
         status="succeeded",
+        params=params,
         result=invoked.get("result"),
     )
 
@@ -145,8 +155,14 @@ async def execute_workflow(
     context: Dict[str, Any],
     invoke_skill: StepInvokeFn,
     conversation_id: str,
+    completed_steps: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Execute a compiled workflow with dependency-aware scheduling."""
+    """Execute a compiled workflow with dependency-aware scheduling.
+
+    ``completed_steps`` (``step_id -> {"status": "succeeded"|"failed", "result"|"error"}``)
+    continues an earlier run: those steps are not invoked again, and their
+    results feed the steps that depend on them.
+    """
     steps = _ordered_steps(workflow)
     step_map = {step.id: step for step in steps}
     statuses: Dict[str, str] = {step.id: "pending" for step in steps}
@@ -160,6 +176,26 @@ async def execute_workflow(
     on_error = workflow.definition.execution.on_error
 
     stop_scheduling = False
+    for step_id, done_step in (completed_steps or {}).items():
+        step = step_map.get(step_id)
+        if step is None:
+            continue
+        if done_step.get("status") == "succeeded":
+            statuses[step_id] = "succeeded"
+            results[step_id] = {
+                "skill_id": step.skill_id,
+                "result": done_step.get("result"),
+                "params": done_step.get("params") or {},
+                "finished_at": done_step.get("finished_at") or datetime.now(timezone.utc).isoformat(),
+            }
+            _apply_step_outputs(step, done_step.get("result"), context, context_delta)
+        else:
+            statuses[step_id] = "failed"
+            errors.append(
+                {"step_id": step_id, "skill_id": step.skill_id, "error": str(done_step.get("error") or "unknown error")}
+            )
+            if on_error == "fail_fast":
+                stop_scheduling = True
     while True:
         pending = [step_id for step_id, status in statuses.items() if status == "pending"]
         if not pending:
@@ -227,6 +263,7 @@ async def execute_workflow(
                 results[item.step_id] = {
                     "skill_id": step.skill_id,
                     "result": item.result,
+                    "params": item.params or {},
                     "finished_at": datetime.now(timezone.utc).isoformat(),
                 }
                 _apply_step_outputs(step, item.result, context, context_delta)
@@ -234,6 +271,7 @@ async def execute_workflow(
                 input_required_step = {
                     "step_id": item.step_id,
                     "skill_id": step.skill_id,
+                    "params": item.params or {},
                     "input_required": item.input_required,
                 }
                 for key, value in (
