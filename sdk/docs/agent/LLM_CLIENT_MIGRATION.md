@@ -75,7 +75,7 @@ OPENAI_API_KEY=...
 ```
 
 Available profiles are `registry`, `inl_hpc`, `inl_litellm`, `amsc`,
-`anthropic`, and `openai`. Their YAML files are installed in
+`anthropic`, `openai`, and `anl_asksage`. Their YAML files are installed in
 `prometheus_api.llm_configs` and
 contain every semantic flavor used by agents. Customize placeholder model IDs
 and endpoints in the profile source before building a deployment image, or

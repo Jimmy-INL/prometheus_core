@@ -127,7 +127,7 @@ an explicit config.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `LLM_CONFIG_PROFILE` | Installed configuration profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai`. | `registry` | No |
+| `LLM_CONFIG_PROFILE` | Installed configuration profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, `openai`, or `anl_asksage`. | `registry` | No |
 | `LLM_CONFIG_FILE` | Custom LiteLLM YAML path. This overrides `LLM_CONFIG_PROFILE`. | - | No |
 | `REGISTRY_URL` | LiteLLM registry/proxy URL referenced by the installed `registry` profile. | - | For `registry` |
 | `LLM_DEBUG_LOG_MESSAGES` | Include normalized messages and embedding inputs in debug logs after secret redaction. Prompt content is hidden when `false`. | `false` | No |

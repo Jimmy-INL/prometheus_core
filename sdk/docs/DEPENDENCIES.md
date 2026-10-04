@@ -52,8 +52,8 @@ YAML configuration:
 - The installed `registry` profile routes aliases through the LiteLLM proxy or
   gateway referenced by `REGISTRY_URL`.
 - The Python `litellm` package calls providers directly for profiles containing
-  `model_list`, such as `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, and
-  `openai`.
+  `model_list`, such as `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`,
+  `openai`, and `anl_asksage`.
 
 ## MLflow
 

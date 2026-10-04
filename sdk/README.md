@@ -115,7 +115,7 @@ class AnalysisAgent(PrometheusAgent):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_CONFIG_PROFILE` | Installed profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai` | `registry` |
+| `LLM_CONFIG_PROFILE` | Installed profile: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, `openai`, or `anl_asksage` | `registry` |
 | `LLM_CONFIG_FILE` | Custom LiteLLM YAML path; overrides `LLM_CONFIG_PROFILE` | - |
 | `REGISTRY_URL` | LiteLLM proxy URL read by the installed `registry` profile | - |
 | `LLM_DEBUG_LOG_MESSAGES` | Include redacted prompt/embedding content in debug logs | `false` |

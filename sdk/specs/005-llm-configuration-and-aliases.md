@@ -20,10 +20,10 @@ Let applications select LLM models through stable aliases while using an explici
 - REQ-005-10: `list_models()` MUST prefer proxy aliases when the selected configuration's `proxy_url` is reachable and fall back to its `model_list` aliases only when the proxy is unreachable.
 - REQ-005-11: Missing aliases MUST raise `LLMAliasError` with the missing alias, available aliases, and an instruction to configure LiteLLM or the selected LLM config file.
 - REQ-005-12: `resolve_model(alias)` MUST return the alias itself on the proxy path and the provider model name on the fallback path.
-- REQ-005-13: The package MUST install `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, and `openai` YAML profiles, and `get_llm_config_path(profile)` MUST return the package-owned path for a supported profile and reject unknown names.
+- REQ-005-13: The package MUST install `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, `openai`, and `anl_asksage` YAML profiles, and `get_llm_config_path(profile)` MUST return the package-owned path for a supported profile and reject unknown names.
 - REQ-005-14: `LLMConfig.from_env(...)` MUST select the first available configuration in this order: `LLM_CONFIG_FILE`, `LLM_CONFIG_PROFILE`, then the installed `registry` profile.
 - REQ-005-15: `LLMConfig` MUST resolve a top-level YAML `proxy_url`, including `os.environ/NAME` references, unless an explicit `proxy_url` constructor argument overrides it.
-- REQ-005-16: The five direct-inference profiles MUST define `default`, `small`, `medium`, `large`, `vision`, and `embedding` aliases and MUST reference provider API keys through environment variables rather than embedding credentials.
+- REQ-005-16: The six direct-inference profiles MUST define `default`, `small`, `medium`, `large`, `vision`, and `embedding` aliases and MUST reference provider API keys through environment variables rather than embedding credentials.
 - REQ-005-17: `LLMConfig.from_env(...)` MUST load `LLM_CONFIG_FILE`, `LLM_CONFIG_PROFILE`, `LLM_DEBUG_LOG_MESSAGES`, and `ENABLE_MLFLOW_TRACING`, trim string selectors, and convert truthy flag strings from `1`, `true`, `yes`, or `on`.
 
 ## Behavior

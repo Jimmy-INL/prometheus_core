@@ -22,6 +22,7 @@ def test_packaged_llm_config_paths_are_readable():
         "amsc",
         "anthropic",
         "openai",
+        "anl_asksage",
     )
 
     for profile in LLM_CONFIG_PROFILES:
@@ -42,6 +43,10 @@ def test_packaged_llm_config_paths_are_readable():
             {"os.environ/ANTHROPIC_API_KEY", "os.environ/EMBEDDING_API_KEY"},
         ),
         ("openai", {"os.environ/OPENAI_API_KEY"}),
+        (
+            "anl_asksage",
+            {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
+        ),
     ],
 )
 def test_provider_profiles_scaffold_every_flavor(profile, api_key_references):
