@@ -124,7 +124,7 @@ def main() -> int:
             if not deck.exists():
                 continue
             page.goto(deck.resolve().as_uri())
-            page.wait_for_load_state("networkidle")
+            page.wait_for_load_state("load")
             page.add_style_tag(content=".slide{transition:none !important}")
             page.evaluate("document.fonts.ready")
             page.wait_for_timeout(400)

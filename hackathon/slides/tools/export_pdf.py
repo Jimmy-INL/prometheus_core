@@ -17,7 +17,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1600, "height": 900})
     for name in decks:
         page.goto((ROOT / name).as_uri())
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("load")
         page.evaluate("document.fonts.ready")
         page.wait_for_timeout(500)
         out = ROOT / "pdf" / (pathlib.Path(name).stem + ".pdf")

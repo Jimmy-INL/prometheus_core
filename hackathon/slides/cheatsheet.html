@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day 2 Cheat Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  body { overflow: auto; background: #fff; }
+  main { max-width: 1240px; margin: 0 auto; padding: 40px 24px 70px; display: flex; flex-direction: column; gap: 22px; }
+  header { display: flex; justify-content: space-between; align-items: end; gap: 20px; flex-wrap: wrap; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+  header h1 { font-size: 40px; }
+  .sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(540px, 1fr)); gap: 18px; }
+  .sheet section { border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .sheet h2 { font-size: 21px; color: var(--navy-ink); }
+  .sheet pre { font-size: 13px; overflow-x: auto; white-space: pre; }
+  .sheet p, .sheet li { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+  .sheet ul { margin: 0; padding-left: 1.1em; }
+  .sheet li code { white-space: normal; overflow-wrap: anywhere; }
+  .sheet table.t { font-size: 14px; }
+  @media print { main { padding: 10px; } .sheet section { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><div class="eyebrow" style="color:var(--navy-ink)">Agent developer hackathon · Day 2</div><h1>Cheat sheet</h1></div>
+    <p class="small">The details behind each item are in the decks (<a href="index.html">index</a>), mostly <a href="04-agent-template.html">04 Building an agent</a>.</p>
+  </header>
+
+  <div class="sheet">
+    <section>
+      <h2>Your team's folder</h2>
+<pre>export GH_HOST=github.inl.gov
+gh repo fork genesis/hackathon --clone=false
+git clone git@github.inl.gov:&lt;you&gt;/hackathon.git
+cd hackathon
+git remote add upstream git@github.inl.gov:genesis/hackathon.git
+git config pull.rebase true
+
+cd ~/prometheus/prometheus_agent_template
+python3 setup_agent.py
+#  name:   &lt;Team&gt; Table Plot     (" Agent" is appended)
+#  output: ../hackathon/agents/&lt;team_name&gt;</pre>
+    </section>
+
+    <section>
+      <h2>Git, every piece of work</h2>
+<pre>git fetch upstream
+git switch -c feature/&lt;team&gt;-&lt;what&gt; upstream/main
+git commit -m "Imperative subject under 72 chars"
+git pull --rebase upstream main
+git push -u origin HEAD          # after a rebase:
+git push --force-with-lease      #   your branch only
+gh pr create --repo genesis/hackathon --base main</pre>
+      <p>Never commit <code>.env</code>. One PR needs an approval from someone outside your team (gate #7).</p>
+    </section>
+
+    <section>
+      <h2>Run and check</h2>
+<pre>cd ~/prometheus/hackathon/agents/&lt;team_name&gt;
+make up              # build, start, register
+make logs            # your tracebacks are here
+docker restart &lt;slug&gt;-agent   # after a PLATFORM restart
+
+# in the chat
+/agents   /artifacts   /tasks
+
+docker logs -f client-agent   # what the orchestrator did</pre>
+      <p>Test in a <b>fresh conversation</b>. New or changed agents are picked up within about a minute.</p>
+    </section>
+
+    <section>
+      <h2>A skill in <code>agent_card.json</code></h2>
+<pre>{ "id": "&lt;team&gt;_plot_table",
+  "description": "Plot columns of a table artifact or an
+     uploaded CSV as a PNG. If no columns are named, the
+     skill asks, offering the real names.",
+  "usage_notes": "Use for plot/chart/graph requests.",
+  "inputSchema": { "type": "object",
+    "properties": {
+      "table_artifact_id": { "type": "string",
+        "x_artifact_ref": "single",
+        "description": "Table artifact or CSV file." },
+      "x_column": { "type": "string",
+        "description": "x axis column (approximate ok)" } },
+    "required": ["table_artifact_id"] } }</pre>
+      <p>Top level: <code>"capabilities": {"streaming": true}</code>.</p>
+    </section>
+
+    <section>
+      <h2>Dispatch, input, output</h2>
+<pre>async def _execute(self, params, context, event_queue):
+    if params["skill_id"] == "&lt;team&gt;_plot_table": ...
+
+path = await self.get_artifact_file_path(
+    params["table_artifact_id"], context=context,
+    artifacts=params.get("artifacts"))
+
+table_id = await self.send_json_artifact(
+    context, event_queue, payload, name="table",
+    catalog_artifact=True)
+
+ref = await self.send_deeplynx_artifact(
+    context=context, event_queue=event_queue,
+    file_path=png, name="plot.png", description="…",
+    storage_config=ConnectionConfig.from_env(),
+    mime_type="image/png")
+return {"status": "success", "artifact_id": ref.artifact_id}</pre>
+    </section>
+
+    <section>
+      <h2>Talk to the user</h2>
+<pre>await self.send_status_update(context, event_queue,
+                              message="Parsing 4 tables…")
+
+from prometheus_api.agent import MissingInput
+await self.send_input_required(context, event_queue,
+    missing_inputs=[MissingInput(name="x_column",
+        type="enum", options=list(df.columns),
+        description="x axis column",
+        user_prompt="Which column goes on the x axis?")],
+    hint="Choose the columns to plot.")
+return {}
+# resumed call: self.get_provided_inputs(context)
+# save what you need first: self.save_context_state(ctx, {...})</pre>
+    </section>
+
+    <section>
+      <h2>LLM</h2>
+<pre>import os
+from prometheus_api.llm_client import (
+    LLMConfig, ToolDefinition, acall_tool)
+
+cfg = LLMConfig.from_env().with_api_key(
+    os.getenv("LITELLM_MASTER_KEY"))
+async with self.llm_client(context, config=cfg) as llm:
+    r = await llm.small("…")          # r.text
+    call = await acall_tool(llm, prompt, tool=PICK,
+                            model="small")
+    idx = call.arguments["index"]</pre>
+      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Each one must exist in the platform's <code>litellm_config.yaml</code> (check <code>/v1/models</code>).</p>
+    </section>
+
+    <section>
+      <h2>Long work</h2>
+      <ul>
+        <li>Blocking code: <code>await asyncio.to_thread(fn, …)</code></li>
+        <li>With progress: a <code>PrometheusWorker</code> run via <code>await self.run_worker(worker, context, event_queue)</code></li>
+        <li>Minutes or more: <code>await self.declare_long_running(context, event_queue, estimate_seconds=…)</code></li>
+      </ul>
+      <h2>Packaging</h2>
+      <ul>
+        <li>Your imports in <code>pyproject.toml</code> (pandas, matplotlib); never <code>prometheus_api</code></li>
+        <li><code>MPLBACKEND=Agg</code>; a <code>COPY</code> line in the <code>Dockerfile</code> per extra module</li>
+        <li><code>uv run pytest</code> and <code>uv run ruff check .</code> must pass</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>When it breaks</h2>
+      <table class="t">
+        <tr><th>Symptom</th><th>Fix</th></tr>
+        <tr><td>Not in <code>/agents</code></td><td><code>docker restart &lt;slug&gt;-agent</code>; <code>make logs</code></td></tr>
+        <tr><td>Never called</td><td>sharpen <code>description</code> / <code>usage_notes</code></td></tr>
+        <tr><td>LLM 401</td><td>attach <code>LITELLM_MASTER_KEY</code></td></tr>
+        <tr><td><code>LLMAliasError</code></td><td>add the flavor to <code>litellm_config.yaml</code></td></tr>
+        <tr><td>Upload ignored, plot missing</td><td>DeepLynx settings; <code>mime_type="image/png"</code></td></tr>
+        <tr><td>"No 'userToken' found"</td><td>activate a signing key (Admin)</td></tr>
+        <tr><td><code>ModuleNotFoundError</code></td><td><code>pyproject.toml</code>, Dockerfile <code>COPY</code></td></tr>
+      </table>
+    </section>
+  </div>
+</main>
+</body>
+</html>

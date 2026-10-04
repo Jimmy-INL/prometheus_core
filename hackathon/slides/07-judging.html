@@ -74,19 +74,23 @@
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Stage 1 · the gate</div><h2>Must-haves: pass/fail, and how judges check each</h2></div>
+  <div class="head"><div class="eyebrow">Stage 1 · the gate</div><h2>Seven must-haves</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:40px">#</th><th style="width:500px">Must-have</th><th>How the judges verify it</th></tr>
-      <tr><td>1</td><td>Built from <code>prometheus_agent_template</code>; a <code>PrometheusAgent</code> subclass</td><td>Read <code>agent.py</code> at the submitted SHA</td></tr>
-      <tr><td>2</td><td>At least <b>two skills</b>, extract and plot, with team-prefixed IDs</td><td>Read <code>agent_card.json</code>; <code>GET /api/agent-card</code> on the running agent</td></tr>
-      <tr><td>3</td><td>Registers with the platform; appears under <code>/agents</code></td><td><code>curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/agents</code>, then <code>/agents</code> in the chat</td></tr>
-      <tr><td>4</td><td>Natural-language requests are <b>routed by the orchestrator</b></td><td>The practice prompt on the practice file calls both skills; the status stream or client-agent log shows the calls</td></tr>
-      <tr><td>5</td><td>Extract emits a table artifact; plot emits an <b>image</b> that renders</td><td><code>/artifacts</code> lists both; the PNG shows in the chat</td></tr>
-      <tr><td>6</td><td>Tests pass and lint is clean</td><td><code>uv run pytest &amp;&amp; uv run ruff check .</code> in a fresh clone of the SHA</td></tr>
-      <tr><td>7</td><td>A PR reviewed by someone outside the team</td><td>An approval from a non-team member, with at least one resolved thread</td></tr>
-    </table>
-    <div class="callout warn">A team that misses the gate still takes the hidden test, gets written feedback, and can win category awards. It is not ranked for the Prometheus Prize or the runner-up.</div>
+    <div class="grid g2" style="gap:30px">
+      <ol class="b">
+        <li>Built from <code>prometheus_agent_template</code>; a <code>PrometheusAgent</code> subclass</li>
+        <li>At least <b>two skills</b> (extract, plot) with team-prefixed IDs</li>
+        <li>Registers with the platform; listed under <code>/agents</code></li>
+        <li>Natural-language requests are <b>routed by the orchestrator</b></li>
+        <li>Extract emits a table artifact; plot emits an <b>image that renders</b></li>
+        <li><code>uv run pytest</code> and <code>uv run ruff check .</code> pass</li>
+        <li>A PR <b>approved by someone outside the team</b></li>
+      </ol>
+      <div class="col">
+        <div class="callout">Judges check each one on your demo machine with the practice file, and in a fresh clone of your submitted commit.</div>
+        <div class="callout warn">Miss the gate and you still take the hidden test, get feedback, and can win category awards, but you are not ranked for the main prizes.</div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -133,21 +137,6 @@
       <tr><td><b>Demo &amp; communication</b></td><td>10</td><td>A clear 5-minute story: the approach, the trade-offs (regex vs LLM, where matching happens), a look at the code, what didn't work</td></tr>
     </table>
     <p class="small">Each judge scores every criterion from 1 to 5. Points = score ÷ 5 × weight. Example: a 4 on Skill design gives 12 of 15 points.</p>
-  </div>
-</section>
-
-<section class="slide">
-  <div class="head"><div class="eyebrow">Scoring anchors</div><h2>What a 1, a 3, and a 5 look like</h2></div>
-  <div class="content">
-    <table class="t xs">
-      <tr><th style="width:230px">Criterion</th><th>1 · barely there</th><th>3 · solid</th><th>5 · outstanding</th></tr>
-      <tr><td><b>Skill design &amp; card</b></td><td>One monolithic skill, or template placeholder text</td><td>Two skills, routed for the team's own prompts</td><td>Skills compose cleanly through artifacts; routed for every judge phrasing and never picked by mistake</td></tr>
-      <tr><td><b>Plot quality</b></td><td>Unlabelled axes, default title, wrong chart type</td><td>Labels and units, a title, readable</td><td>Caption-derived title, units, legend, sensible scales and chart type; looks like a figure for a report</td></tr>
-      <tr><td><b>Robustness</b></td><td>A stack trace on the first unusual input</td><td>Errors return a clear message</td><td>Asks when ambiguous (two matching tables, two temperature columns); handles separators, missing values, text columns</td></tr>
-      <tr><td><b>Engineering quality</b></td><td>The template's two tests, one giant commit</td><td>Tests for the parser and the plot; reviewed PRs; README</td><td>Fixtures from several hand-written files, mocked LLM, edge-case tests; small reviewed PRs; clear config docs</td></tr>
-      <tr><td><b>Demo</b></td><td>Slides only, no live run</td><td>A live run with a short explanation</td><td>A clear story with trade-offs, honest about failures, handles a judge's question at the keyboard</td></tr>
-    </table>
-    <p class="small">2 and 4 sit between the anchors. Judges score independently, then compare notes; a difference of more than 2 points on a criterion is discussed before averaging.</p>
   </div>
 </section>
 
@@ -214,40 +203,6 @@
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">For judges</div><h2>Score sheet (one per team)</h2></div>
-  <div class="content">
-    <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:26px">
-      <table class="t sm score">
-        <tr><th>Item</th><th style="width:70px">Max</th><th style="width:110px">Score</th><th>Notes</th></tr>
-        <tr class="hl"><td><b>Hidden test 1</b> · table / columns / image</td><td>15</td><td>__ / __ / __</td><td></td></tr>
-        <tr class="hl"><td><b>Hidden test 2</b> · table / matching / image</td><td>12</td><td>__ / __ / __</td><td></td></tr>
-        <tr class="hl"><td><b>Hidden test 3</b> · direct / asks / plots</td><td>13</td><td>__ / __ / __</td><td></td></tr>
-        <tr><td>Skill design &amp; card (1–5)</td><td>15</td><td></td><td></td></tr>
-        <tr><td>Plot quality (1–5)</td><td>10</td><td></td><td></td></tr>
-        <tr><td>Robustness (1–5)</td><td>10</td><td></td><td></td></tr>
-        <tr><td>Engineering quality (1–5)</td><td>15</td><td></td><td></td></tr>
-        <tr><td>Demo &amp; communication (1–5)</td><td>10</td><td></td><td></td></tr>
-        <tr class="hl"><td><b>Total</b></td><td>100</td><td></td><td></td></tr>
-      </table>
-      <div class="col">
-        <table class="t sm score">
-          <tr><th>Team</th><th></th></tr>
-          <tr><td>Commit SHA</td><td></td></tr>
-          <tr><td>Gate 1–7 passed?</td><td>☐1 ☐2 ☐3 ☐4 ☐5 ☐6 ☐7</td></tr>
-          <tr><td>Stretch goals seen</td><td>☐1 ☐2 ☐3 ☐4 ☐5 ☐6</td></tr>
-          <tr><td>Bonus (+2 each, max 10)</td><td></td></tr>
-          <tr><td>Penalties</td><td></td></tr>
-          <tr><td>Hidden test time (s)</td><td></td></tr>
-          <tr><td>Award nominations</td><td></td></tr>
-        </table>
-        <p class="small">Rubric points = score ÷ 5 × weight. Final = hidden test + average rubric points + bonus − penalties.</p>
-      </div>
-    </div>
-  </div>
-  <aside class="notes">The item-level breakdown of the hidden-test points is in the organizer notes that go with the demo files.</aside>
-</section>
-
-<section class="slide">
   <div class="head"><div class="eyebrow">Day 2 end</div><h2>Schedule for demos and awards</h2></div>
   <div class="content" style="gap:0">
     <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Code freeze and submissions</div><div class="de">PR links and commit SHA in <code>genesis/hackathon</code>, card name and skill IDs, README</div></div></div>
@@ -257,36 +212,6 @@
     <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Awards</div><div class="de">Category awards first, then People's Choice, runner-up, and Best in Show</div></div></div>
     <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">What happens next</div><div class="de">How the best agent gets reviewed and brought into the platform</div></div></div>
   </div>
-</section>
-
-<section class="slide">
-  <div class="head"><div class="eyebrow">And the winners are…</div><h2>Awards</h2></div>
-  <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <table class="t sm">
-        <tr><th>Award</th><th>Team</th></tr>
-        <tr class="hl"><td>🏆 Prometheus Prize (Best in Show)</td><td></td></tr>
-        <tr><td>🥈 Second Stage Award</td><td></td></tr>
-        <tr><td>🗳️ People's Choice</td><td></td></tr>
-        <tr><td>🔍 Table Detective</td><td></td></tr>
-        <tr><td>🧭 Column Whisperer</td><td></td></tr>
-        <tr><td>📈 Show Me the Plot</td><td></td></tr>
-        <tr><td>💬 Good Question</td><td></td></tr>
-      </table>
-      <table class="t sm">
-        <tr><th>Award</th><th>Team</th></tr>
-        <tr><td>🎯 Orchestrator's Pet</td><td></td></tr>
-        <tr><td>🛑 SCRAM Award</td><td></td></tr>
-        <tr><td>⚡ Speed of Light</td><td></td></tr>
-        <tr><td>🛡️ Defense in Depth</td><td></td></tr>
-        <tr><td>💙 Cherenkov Glow</td><td></td></tr>
-        <tr><td>🧪 Moonshot</td><td></td></tr>
-        <tr><td>🐛 Half-Life Award</td><td></td></tr>
-        <tr><td>✨ Special mention</td><td></td></tr>
-      </table>
-    </div>
-  </div>
-  <aside class="notes">Fill in the winners during deliberation, or reveal them one at a time.</aside>
 </section>
 
 </div></div>
