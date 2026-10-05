@@ -135,14 +135,15 @@ return {}
 from prometheus_api.llm_client import (
     LLMConfig, ToolDefinition, acall_tool)
 
-cfg = LLMConfig.from_env().with_api_key(
-    os.getenv("LITELLM_MASTER_KEY"))
+cfg = LLMConfig.from_env()          # profile from .env
+if cfg.proxy_url:                   # platform proxy only
+    cfg = cfg.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
 async with self.llm_client(context, config=cfg) as llm:
     r = await llm.small("…")          # r.text
     call = await acall_tool(llm, prompt, tool=PICK,
                             model="small")
     idx = call.arguments["index"]</pre>
-      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Each one must exist in the platform's <code>litellm_config.yaml</code> (check <code>/v1/models</code>).</p>
+      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Provider in your agent's <code>.env</code>: <code>LLM_CONFIG_PROFILE=inl_litellm</code> + <code>INL_LITELLM_API_KEY</code>, or <code>amsc</code> + <code>AMSC_I2_API_KEY</code>, or <code>anl_asksage</code> + <code>ASKSAGE_API_KEY</code>.</p>
     </section>
 
     <section>
@@ -166,8 +167,8 @@ async with self.llm_client(context, config=cfg) as llm:
         <tr><th>Symptom</th><th>Fix</th></tr>
         <tr><td>Not in <code>/agents</code></td><td><code>docker restart &lt;slug&gt;-agent</code>; <code>make logs</code></td></tr>
         <tr><td>Never called</td><td>sharpen <code>description</code> / <code>usage_notes</code></td></tr>
-        <tr><td>LLM 401</td><td>attach <code>LITELLM_MASTER_KEY</code></td></tr>
-        <tr><td><code>LLMAliasError</code></td><td>add the flavor to <code>litellm_config.yaml</code></td></tr>
+        <tr><td>LLM 401</td><td>the profile's key in <code>.env</code></td></tr>
+        <tr><td>"Unknown LLM config profile"</td><td>check the <code>LLM_CONFIG_PROFILE</code> spelling</td></tr>
         <tr><td>Upload ignored, plot missing</td><td>DeepLynx settings; <code>mime_type="image/png"</code></td></tr>
         <tr><td>"No 'userToken' found"</td><td>activate a signing key (Admin)</td></tr>
         <tr><td><code>ModuleNotFoundError</code></td><td><code>pyproject.toml</code>, Dockerfile <code>COPY</code></td></tr>

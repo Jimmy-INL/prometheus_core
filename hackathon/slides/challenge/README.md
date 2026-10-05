@@ -41,6 +41,6 @@ The new files follow the same conventions as the practice file: GitHub-flavoured
 
 - **DeepLynx must be configured** (local or shared instance). Chat uploads are stored there, and a PNG artifact needs DeepLynx to render (`send_deeplynx_artifact`).
 - Add `matplotlib` (and anything else you import) to your agent's `pyproject.toml`; use the `Agg` backend.
-- LLM calls: `self.llm_client(context, config=LLMConfig.from_env().with_api_key(os.getenv("LITELLM_MASTER_KEY")))`, with the flavor that fits each call (`small` for cheap classification, `medium`/`large` for matching, `vision` to check a plot). Under the default `registry` profile, make sure your platform's `litellm_config.yaml` defines the flavors you use.
+- LLM calls: pick a provider with `LLM_CONFIG_PROFILE` (`inl_litellm`, `amsc`, or `anl_asksage`) and its key in your agent's `.env`, then use `self.llm_client(context)` with the flavor that fits each call (`small` for cheap classification, `medium`/`large` for matching, `vision` to check a plot).
 
 See the Day 1 decks (`index.html`) for everything else.

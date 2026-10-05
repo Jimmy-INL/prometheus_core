@@ -93,7 +93,7 @@ docker restart client-agent</pre>
 <tr><td>"The Prometheus Platform must be launched first"</td><td>start the platform first (the network is missing)</td></tr>
 <tr><td>not in <code>/agents</code></td><td>the platform was restarted: <code>docker restart hello-&lt;you&gt;-agent</code></td></tr>
 <tr><td>never routed</td><td>sharpen the description; <code>docker restart client-agent</code></td></tr>
-<tr><td>LLM 401 (if you added LLM calls)</td><td><code>LLMConfig…with_api_key(LITELLM_MASTER_KEY)</code></td></tr>
+<tr><td>LLM 401 (if you added LLM calls)</td><td>the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code></td></tr>
 <tr><td><code>ModuleNotFoundError</code> in the container</td><td>add a <code>COPY</code> line to the Dockerfile</td></tr>
 </table>
 </div>

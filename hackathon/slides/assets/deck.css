@@ -312,3 +312,4 @@ pre { flex-shrink: 0; }
 .takeaways .tk .n { font-family: var(--display); font-size: 48px; font-weight: 800; color: var(--acc); line-height: 1; }
 .takeaways .tk h3 { font-size: 30px; }
 .takeaways .tk p { font-size: 21px; color: var(--ink-2); line-height: 1.4; margin-top: 4px; }
+table.t.nw td code { white-space: nowrap; overflow-wrap: normal; }

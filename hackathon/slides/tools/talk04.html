@@ -255,18 +255,19 @@ x = params.get(<span class="s">"x_column"</span>) <span class="k">or</span> answ
 <section class="slide section">
   <div class="num">C</div>
   <h2>Using an LLM</h2>
-  <p class="lede">One client in the base image. You pick a flavor; the platform picks the model.</p>
+  <p class="lede">One client in the base image. You pick a flavor in code; your <code>.env</code> picks the provider.</p>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">LLMClient</div><h2>Call the platform's LLM</h2></div>
+  <div class="head"><div class="eyebrow">LLMClient</div><h2>Call an LLM</h2></div>
   <div class="content">
     <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px">
       <pre class="sm"><span class="k">import</span> os
 <span class="k">from</span> prometheus_api.llm_client <span class="k">import</span> LLMConfig
 
-cfg = LLMConfig.from_env().with_api_key(
-    os.getenv(<span class="s">"LITELLM_MASTER_KEY"</span>))
+cfg = LLMConfig.from_env()   <span class="c"># profile from .env</span>
+<span class="k">if</span> cfg.proxy_url:            <span class="c"># only the platform proxy</span>
+    cfg = cfg.with_api_key(os.getenv(<span class="s">"LITELLM_MASTER_KEY"</span>))
 
 <span class="k">async with</span> self.llm_client(context, config=cfg) <span class="k">as</span> llm:
     r = <span class="k">await</span> llm.small(
@@ -281,7 +282,7 @@ answer = r.text</pre>
           <tr><td><code>vision</code></td><td>checking your own plot image</td></tr>
           <tr><td><code>embedding</code></td><td>similarity search</td></tr>
         </table>
-        <div class="callout warn">Without <code>with_api_key(LITELLM_MASTER_KEY)</code> the platform's proxy answers <b>401</b>. Each flavor you use must exist in the platform's <code>litellm_config.yaml</code>.</div>
+        <div class="callout">Which provider answers is set by <code>LLM_CONFIG_PROFILE</code> in your agent's <code>.env</code>: <code>inl_litellm</code>, <code>amsc</code>, or <code>anl_asksage</code> (deck 03). The master key is attached only for the platform's own proxy; otherwise your profile's key is used.</div>
       </div>
     </div>
   </div>
@@ -363,7 +364,7 @@ docker restart neutron-table-plot-agent</pre>
       <tr><td>Called with the wrong arguments</td><td>parameter descriptions; what your previous result returned</td></tr>
       <tr><td>Crashes on the file</td><td><code>make logs</code>: your traceback is there</td></tr>
       <tr><td>The plot doesn't render</td><td><code>mime_type="image/png"</code>, DeepLynx configured</td></tr>
-      <tr><td>LLM call fails with 401</td><td>attach <code>LITELLM_MASTER_KEY</code></td></tr>
+      <tr><td>LLM call fails with 401</td><td>the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code></td></tr>
       <tr><td><code>ModuleNotFoundError</code> in the container</td><td>add it to <code>pyproject.toml</code>, and a <code>COPY</code> line for your own modules</td></tr>
     </table>
     <p class="small">What the orchestrator decided, and why: <code>docker logs -f client-agent</code> in the platform.</p>

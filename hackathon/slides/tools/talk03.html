@@ -13,7 +13,7 @@
     <div class="grid g4">
       <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Healthy</h3><p class="small">All services up, and you know where to look when one isn't.</p></div>
       <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>Logged in</h3><p class="small">An admin user and an active signing key.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>LLMs answer</h3><p class="small">The flavors your agent will use exist.</p></div>
+      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>LLMs answer</h3><p class="small">You have a key for an LLM profile.</p></div>
       <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>Files work</h3><p class="small">An upload lands in DeepLynx.</p></div>
     </div>
     <div class="callout info">Platform not starting yet? Work through the bonus slides at the end of this deck with a mentor.</div>
@@ -67,9 +67,7 @@ curl -s localhost:8600/healthz              <span class="c"># {"status":"ok"}</s
 
 set -a; source .env; set +a                 <span class="c"># for the key below</span>
 curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-     localhost:9977/v1/agents | python3 -m json.tool     <span class="c"># registered agents</span>
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-     localhost:9977/v1/models                            <span class="c"># available LLM flavors</span></pre>
+     localhost:9977/v1/agents | python3 -m json.tool     <span class="c"># registered agents</span></pre>
     <div class="grid g2">
       <div class="callout">Then ask the chat something real: "Find recent OSTI papers on SiC cladding". Watch it with <code>make logs SERVICE=client-agent</code>.</div>
       <div class="callout warn">A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> header.</div>
@@ -92,25 +90,31 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">LLMs</div><h2>Which models your platform offers</h2></div>
+  <div class="head"><div class="eyebrow">LLMs</div><h2>Which LLMs your agent uses</h2></div>
   <div class="content">
-    <div class="grid" style="grid-template-columns: 1fr 1.1fr; gap:30px">
+    <div class="grid" style="grid-template-columns: 1.45fr 1fr; gap:30px">
       <div class="col">
-        <p class="body">Agents ask for a <b>flavor</b> (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>). By default every flavor is looked up in the platform's LiteLLM, configured in <code>litellm_config.yaml</code>.</p>
-        <div class="callout warn">On <code>dev</code> that file defines only <code>medium</code>. Add the flavors your agent uses, then <code>make restart</code> and check <code>/v1/models</code>.</div>
-        <p class="small">Prefer INL's LiteLLM or another provider? Set <code>LLM_CONFIG_PROFILE</code> (e.g. <code>inl_litellm</code>) and its key in <code>.env</code>. Details in the appendix.</p>
+        <p class="body">Your code asks for a <b>flavor</b> (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>). One line in your agent's <code>.env</code> picks a <b>profile</b>: a provider plus the model behind each flavor.</p>
+        <table class="t sm nw">
+          <tr><th>Profile</th><th>Provider</th><th>Key in <code>.env</code></th></tr>
+          <tr><td><code>inl_litellm</code></td><td>INL LiteLLM</td><td><code>INL_LITELLM_API_KEY</code></td></tr>
+          <tr><td><code>amsc</code></td><td>American Science Cloud</td><td><code>AMSC_I2_API_KEY</code></td></tr>
+          <tr><td><code>anl_asksage</code></td><td>ANL AskSage</td><td><code>ASKSAGE_API_KEY</code></td></tr>
+        </table>
+        <p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>. AskSage arrives with the next SDK release, before the hackathon. Its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>).</p>
       </div>
-      <pre class="sm"><span class="c"># prometheus_platform/litellm_config.yaml</span>
-model_list:
-  - model_name: medium
-    litellm_params:
-      model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
-<span class="h">  - model_name: small</span>
-<span class="h">    litellm_params:</span>
-<span class="h">      model: anthropic/claude-haiku-4-5</span>
-<span class="h">      api_key: os.environ/ANTHROPIC_API_KEY</span>
-<span class="h">  # …likewise large, vision</span></pre>
+      <div class="col">
+        <pre class="sm"><span class="c"># your agent's .env: pick one</span>
+LLM_CONFIG_PROFILE=inl_litellm
+INL_LITELLM_API_KEY=…
+
+<span class="c"># LLM_CONFIG_PROFILE=amsc</span>
+<span class="c"># AMSC_I2_API_KEY=…</span>
+
+<span class="c"># LLM_CONFIG_PROFILE=anl_asksage</span>
+<span class="c"># ASKSAGE_API_KEY=…</span></pre>
+        <p class="small">Then <code>make up</code> in your agent's folder. Keys stay in <code>.env</code>, never in code or the repo.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -160,8 +164,8 @@ EOF</pre>
       <tr><th style="width:470px">Symptom</th><th>Fix</th></tr>
       <tr><td>Every chat turn fails: "No 'userToken' found…"</td><td>Admin › Signing Keys: generate and <b>activate</b> a key</td></tr>
       <tr><td>Your agent disappeared from <code>/agents</code></td><td>the platform restarted: <code>docker restart &lt;your-agent&gt;</code></td></tr>
-      <tr><td><code>LLMAliasError</code>: alias 'small' not available</td><td>add that flavor to <code>litellm_config.yaml</code>, <code>make restart</code></td></tr>
-      <tr><td>LLM call gets HTTP 401</td><td>attach <code>LITELLM_MASTER_KEY</code> to the LLM config</td></tr>
+      <tr><td>LLM call gets HTTP 401</td><td>the key for your <code>LLM_CONFIG_PROFILE</code> is missing or wrong in the agent's <code>.env</code></td></tr>
+      <tr><td>"Unknown LLM config profile"</td><td>a typo in <code>LLM_CONFIG_PROFILE</code>, or an SDK image without that profile</td></tr>
       <tr><td>"DeepLynx storage is not configured"</td><td>set the <code>DEEPLYNX_*</code> lines, <code>make restart</code></td></tr>
       <tr><td>Something else</td><td><code>make logs SERVICE=&lt;name&gt;</code>; the appendix has the full troubleshooting tables</td></tr>
     </table>
