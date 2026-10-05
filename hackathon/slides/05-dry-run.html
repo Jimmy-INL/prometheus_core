@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- generated from slides/05-dry-run.md: edit that file and run tools/build.py -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -13,27 +14,55 @@
 <div id="viewport"><div id="stage">
 
 <section class="slide">
-<div class="head"><div class="eyebrow">3:30 pm · hands-on · 60 min</div><h2>End-to-end dry run</h2><p class="lede">Do everything from today yourself. Mentors circulate to unblock environment problems; raise your hand early.</p></div>
-<div class="content">
+  <div class="head"><div class="eyebrow">3:30 pm · hands-on · 60 min</div><h2>End-to-end dry run</h2><p class="lede">Do everything from today yourself. Mentors circulate to unblock environment problems; raise your hand early.</p></div>
+  <div class="content">
 <div class="grid g4">
-<div class="card acc"><div class="kpi"><span class="v">1</span><span class="l">~10 min</span></div><h3>Check</h3><p class="small">Your platform from the homework is up and current, and you are logged in with an active signing key.</p></div>
-<div class="card acc"><div class="kpi"><span class="v">2</span><span class="l">~15 min</span></div><h3>Scaffold</h3><p class="small">Clone <code>prometheus_agent_template</code> and run <code>setup_agent.py</code> with a <b>unique</b> name (<code>hello-&lt;you&gt;</code>).</p></div>
-<div class="card acc"><div class="kpi"><span class="v">3</span><span class="l">~15 min</span></div><h3>Edit &amp; call</h3><p class="small">Change the skill so it greets by name. <code>make up</code>, check it registered, and get the chat to route to it.</p></div>
-<div class="card acc"><div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div><h3>Practice PR</h3><p class="small">Fork <code>genesis/hackathon</code>, commit your agent under <code>practice/&lt;you&gt;/</code>, open a PR to <code>main</code>, get a review.</p></div>
+<div class="card acc">
+<div class="kpi"><span class="v">1</span><span class="l">~10 min</span></div>
+<h3>Check</h3>
+<p class="small">Your platform from the homework is up and current, and you are logged in with an active signing key.</p>
 </div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">2</span><span class="l">~15 min</span></div>
+<h3>Scaffold</h3>
+<p class="small">Clone <code>prometheus_agent_template</code> and run <code>setup_agent.py</code> with a <strong>unique</strong> name (<code>hello-&lt;you&gt;</code>).</p>
+</div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">3</span><span class="l">~15 min</span></div>
+<h3>Edit &amp; call</h3>
+<p class="small">Change the skill so it greets by name. <code>make up</code>, check it registered, and get the chat to route to it.</p>
+</div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div>
+<h3>Practice PR</h3>
+<p class="small">Fork <code>genesis/hackathon</code>, commit your agent under <code>practice/&lt;you&gt;/</code>, open a PR to <code>main</code>, get a review.</p>
+</div>
+
+</div>
+
 <div class="grid g3 wrap-code">
-<div class="callout good"><b>Done</b> = <code>/agents</code> lists your agent, a chat message returns your greeting, and your PR has an approval.</div>
-<div class="callout warn">Use <b>your own</b> card name and skill ID. The registry replaces agents with the same name, so two identical "Hello World Agent"s evict each other.</div>
-<div class="callout info">Folder layout: <code>~/prometheus/{prometheus_platform, prometheus_agent_template, hello-&lt;you&gt;}</code>. <code>setup_agent.py</code> then finds the platform's <code>.env</code>.</div>
+<div class="callout good">
+<strong>Done</strong> = <code>/agents</code> lists your agent, a chat message returns your greeting, and your PR has an approval.</div>
+
+<div class="callout warn">
+Use <strong>your own</strong> card name and skill ID. The registry replaces agents with the same name, so two identical &quot;Hello World Agent&quot;s evict each other.</div>
+
+<div class="callout info">
+Folder layout: <code>~/prometheus/{prometheus_platform, prometheus_agent_template, hello-&lt;you&gt;}</code>. <code>setup_agent.py</code> then finds the platform's <code>.env</code>.</div>
+
 </div>
-</div>
+
+  </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">Refresh · 1</div><h2>Platform: is it ready?</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <pre class="xs">cd ~/prometheus/prometheus_platform
+<div class="grid g2" style="gap:26px;">
+<pre class="xs">cd ~/prometheus/prometheus_platform
 git pull                      <span class="c"># latest dev</span>
 make up
 make ps
@@ -41,18 +70,21 @@ make ps
 <span class="c"># verify</span>
 set -a; source .env; set +a
 curl -s localhost:8600/healthz
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
      localhost:9977/v1/agents | python3 -m json.tool</pre>
-      <div class="col">
-        <ol class="b">
-          <li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
-          <li>Admin › Signing Keys → <b>generate + activate</b></li>
-          <li>Chat: <code>/agents</code>, then ask a question</li>
-          <li>Upload any small file: it should appear in DeepLynx</li>
-        </ol>
-        <div class="callout warn">Platform not up yet? Use the <b>bonus slide</b> at the end of this deck, and the bonus section of deck 03.</div>
-      </div>
-    </div>
+<div class="col">
+<ol class="b">
+<li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
+<li>Admin › Signing Keys → <strong>generate + activate</strong></li>
+<li>Chat: <code>/agents</code>, then ask a question</li>
+<li>Upload any small file: it should appear in DeepLynx</li>
+</ol>
+<div class="callout warn">
+Platform not up yet? Use the <strong>bonus slide</strong> at the end of this deck, and the bonus section of deck 03.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
@@ -62,21 +94,21 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
 <pre class="sm">cd ~/prometheus/prometheus_agent_template   <span class="c"># cloned for homework</span>
 git pull
 python3 setup_agent.py
-<span class="c">#  name: Hello &lt;You&gt;   → card "Hello &lt;You&gt; Agent"</span>
+<span class="c">#  name: Hello &lt;You&gt;   → card &quot;Hello &lt;You&gt; Agent&quot;</span>
 <span class="c">#  skill id: hello_&lt;you&gt;_greeting   (unique!)</span>
 <span class="c">#  output dir: ../hello-&lt;you&gt;</span>
 <span class="c">#  copy secrets from ../prometheus_platform/.env? yes</span>
 cd ../hello-<span class="p">&lt;you&gt;</span>
 
 <span class="c"># edit agent_card.json: skill description + usage_notes</span>
-<span class="c">#   "Greets a person by name. Use when the user asks</span>
-<span class="c">#    to be greeted or says hello to &lt;You&gt;."</span>
+<span class="c">#   &quot;Greets a person by name. Use when the user asks</span>
+<span class="c">#    to be greeted or says hello to &lt;You&gt;.&quot;</span>
 <span class="c">#   inputSchema: rename input_data → person_name</span>
 
 <span class="c"># edit agent.py → _execute:</span>
-<span class="c">#   name = params.get("person_name")</span>
-<span class="c">#   return {"status": "success",</span>
-<span class="c">#           "greeting": f"Hello, {name}, from &lt;you&gt;!"}</span>
+<span class="c">#   name = params.get(&quot;person_name&quot;)</span>
+<span class="c">#   return {&quot;status&quot;: &quot;success&quot;,</span>
+<span class="c">#           &quot;greeting&quot;: f&quot;Hello, {name}, from &lt;you&gt;!&quot;}</span>
 
 uv sync &amp;&amp; uv run pytest    <span class="c"># update the tests too</span>
 uv run ruff check .
@@ -90,35 +122,58 @@ make logs</pre>
   <div class="content">
 <div class="col">
 <pre class="sm"><span class="c"># registered?</span>
-docker logs hello-<span class="p">&lt;you&gt;</span>-agent 2&gt;&amp;1 | grep "Registered '"
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  localhost:9977/v1/agents | grep -o '"agent_name": *"[^"]*"'
+docker logs hello-<span class="p">&lt;you&gt;</span>-agent <span class="n">2</span>&gt;&amp;<span class="n">1</span> | grep <span class="s">&quot;Registered &#x27;&quot;</span>
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
+  localhost:9977/v1/agents | grep -o <span class="s">&#x27;&quot;agent_name&quot;: *&quot;[^&quot;]*&quot;&#x27;</span>
 
 <span class="c"># make the orchestrator notice now (else ≤ 60 s)</span>
 docker restart client-agent</pre>
 <ol class="b sm">
 <li>Chat: <code>/agents</code> shows your agent</li>
-<li>Ask: "Please greet Marie Curie on behalf of &lt;You&gt;"</li>
+<li>Ask: &quot;Please greet Marie Curie on behalf of &lt;You&gt;&quot;</li>
 <li>Watch <code>make logs</code> in your agent dir</li>
-<li>Stretch: set <code>"streaming": true</code>, add a <code>send_status_update</code>, then <code>make up</code> again</li>
+<li>Stretch: set <code>&quot;streaming&quot;: true</code>, add a <code>send_status_update</code>, then <code>make up</code> again</li>
 </ol>
 <table class="t xs wrap-code">
-<tr><th>If…</th><th>then</th></tr>
-<tr><td>"The Prometheus Platform must be launched first"</td><td>start the platform first (the network is missing)</td></tr>
-<tr><td>not in <code>/agents</code></td><td>the platform was restarted: <code>docker restart hello-&lt;you&gt;-agent</code></td></tr>
-<tr><td>never routed</td><td>sharpen the description; <code>docker restart client-agent</code></td></tr>
-<tr><td>LLM 401 (if you added LLM calls)</td><td>the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code></td></tr>
-<tr><td><code>ModuleNotFoundError</code> in the container</td><td>add a <code>COPY</code> line to the Dockerfile</td></tr>
+<thead>
+<tr>
+<th>If…</th>
+<th>then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&quot;The Prometheus Platform must be launched first&quot;</td>
+<td>start the platform first (the network is missing)</td>
+</tr>
+<tr>
+<td>not in <code>/agents</code></td>
+<td>the platform was restarted: <code>docker restart hello-&lt;you&gt;-agent</code></td>
+</tr>
+<tr>
+<td>never routed</td>
+<td>sharpen the description; <code>docker restart client-agent</code></td>
+</tr>
+<tr>
+<td>LLM 401 (if you added LLM calls)</td>
+<td>the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code></td>
+</tr>
+<tr>
+<td><code>ModuleNotFoundError</code> in the container</td>
+<td>add a <code>COPY</code> line to the Dockerfile</td>
+</tr>
+</tbody>
 </table>
 </div>
+
   </div>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Practice PR to <code style="font-size:.8em">genesis/hackathon</code>, with a rebase</h2></div>
+  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Practice PR to <code>genesis/hackathon</code>, with a rebase</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:24px">
-      <pre class="xs">cd ~/prometheus
+<div class="grid g2" style="gap:24px;">
+<pre class="xs">cd ~/prometheus
 export GH_HOST=github.inl.gov
 gh repo fork genesis/hackathon --clone=false
 git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
@@ -128,38 +183,60 @@ git fetch upstream
 git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
 
 mkdir -p practice/<span class="p">&lt;you&gt;</span>
-cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} \
+cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} <span class="s">\</span>
    practice/<span class="p">&lt;you&gt;</span>/
 git status                     <span class="c"># NO .env in the list!</span>
 git add practice/<span class="p">&lt;you&gt;</span>
-git commit -m "Add hello-world agent for &lt;you&gt;"
+git commit -m <span class="s">&quot;Add hello-world agent for <span class="p">&lt;you&gt;</span>&quot;</span>
 
 <span class="c"># someone else merged first? replay on top</span>
 <span class="h">git pull --rebase upstream main</span>
 
 git push -u origin HEAD        <span class="c"># later: git push --force-with-lease</span>
-gh pr create --repo genesis/hackathon \
-  --base main --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> \
-  --title "Practice: hello from &lt;you&gt;" \
-  --body "Dry-run PR. Tested: uv run pytest, routed in UI."</pre>
-      <div class="col">
-        <ol class="b sm">
-          <li>Ask your neighbour to review: <code>gh pr view &lt;n&gt; --web</code></li>
-          <li>Reviewer: leave one inline comment</li>
-          <li>Author: push a fix commit and reply "Fixed in &lt;sha&gt;"</li>
-          <li>Reviewer: resolve the thread and <b>approve</b></li>
-          <li>A mentor merges</li>
-        </ol>
-        <div class="callout warn">Repo <b><code>genesis/hackathon</code></b>, base <code>main</code>. <code>--force-with-lease</code> only on your own feature branch.</div>
-        <table class="t xs wrap-code">
-          <tr><th>If…</th><th>then</th></tr>
-          <tr><td>cannot fork or see <code>genesis/hackathon</code></td><td>org access (team <code>open</code>); ask a mentor</td></tr>
-          <tr><td>rebase conflict</td><td>edit → <code>git add</code> → <code>git rebase --continue</code> (or <code>--abort</code>)</td></tr>
-          <tr><td>push rejected (non-fast-forward)</td><td>after a rebase: <code>git push --force-with-lease</code></td></tr>
-          <tr><td><code>gh</code> talks to github.com</td><td><code>export GH_HOST=github.inl.gov</code></td></tr>
-        </table>
-      </div>
-    </div>
+gh pr create --repo genesis/hackathon <span class="s">\</span>
+  --base main --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> <span class="s">\</span>
+  --title <span class="s">&quot;Practice: hello from <span class="p">&lt;you&gt;</span>&quot;</span> <span class="s">\</span>
+  --body <span class="s">&quot;Dry-run PR. Tested: uv run pytest, routed in UI.&quot;</span></pre>
+<div class="col">
+<ol class="b sm">
+<li>Ask your neighbour to review: <code>gh pr view &lt;n&gt; --web</code></li>
+<li>Reviewer: leave one inline comment</li>
+<li>Author: push a fix commit and reply &quot;Fixed in &lt;sha&gt;&quot;</li>
+<li>Reviewer: resolve the thread and <strong>approve</strong></li>
+<li>A mentor merges</li>
+</ol>
+<div class="callout warn">
+Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <code>--force-with-lease</code> only on your own feature branch.</div>
+
+<table class="t xs wrap-code">
+<thead>
+<tr>
+<th>If…</th>
+<th>then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cannot fork or see <code>genesis/hackathon</code></td>
+<td>org access (team <code>open</code>); ask a mentor</td>
+</tr>
+<tr>
+<td>rebase conflict</td>
+<td>edit → <code>git add</code> → <code>git rebase --continue</code> (or <code>--abort</code>)</td>
+</tr>
+<tr>
+<td>push rejected (non-fast-forward)</td>
+<td>after a rebase: <code>git push --force-with-lease</code></td>
+</tr>
+<tr>
+<td><code>gh</code> talks to github.com</td>
+<td><code>export GH_HOST=github.inl.gov</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
   </div>
   <aside class="notes">Practice PRs go to genesis/hackathon main under practice/&lt;user&gt;/; team agents on Day 2 go under agents/&lt;team_name&gt;/.</aside>
 </section>
@@ -173,48 +250,68 @@ gh pr create --repo genesis/hackathon \
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Refresh · 1</div><h2>Platform from scratch: clone, configure, start, verify</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:24px">
-      <pre class="xs"><span class="c"># once</span>
+<div class="grid g2" style="gap:24px;">
+<pre class="xs"><span class="c"># once</span>
 export GH_HOST=github.inl.gov
 gh repo fork genesis/prometheus_platform --clone=false
 git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
 cd prometheus_platform
-git remote add upstream \
+git remote add upstream <span class="s">\</span>
   git@github.inl.gov:genesis/prometheus_platform.git
 git fetch upstream
 
-echo $GITHUB_PAT | docker login containers.github.inl.gov \
+echo $GITHUB_PAT | docker login containers.github.inl.gov <span class="s">\</span>
   --username <span class="p">&lt;you&gt;</span> --password-stdin        <span class="c"># PAT: read:packages</span>
 
 cp .env.example .env
 <span class="c"># fill: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD,</span>
 <span class="c">#       BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,</span>
 <span class="c">#       LITELLM_DB_PASSWORD, ADMIN_DB_PASSWORD</span>
-python3 -c "import secrets; print(secrets.token_hex(32))"
+python3 -c <span class="s">&quot;import secrets; print(secrets.token_hex(32))&quot;</span>
 
 make up                   <span class="c"># long first build; make logs to watch</span>
 make ps</pre>
-      <div class="col">
-        <pre class="xs"><span class="c"># 3. verify (bottom-up)</span>
+<div class="col">
+<pre class="xs"><span class="c"># 3. verify (bottom-up)</span>
 set -a; source .env; set +a
 curl -s localhost:9977/health/liveliness
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
      localhost:9977/v1/agents | python3 -m json.tool
 curl -s localhost:8600/healthz</pre>
-        <ol class="b sm">
-          <li>Open <code>http://localhost:5150</code> → setup wizard → create the admin</li>
-          <li>Admin › Signing Keys → <b>generate + activate</b></li>
-          <li>Chat: <code>/agents</code>, then ask a question</li>
-        </ol>
-        <table class="t xs wrap-code">
-          <tr><th>If…</th><th>then</th></tr>
-          <tr><td><code>FROM …prometheus_api:</code> error</td><td>remove the empty <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> line in <code>.env</code></td></tr>
-          <tr><td>pull <code>unauthorized</code></td><td><code>docker login</code> again; PAT scope; VPN</td></tr>
-          <tr><td>"No 'userToken' found"</td><td>activate a signing key</td></tr>
-          <tr><td>port already in use</td><td><code>make down</code>, or change <code>*_PORT</code> in <code>.env</code></td></tr>
-        </table>
-      </div>
-    </div>
+<ol class="b sm">
+<li>Open <code>http://localhost:5150</code> → setup wizard → create the admin</li>
+<li>Admin › Signing Keys → <strong>generate + activate</strong></li>
+<li>Chat: <code>/agents</code>, then ask a question</li>
+</ol>
+<table class="t xs wrap-code">
+<thead>
+<tr>
+<th>If…</th>
+<th>then</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FROM …prometheus_api:</code> error</td>
+<td>remove the empty <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> line in <code>.env</code></td>
+</tr>
+<tr>
+<td>pull <code>unauthorized</code></td>
+<td><code>docker login</code> again; PAT scope; VPN</td>
+</tr>
+<tr>
+<td>&quot;No 'userToken' found&quot;</td>
+<td>activate a signing key</td>
+</tr>
+<tr>
+<td>port already in use</td>
+<td><code>make down</code>, or change <code>*_PORT</code> in <code>.env</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
   </div>
 </section>
 
@@ -227,12 +324,12 @@ curl -s localhost:8600/healthz</pre>
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Refresh · 1</div><h2>Platform: is it ready?</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <pre class="sm">cd ~/prometheus/prometheus_platform
+<div class="grid g2" style="gap:26px;">
+<pre class="sm">cd ~/prometheus/prometheus_platform
 <span class="c"># 1. your fork as origin (deck 02), then update</span>
 git remote rename origin upstream
 gh repo fork genesis/prometheus_platform --clone=false
-git remote add origin \
+git remote add origin <span class="s">\</span>
   git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
 git pull --rebase upstream dev
 
@@ -243,20 +340,22 @@ make ps
 <span class="c"># 3. verify (bottom-up)</span>
 set -a; source .env; set +a
 curl -s localhost:9977/health/liveliness
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
      localhost:9977/v1/agents | python3 -m json.tool
-curl -s localhost:8600/healthz
-</pre>
-      <div class="col">
-        <ol class="b">
-          <li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
-          <li>Admin › Signing Keys → <b>generate + activate</b></li>
-          <li>Chat: <code>/agents</code>, then ask a question</li>
-          <li>Upload any small file: it should appear in DeepLynx</li>
-        </ol>
-        <div class="callout warn">Platform not up yet? Use the <b>bonus slide</b> at the end of this deck, and the bonus section of deck 03.</div>
-      </div>
-    </div>
+curl -s localhost:8600/healthz</pre>
+<div class="col">
+<ol class="b">
+<li>Open <code>http://localhost:5150</code>; create the admin in the setup wizard if you haven't</li>
+<li>Admin › Signing Keys → <strong>generate + activate</strong></li>
+<li>Chat: <code>/agents</code>, then ask a question</li>
+<li>Upload any small file: it should appear in DeepLynx</li>
+</ol>
+<div class="callout warn">
+Platform not up yet? Use the <strong>bonus slide</strong> at the end of this deck, and the bonus section of deck 03.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 

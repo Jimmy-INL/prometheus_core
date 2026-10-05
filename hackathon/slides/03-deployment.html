@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- generated from slides/03-deployment.md: edit that file and run tools/build.py -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -24,132 +25,236 @@
 <section class="slide">
   <div class="head"><div class="eyebrow">Goal</div><h2>By the break, your platform is ready for an agent</h2></div>
   <div class="content">
-    <div class="grid g4">
-      <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Healthy</h3><p class="small">All services up, and you know where to look when one isn't.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>Logged in</h3><p class="small">An admin user and an active signing key.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>LLMs answer</h3><p class="small">You have a key for an LLM profile.</p></div>
-      <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>Files work</h3><p class="small">An upload lands in DeepLynx.</p></div>
-    </div>
-    <div class="callout info">Platform not starting yet? Work through the bonus slides at the end of this deck with a mentor.</div>
+<div class="grid g4">
+<div class="card acc">
+<div class="kpi"><span class="v">1</span></div>
+<h3>Healthy</h3>
+<p class="small">All services up, and you know where to look when one isn't.</p>
+</div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">2</span></div>
+<h3>Logged in</h3>
+<p class="small">An admin user and an active signing key.</p>
+</div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">3</span></div>
+<h3>LLMs answer</h3>
+<p class="small">You have a key for an LLM profile.</p>
+</div>
+
+<div class="card acc">
+<div class="kpi"><span class="v">4</span></div>
+<h3>Files work</h3>
+<p class="small">An upload lands in DeepLynx.</p>
+</div>
+
+</div>
+
+<div class="callout info">
+Platform not starting yet? Work through the bonus slides at the end of this deck with a mentor.</div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">What runs</div><h2>Three addresses you need</h2></div>
   <div class="content">
-    <table class="t">
-      <tr><th style="width:330px">Address</th><th>What it is</th><th>You use it to…</th></tr>
-      <tr class="hl"><td><code>http://localhost:5150</code></td><td>the chat UI</td><td>test your agent like a user</td></tr>
-      <tr><td><code>http://localhost:9977</code></td><td>LiteLLM: the agent registry and the LLM gateway</td><td>see registered agents and available models</td></tr>
-      <tr><td><code>http://localhost:8600</code></td><td>the backend</td><td>check health (<code>/healthz</code>)</td></tr>
-    </table>
-    <p class="body">Behind them: the orchestrator (<code>client-agent</code>), three agents, a state store, and two databases. They talk to each other on the Docker network <code>prometheus_platform_agent-network</code>, which your agent joins too.</p>
+<table class="t">
+<thead>
+<tr>
+<th style="width:330px">Address</th>
+<th>What it is</th>
+<th>You use it to…</th>
+</tr>
+</thead>
+<tbody>
+<tr class="hl">
+<td><code>http://localhost:5150</code></td>
+<td>the chat UI</td>
+<td>test your agent like a user</td>
+</tr>
+<tr>
+<td><code>http://localhost:9977</code></td>
+<td>LiteLLM: the agent registry and the LLM gateway</td>
+<td>see registered agents and available models</td>
+</tr>
+<tr>
+<td><code>http://localhost:8600</code></td>
+<td>the backend</td>
+<td>check health (<code>/healthz</code>)</td>
+</tr>
+</tbody>
+</table>
+<p class="body">Behind them: the orchestrator (<code>client-agent</code>), three agents, a state store, and two databases. They talk to each other on the Docker network <code>prometheus_platform_agent-network</code>, which your agent joins too.</p>
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">Day to day</div><h2>Four commands, one trap</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <pre class="sm">cd ~/prometheus/prometheus_platform
+<div class="grid g2" style="gap:30px;">
+<pre class="sm">cd ~/prometheus/prometheus_platform
 make up                     <span class="c"># build and start</span>
 make restart                <span class="c"># restart, no rebuild</span>
 make logs SERVICE=client-agent
 make down                   <span class="c"># stop</span></pre>
-      <div class="callout bad"><b>Every <code>make up</code> or <code>make restart</code> empties the agent registry.</b> The platform's own agents re-register by themselves. <b>Your agent doesn't</b>: restart it afterwards with <code>docker restart &lt;your-agent&gt;</code>.</div>
-    </div>
+<div class="col">
+<div class="callout bad">
+<strong>Every <code>make up</code> or <code>make restart</code> empties the agent registry.</strong> The platform's own agents re-register by themselves. <strong>Your agent doesn't</strong>: restart it afterwards with <code>docker restart &lt;your-agent&gt;</code>.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">First login</div><h2>An admin user, then a signing key</h2></div>
   <div class="content">
-    <div class="steps">
-      <div class="step"><div><h4>Open <code>http://localhost:5150</code></h4><p class="small">On first start a setup wizard creates your admin user.</p></div></div>
-      <div class="step"><div><h4>Admin › Signing Keys → generate, then activate</h4><p class="small">The platform signs every chat turn with it, so agents know which user is asking.</p></div></div>
-      <div class="step"><div><h4>Type <code>/agents</code> in the chat</h4><p class="small">You should see form-filler, OSTI research, and synthesis.</p></div></div>
-    </div>
-    <div class="callout warn">No active key → every chat turn fails with "No 'userToken' found…".</div>
+<div class="steps">
+<div class="step"><div><h4>Open <code>http://localhost:5150</code></h4>
+<p class="small">On first start a setup wizard creates your admin user.</p>
+</div></div>
+<div class="step"><div><h4>Admin › Signing Keys → generate, then activate</h4>
+<p class="small">The platform signs every chat turn with it, so agents know which user is asking.</p>
+</div></div>
+<div class="step"><div><h4>Type <code>/agents</code> in the chat</h4>
+<p class="small">You should see form-filler, OSTI research, and synthesis.</p>
+</div></div>
+</div>
+
+<div class="callout warn">
+No active key → every chat turn fails with &quot;No 'userToken' found…&quot;.</div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">Health checks</div><h2>Is it healthy?</h2></div>
   <div class="content">
-    <pre class="sm">make ps                                     <span class="c"># all "Up"; most also "(healthy)"</span>
-curl -s localhost:8600/healthz              <span class="c"># {"status":"ok"}</span>
+<pre class="sm">make ps                                     <span class="c"># all &quot;Up&quot;; most also &quot;(healthy)&quot;</span>
+curl -s localhost:8600/healthz              <span class="c"># {&quot;status&quot;:&quot;ok&quot;}</span>
 
 set -a; source .env; set +a                 <span class="c"># for the key below</span>
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
      localhost:9977/v1/agents | python3 -m json.tool     <span class="c"># registered agents</span></pre>
-    <div class="grid g2">
-      <div class="callout">Then ask the chat something real: "Find recent OSTI papers on SiC cladding". Watch it with <code>make logs SERVICE=client-agent</code>.</div>
-      <div class="callout warn">A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> header.</div>
-    </div>
+<div class="grid g2">
+<div class="callout">
+Then ask the chat something real: &quot;Find recent OSTI papers on SiC cladding&quot;. Watch it with <code>make logs SERVICE=client-agent</code>.</div>
+
+<div class="callout warn">
+A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> header.</div>
+
+</div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">Learn from working code</div><h2>Reference agents for tomorrow</h2></div>
   <div class="content">
-    <pre class="sm">make DEBUG_AGENTS=true up        <span class="c"># adds the reference agents</span></pre>
-    <table class="t">
-      <tr><th style="width:330px">Agent</th><th>Shows you how to…</th><th>Try</th></tr>
-      <tr class="hl"><td><code>artifact-debug-agent</code></td><td>publish an image through DeepLynx</td><td>"Make an image with the word Success"</td></tr>
-      <tr><td><code>corrosion-agent</code></td><td>ask the user for missing inputs</td><td>"Corrosion analysis of SS316"</td></tr>
-      <tr><td><code>thread-pattern-agent</code></td><td>run long work in the background</td><td>"Run a background task"</td></tr>
-    </table>
-    <p class="small">Read them in <code>prometheus_platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
+<pre class="sm">make DEBUG_AGENTS=true up        <span class="c"># adds the reference agents</span></pre>
+<table class="t">
+<thead>
+<tr>
+<th style="width:330px">Agent</th>
+<th>Shows you how to…</th>
+<th>Try</th>
+</tr>
+</thead>
+<tbody>
+<tr class="hl">
+<td><code>artifact-debug-agent</code></td>
+<td>publish an image through DeepLynx</td>
+<td>&quot;Make an image with the word Success&quot;</td>
+</tr>
+<tr>
+<td><code>corrosion-agent</code></td>
+<td>ask the user for missing inputs</td>
+<td>&quot;Corrosion analysis of SS316&quot;</td>
+</tr>
+<tr>
+<td><code>thread-pattern-agent</code></td>
+<td>run long work in the background</td>
+<td>&quot;Run a background task&quot;</td>
+</tr>
+</tbody>
+</table>
+<p class="small">Read them in <code>prometheus_platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">LLMs</div><h2>Which LLMs your agent uses</h2></div>
   <div class="content">
-    <div class="grid" style="grid-template-columns: 1.45fr 1fr; gap:30px">
-      <div class="col">
-        <p class="body">Your code asks for a <b>flavor</b> (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>). One line in your agent's <code>.env</code> picks a <b>profile</b>: a provider plus the model behind each flavor.</p>
-        <table class="t sm nw">
-          <tr><th>Profile</th><th>Provider</th><th>Key in <code>.env</code></th></tr>
-          <tr><td><code>inl_litellm</code></td><td>INL LiteLLM</td><td><code>INL_LITELLM_API_KEY</code></td></tr>
-          <tr><td><code>amsc</code></td><td>American Science Cloud</td><td><code>AMSC_I2_API_KEY</code></td></tr>
-          <tr><td><code>anl_asksage</code></td><td>ANL AskSage</td><td><code>ASKSAGE_API_KEY</code></td></tr>
-        </table>
-        <p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>. AskSage arrives with the next SDK release, before the hackathon. Its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>).</p>
-      </div>
-      <div class="col">
-        <pre class="sm"><span class="c"># your agent's .env: pick one</span>
+<div class="grid" style="grid-template-columns: 1.45fr 1fr; gap:30px;">
+<div class="col">
+<p class="body">Your code asks for a <strong>flavor</strong> (<code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>). One line in your agent's <code>.env</code> picks a <strong>profile</strong>: a provider plus the model behind each flavor.</p>
+<table class="t sm nw">
+<thead>
+<tr>
+<th>Profile</th>
+<th>Provider</th>
+<th>Key in <code>.env</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inl_litellm</code></td>
+<td>INL LiteLLM</td>
+<td><code>INL_LITELLM_API_KEY</code></td>
+</tr>
+<tr>
+<td><code>amsc</code></td>
+<td>American Science Cloud</td>
+<td><code>AMSC_I2_API_KEY</code></td>
+</tr>
+<tr>
+<td><code>anl_asksage</code></td>
+<td>ANL AskSage</td>
+<td><code>ASKSAGE_API_KEY</code></td>
+</tr>
+</tbody>
+</table>
+<p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>. AskSage arrives with the next SDK release, before the hackathon. Its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>).</p>
+</div>
+<div class="col">
+<pre class="sm"># your agent&#x27;s .env: pick one
 LLM_CONFIG_PROFILE=inl_litellm
 INL_LITELLM_API_KEY=…
 
-<span class="c"># LLM_CONFIG_PROFILE=amsc</span>
-<span class="c"># AMSC_I2_API_KEY=…</span>
+# LLM_CONFIG_PROFILE=amsc
+# AMSC_I2_API_KEY=…
 
-<span class="c"># LLM_CONFIG_PROFILE=anl_asksage</span>
-<span class="c"># ASKSAGE_API_KEY=…</span></pre>
-        <p class="small">Then <code>make up</code> in your agent's folder. Keys stay in <code>.env</code>, never in code or the repo.</p>
-      </div>
-    </div>
+# LLM_CONFIG_PROFILE=anl_asksage
+# ASKSAGE_API_KEY=…</pre>
+<p class="small">Then <code>make up</code> in your agent's folder. Keys stay in <code>.env</code>, never in code or the repo.</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">DeepLynx</div><h2>Where your files live</h2></div>
   <div class="content">
-    <div class="row" style="align-items:stretch; gap:0">
-      <div class="box gray" style="flex:1"><b>Chat upload</b></div>
-      <div class="arrow-h" style="width:50px"></div>
-      <div class="box teal" style="flex:1.2"><b>DeepLynx</b><span class="small">stores the file</span></div>
-      <div class="arrow-h" style="width:50px"></div>
-      <div class="box orange" style="flex:1"><b>Your agent</b><span class="small">reads it, writes results back</span></div>
-      <div class="arrow-h" style="width:50px"></div>
-      <div class="box sky" style="flex:1"><b>Chat UI</b><span class="small">renders the plot</span></div>
-    </div>
-    <ul class="b">
-      <li>Every upload and every result file goes through DeepLynx, INL's data store.</li>
-      <li><b>Without it, your agent never sees uploads and a PNG cannot render.</b></li>
-      <li>Use the shared instance (<code>deeplynx.inl.gov</code>) or a local one (bonus slides). The settings are the <code>DEEPLYNX_*</code> lines in <code>.env</code>.</li>
-    </ul>
+<div class="row" style="align-items:stretch; gap:0;">
+<div class="box gray" style="flex:1"><strong>Chat upload</strong></div>
+<div class="arrow-h" style="width:50px"></div>
+<div class="box teal" style="flex:1.2"><strong>DeepLynx</strong><span class="small">stores the file</span></div>
+<div class="arrow-h" style="width:50px"></div>
+<div class="box orange" style="flex:1"><strong>Your agent</strong><span class="small">reads it, writes results back</span></div>
+<div class="arrow-h" style="width:50px"></div>
+<div class="box sky" style="flex:1"><strong>Chat UI</strong><span class="small">renders the plot</span></div>
+</div>
+
+<ul class="b">
+<li>Every upload and every result file goes through DeepLynx, INL's data store.</li>
+<li><strong>Without it, your agent never sees uploads and a PNG cannot render.</strong></li>
+<li>Use the shared instance (<code>deeplynx.inl.gov</code>) or a local one (bonus slides). The settings are the <code>DEEPLYNX_*</code> lines in <code>.env</code>.</li>
+</ul>
   </div>
 </section>
 
@@ -158,42 +263,68 @@ INL_LITELLM_API_KEY=…
   <div class="content">
 <div class="col">
 <pre class="sm"><span class="c"># from inside the backend container (has DEEPLYNX_* env)</span>
-docker exec -i backend python - &lt;&lt;'EOF'
-from prometheus_api.storage_client import (
+docker exec -i backend python - &lt;&lt;<span class="s">&#x27;EOF&#x27;</span>
+<span class="k">from</span> prometheus_api.storage_client <span class="k">import</span> (
     ConnectionConfig, StorageClient)
 cfg = ConnectionConfig.from_env()
-with StorageClient(cfg) as c:
-    page = c.items.list(page_size=5)
-    print("OK", cfg.base_url, len(page.items), "items")
+<span class="k">with</span> StorageClient(cfg) <span class="k">as</span> c:
+    page = c.items.list(page_size=<span class="n">5</span>)
+    print(<span class="s">&quot;OK&quot;</span>, cfg.base_url, len(page.items), <span class="s">&quot;items&quot;</span>)
 EOF</pre>
 <p class="small">Then upload a file in the chat. It should appear in the DeepLynx UI under your project, and <code>/artifacts</code> lists it.</p>
 </div>
+
   </div>
 </section>
 
 <section class="slide">
   <div class="head"><div class="eyebrow">Something is off</div><h2>The six problems you are most likely to hit</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:470px">Symptom</th><th>Fix</th></tr>
-      <tr><td>Every chat turn fails: "No 'userToken' found…"</td><td>Admin › Signing Keys: generate and <b>activate</b> a key</td></tr>
-      <tr><td>Your agent disappeared from <code>/agents</code></td><td>the platform restarted: <code>docker restart &lt;your-agent&gt;</code></td></tr>
-      <tr><td>LLM call gets HTTP 401</td><td>the key for your <code>LLM_CONFIG_PROFILE</code> is missing or wrong in the agent's <code>.env</code></td></tr>
-      <tr><td>"Unknown LLM config profile"</td><td>a typo in <code>LLM_CONFIG_PROFILE</code>, or an SDK image without that profile</td></tr>
-      <tr><td>"DeepLynx storage is not configured"</td><td>set the <code>DEEPLYNX_*</code> lines, <code>make restart</code></td></tr>
-      <tr><td>Something else</td><td><code>make logs SERVICE=&lt;name&gt;</code>; the appendix has the full troubleshooting tables</td></tr>
-    </table>
+<table class="t sm">
+<thead>
+<tr>
+<th style="width:470px">Symptom</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every chat turn fails: &quot;No 'userToken' found…&quot;</td>
+<td>Admin › Signing Keys: generate and <strong>activate</strong> a key</td>
+</tr>
+<tr>
+<td>Your agent disappeared from <code>/agents</code></td>
+<td>the platform restarted: <code>docker restart &lt;your-agent&gt;</code></td>
+</tr>
+<tr>
+<td>LLM call gets HTTP 401</td>
+<td>the key for your <code>LLM_CONFIG_PROFILE</code> is missing or wrong in the agent's <code>.env</code></td>
+</tr>
+<tr>
+<td>&quot;Unknown LLM config profile&quot;</td>
+<td>a typo in <code>LLM_CONFIG_PROFILE</code>, or an SDK image without that profile</td>
+</tr>
+<tr>
+<td>&quot;DeepLynx storage is not configured&quot;</td>
+<td>set the <code>DEEPLYNX_*</code> lines, <code>make restart</code></td>
+</tr>
+<tr>
+<td>Something else</td>
+<td><code>make logs SERVICE=&lt;name&gt;</code>; the appendix has the full troubleshooting tables</td>
+</tr>
+</tbody>
+</table>
   </div>
 </section>
 
 <section class="slide">
-<div class="head"><div class="eyebrow">Checkpoint</div><h2>Before the break</h2></div>
-<div class="content">
-<div class="grid g2" style="gap:30px">
+  <div class="head"><div class="eyebrow">Checkpoint</div><h2>Before the break</h2></div>
+  <div class="content">
+<div class="grid g2" style="gap:30px;">
 <div class="col">
 <ul class="b check">
 <li>☐ <code>make ps</code>: all services up</li>
-<li>☐ <code>curl localhost:8600/healthz</code> → <code>{"status":"ok"}</code></li>
+<li>☐ <code>curl localhost:8600/healthz</code> → <code>{&quot;status&quot;:&quot;ok&quot;}</code></li>
 <li>☐ <code>/v1/agents</code> lists 4 agents (client + 3)</li>
 <li>☐ Logged in, signing key active</li>
 <li>☐ <code>/agents</code> in the chat works</li>
@@ -202,11 +333,20 @@ EOF</pre>
 </ul>
 </div>
 <div class="col">
-<div class="card acc"><h3>Stuck?</h3><p class="body">Raise your hand now. Mentors fix environment problems during the break, so that at 2:45 pm everyone can follow the agent session with a running stack.</p></div>
-<div class="card"><h3>Next: Building an agent (2:45 pm)</h3><p class="body">Have your clone of <code>prometheus_agent_template</code> next to the platform, and <code>uv --version</code> working.</p></div>
+<div class="card acc">
+<h3>Stuck?</h3>
+<p class="body">Raise your hand now. Mentors fix environment problems during the break, so that at 2:45 pm everyone can follow the agent session with a running stack.</p>
+</div>
+
+<div class="card">
+<h3>Next: Building an agent (2:45 pm)</h3>
+<p class="body">Have your clone of <code>prometheus_agent_template</code> next to the platform, and <code>uv --version</code> working.</p>
+</div>
+
 </div>
 </div>
-</div>
+
+  </div>
 </section>
 
 <section class="slide section bonus">
@@ -218,153 +358,327 @@ EOF</pre>
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Prerequisites</div><h2>Before you clone</h2></div>
   <div class="content">
-    <table class="t">
-      <tr><th style="width:280px">Need</th><th>Why / check</th></tr>
-      <tr><td><b>Docker + Compose v2</b></td><td>The Makefile calls <code>docker compose -p prometheus_platform</code>. The compose files use <code>include:</code> and <code>additional_contexts</code>, so Compose ≥ 2.20 with BuildKit is needed. Check: <code>docker info</code>, <code>docker compose version</code>.</td></tr>
-      <tr><td><b>GNU make, git, openssl</b></td><td><code>make up</code> generates keys with <code>openssl rand</code>.</td></tr>
-      <tr><td><b>Access to <code>containers.github.inl.gov</code></b></td><td>A PAT with <code>read:packages</code>, then <code>docker login</code>. You need to be on the INL network or VPN.</td></tr>
-      <tr><td><b>An LLM credential</b></td><td><code>ANTHROPIC_API_KEY</code> for the bundled LiteLLM proxy, or a key for another profile (<code>INL_LITELLM_API_KEY</code>…).</td></tr>
-      <tr><td><b>uv + Python 3.12</b></td><td>Only for running things outside Docker: tests, a host-run agent, <code>setup_agent.py</code>. <code>uv --version</code></td></tr>
-      <tr><td>Node.js 22 (optional)</td><td>Only to run the frontend dev server on the host (<code>make react-dev</code>).</td></tr>
-      <tr><td>Disk space</td><td>Several GB for images. No minimum RAM is documented; if builds get killed, raise the Docker Desktop memory limit.</td></tr>
-    </table>
-    <p class="small">Podman: the template README mentions it, but the platform Makefile only drives <code>docker compose</code>. Use Docker Desktop (or Docker Engine) for the hackathon.</p>
+<table class="t">
+<thead>
+<tr>
+<th style="width:280px">Need</th>
+<th>Why / check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Docker + Compose v2</strong></td>
+<td>The Makefile calls <code>docker compose -p prometheus_platform</code>. The compose files use <code>include:</code> and <code>additional_contexts</code>, so Compose ≥ 2.20 with BuildKit is needed. Check: <code>docker info</code>, <code>docker compose version</code>.</td>
+</tr>
+<tr>
+<td><strong>GNU make, git, openssl</strong></td>
+<td><code>make up</code> generates keys with <code>openssl rand</code>.</td>
+</tr>
+<tr>
+<td><strong>Access to <code>containers.github.inl.gov</code></strong></td>
+<td>A PAT with <code>read:packages</code>, then <code>docker login</code>. You need to be on the INL network or VPN.</td>
+</tr>
+<tr>
+<td><strong>An LLM credential</strong></td>
+<td><code>ANTHROPIC_API_KEY</code> for the bundled LiteLLM proxy, or a key for another profile (<code>INL_LITELLM_API_KEY</code>…).</td>
+</tr>
+<tr>
+<td><strong>uv + Python 3.12</strong></td>
+<td>Only for running things outside Docker: tests, a host-run agent, <code>setup_agent.py</code>. <code>uv --version</code></td>
+</tr>
+<tr>
+<td>Node.js 22 (optional)</td>
+<td>Only to run the frontend dev server on the host (<code>make react-dev</code>).</td>
+</tr>
+<tr>
+<td>Disk space</td>
+<td>Several GB for images. No minimum RAM is documented; if builds get killed, raise the Docker Desktop memory limit.</td>
+</tr>
+</tbody>
+</table>
+<p class="small">Podman: the template README mentions it, but the platform Makefile only drives <code>docker compose</code>. Use Docker Desktop (or Docker Engine) for the hackathon.</p>
   </div>
 </section>
 
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Step 1</div><h2>Clone and log in to the registry</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <pre class="sm"><span class="c"># your fork (see previous session), default branch dev</span>
+<div class="grid g2" style="gap:30px;">
+<pre class="sm"><span class="c"># your fork (see previous session), default branch dev</span>
 git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
 cd prometheus_platform
-git remote add upstream \
+git remote add upstream <span class="s">\</span>
   git@github.inl.gov:genesis/prometheus_platform.git
 git switch dev
 
 <span class="c"># registry login: PAT with read:packages</span>
 export GITHUB_PAT=ghp_…
-echo $GITHUB_PAT | docker login containers.github.inl.gov \
+echo $GITHUB_PAT | docker login containers.github.inl.gov <span class="s">\</span>
   --username <span class="p">&lt;github-username&gt;</span> --password-stdin
 
 <span class="c"># smoke test: can you pull the pinned base image?</span>
-docker pull \
+docker pull <span class="s">\</span>
   containers.github.inl.gov/genesis/prometheus_api:95c32b5</pre>
-      <div class="col">
-        <div class="card"><h4>Why the registry?</h4><p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Without a login, the first <code>make up</code> fails at the very first <code>FROM</code> line.</p></div>
-        <div class="card"><h4>Where do tokens go?</h4><p class="small">Docker stores the login in your credential helper. The PAT never goes into <code>.env</code> or into a repo.</p></div>
-        <div class="callout warn"><code>unauthorized</code> or <code>denied</code> on pull? The PAT is missing the <code>read:packages</code> scope, your account lacks org access, or you are off the INL network.</div>
-      </div>
-    </div>
+<div class="col">
+<div class="card">
+<h4>Why the registry?</h4>
+<p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Without a login, the first <code>make up</code> fails at the very first <code>FROM</code> line.</p>
+</div>
+
+<div class="card">
+<h4>Where do tokens go?</h4>
+<p class="small">Docker stores the login in your credential helper. The PAT never goes into <code>.env</code> or into a repo.</p>
+</div>
+
+<div class="callout warn">
+<code>unauthorized</code> or <code>denied</code> on pull? The PAT is missing the <code>read:packages</code> scope, your account lacks org access, or you are off the INL network.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Step 2</div><h2><code style="font-size:.8em">cp .env.example .env</code>: the required values</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Step 2</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
   <div class="content">
-    <div class="grid g32" style="gap:28px">
-      <table class="t sm">
-        <tr><th>Variable</th><th>Meaning</th></tr>
-        <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Used by the Anthropic models in <code>litellm_config.yaml</code> (and the <code>anthropic</code> profile)</td></tr>
-        <tr><td><code>AGENT_SECRET</code></td><td>A2A bearer token: backend → client-agent, LiteLLM → agents</td></tr>
-        <tr><td><code>REDIS_PASSWORD</code></td><td>Valkey <code>--requirepass</code></td></tr>
-        <tr><td><code>REDIS_URL</code></td><td><code>redis://:${REDIS_PASSWORD}@redis:6379</code> (keep it as is)</td></tr>
-        <tr><td><code>BACKEND_JWT_SECRET</code></td><td><b>Session-cookie signing key.</b> The backend won't start while it is empty or still <code>change-me…</code>. (The old <code>CHAINLIT_AUTH_SECRET</code> is no longer read.)</td></tr>
-        <tr><td><code>LITELLM_MASTER_KEY</code></td><td>Registry and gateway admin key (agents register with it)</td></tr>
-        <tr><td><code>LITELLM_DB_PASSWORD</code></td><td>litellm-db Postgres</td></tr>
-        <tr><td><code>ADMIN_DB_PASSWORD</code></td><td>admin-db Postgres</td></tr>
-        <tr><td><code>LITELLM_LOCAL_PORT=9977</code></td><td>Already set. Compose has <b>no default</b> for it, so keep the line.</td></tr>
-        <tr><td><code>ADMIN_DB_ENCRYPTION_KEY=</code></td><td>Leave empty: <code>make up</code> writes a Fernet key into <code>.env</code></td></tr>
-      </table>
-      <div class="col">
-        <h4 class="acc">Generate every "change-me"</h4>
-        <pre class="sm">python3 -c "import secrets; \
-print(secrets.token_hex(32))"</pre>
-        <p class="small">Use a different value for each secret. Anything works locally; the values only have to be consistent across the platform and your agent (<code>setup_agent.py</code> copies them for you).</p>
-        <div class="callout bad">Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code>.gitignore</code>; <code>git status</code> should never show it.</div>
-      </div>
-    </div>
+<div class="grid g32" style="gap:28px;">
+<table class="t sm">
+<thead>
+<tr>
+<th>Variable</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ANTHROPIC_API_KEY</code></td>
+<td>Used by the Anthropic models in <code>litellm_config.yaml</code> (and the <code>anthropic</code> profile)</td>
+</tr>
+<tr>
+<td><code>AGENT_SECRET</code></td>
+<td>A2A bearer token: backend → client-agent, LiteLLM → agents</td>
+</tr>
+<tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td>Valkey <code>--requirepass</code></td>
+</tr>
+<tr>
+<td><code>REDIS_URL</code></td>
+<td><code>redis://:${REDIS_PASSWORD}@redis:6379</code> (keep it as is)</td>
+</tr>
+<tr>
+<td><code>BACKEND_JWT_SECRET</code></td>
+<td><strong>Session-cookie signing key.</strong> The backend won't start while it is empty or still <code>change-me…</code>. (The old <code>CHAINLIT_AUTH_SECRET</code> is no longer read.)</td>
+</tr>
+<tr>
+<td><code>LITELLM_MASTER_KEY</code></td>
+<td>Registry and gateway admin key (agents register with it)</td>
+</tr>
+<tr>
+<td><code>LITELLM_DB_PASSWORD</code></td>
+<td>litellm-db Postgres</td>
+</tr>
+<tr>
+<td><code>ADMIN_DB_PASSWORD</code></td>
+<td>admin-db Postgres</td>
+</tr>
+<tr>
+<td><code>LITELLM_LOCAL_PORT=9977</code></td>
+<td>Already set. Compose has <strong>no default</strong> for it, so keep the line.</td>
+</tr>
+<tr>
+<td><code>ADMIN_DB_ENCRYPTION_KEY=</code></td>
+<td>Leave empty: <code>make up</code> writes a Fernet key into <code>.env</code></td>
+</tr>
+</tbody>
+</table>
+<div class="col">
+<h4 class="acc">Generate every &quot;change-me&quot;</h4>
+<pre class="sm">python3 -c <span class="s">&quot;import secrets; \</span>
+<span class="s">print(secrets.token_hex(32))&quot;</span></pre>
+<p class="small">Use a different value for each secret. Anything works locally; the values only have to be consistent across the platform and your agent (<code>setup_agent.py</code> copies them for you).</p>
+<div class="callout bad">
+Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code>.gitignore</code>; <code>git status</code> should never show it.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Troubleshooting · 1</div><h2>The stack won't start</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th style="width:470px">Symptom</th><th>Cause → fix</th></tr>
-      <tr><td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td><td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>95c32b5</code>.</td></tr>
-      <tr><td><code>unauthorized</code> / <code>denied</code> pulling the base image</td><td>Run <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>; be on the INL network or VPN.</td></tr>
-      <tr><td><code>.env not found</code> from <code>check-prerequisites</code></td><td><code>cp .env.example .env</code></td></tr>
-      <tr><td>Port is already allocated (5150, 8600, 9977, 6379)</td><td>Another process or an old stack is using it. <code>make down</code>, or change <code>*_PORT</code> in <code>.env</code>.</td></tr>
-      <tr><td>Backend exits: "jwt_secret is not configured"</td><td><code>BACKEND_JWT_SECRET</code> is empty or still <code>change-me…</code>. Generate a value (an old <code>CHAINLIT_AUTH_SECRET</code> is no longer read).</td></tr>
-      <tr><td>Backend exits during an alembic step</td><td>Migrations run in <code>backend/docker-entrypoint.sh</code> before uvicorn; <code>make logs SERVICE=backend</code>.</td></tr>
-      <tr><td>SSL / certificate errors during <code>npm ci</code> or <code>pip</code> on the INL network</td><td>TLS inspection. <code>certs/INL.pem</code> is checked in (PR #100); pull the latest <code>dev</code>. Python images get the bundle from the base image.</td></tr>
-      <tr><td><code>network … has active endpoints</code> on <code>make up</code></td><td>An external agent is still attached to <code>prometheus_platform_agent-network</code>. Stop it first (<code>make down</code> in the agent dir).</td></tr>
-      <tr><td>Build killed / exit 137</td><td>Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy).</td></tr>
-      <tr><td>Behind a corporate proxy: downloads time out</td><td>Set <code>HTTP_PROXY</code>/<code>HTTPS_PROXY</code>/<code>NO_PROXY</code>. They are <b>build</b> args; add <code>backend,admin-db</code> and your agent names to <code>NO_PROXY</code>.</td></tr>
-    </table>
+<table class="t sm">
+<thead>
+<tr>
+<th style="width:470px">Symptom</th>
+<th>Cause → fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td>
+<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>95c32b5</code>.</td>
+</tr>
+<tr>
+<td><code>unauthorized</code> / <code>denied</code> pulling the base image</td>
+<td>Run <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>; be on the INL network or VPN.</td>
+</tr>
+<tr>
+<td><code>.env not found</code> from <code>check-prerequisites</code></td>
+<td><code>cp .env.example .env</code></td>
+</tr>
+<tr>
+<td>Port is already allocated (5150, 8600, 9977, 6379)</td>
+<td>Another process or an old stack is using it. <code>make down</code>, or change <code>*_PORT</code> in <code>.env</code>.</td>
+</tr>
+<tr>
+<td>Backend exits: &quot;jwt_secret is not configured&quot;</td>
+<td><code>BACKEND_JWT_SECRET</code> is empty or still <code>change-me…</code>. Generate a value (an old <code>CHAINLIT_AUTH_SECRET</code> is no longer read).</td>
+</tr>
+<tr>
+<td>Backend exits during an alembic step</td>
+<td>Migrations run in <code>backend/docker-entrypoint.sh</code> before uvicorn; <code>make logs SERVICE=backend</code>.</td>
+</tr>
+<tr>
+<td>SSL / certificate errors during <code>npm ci</code> or <code>pip</code> on the INL network</td>
+<td>TLS inspection. <code>certs/INL.pem</code> is checked in (PR #100); pull the latest <code>dev</code>. Python images get the bundle from the base image.</td>
+</tr>
+<tr>
+<td><code>network … has active endpoints</code> on <code>make up</code></td>
+<td>An external agent is still attached to <code>prometheus_platform_agent-network</code>. Stop it first (<code>make down</code> in the agent dir).</td>
+</tr>
+<tr>
+<td>Build killed / exit 137</td>
+<td>Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy).</td>
+</tr>
+<tr>
+<td>Behind a corporate proxy: downloads time out</td>
+<td>Set <code>HTTP_PROXY</code>/<code>HTTPS_PROXY</code>/<code>NO_PROXY</code>. They are <strong>build</strong> args; add <code>backend,admin-db</code> and your agent names to <code>NO_PROXY</code>.</td>
+</tr>
+</tbody>
+</table>
   </div>
 </section>
 
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Local DeepLynx · 1</div><h2>Clone, build, start</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <pre class="sm">git clone https://github.com/idaholab/DeepLynx.git
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<pre class="sm">git clone https://github.com/idaholab/DeepLynx.git
 cd DeepLynx
 cp .env_sample .env
 docker compose build
 docker compose up          <span class="c"># add -d to detach</span></pre>
-        <table class="t sm">
-          <tr><th>Service</th><th>Host port</th><th>What</th></tr>
-          <tr class="hl"><td><code>ui</code></td><td>3000</td><td>admin web UI (auth disabled locally)</td></tr>
-          <tr class="hl"><td><code>server</code></td><td>5000</td><td><b>API</b> at <code>/api/v1</code>, which the platform uses</td></tr>
-          <tr><td><code>docs</code></td><td>3001</td><td>documentation site</td></tr>
-          <tr><td><code>nx-postgres</code></td><td>5432</td><td>its database</td></tr>
-          <tr><td><code>mcp</code></td><td>43656</td><td>DeepLynx MCP server</td></tr>
-          <tr><td><code>insight-*</code></td><td>5009, 5672…</td><td>only with <code>--profile insight</code></td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <div class="card"><h4>It runs next to the platform</h4><p class="small">DeepLynx has its own compose project and network (<code>nexus-network</code>). The platform containers reach it through your host at <code>host.docker.internal:5000</code>.</p></div>
-        <div class="callout warn"><b>macOS: port 5000</b> is often taken by the AirPlay Receiver (System Settings › General › AirDrop &amp; Handoff). Turn it off, or remap the <code>server</code> port.</div>
-        <div class="callout warn"><b>Port 5432</b> clashes with any local Postgres. The platform's own databases do not publish ports, so they won't collide.</div>
-        <p class="small">Pulled new DeepLynx changes? <code>docker compose up --build</code>.</p>
-      </div>
-    </div>
+<table class="t sm">
+<thead>
+<tr>
+<th>Service</th>
+<th>Host port</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr class="hl">
+<td><code>ui</code></td>
+<td>3000</td>
+<td>admin web UI (auth disabled locally)</td>
+</tr>
+<tr class="hl">
+<td><code>server</code></td>
+<td>5000</td>
+<td><strong>API</strong> at <code>/api/v1</code>, which the platform uses</td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td>3001</td>
+<td>documentation site</td>
+</tr>
+<tr>
+<td><code>nx-postgres</code></td>
+<td>5432</td>
+<td>its database</td>
+</tr>
+<tr>
+<td><code>mcp</code></td>
+<td>43656</td>
+<td>DeepLynx MCP server</td>
+</tr>
+<tr>
+<td><code>insight-*</code></td>
+<td>5009, 5672…</td>
+<td>only with <code>--profile insight</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="col">
+<div class="card">
+<h4>It runs next to the platform</h4>
+<p class="small">DeepLynx has its own compose project and network (<code>nexus-network</code>). The platform containers reach it through your host at <code>host.docker.internal:5000</code>.</p>
+</div>
+
+<div class="callout warn">
+<strong>macOS: port 5000</strong> is often taken by the AirPlay Receiver (System Settings › General › AirDrop &amp; Handoff). Turn it off, or remap the <code>server</code> port.</div>
+
+<div class="callout warn">
+<strong>Port 5432</strong> clashes with any local Postgres. The platform's own databases do not publish ports, so they won't collide.</div>
+
+<p class="small">Pulled new DeepLynx changes? <code>docker compose up --build</code>.</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Local DeepLynx · 2</div><h2>Create a project at <code style="font-size:.8em">http://localhost:3000</code></h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Local DeepLynx · 2</div><h2>Create a project at <code>http://localhost:3000</code></h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:20px">
-      <div class="col"><img class="fit" src="assets/deeplynx/dl_3.png" alt="Selecting the INL default organization" style="border:1px solid var(--rule); border-radius:8px"><p class="small"><b>①</b> Skip or take the quick tour. In the top-left dropdown, select <b>"INL – default organization"</b>.</p></div>
-      <div class="col"><img class="fit" src="assets/deeplynx/dl_4.png" alt="Empty organization with + Project button" style="border:1px solid var(--rule); border-radius:8px"><p class="small"><b>②</b> Click <b>"+ Project"</b> and give it any name. A project is a fenced-off database for the platform.</p></div>
-      <div class="col"><img class="fit" src="assets/deeplynx/dl_6.png" alt="Project page with project ID in URL" style="border:1px solid var(--rule); border-radius:8px"><p class="small"><b>③</b> The URL now shows <code>localhost:3000/project/1</code>. <b>1 is your project ID</b>; each new project gets a new one.</p></div>
-    </div>
+<div class="grid g3" style="gap:20px;">
+<div class="col">
+<img alt="Selecting the INL default organization" class="fit" src="assets/deeplynx/dl_3.png" style="border:1px solid var(--rule); border-radius:8px"/>
+<p class="small"><strong>①</strong> Skip or take the quick tour. In the top-left dropdown, select <strong>&quot;INL – default organization&quot;</strong>.</p>
+</div>
+<div class="col">
+<img alt="Empty organization with + Project button" class="fit" src="assets/deeplynx/dl_4.png" style="border:1px solid var(--rule); border-radius:8px"/>
+<p class="small"><strong>②</strong> Click <strong>&quot;+ Project&quot;</strong> and give it any name. A project is a fenced-off database for the platform.</p>
+</div>
+<div class="col">
+<img alt="Project page with project ID in URL" class="fit" src="assets/deeplynx/dl_6.png" style="border:1px solid var(--rule); border-radius:8px"/>
+<p class="small"><strong>③</strong> The URL now shows <code>localhost:3000/project/1</code>. <strong>1 is your project ID</strong>; each new project gets a new one.</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide bonus">
   <div class="head"><div class="eyebrow">Bonus · Local DeepLynx · 3</div><h2>Generate an API key and point the platform at it</h2></div>
   <div class="content">
-    <div class="grid" style="grid-template-columns: 0.8fr 0.8fr 1.4fr; gap:22px">
-      <div class="col"><img class="fit" src="assets/deeplynx/dl_7.png" alt="Local Developer menu with Settings" style="border:1px solid var(--rule); border-radius:8px"><p class="small"><b>④</b> Bottom left: person icon → under <i>Local Developer</i> click <b>Settings</b> (not the organization settings in the far-left bar).</p></div>
-      <div class="col"><img class="fit" src="assets/deeplynx/dl_8.png" alt="API Keys section with Generate New" style="border:1px solid var(--rule); border-radius:8px"><p class="small"><b>⑤</b> API Keys → <b>"+ Generate New"</b>. Copy the <b>key and secret</b> now: the secret is shown only once.</p></div>
-      <div class="col">
-        <p class="small"><b>⑥</b> In <code>prometheus_platform/.env</code>:</p>
-        <pre class="sm">DEEPLYNX_KEY=…
+<div class="grid" style="grid-template-columns: 0.8fr 0.8fr 1.4fr; gap:22px;">
+<div class="col">
+<img alt="Local Developer menu with Settings" class="fit" src="assets/deeplynx/dl_7.png" style="border:1px solid var(--rule); border-radius:8px"/>
+<p class="small"><strong>④</strong> Bottom left: person icon → under <em>Local Developer</em> click <strong>Settings</strong> (not the organization settings in the far-left bar).</p>
+</div>
+<div class="col">
+<img alt="API Keys section with Generate New" class="fit" src="assets/deeplynx/dl_8.png" style="border:1px solid var(--rule); border-radius:8px"/>
+<p class="small"><strong>⑤</strong> API Keys → <strong>&quot;+ Generate New&quot;</strong>. Copy the <strong>key and secret</strong> now: the secret is shown only once.</p>
+</div>
+<div class="col">
+<p class="small"><strong>⑥</strong> In <code>prometheus_platform/.env</code>:</p>
+<pre class="sm">DEEPLYNX_KEY=…
 DEEPLYNX_SECRET=…
 DEEPLYNX_BASE_URL=http://host.docker.internal:5000/api/v1/
 DEEPLYNX_ORG_ID=1
 DEEPLYNX_PROJECT_ID=1</pre>
-        <p class="small">Then <code>make restart</code>. Copy the same values into your agent's <code>.env</code> (<code>setup_agent.py</code> copies every <code>DEEPLYNX_*</code> for you).</p>
-        <p class="small">Agent running on the host (not in Docker)? Use <code>http://localhost:5000/api/v1</code>.</p>
-      </div>
-    </div>
+<p class="small">Then <code>make restart</code>. Copy the same values into your agent's <code>.env</code> (<code>setup_agent.py</code> copies every <code>DEEPLYNX_*</code> for you).</p>
+<p class="small">Agent running on the host (not in Docker)? Use <code>http://localhost:5000/api/v1</code>.</p>
+</div>
+</div>
+
   </div>
 </section>
 
@@ -377,98 +691,257 @@ DEEPLYNX_PROJECT_ID=1</pre>
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Goal</div><h2>You ran the stack at home. By 2:30 pm you also…</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="steps">
-        <div class="step"><div><h4>Know what is running</h4><p class="small">Every container, its port, and what <code>make up</code> really does.</p></div></div>
-        <div class="step"><div><h4>Are logged in, with a signing key</h4><p class="small">The setup wizard's admin, plus an active key so agents accept your requests.</p></div></div>
-        <div class="step"><div><h4>Get an answer</h4><p class="small"><code>/agents</code> lists the agents, and a question goes through the LLM proxy.</p></div></div>
-        <div class="step"><div><h4>Can upload a file</h4><p class="small">It lands in DeepLynx and agents can read it.</p></div></div>
-      </div>
-      <div class="col">
-        <div class="card acc"><h3>This session</h3><ol class="b sm"><li>What is running</li><li>Configuration and <code>make up</code></li><li>The base image</li><li>First login and health checks</li><li>LLM configuration</li><li>DeepLynx</li><li>When things are off</li></ol></div>
-        <div class="callout warn">Platform not starting yet? Use the <b>bonus slides</b> at the end of this deck with a mentor.</div>
-      </div>
-    </div>
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<div class="steps">
+<div class="step"><div><h4>Know what is running</h4>
+<p class="small">Every container, its port, and what <code>make up</code> really does.</p>
+</div></div>
+<div class="step"><div><h4>Are logged in, with a signing key</h4>
+<p class="small">The setup wizard's admin, plus an active key so agents accept your requests.</p>
+</div></div>
+<div class="step"><div><h4>Get an answer</h4>
+<p class="small"><code>/agents</code> lists the agents, and a question goes through the LLM proxy.</p>
+</div></div>
+<div class="step"><div><h4>Can upload a file</h4>
+<p class="small">It lands in DeepLynx and agents can read it.</p>
+</div></div>
+</div>
+
+</div>
+<div class="col">
+<div class="card acc">
+<h3>This session</h3>
+<ol class="b sm">
+<li>What is running</li>
+<li>Configuration and <code>make up</code></li>
+<li>The base image</li>
+<li>First login and health checks</li>
+<li>LLM configuration</li>
+<li>DeepLynx</li>
+<li>When things are off</li>
+</ol>
+</div>
+
+<div class="callout warn">
+Platform not starting yet? Use the <strong>bonus slides</strong> at the end of this deck with a mentor.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">What you will run</div><h2>Ports on your host</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <table class="t">
-        <tr><th>URL</th><th>Service</th><th>Variable</th></tr>
-        <tr class="hl"><td><code>http://localhost:5150</code></td><td>Frontend (Vite dev)</td><td><code>FRONTEND_DEV_PORT</code></td></tr>
-        <tr><td><code>http://localhost:8080</code></td><td>Frontend (nginx; <code>PROFILE=prod</code>)</td><td><code>FRONTEND_PROD_PORT</code></td></tr>
-        <tr><td><code>http://localhost:8600</code></td><td>Backend (FastAPI)</td><td><code>BACKEND_PORT</code></td></tr>
-        <tr><td><code>http://localhost:9977</code></td><td>LiteLLM: registry, gateway, proxy</td><td><code>LITELLM_LOCAL_PORT</code></td></tr>
-        <tr><td><code>localhost:6379</code></td><td>Valkey (Redis protocol)</td><td><code>REDIS_LOCAL_PORT</code></td></tr>
-        <tr><td><code>http://localhost:8001</code></td><td>client-agent (system-test mode only)</td><td><code>CLIENT_AGENT_PORT</code></td></tr>
-        <tr><td><code>http://localhost:8008</code></td><td>artifact-debug-agent (<code>DEBUG_AGENTS=true</code>)</td><td><code>ARTIFACT_DEBUG_PORT</code></td></tr>
-      </table>
-      <div class="col">
-        <p class="body">Everything else stays <b>inside</b> the Docker network <code>prometheus_platform_agent-network</code> and is reached by service name:</p>
-        <pre class="sm">http://litellm:4000        <span class="c"># or litellm-proxy:4000</span>
+<div class="grid g2" style="gap:30px;">
+<table class="t">
+<thead>
+<tr>
+<th>URL</th>
+<th>Service</th>
+<th>Variable</th>
+</tr>
+</thead>
+<tbody>
+<tr class="hl">
+<td><code>http://localhost:5150</code></td>
+<td>Frontend (Vite dev)</td>
+<td><code>FRONTEND_DEV_PORT</code></td>
+</tr>
+<tr>
+<td><code>http://localhost:8080</code></td>
+<td>Frontend (nginx; <code>PROFILE=prod</code>)</td>
+<td><code>FRONTEND_PROD_PORT</code></td>
+</tr>
+<tr>
+<td><code>http://localhost:8600</code></td>
+<td>Backend (FastAPI)</td>
+<td><code>BACKEND_PORT</code></td>
+</tr>
+<tr>
+<td><code>http://localhost:9977</code></td>
+<td>LiteLLM: registry, gateway, proxy</td>
+<td><code>LITELLM_LOCAL_PORT</code></td>
+</tr>
+<tr>
+<td><code>localhost:6379</code></td>
+<td>Valkey (Redis protocol)</td>
+<td><code>REDIS_LOCAL_PORT</code></td>
+</tr>
+<tr>
+<td><code>http://localhost:8001</code></td>
+<td>client-agent (system-test mode only)</td>
+<td><code>CLIENT_AGENT_PORT</code></td>
+</tr>
+<tr>
+<td><code>http://localhost:8008</code></td>
+<td>artifact-debug-agent (<code>DEBUG_AGENTS=true</code>)</td>
+<td><code>ARTIFACT_DEBUG_PORT</code></td>
+</tr>
+</tbody>
+</table>
+<div class="col">
+<p class="body">Everything else stays <strong>inside</strong> the Docker network <code>prometheus_platform_agent-network</code> and is reached by service name:</p>
+<pre class="sm">http://litellm:4000        <span class="c"># or litellm-proxy:4000</span>
 redis://redis:6379
 http://backend:8000        <span class="c"># JWKS for agents</span>
 http://client-agent:8000
-http://&lt;agent-service&gt;:8000</pre>
-        <div class="callout">A port is already taken, for example by a local Redis on 6379? Change the variable in <code>.env</code> and re-run <code>make up</code>.</div>
-      </div>
-    </div>
+http://<span class="p">&lt;agent-service&gt;</span>:8000</pre>
+<div class="callout">
+A port is already taken, for example by a local Redis on 6379? Change the variable in <code>.env</code> and re-run <code>make up</code>.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">Configuration</div><h2>The <code style="font-size:.8em">.env</code> knobs worth knowing</h2></div>
+  <div class="head"><div class="eyebrow">Configuration</div><h2>The <code>.env</code> knobs worth knowing</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <table class="t xs">
-        <tr><th>Variable</th><th>Default</th><th>Purpose</th></tr>
-        <tr><td><code>DEBUG_AGENTS</code></td><td><code>false</code></td><td>Include <code>agents/debug-agents/*</code></td></tr>
-        <tr><td><code>LLM_CONFIG_PROFILE</code></td><td><code>registry</code></td><td>Which flavor→model map agents use</td></tr>
-        <tr><td><code>LLM_CONFIG_FILE</code></td><td>empty</td><td>Custom YAML inside the container; overrides the profile</td></tr>
-        <tr><td><code>OPENAI_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>EMBEDDING_API_KEY</code></td><td>empty</td><td>Only what the chosen profile needs</td></tr>
-        <tr><td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td><td>commented</td><td>Override the Makefile pin (<code>95c32b5</code>)</td></tr>
-        <tr><td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td><td>commented</td><td>Storage for uploads and <code>deeplynx://</code></td></tr>
-        <tr><td><code>PROMETHEUS_MAX_UPLOAD_BYTES</code></td><td>104857600</td><td>100 MiB upload cap</td></tr>
-        <tr><td><code>HTTP(S)_PROXY</code>, <code>NO_PROXY</code></td><td>commented</td><td>Build args for Python images only</td></tr>
-      </table>
-      <table class="t xs">
-        <tr><th>Variable</th><th>Default</th><th>Purpose</th></tr>
-        <tr><td><code>USER_IDENTITY_REQUIRED</code></td><td><code>true</code></td><td>Agents reject turns without a user JWT</td></tr>
-        <tr><td><code>USER_IDENTITY_PRIVATE_KEY</code></td><td>empty</td><td>Backend fallback signing key (not in JWKS)</td></tr>
-        <tr><td><code>USER_IDENTITY_PUBLIC_KEY</code></td><td>empty</td><td>Static key for agents <i>outside</i> compose; <code>JWKS_URL</code> wins</td></tr>
-        <tr><td><code>USER_IDENTITY_ISS</code> / <code>_AUD</code></td><td>prometheus-platform / -agents</td><td>JWT claims</td></tr>
-        <tr><td><code>USER_IDENTITY_TTL</code></td><td>7200</td><td>Token lifetime in seconds</td></tr>
-        <tr><td><code>BACKEND_WORKERS</code></td><td>1</td><td>uvicorn workers (sessions live in Valkey)</td></tr>
-        <tr><td><code>PROMETHEUS_MESH_WORKERS</code> / <code>_TIMEOUT_SECONDS</code></td><td>2 / 120</td><td>VTK mesh-conversion pool, per-mesh time budget</td></tr>
-        <tr><td><code>BACKEND_MEM_LIMIT</code></td><td>4g</td><td>backend container memory cap</td></tr>
-        <tr><td><code>BACKEND_PUBLIC_URL</code></td><td>empty</td><td>Browser origin for OIDC redirects</td></tr>
-        <tr><td><code>CREDENTIAL_BROKER</code></td><td><code>env</code></td><td><code>env</code> = global creds; <code>vault</code> = per user</td></tr>
-        <tr><td><code>PROMETHEUS_SYSTEM_TESTING</code></td><td><code>false</code></td><td>Publish the client-agent on :8001</td></tr>
-      </table>
-    </div>
-    <p class="tiny">Documented but unused on <code>dev</code>: <code>FRONTEND_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
+<div class="grid g2" style="gap:26px;">
+<table class="t xs">
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEBUG_AGENTS</code></td>
+<td><code>false</code></td>
+<td>Include <code>agents/debug-agents/*</code></td>
+</tr>
+<tr>
+<td><code>LLM_CONFIG_PROFILE</code></td>
+<td><code>registry</code></td>
+<td>Which flavor→model map agents use</td>
+</tr>
+<tr>
+<td><code>LLM_CONFIG_FILE</code></td>
+<td>empty</td>
+<td>Custom YAML inside the container; overrides the profile</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>EMBEDDING_API_KEY</code></td>
+<td>empty</td>
+<td>Only what the chosen profile needs</td>
+</tr>
+<tr>
+<td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td>
+<td>commented</td>
+<td>Override the Makefile pin (<code>95c32b5</code>)</td>
+</tr>
+<tr>
+<td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td>
+<td>commented</td>
+<td>Storage for uploads and <code>deeplynx://</code></td>
+</tr>
+<tr>
+<td><code>PROMETHEUS_MAX_UPLOAD_BYTES</code></td>
+<td>104857600</td>
+<td>100 MiB upload cap</td>
+</tr>
+<tr>
+<td><code>HTTP(S)_PROXY</code>, <code>NO_PROXY</code></td>
+<td>commented</td>
+<td>Build args for Python images only</td>
+</tr>
+</tbody>
+</table>
+<table class="t xs">
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USER_IDENTITY_REQUIRED</code></td>
+<td><code>true</code></td>
+<td>Agents reject turns without a user JWT</td>
+</tr>
+<tr>
+<td><code>USER_IDENTITY_PRIVATE_KEY</code></td>
+<td>empty</td>
+<td>Backend fallback signing key (not in JWKS)</td>
+</tr>
+<tr>
+<td><code>USER_IDENTITY_PUBLIC_KEY</code></td>
+<td>empty</td>
+<td>Static key for agents <em>outside</em> compose; <code>JWKS_URL</code> wins</td>
+</tr>
+<tr>
+<td><code>USER_IDENTITY_ISS</code> / <code>_AUD</code></td>
+<td>prometheus-platform / -agents</td>
+<td>JWT claims</td>
+</tr>
+<tr>
+<td><code>USER_IDENTITY_TTL</code></td>
+<td>7200</td>
+<td>Token lifetime in seconds</td>
+</tr>
+<tr>
+<td><code>BACKEND_WORKERS</code></td>
+<td>1</td>
+<td>uvicorn workers (sessions live in Valkey)</td>
+</tr>
+<tr>
+<td><code>PROMETHEUS_MESH_WORKERS</code> / <code>_TIMEOUT_SECONDS</code></td>
+<td>2 / 120</td>
+<td>VTK mesh-conversion pool, per-mesh time budget</td>
+</tr>
+<tr>
+<td><code>BACKEND_MEM_LIMIT</code></td>
+<td>4g</td>
+<td>backend container memory cap</td>
+</tr>
+<tr>
+<td><code>BACKEND_PUBLIC_URL</code></td>
+<td>empty</td>
+<td>Browser origin for OIDC redirects</td>
+</tr>
+<tr>
+<td><code>CREDENTIAL_BROKER</code></td>
+<td><code>env</code></td>
+<td><code>env</code> = global creds; <code>vault</code> = per user</td>
+</tr>
+<tr>
+<td><code>PROMETHEUS_SYSTEM_TESTING</code></td>
+<td><code>false</code></td>
+<td>Publish the client-agent on :8001</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p class="tiny">Documented but unused on <code>dev</code>: <code>FRONTEND_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
   </div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">Under the hood</div><h2><code style="font-size:.8em">make up</code>, and what it really does</h2></div>
+  <div class="head"><div class="eyebrow">Under the hood</div><h2><code>make up</code>, and what it really does</h2></div>
   <div class="content">
-    <div class="row" style="align-items:stretch; gap:0">
-      <div class="box gray" style="flex:1"><b>check-prerequisites</b><span class="small"><code>.env</code> exists, docker is running</span></div>
-      <div class="arrow-h" style="width:30px"></div>
-      <div class="box sky" style="flex:1"><b>generate</b><span class="small">writes <code>docker-compose.agents.yml</code> (<code>include:</code> of <code>agents/*/docker-compose.yml</code>)</span></div>
-      <div class="arrow-h" style="width:30px"></div>
-      <div class="box sky" style="flex:1"><b>ensure-admin-encryption-key</b><span class="small">Fernet key into <code>.env</code> if empty</span></div>
-      <div class="arrow-h" style="width:30px"></div>
-      <div class="box crimson" style="flex:1"><b>clear-litellm-db</b><span class="small"><code>compose down</code> + delete the <code>litellm-db-data</code> volume</span></div>
-      <div class="arrow-h" style="width:30px"></div>
-      <div class="box green" style="flex:1"><b>up --build -d</b><span class="small">profile <code>dev</code>: all services + frontend-dev</span></div>
-    </div>
-    <div class="grid g2" style="gap:26px">
-      <pre class="sm">make up                        <span class="c"># build + start, detached</span>
+<div class="row" style="align-items:stretch; gap:0;">
+<div class="box gray" style="flex:1"><strong>check-prerequisites</strong><span class="small"><code>.env</code> exists, docker is running</span></div>
+<div class="arrow-h" style="width:30px"></div>
+<div class="box sky" style="flex:1"><strong>generate</strong><span class="small">writes <code>docker-compose.agents.yml</code> (<code>include:</code> of <code>agents/*/docker-compose.yml</code>)</span></div>
+<div class="arrow-h" style="width:30px"></div>
+<div class="box sky" style="flex:1"><strong>ensure-admin-encryption-key</strong><span class="small">Fernet key into <code>.env</code> if empty</span></div>
+<div class="arrow-h" style="width:30px"></div>
+<div class="box crimson" style="flex:1"><strong>clear-litellm-db</strong><span class="small"><code>compose down</code> + delete the <code>litellm-db-data</code> volume</span></div>
+<div class="arrow-h" style="width:30px"></div>
+<div class="box green" style="flex:1"><strong>up --build -d</strong><span class="small">profile <code>dev</code>: all services + frontend-dev</span></div>
+</div>
+
+<div class="grid g2" style="gap:26px;">
+<pre class="sm">make up                        <span class="c"># build + start, detached</span>
 make up-fg                     <span class="c"># same, logs in foreground</span>
 make DEBUG_AGENTS=true up      <span class="c"># + mock agents</span>
 make PROFILE=prod up           <span class="c"># nginx frontend on :8080</span>
@@ -476,230 +949,443 @@ make PROFILE= up               <span class="c"># no frontend container…</span>
 make react-dev                 <span class="c"># …run Vite on the host</span>
 make PROMETHEUS_SYSTEM_TESTING=true up  <span class="c"># :8001</span>
 make ps ; make logs SERVICE=client-agent</pre>
-      <div class="col">
-        <div class="callout bad"><b><code>make up</code> and <code>make restart</code> wipe all agent registrations.</b> Every run does a full <code>down</code> and deletes the LiteLLM DB. In-tree agents re-register because they restart too. An <b>external agent</b> (your template agent) must be restarted afterwards.</div>
-        <p class="small"><code>restart</code> = the same without <code>--build</code>. <code>ng-up</code> / <code>ng-restart</code> skip regenerating the agents file. <code>docker-compose.override.yml</code> is picked up automatically if present (gitignored).</p>
-      </div>
-    </div>
+<div class="col">
+<div class="callout bad">
+<strong><code>make up</code> and <code>make restart</code> wipe all agent registrations.</strong> Every run does a full <code>down</code> and deletes the LiteLLM DB. In-tree agents re-register because they restart too. An <strong>external agent</strong> (your template agent) must be restarted afterwards.</div>
+
+<p class="small"><code>restart</code> = the same without <code>--build</code>. <code>ng-up</code> / <code>ng-restart</code> skip regenerating the agents file. <code>docker-compose.override.yml</code> is picked up automatically if present (gitignored).</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">How the platform selects the base image</div><h2>From one Makefile line to every <code style="font-size:.8em">FROM</code></h2></div>
+  <div class="head"><div class="eyebrow">How the platform selects the base image</div><h2>From one Makefile line to every <code>FROM</code></h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:22px">
-      <div class="col"><h4 class="acc">① Makefile (the pin)</h4><pre class="sm"><span class="c"># Override this to pin a</span>
+<div class="grid g3" style="gap:22px;">
+<div class="col">
+<h4 class="acc">① Makefile (the pin)</h4>
+<pre class="sm"><span class="c"># Override this to pin a</span>
 <span class="c"># specific base image.</span>
-PROMETHEUS_API_BASE_IMAGE_HASH \
-  <span class="h">?= 95c32b5</span>
-export \
-  PROMETHEUS_API_BASE_IMAGE_HASH</pre><p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p></div>
-      <div class="col"><h4 class="acc">② compose (build arg)</h4><pre class="sm"><span class="c"># docker-compose.yml</span>
+PROMETHEUS_API_BASE_IMAGE_HASH <span class="s">\</span>
+<span class="h">  ?= 95c32b5</span>
+export <span class="s">\</span>
+  PROMETHEUS_API_BASE_IMAGE_HASH</pre>
+<p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p>
+</div>
+<div class="col">
+<h4 class="acc">② compose (build arg)</h4>
+<pre class="sm"><span class="c"># docker-compose.yml</span>
 x-build-args:
   PROMETHEUS_API_BASE_IMAGE_HASH:
     ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
 <span class="c"># agents/&lt;x&gt;/docker-compose.yml</span>
 args:
   - PROMETHEUS_API_BASE_IMAGE_HASH=
-      ${PROMETHEUS_API_BASE_IMAGE_HASH}</pre></div>
-      <div class="col"><h4 class="acc">③ every Dockerfile</h4><pre class="sm">ARG PROMETHEUS_API_BASE_IMAGE_HASH
-FROM containers.github.inl.gov/
+      ${PROMETHEUS_API_BASE_IMAGE_HASH}</pre>
+</div>
+<div class="col">
+<h4 class="acc">③ every Dockerfile</h4>
+<pre class="sm"><span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_HASH
+<span class="k">FROM</span> <span class="s">containers.github.inl.gov/</span>
   genesis/prometheus_api:
-  ${PROMETHEUS_API_BASE_IMAGE_HASH}
-ENV UV_PROJECT_ENVIRONMENT=/usr/local
-RUN uv sync --no-dev \
-  --no-install-project --inexact</pre><p class="tiny">(The <code>FROM</code> is one line in the real file.)</p></div>
-    </div>
-    <div class="grid g3">
-      <div class="card"><h4>Try another SDK version</h4><pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre><p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>95c32b5</code> is v0.13.0, the same as <code>latest</code> today. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p></div>
-      <div class="card"><h4>Trap: an empty line in <code>.env</code></h4><p class="small">An uncommented <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> overrides the Makefile default with <b>empty</b> (make's <code>?=</code> does not apply to defined variables), which breaks the <code>FROM</code>.</p></div>
-      <div class="card"><h4>Trap: plain <code>docker compose</code></h4><p class="small">Compose's default is empty. Always build through <code>make</code>, or export the variable yourself.</p></div>
-    </div>
+  <span class="s">${</span>PROMETHEUS_API_BASE_IMAGE_HASH<span class="s">}</span>
+<span class="k">ENV</span> UV_PROJECT_ENVIRONMENT=/usr/local
+<span class="k">RUN</span> uv sync --no-dev <span class="s">\</span>
+  --no-install-project --inexact</pre>
+<p class="tiny">(The <code>FROM</code> is one line in the real file.)</p>
+</div>
+</div>
+
+<div class="grid g3">
+<div class="card">
+<h4>Try another SDK version</h4>
+<pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre>
+<p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>95c32b5</code> is v0.13.0, the same as <code>latest</code> today. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
+</div>
+
+<div class="card">
+<h4>Trap: an empty line in <code>.env</code></h4>
+<p class="small">An uncommented <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> overrides the Makefile default with <strong>empty</strong> (make's <code>?=</code> does not apply to defined variables), which breaks the <code>FROM</code>.</p>
+</div>
+
+<div class="card">
+<h4>Trap: plain <code>docker compose</code></h4>
+<p class="small">Compose's default is empty. Always build through <code>make</code>, or export the variable yourself.</p>
+</div>
+
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">What the base image provides</div><h2>Inside <code style="font-size:.8em">prometheus_api/Dockerfile</code></h2></div>
+  <div class="head"><div class="eyebrow">What the base image provides</div><h2>Inside <code>prometheus_api/Dockerfile</code></h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:28px">
-      <pre class="xs">FROM ghcr.io/astral-sh/uv:0.11.25-python3.12-trixie-slim\
-@sha256:1b9ee303…                  <span class="c"># digest-pinned</span>
+<div class="grid g2" style="gap:28px;">
+<pre class="xs"><span class="k">FROM</span> <span class="s">ghcr.io/astral-sh/uv:0.11.25-python3.12-trixie-slim\</span>
+@sha256:1b9ee303…                  # digest-pinned
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem \
-    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem \
-    UV_SYSTEM_PYTHON=1
+<span class="k">ENV</span> PYTHONDONTWRITEBYTECODE=<span class="n">1</span> PYTHONUNBUFFERED=<span class="n">1</span> <span class="s">\</span>
+    SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.pem <span class="s">\</span>
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-bundle.pem <span class="s">\</span>
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem <span class="s">\</span>
+    UV_SYSTEM_PYTHON=<span class="n">1</span>
 
 <span class="c"># system CAs + every certs/*.pem (INL bundle)</span>
-RUN --mount=type=bind,source=certs,target=/tmp/certs \
-    cp /etc/ssl/certs/ca-certificates.crt \
-       /etc/ssl/certs/ca-bundle.pem; \
-    cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem
+<span class="k">RUN</span> --mount=type=bind,source=certs,target=/tmp/certs <span class="s">\</span>
+    cp /etc/ssl/certs/ca-certificates.crt <span class="s">\</span>
+       /etc/ssl/certs/ca-bundle.pem; <span class="s">\</span>
+    cat /tmp/certs/*.pem &gt;&gt; /etc/ssl/certs/ca-bundle.pem
 
-RUN apt-get install -y --no-install-recommends git
+<span class="k">RUN</span> apt-get install -y --no-install-recommends git
 
 <span class="c"># locked runtime deps → system Python</span>
-RUN uv export --frozen --no-dev --no-emit-project \
-      > requirements.txt &amp;&amp; uv pip install -r requirements.txt
+<span class="k">RUN</span> uv export --frozen --no-dev --no-emit-project <span class="s">\</span>
+      &gt; requirements.txt &amp;&amp; uv pip install -r requirements.txt
 <span class="c"># the package itself</span>
-RUN uv pip install --no-deps /src
-CMD ["python"]</pre>
-      <div class="col">
-        <table class="t sm">
-          <tr><th>You get</th><th>Details</th></tr>
-          <tr><td>Debian 13 slim, Python 3.12, <code>uv</code>, <code>git</code></td><td>runs as root, no <code>WORKDIR</code> (agents set <code>/app</code>)</td></tr>
-          <tr><td><code>prometheus_api</code></td><td>PrometheusAgent, LLMClient, StorageClient, identity, credentials, artifacts</td></tr>
-          <tr><td>Server stack</td><td><code>a2a-sdk[http-server]</code> 1.x, starlette, uvicorn</td></tr>
-          <tr><td>Clients</td><td>litellm, httpx, redis, fsspec (<code>deeplynx://</code>), PyJWT, pydantic, pyyaml</td></tr>
-          <tr><td>LLM profiles</td><td><code>registry</code>, <code>inl_hpc</code>, <code>inl_litellm</code>, <code>amsc</code>, <code>anthropic</code>, <code>openai</code></td></tr>
-          <tr><td>INL TLS trust</td><td><code>certs/INL.pem</code> (157 CAs, incl. the INL root)</td></tr>
-          <tr><td>CLI</td><td><code>prometheus-identity-keygen</code></td></tr>
-        </table>
-        <p class="small">Your agent image adds only your own dependencies. That is why builds are small, and why <code>prometheus_api</code> must not appear in your <code>pyproject.toml</code>.</p>
-      </div>
-    </div>
+<span class="k">RUN</span> uv pip install --no-deps /src
+<span class="k">CMD</span> [<span class="s">&quot;python&quot;</span>]</pre>
+<div class="col">
+<table class="t sm">
+<thead>
+<tr>
+<th>You get</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Debian 13 slim, Python 3.12, <code>uv</code>, <code>git</code></td>
+<td>runs as root, no <code>WORKDIR</code> (agents set <code>/app</code>)</td>
+</tr>
+<tr>
+<td><code>prometheus_api</code></td>
+<td>PrometheusAgent, LLMClient, StorageClient, identity, credentials, artifacts</td>
+</tr>
+<tr>
+<td>Server stack</td>
+<td><code>a2a-sdk[http-server]</code> 1.x, starlette, uvicorn</td>
+</tr>
+<tr>
+<td>Clients</td>
+<td>litellm, httpx, redis, fsspec (<code>deeplynx://</code>), PyJWT, pydantic, pyyaml</td>
+</tr>
+<tr>
+<td>LLM profiles</td>
+<td><code>registry</code>, <code>inl_hpc</code>, <code>inl_litellm</code>, <code>amsc</code>, <code>anthropic</code>, <code>openai</code></td>
+</tr>
+<tr>
+<td>INL TLS trust</td>
+<td><code>certs/INL.pem</code> (157 CAs, incl. the INL root)</td>
+</tr>
+<tr>
+<td>CLI</td>
+<td><code>prometheus-identity-keygen</code></td>
+</tr>
+</tbody>
+</table>
+<p class="small">Your agent image adds only your own dependencies. That is why builds are small, and why <code>prometheus_api</code> must not appear in your <code>pyproject.toml</code>.</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Reference</div><h2>Every Makefile target</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:26px">
-      <table class="t xs">
-        <tr><th>Target</th><th>Does</th></tr>
-        <tr><td><code>help</code></td><td>(default) list targets</td></tr>
-        <tr><td><code>up</code> / <code>up-fg</code></td><td>generate + key + wipe LiteLLM DB + <code>up --build</code></td></tr>
-        <tr><td><code>restart</code> / <code>restart-fg</code></td><td>same without <code>--build</code> (still a full down)</td></tr>
-        <tr><td><code>ng-up</code>, <code>ng-restart</code> (+<code>-fg</code>)</td><td>without regenerating the agents file</td></tr>
-        <tr><td><code>down</code></td><td>stop everything</td></tr>
-        <tr><td><code>down-v</code></td><td>stop and <b>delete volumes</b> (Valkey incl. sessions, both DBs, mesh cache, model caches)</td></tr>
-        <tr><td><code>build</code></td><td>generate + build images</td></tr>
-        <tr><td><code>ps</code>, <code>logs</code> [<code>SERVICE=</code>]</td><td>status, follow logs</td></tr>
-        <tr><td><code>generate</code>, <code>regenerate</code>, <code>clean-generated</code></td><td>manage <code>docker-compose.agents.yml</code></td></tr>
-      </table>
-      <table class="t xs">
-        <tr><th>Target</th><th>Does</th></tr>
-        <tr><td><code>clear-litellm-db</code></td><td>down + delete the LiteLLM volume</td></tr>
-        <tr><td><code>clear-admin-users</code></td><td>truncate users → the setup wizard runs again</td></tr>
-        <tr><td><code>ensure-admin-encryption-key</code></td><td>Fernet key into <code>.env</code></td></tr>
-        <tr><td><code>check-prerequisites</code></td><td>.env + docker checks</td></tr>
-        <tr><td><code>test-static</code></td><td>infra tests, no Docker</td></tr>
-        <tr><td><code>test-integration</code>, <code>test-infra</code></td><td>against running containers</td></tr>
-        <tr><td><code>test-system</code></td><td>full system (needs <code>PROMETHEUS_SYSTEM_TESTING=true</code>)</td></tr>
-        <tr><td><code>react-dev</code>, <code>react-build</code>, <code>react-check</code></td><td>frontend on the host</td></tr>
-        <tr><td><code>build-plain</code></td><td><b>broken</b> on dev (undefined variable)</td></tr>
-      </table>
-    </div>
-    <p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
+<div class="grid g2" style="gap:26px;">
+<table class="t xs">
+<thead>
+<tr>
+<th>Target</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>help</code></td>
+<td>(default) list targets</td>
+</tr>
+<tr>
+<td><code>up</code> / <code>up-fg</code></td>
+<td>generate + key + wipe LiteLLM DB + <code>up --build</code></td>
+</tr>
+<tr>
+<td><code>restart</code> / <code>restart-fg</code></td>
+<td>same without <code>--build</code> (still a full down)</td>
+</tr>
+<tr>
+<td><code>ng-up</code>, <code>ng-restart</code> (+<code>-fg</code>)</td>
+<td>without regenerating the agents file</td>
+</tr>
+<tr>
+<td><code>down</code></td>
+<td>stop everything</td>
+</tr>
+<tr>
+<td><code>down-v</code></td>
+<td>stop and <strong>delete volumes</strong> (Valkey incl. sessions, both DBs, mesh cache, model caches)</td>
+</tr>
+<tr>
+<td><code>build</code></td>
+<td>generate + build images</td>
+</tr>
+<tr>
+<td><code>ps</code>, <code>logs</code> [<code>SERVICE=</code>]</td>
+<td>status, follow logs</td>
+</tr>
+<tr>
+<td><code>generate</code>, <code>regenerate</code>, <code>clean-generated</code></td>
+<td>manage <code>docker-compose.agents.yml</code></td>
+</tr>
+</tbody>
+</table>
+<table class="t xs">
+<thead>
+<tr>
+<th>Target</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clear-litellm-db</code></td>
+<td>down + delete the LiteLLM volume</td>
+</tr>
+<tr>
+<td><code>clear-admin-users</code></td>
+<td>truncate users → the setup wizard runs again</td>
+</tr>
+<tr>
+<td><code>ensure-admin-encryption-key</code></td>
+<td>Fernet key into <code>.env</code></td>
+</tr>
+<tr>
+<td><code>check-prerequisites</code></td>
+<td>.env + docker checks</td>
+</tr>
+<tr>
+<td><code>test-static</code></td>
+<td>infra tests, no Docker</td>
+</tr>
+<tr>
+<td><code>test-integration</code>, <code>test-infra</code></td>
+<td>against running containers</td>
+</tr>
+<tr>
+<td><code>test-system</code></td>
+<td>full system (needs <code>PROMETHEUS_SYSTEM_TESTING=true</code>)</td>
+</tr>
+<tr>
+<td><code>react-dev</code>, <code>react-build</code>, <code>react-check</code></td>
+<td>frontend on the host</td>
+</tr>
+<tr>
+<td><code>build-plain</code></td>
+<td><strong>broken</strong> on dev (undefined variable)</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">First login</div><h2>Setup wizard, then a signing key</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="steps">
-        <div class="step"><div><h4>Open <code>http://localhost:5150</code></h4><p class="small">On a fresh admin-db the <b>setup wizard</b> appears. Create the first user; it becomes <code>admin</code>. (The old <code>prometheus/prometheus</code> login in the README no longer exists.)</p></div></div>
-        <div class="step"><div><h4>Admin › Signing Keys</h4><p class="small">Generate a key and <b>activate</b> it. From then on the backend mints an RS256 <code>userToken</code> for every chat turn and publishes the public key at <code>/.well-known/jwks.json</code>.</p></div></div>
-        <div class="step"><div><h4>Chat</h4><p class="small">Try <code>/help</code>, <code>/agents</code>, <code>/workflows</code>, then ask a real question.</p></div></div>
-      </div>
-      <div class="col">
-        <div class="callout bad"><b>Skip step 2 and every turn fails</b> with "No 'userToken' found in message metadata and USER_IDENTITY_REQUIRED=true". Agents require a user identity by default.</div>
-        <div class="card"><h4>Alternative to the admin UI</h4><ul class="b xs">
-          <li>Local only: <code>USER_IDENTITY_REQUIRED=false</code> in <code>.env</code>, then <code>make restart</code>. Requests run as user <code>local</code>.</li>
-          <li>Setting <code>USER_IDENTITY_PRIVATE_KEY</code> is <b>not</b> enough on the stock stack: agents verify through the backend's JWKS (<code>JWKS_URL</code>), which lists only keys stored in admin-db. Use the admin UI.</li>
-        </ul></div>
-        <p class="small">Redo the wizard with <code>make clear-admin-users</code>. Sessions live in Valkey: a backend restart (even <code>make restart</code>) keeps you logged in, and a reload reopens the conversation you had open.</p>
-      </div>
-    </div>
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<div class="steps">
+<div class="step"><div><h4>Open <code>http://localhost:5150</code></h4>
+<p class="small">On a fresh admin-db the <strong>setup wizard</strong> appears. Create the first user; it becomes <code>admin</code>. (The old <code>prometheus/prometheus</code> login in the README no longer exists.)</p>
+</div></div>
+<div class="step"><div><h4>Admin › Signing Keys</h4>
+<p class="small">Generate a key and <strong>activate</strong> it. From then on the backend mints an RS256 <code>userToken</code> for every chat turn and publishes the public key at <code>/.well-known/jwks.json</code>.</p>
+</div></div>
+<div class="step"><div><h4>Chat</h4>
+<p class="small">Try <code>/help</code>, <code>/agents</code>, <code>/workflows</code>, then ask a real question.</p>
+</div></div>
+</div>
+
+</div>
+<div class="col">
+<div class="callout bad">
+<strong>Skip step 2 and every turn fails</strong> with &quot;No 'userToken' found in message metadata and USER_IDENTITY_REQUIRED=true&quot;. Agents require a user identity by default.</div>
+
+<div class="card">
+<h4>Alternative to the admin UI</h4>
+<ul class="b xs">
+<li>Local only: <code>USER_IDENTITY_REQUIRED=false</code> in <code>.env</code>, then <code>make restart</code>. Requests run as user <code>local</code>.</li>
+<li>Setting <code>USER_IDENTITY_PRIVATE_KEY</code> is <strong>not</strong> enough on the stock stack: agents verify through the backend's JWKS (<code>JWKS_URL</code>), which lists only keys stored in admin-db. Use the admin UI.</li>
+</ul>
+</div>
+
+<p class="small">Redo the wizard with <code>make clear-admin-users</code>. Sessions live in Valkey: a backend restart (even <code>make restart</code>) keeps you logged in, and a reload reopens the conversation you had open.</p>
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Health checks</div><h2>Check bottom-up: store → registry → backend → agents</h2></div>
   <div class="content">
-    <pre class="sm">source .env   <span class="c"># for the variables below</span>
+<pre class="sm">source .env   <span class="c"># for the variables below</span>
 
-make ps                                                     <span class="c"># everything "Up"; litellm, dbs, backend "(healthy)"</span>
-docker exec agent-valkey valkey-cli -a "$REDIS_PASSWORD" ping  <span class="c"># → PONG</span>
+make ps                                                     <span class="c"># everything &quot;Up&quot;; litellm, dbs, backend &quot;(healthy)&quot;</span>
+docker exec agent-valkey valkey-cli -a <span class="s">&quot;</span>$REDIS_PASSWORD<span class="s">&quot;</span> ping  <span class="c"># → PONG</span>
 docker exec litellm-db pg_isready -U litellm                 <span class="c"># → accepting connections</span>
 docker exec admin-db   pg_isready -U admin
 
-curl -s http://localhost:9977/health/liveliness               <span class="c"># → "I'm alive!"</span>
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-     http://localhost:9977/v1/models                           <span class="c"># → {"data":[{"id":"medium",…}]}</span>
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl -s http://localhost:9977/health/liveliness               <span class="c"># → &quot;I&#x27;m alive!&quot;</span>
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
+     http://localhost:9977/v1/models                           <span class="c"># → {&quot;data&quot;:[{&quot;id&quot;:&quot;medium&quot;,…}]}</span>
+curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KEY<span class="s">&quot;</span> <span class="s">\</span>
      http://localhost:9977/v1/agents | python3 -m json.tool    <span class="c"># → registered agents</span>
 
-curl -s http://localhost:8600/healthz                          <span class="c"># → {"status":"ok"}</span>
+curl -s http://localhost:8600/healthz                          <span class="c"># → {&quot;status&quot;:&quot;ok&quot;}</span>
 curl -s http://localhost:8600/.well-known/jwks.json            <span class="c"># → your active signing key</span>
 
-docker exec client-agent python -c "import urllib.request as u; \
-  print(u.urlopen('http://synthesis-agent:8000/health').read())"   <span class="c"># → {"ok": true, "status": "healthy", …}</span></pre>
-    <div class="grid g3">
-      <div class="card"><h4>401 from LiteLLM?</h4><p class="small">Every LiteLLM route except health needs <code>Authorization: Bearer $LITELLM_MASTER_KEY</code>.</p></div>
-      <div class="card"><h4><code>/healthz</code> through :5150?</h4><p class="small">It is not under <code>/api</code>, so the frontend proxy does not forward it. Use :8600 directly.</p></div>
-      <div class="card"><h4>No agent healthchecks</h4><p class="small">The agents and the client-agent have no Docker healthcheck (the backend does). "Up" only means started; check their logs.</p></div>
-    </div>
+docker exec client-agent python -c <span class="s">&quot;import urllib.request as u; \</span>
+<span class="s">  print(u.urlopen(&#x27;http://synthesis-agent:8000/health&#x27;).read())&quot;</span>   <span class="c"># → {&quot;ok&quot;: true, &quot;status&quot;: &quot;healthy&quot;, …}</span></pre>
+<div class="grid g3">
+<div class="card">
+<h4>401 from LiteLLM?</h4>
+<p class="small">Every LiteLLM route except health needs <code>Authorization: Bearer $LITELLM_MASTER_KEY</code>.</p>
+</div>
+
+<div class="card">
+<h4><code>/healthz</code> through :5150?</h4>
+<p class="small">It is not under <code>/api</code>, so the frontend proxy does not forward it. Use :8600 directly.</p>
+</div>
+
+<div class="card">
+<h4>No agent healthchecks</h4>
+<p class="small">The agents and the client-agent have no Docker healthcheck (the backend does). &quot;Up&quot; only means started; check their logs.</p>
+</div>
+
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">The real test</div><h2>Ask the platform something</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <table class="t sm">
-          <tr><th>Type in the chat</th><th>Expect</th></tr>
-          <tr><td><code>/help</code></td><td>the slash commands</td></tr>
-          <tr><td><code>/agents</code></td><td>form-filler, OSTI research, synthesis (plus debug agents)</td></tr>
-          <tr><td><code>/workflows</code></td><td>registered workflow templates</td></tr>
-          <tr><td><code>/artifacts</code></td><td>this conversation's artifacts</td></tr>
-          <tr><td><code>/tasks [id]</code></td><td>background tasks</td></tr>
-          <tr><td>"Find recent OSTI papers on SiC cladding"</td><td>routes to <code>search_literature</code>; watch the status stream</td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <h4 class="acc">Watch it happen</h4>
-        <pre class="sm">make logs SERVICE=client-agent
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<table class="t sm">
+<thead>
+<tr>
+<th>Type in the chat</th>
+<th>Expect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/help</code></td>
+<td>the slash commands</td>
+</tr>
+<tr>
+<td><code>/agents</code></td>
+<td>form-filler, OSTI research, synthesis (plus debug agents)</td>
+</tr>
+<tr>
+<td><code>/workflows</code></td>
+<td>registered workflow templates</td>
+</tr>
+<tr>
+<td><code>/artifacts</code></td>
+<td>this conversation's artifacts</td>
+</tr>
+<tr>
+<td><code>/tasks [id]</code></td>
+<td>background tasks</td>
+</tr>
+<tr>
+<td>&quot;Find recent OSTI papers on SiC cladding&quot;</td>
+<td>routes to <code>search_literature</code>; watch the status stream</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="col">
+<h4 class="acc">Watch it happen</h4>
+<pre class="sm">make logs SERVICE=client-agent
 make logs SERVICE=osti-research-agent
 make logs SERVICE=litellm</pre>
-        <p class="small">In the client-agent log you see discovery (<code>GET /v1/agents</code>), each tool call the loop makes (status "Next step: …"), and the <code>/a2a/{agent}</code> call.</p>
-        <div class="callout">A newly registered agent reaches the orchestrator's tool list within about 60 s (the capability-cache TTL), immediately on a skill miss, or right after <code>docker restart client-agent</code>.</div>
-      </div>
-    </div>
+<p class="small">In the client-agent log you see discovery (<code>GET /v1/agents</code>), each tool call the loop makes (status &quot;Next step: …&quot;), and the <code>/a2a/{agent}</code> call.</p>
+<div class="callout">
+A newly registered agent reaches the orchestrator's tool list within about 60 s (the capability-cache TTL), immediately on a skill miss, or right after <code>docker restart client-agent</code>.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">More to play with</div><h2><code style="font-size:.8em">DEBUG_AGENTS=true</code>: the reference agents</h2></div>
+  <div class="head"><div class="eyebrow">More to play with</div><h2><code>DEBUG_AGENTS=true</code>: the reference agents</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <pre class="sm">make DEBUG_AGENTS=true up
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<pre class="sm">make DEBUG_AGENTS=true up
 <span class="c"># or set DEBUG_AGENTS=true in .env</span></pre>
-        <table class="t sm">
-          <tr><th>Agent</th><th>Study it for</th></tr>
-          <tr><td>artifact-debug-agent (:8008)</td><td>DeepLynx artifacts, SVG→PNG, and an agent-owned workflow</td></tr>
-          <tr><td>corrosion-agent</td><td><code>send_input_required</code> + context state</td></tr>
-          <tr><td>thermal-agent</td><td>a custom <code>json_type</code> with its own viewer</td></tr>
-          <tr><td>material-data-agent</td><td>many small skills on one agent</td></tr>
-          <tr><td>radiation-agent</td><td>input-required prompts</td></tr>
-          <tr><td>thread-pattern-agent</td><td><code>PrometheusWorker</code>, <code>declare_long_running</code></td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <h4 class="acc">Prompts that exercise them</h4>
-        <ul class="b sm">
-          <li>"Thermal analysis of SS316 at 550 °C" → thermal viewer</li>
-          <li>"Comprehensive material analysis of SS347" → the <code>comprehensive_material_analysis</code> DAG workflow, which asks for <b>approval</b> before it runs</li>
-          <li>"Make an image with the word Success" → SVG to DeepLynx (needs DeepLynx)</li>
-          <li><code>/artifact_debug.patriotic_usa_png</code> → starts the agent-owned workflow directly</li>
-        </ul>
-        <div class="callout">These are the best working examples of every pattern in the template tutorial. Read them in <code>agents/debug-agents/</code>.</div>
-      </div>
-    </div>
+<table class="t sm">
+<thead>
+<tr>
+<th>Agent</th>
+<th>Study it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>artifact-debug-agent (:8008)</td>
+<td>DeepLynx artifacts, SVG→PNG, and an agent-owned workflow</td>
+</tr>
+<tr>
+<td>corrosion-agent</td>
+<td><code>send_input_required</code> + context state</td>
+</tr>
+<tr>
+<td>thermal-agent</td>
+<td>a custom <code>json_type</code> with its own viewer</td>
+</tr>
+<tr>
+<td>material-data-agent</td>
+<td>many small skills on one agent</td>
+</tr>
+<tr>
+<td>radiation-agent</td>
+<td>input-required prompts</td>
+</tr>
+<tr>
+<td>thread-pattern-agent</td>
+<td><code>PrometheusWorker</code>, <code>declare_long_running</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="col">
+<h4 class="acc">Prompts that exercise them</h4>
+<ul class="b sm">
+<li>&quot;Thermal analysis of SS316 at 550 °C&quot; → thermal viewer</li>
+<li>&quot;Comprehensive material analysis of SS347&quot; → the <code>comprehensive_material_analysis</code> DAG workflow, which asks for <strong>approval</strong> before it runs</li>
+<li>&quot;Make an image with the word Success&quot; → SVG to DeepLynx (needs DeepLynx)</li>
+<li><code>/artifact_debug.patriotic_usa_png</code> → starts the agent-owned workflow directly</li>
+</ul>
+<div class="callout">
+These are the best working examples of every pattern in the template tutorial. Read them in <code>agents/debug-agents/</code>.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
@@ -707,15 +1393,18 @@ make logs SERVICE=litellm</pre>
   <div class="head"><div class="eyebrow">LLM configuration for the deployment</div><h2>Code picks a flavor; the profile picks the model</h2></div>
   <div class="content">
 <div class="col">
-<p class="body">Agent code asks for a <b>flavor</b> (<code>llm.medium(…)</code>). The deployment chooses a <b>profile</b> that maps flavors to real models. Resolution order in <code>LLMConfig.from_env()</code>:</p>
+<p class="body">Agent code asks for a <strong>flavor</strong> (<code>llm.medium(…)</code>). The deployment chooses a <strong>profile</strong> that maps flavors to real models. Resolution order in <code>LLMConfig.from_env()</code>:</p>
 <ol class="b">
 <li><code>LLM_CONFIG_FILE</code>: a YAML path inside the container</li>
 <li><code>LLM_CONFIG_PROFILE</code>: an installed profile name</li>
 <li>otherwise <code>registry</code></li>
 </ol>
-<p class="small">The platform default is <code>registry</code>: <code>proxy_url: os.environ/REGISTRY_URL</code>, so every call goes to <b>LiteLLM</b> at <code>http://litellm:4000/v1/chat/completions</code> with <code>model=&lt;flavor&gt;</code>.</p>
-<div class="callout warn">With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy. Its <code>litellm_config.yaml</code> on <code>dev</code> currently defines only <code>medium</code> (→ <code>anthropic/claude-sonnet-4-6</code>). Add the other aliases there (right), or switch to a profile such as <code>inl_litellm</code>, which defines all six. A flavor with no model behind it raises <code>LLMAliasError</code>.</div>
+<p class="small">The platform default is <code>registry</code>: <code>proxy_url: os.environ/REGISTRY_URL</code>, so every call goes to <strong>LiteLLM</strong> at <code>http://litellm:4000/v1/chat/completions</code> with <code>model=&lt;flavor&gt;</code>.</p>
+<div class="callout warn">
+With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy. Its <code>litellm_config.yaml</code> on <code>dev</code> currently defines only <code>medium</code> (→ <code>anthropic/claude-sonnet-4-6</code>). Add the other aliases there (right), or switch to a profile such as <code>inl_litellm</code>, which defines all six. A flavor with no model behind it raises <code>LLMAliasError</code>.</div>
+
 </div>
+
   </div>
 </section>
 
@@ -723,7 +1412,6 @@ make logs SERVICE=litellm</pre>
   <div class="head"><div class="eyebrow">LLM configuration for the deployment</div><h2>Adding flavors to the platform proxy</h2></div>
   <div class="content">
 <div class="col">
-
 <pre class="sm"><span class="c"># prometheus_platform/litellm_config.yaml</span>
 model_list:
   - model_name: medium
@@ -738,35 +1426,85 @@ model_list:
 <span class="h">    litellm_params:</span>
 <span class="h">      model: anthropic/claude-sonnet-4-6</span>
 <span class="h">      api_key: os.environ/ANTHROPIC_API_KEY</span>
-<span class="h">  # …likewise large, vision, embedding</span>
+<span class="h">  <span class="c"># …likewise large, vision, embedding</span></span>
 general_settings:   <span class="c"># unchanged</span>
-  master_key: "os.environ/LITELLM_MASTER_KEY"
+  master_key: <span class="s">&quot;os.environ/LITELLM_MASTER_KEY&quot;</span>
   …</pre>
-<p class="small">Then <code>make restart</code> and check <code>curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/models</code>. Model IDs are examples; use what your key can access.</p>
+<p class="small">Then <code>make restart</code> and check <code>curl -H &quot;Authorization: Bearer $LITELLM_MASTER_KEY&quot; localhost:9977/v1/models</code>. Model IDs are examples; use what your key can access.</p>
 </div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Other providers</div><h2>Switching the whole stack to another profile</h2></div>
   <div class="content">
-    <table class="t sm">
-      <tr><th>Profile</th><th>Route</th><th>Key</th><th>default · small · medium · large · vision · embedding</th></tr>
-      <tr class="hl"><td><code>registry</code></td><td>LiteLLM proxy at <code>$REGISTRY_URL</code></td><td>proxy master key</td><td>whatever <code>litellm_config.yaml</code> defines</td></tr>
-      <tr><td><code>inl_litellm</code></td><td><code>https://litellm.inl.gov/v1</code></td><td><code>INL_LITELLM_API_KEY</code></td><td>claude-sonnet-5-awsgov · sonnet-4-5 · sonnet-5 · opus-4-8 · opus-4-8 · text-embedding-3-large-gov-va</td></tr>
-      <tr><td><code>inl_hpc</code></td><td><code>https://api.hpc.inl.gov/llm/v1</code> (vLLM)</td><td><code>INL_HPC_API_KEY</code></td><td>gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed</td></tr>
-      <tr><td><code>anthropic</code></td><td>direct</td><td><code>ANTHROPIC_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td><td>opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large</td></tr>
-      <tr><td><code>amsc</code></td><td>American Science Cloud</td><td><code>AMSC_I2_API_KEY</code></td><td>sonnet · haiku · sonnet · opus · opus · ada-002</td></tr>
-      <tr><td><code>anl_asksage</code></td><td>ANL AskSage (prometheus_api PR #65)</td><td><code>ASKSAGE_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td><td>gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large</td></tr>
-      <tr><td><code>openai</code></td><td>direct</td><td><code>OPENAI_API_KEY</code></td><td>gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large</td></tr>
-    </table>
-    <div class="grid g2">
-      <pre class="sm"><span class="c"># .env: all platform agents talk to INL LiteLLM directly</span>
+<table class="t sm">
+<thead>
+<tr>
+<th>Profile</th>
+<th>Route</th>
+<th>Key</th>
+<th>default · small · medium · large · vision · embedding</th>
+</tr>
+</thead>
+<tbody>
+<tr class="hl">
+<td><code>registry</code></td>
+<td>LiteLLM proxy at <code>$REGISTRY_URL</code></td>
+<td>proxy master key</td>
+<td>whatever <code>litellm_config.yaml</code> defines</td>
+</tr>
+<tr>
+<td><code>inl_litellm</code></td>
+<td><code>https://litellm.inl.gov/v1</code></td>
+<td><code>INL_LITELLM_API_KEY</code></td>
+<td>claude-sonnet-5-awsgov · sonnet-4-5 · sonnet-5 · opus-4-8 · opus-4-8 · text-embedding-3-large-gov-va</td>
+</tr>
+<tr>
+<td><code>inl_hpc</code></td>
+<td><code>https://api.hpc.inl.gov/llm/v1</code> (vLLM)</td>
+<td><code>INL_HPC_API_KEY</code></td>
+<td>gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed</td>
+</tr>
+<tr>
+<td><code>anthropic</code></td>
+<td>direct</td>
+<td><code>ANTHROPIC_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
+<td>opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large</td>
+</tr>
+<tr>
+<td><code>amsc</code></td>
+<td>American Science Cloud</td>
+<td><code>AMSC_I2_API_KEY</code></td>
+<td>sonnet · haiku · sonnet · opus · opus · ada-002</td>
+</tr>
+<tr>
+<td><code>anl_asksage</code></td>
+<td>ANL AskSage (prometheus_api PR #65)</td>
+<td><code>ASKSAGE_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
+<td>gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large</td>
+</tr>
+<tr>
+<td><code>openai</code></td>
+<td>direct</td>
+<td><code>OPENAI_API_KEY</code></td>
+<td>gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large</td>
+</tr>
+</tbody>
+</table>
+<div class="grid g2">
+<pre class="sm"><span class="c"># .env: all platform agents talk to INL LiteLLM directly</span>
 LLM_CONFIG_PROFILE=inl_litellm
 INL_LITELLM_API_KEY=sk-…
 make restart</pre>
-      <div class="callout">Setting <code>ANTHROPIC_API_KEY</code> alone does <b>not</b> change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.</div>
-    </div>
+<div class="col">
+<div class="callout">
+Setting <code>ANTHROPIC_API_KEY</code> alone does <strong>not</strong> change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
@@ -779,30 +1517,52 @@ make restart</pre>
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">DeepLynx</div><h2>Why the platform needs it</h2></div>
   <div class="content">
-    <div class="grid g2" style="gap:30px">
-      <div class="col">
-        <p class="body"><b>DeepLynx</b> (Nexus) is INL's open-source data warehouse (<code>github.com/idaholab/DeepLynx</code>): organizations → projects → records (items), files, tags, relationships, and timeseries, behind a REST API.</p>
-        <table class="t sm">
-          <tr><th>Who</th><th>Uses DeepLynx for</th></tr>
-          <tr><td>client-agent</td><td><b>every user upload</b> → stored, then registered as an artifact</td></tr>
-          <tr><td>agents</td><td><code>send_deeplynx_artifact()</code> → <code>deeplynx://…/items/N</code></td></tr>
-          <tr><td>backend</td><td>resolves <code>deeplynx://</code> to bytes for the viewers</td></tr>
-          <tr><td>agents consuming files</td><td><code>get_artifact_file_path()</code> via fsspec</td></tr>
-        </table>
-      </div>
-      <div class="col">
-        <pre class="sm">deeplynx://organizations/<span class="n">{org_id}</span>/projects/<span class="n">{proj_id}</span>/items/<span class="n">{item_id}</span></pre>
-        <pre class="sm"><span class="c"># any prometheus_api environment</span>
-import fsspec
-from prometheus_api.storage_client import ConnectionConfig
+<div class="grid g2" style="gap:30px;">
+<div class="col">
+<p class="body"><strong>DeepLynx</strong> (Nexus) is INL's open-source data warehouse (<code>github.com/idaholab/DeepLynx</code>): organizations → projects → records (items), files, tags, relationships, and timeseries, behind a REST API.</p>
+<table class="t sm">
+<thead>
+<tr>
+<th>Who</th>
+<th>Uses DeepLynx for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>client-agent</td>
+<td><strong>every user upload</strong> → stored, then registered as an artifact</td>
+</tr>
+<tr>
+<td>agents</td>
+<td><code>send_deeplynx_artifact()</code> → <code>deeplynx://…/items/N</code></td>
+</tr>
+<tr>
+<td>backend</td>
+<td>resolves <code>deeplynx://</code> to bytes for the viewers</td>
+</tr>
+<tr>
+<td>agents consuming files</td>
+<td><code>get_artifact_file_path()</code> via fsspec</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="col">
+<pre class="sm">deeplynx://organizations/{org_id}/projects/{proj_id}/items/{item_id}</pre>
+<pre class="sm"><span class="c"># any prometheus_api environment</span>
+<span class="k">import</span> fsspec
+<span class="k">from</span> prometheus_api.storage_client <span class="k">import</span> ConnectionConfig
 
-fs = fsspec.filesystem("deeplynx",
+fs = fsspec.filesystem(<span class="s">&quot;deeplynx&quot;</span>,
         config=ConnectionConfig.from_env())
-fs.get("deeplynx://organizations/1/projects/1/items/42",
-       "/tmp/out/")          <span class="c"># → /tmp/out/42</span></pre>
-        <div class="callout warn">No DeepLynx configured → uploads show "DeepLynx storage is not configured" and are <b>not</b> passed to agents. Compose defaults to <code>https://deeplynx.inl.gov/api/v1</code>, which needs a key. A local instance is the easiest route for the hackathon.</div>
-      </div>
-    </div>
+fs.get(<span class="s">&quot;deeplynx://organizations/1/projects/1/items/42&quot;</span>,
+       <span class="s">&quot;/tmp/out/&quot;</span>)          <span class="c"># → /tmp/out/42</span></pre>
+<div class="callout warn">
+No DeepLynx configured → uploads show &quot;DeepLynx storage is not configured&quot; and are <strong>not</strong> passed to agents. Compose defaults to <code>https://deeplynx.inl.gov/api/v1</code>, which needs a key. A local instance is the easiest route for the hackathon.</div>
+
+</div>
+</div>
+
   </div>
 </section>
 
@@ -811,65 +1571,163 @@ fs.get("deeplynx://organizations/1/projects/1/items/42",
   <div class="content">
 <div class="col">
 <table class="t sm wrap-code">
-<tr><th>Symptom</th><th>Fix</th></tr>
-<tr><td>Connection refused to <code>host.docker.internal</code> (Linux)</td><td>Docker Engine on Linux has no <code>host.docker.internal</code> by default. Add <code>extra_hosts: ["host.docker.internal:host-gateway"]</code> via a <code>docker-compose.override.yml</code>.</td></tr>
-<tr><td><code>AuthenticationError</code> / 401</td><td>Key and secret swapped, or the secret was not copied completely. Generate a new key.</td></tr>
-<tr><td><code>ValueError: invalid literal for int() with base 10: ''</code></td><td><code>DEEPLYNX_ORG_ID</code> / <code>_PROJECT_ID</code> are empty (compose passes empty strings). Set them.</td></tr>
-<tr><td>"Failed to get data source ID…"</td><td>The project has no default data source. Set <code>DEEPLYNX_DATA_SOURCE_ID</code> (list them with <code>examples/list_datasources.py</code> in prometheus_api).</td></tr>
-<tr><td><code>deeplynx://</code> URI won't resolve in your agent</td><td>The agent needs the <b>same org and project</b> in its <code>ConnectionConfig</code> as the URI.</td></tr>
-<tr><td>Nothing on :5000 (macOS)</td><td>AirPlay Receiver has the port.</td></tr>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connection refused to <code>host.docker.internal</code> (Linux)</td>
+<td>Docker Engine on Linux has no <code>host.docker.internal</code> by default. Add <code>extra_hosts: [&quot;host.docker.internal:host-gateway&quot;]</code> via a <code>docker-compose.override.yml</code>.</td>
+</tr>
+<tr>
+<td><code>AuthenticationError</code> / 401</td>
+<td>Key and secret swapped, or the secret was not copied completely. Generate a new key.</td>
+</tr>
+<tr>
+<td><code>ValueError: invalid literal for int() with base 10: ''</code></td>
+<td><code>DEEPLYNX_ORG_ID</code> / <code>_PROJECT_ID</code> are empty (compose passes empty strings). Set them.</td>
+</tr>
+<tr>
+<td>&quot;Failed to get data source ID…&quot;</td>
+<td>The project has no default data source. Set <code>DEEPLYNX_DATA_SOURCE_ID</code> (list them with <code>examples/list_datasources.py</code> in prometheus_api).</td>
+</tr>
+<tr>
+<td><code>deeplynx://</code> URI won't resolve in your agent</td>
+<td>The agent needs the <strong>same org and project</strong> in its <code>ConnectionConfig</code> as the URI.</td>
+</tr>
+<tr>
+<td>Nothing on :5000 (macOS)</td>
+<td>AirPlay Receiver has the port.</td>
+</tr>
+</tbody>
 </table>
 <p class="tiny"><code>DEEPLYNX_TIMEOUT</code>, <code>_MAX_RETRIES</code>, and <code>_VERIFY_SSL</code> appear in <code>prometheus_api/.env.example</code> but are ignored; pass them as <code>ConnectionConfig</code> arguments instead.</p>
 </div>
+
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Troubleshooting · 1</div><h2>It starts, but something is off</h2></div>
   <div class="content">
-    <table class="t">
-<tr><th style="width:470px">Symptom</th><th>Cause → fix</th></tr><tr><td>Every turn fails: "No 'userToken' found… USER_IDENTITY_REQUIRED=true"</td><td>No active signing key. Go to Admin › Signing Keys → generate + activate (or <code>USER_IDENTITY_REQUIRED=false</code>).</td></tr><tr><td>"userToken has expired"</td><td>A long turn exceeded <code>USER_IDENTITY_TTL</code> (7200 s). Raise it.</td></tr><tr><td><code>LLMAliasError</code>: alias 'small' not available</td><td>The active profile has no model for that flavor. Under <code>registry</code>, add the alias to <code>litellm_config.yaml</code> and <code>make restart</code>, or switch <code>LLM_CONFIG_PROFILE</code>.</td></tr><tr><td>HTTP 401 from an LLM call in an agent</td><td>With a direct profile (<code>inl_litellm</code>, <code>amsc</code>, <code>anl_asksage</code>): the profile's key is missing in the agent's <code>.env</code>. With the <code>registry</code> profile: attach the master key only when <code>cfg.proxy_url</code> is set (next session).</td></tr><tr><td>The agent is running but not in <code>/agents</code></td><td>The registration was wiped by <code>make up</code>/<code>restart</code>. <code>docker restart &lt;agent&gt;</code> re-registers it; it is routable within about 60 s.</td></tr>
-    </table>
+<table class="t">
+<thead>
+<tr>
+<th style="width:470px">Symptom</th>
+<th>Cause → fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every turn fails: &quot;No 'userToken' found… USER_IDENTITY_REQUIRED=true&quot;</td>
+<td>No active signing key. Go to Admin › Signing Keys → generate + activate (or <code>USER_IDENTITY_REQUIRED=false</code>).</td>
+</tr>
+<tr>
+<td>&quot;userToken has expired&quot;</td>
+<td>A long turn exceeded <code>USER_IDENTITY_TTL</code> (7200 s). Raise it.</td>
+</tr>
+<tr>
+<td><code>LLMAliasError</code>: alias 'small' not available</td>
+<td>The active profile has no model for that flavor. Under <code>registry</code>, add the alias to <code>litellm_config.yaml</code> and <code>make restart</code>, or switch <code>LLM_CONFIG_PROFILE</code>.</td>
+</tr>
+<tr>
+<td>HTTP 401 from an LLM call in an agent</td>
+<td>With a direct profile (<code>inl_litellm</code>, <code>amsc</code>, <code>anl_asksage</code>): the profile's key is missing in the agent's <code>.env</code>. With the <code>registry</code> profile: attach the master key only when <code>cfg.proxy_url</code> is set (next session).</td>
+</tr>
+<tr>
+<td>The agent is running but not in <code>/agents</code></td>
+<td>The registration was wiped by <code>make up</code>/<code>restart</code>. <code>docker restart &lt;agent&gt;</code> re-registers it; it is routable within about 60 s.</td>
+</tr>
+</tbody>
+</table>
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Troubleshooting · 2</div><h2>It starts, but something is off (continued)</h2></div>
   <div class="content">
-    <table class="t">
-<tr><th style="width:470px">Symptom</th><th>Cause → fix</th></tr><tr><td>The orchestrator never calls your skill</td><td>A weak skill description or <code>usage_notes</code> (tags are not shown to it), a duplicate skill id, or a card URL the client-agent cannot reach (<code>EXTERNAL_AGENT_URL</code>).</td></tr><tr><td>Upload ignored: "DeepLynx storage is not configured"</td><td>Set <code>DEEPLYNX_*</code> and <code>make restart</code>.</td></tr><tr><td>Chat title stays as the raw first question</td><td>Title generation uses <code>llm.small</code>, which is missing under <code>registry</code>. Harmless.</td></tr><tr><td>Mesh viewer error "libGL.so.1"</td><td>An old backend image. Rebuild with <code>make up</code>.</td></tr><tr><td>"Live updates stopped — the server is unreachable"</td><td>The backend or Valkey restarted mid-stream. Reload: the session and the open conversation come back.</td></tr>
-    </table>
+<table class="t">
+<thead>
+<tr>
+<th style="width:470px">Symptom</th>
+<th>Cause → fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The orchestrator never calls your skill</td>
+<td>A weak skill description or <code>usage_notes</code> (tags are not shown to it), a duplicate skill id, or a card URL the client-agent cannot reach (<code>EXTERNAL_AGENT_URL</code>).</td>
+</tr>
+<tr>
+<td>Upload ignored: &quot;DeepLynx storage is not configured&quot;</td>
+<td>Set <code>DEEPLYNX_*</code> and <code>make restart</code>.</td>
+</tr>
+<tr>
+<td>Chat title stays as the raw first question</td>
+<td>Title generation uses <code>llm.small</code>, which is missing under <code>registry</code>. Harmless.</td>
+</tr>
+<tr>
+<td>Mesh viewer error &quot;libGL.so.1&quot;</td>
+<td>An old backend image. Rebuild with <code>make up</code>.</td>
+</tr>
+<tr>
+<td>&quot;Live updates stopped — the server is unreachable&quot;</td>
+<td>The backend or Valkey restarted mid-stream. Reload: the session and the open conversation come back.</td>
+</tr>
+</tbody>
+</table>
   </div>
 </section>
 
 <section class="slide appendix">
   <div class="head"><div class="eyebrow">Debugging toolkit</div><h2>Where to look</h2></div>
   <div class="content">
-    <div class="grid g3" style="gap:20px">
-      <div class="card"><h4>Logs</h4><pre class="xs">make logs                    <span class="c"># all</span>
+<div class="grid g3" style="gap:20px;">
+<div class="card">
+<h4>Logs</h4>
+<pre class="xs">make logs                    <span class="c"># all</span>
 make logs SERVICE=backend
 docker logs -f client-agent
-docker logs &lt;agent&gt; 2&gt;&amp;1 \
-  | grep -i "Registered '"</pre><p class="small">Everything logs to stdout. The "Registered" line appears only if the agent logs at INFO (the template does); <code>/v1/agents</code> is authoritative.</p></div>
-      <div class="card"><h4>State</h4><pre class="xs">docker exec -it agent-valkey \
-  valkey-cli -a "$REDIS_PASSWORD"
+docker logs <span class="p">&lt;agent&gt;</span> <span class="n">2</span>&gt;&amp;<span class="n">1</span> <span class="s">\</span>
+  | grep -i <span class="s">&quot;Registered &#x27;&quot;</span></pre>
+<p class="small">Everything logs to stdout. The &quot;Registered&quot; line appears only if the agent logs at INFO (the template does); <code>/v1/agents</code> is authoritative.</p>
+</div>
+
+<div class="card">
+<h4>State</h4>
+<pre class="xs">docker exec -it agent-valkey <span class="s">\</span>
+  valkey-cli -a <span class="s">&quot;</span>$REDIS_PASSWORD<span class="s">&quot;</span>
 &gt; KEYS artifacts:conv:*
 &gt; KEYS conversation:*
 &gt; KEYS capability_cache:v4:*
-&gt; KEYS session:*</pre><p class="small">Conversation state, artifact catalog, capability cache (60 s TTL), task graph, browser sessions.</p></div>
-      <div class="card"><h4>Inside a container</h4><pre class="xs">docker exec client-agent env \
-  | grep -E '^(REGISTRY_URL|LLM_CONFIG_)'
-docker exec client-agent python -c "
-import os, urllib.request as u
+&gt; KEYS session:*</pre>
+<p class="small">Conversation state, artifact catalog, capability cache (60 s TTL), task graph, browser sessions.</p>
+</div>
+
+<div class="card">
+<h4>Inside a container</h4>
+<pre class="xs">docker exec client-agent env \
+  | grep -E <span class="s">&#x27;^(REGISTRY_URL|LLM_CONFIG_)&#x27;</span>
+docker exec client-agent python -c <span class="s">&quot;</span>
+<span class="k">import</span> os, urllib.request <span class="k">as</span> u
 r = u.Request(
- 'http://localhost:8000'
- '/discovery/refresh',
- method='POST', headers={
- 'Authorization': 'Bearer '
- + os.environ['AGENT_SECRET']})
-print(u.urlopen(r).read())"</pre><p class="small">Force a discovery refresh. The images have Python but no <code>curl</code>.</p></div>
-    </div>
-    <div class="callout">Reset ladder, from least to most destructive: <code>docker restart &lt;svc&gt;</code> → <code>make restart</code> → <code>make up</code> → <code>make clear-admin-users</code> → <code>make down-v</code> (deletes all volumes, history, and users).</div>
+ <span class="s">&#x27;http://localhost:8000&#x27;</span>
+ <span class="s">&#x27;/discovery/refresh&#x27;</span>,
+ method=<span class="s">&#x27;POST&#x27;</span>, headers={
+ <span class="s">&#x27;Authorization&#x27;</span>: <span class="s">&#x27;Bearer &#x27;</span>
+ + os.environ[<span class="s">&#x27;AGENT_SECRET&#x27;</span>]})
+print(u.urlopen(r).read())<span class="s">&quot;</span></pre>
+<p class="small">Force a discovery refresh. The images have Python but no <code>curl</code>.</p>
+</div>
+
+</div>
+
+<div class="callout">
+Reset ladder, from least to most destructive: <code>docker restart &lt;svc&gt;</code> → <code>make restart</code> → <code>make up</code> → <code>make clear-admin-users</code> → <code>make down-v</code> (deletes all volumes, history, and users).</div>
+
   </div>
 </section>
 
