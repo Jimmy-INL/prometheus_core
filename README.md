@@ -165,7 +165,6 @@ Backend settings come from `backend/app/config.yml` (override the path with `PRO
 | `debug` | Enable debug features |
 | `auto-approve-steps` | Skip manual approval between workflow steps |
 | `workflow-suggestions` | Chat suggestions shown on startup |
-| Local users | Created during first startup and managed from the Admin tab; they are not configured in this file. |
 
 The React app itself is configured through `frontend/config.ts` and `VITE_*` environment variables (e.g. `VITE_BACKEND_URL`).
 
