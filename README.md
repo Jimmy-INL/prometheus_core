@@ -45,6 +45,34 @@ cp .env.example .env
 # Optional: DEEPLYNX_*, HTTP_PROXY / HTTPS_PROXY / NO_PROXY
 ```
 
+#### Choose an LLM profile
+
+`LLM_CONFIG_PROFILE` tells the agents which LLM provider to use. Set it in `.env`; if you do not change it, the default is `registry`.
+
+```dotenv
+LLM_CONFIG_PROFILE=registry
+```
+
+Choose one of the following values and fill in the matching API key in `.env`:
+
+| Value | What it uses | Additional variable to fill in |
+|---|---|---|
+| `registry` | The LiteLLM proxy included with this project. This is the default and the simplest option for most users. | `ANTHROPIC_API_KEY` |
+| `anthropic` | Anthropic directly, without using LiteLLM for model requests. | `ANTHROPIC_API_KEY`; also `EMBEDDING_API_KEY` if an agent uses embeddings |
+| `openai` | OpenAI directly for model and embedding requests. | `OPENAI_API_KEY` |
+| `inl_hpc` | INL HPC's OpenAI-compatible model service. | `INL_HPC_API_KEY` |
+| `inl_litellm` | INL's hosted LiteLLM service. | `INL_LITELLM_API_KEY` |
+| `amsc` | The American Science Cloud I2 model service. | `AMSC_I2_API_KEY` |
+
+For example, to use OpenAI:
+
+```dotenv
+LLM_CONFIG_PROFILE=openai
+OPENAI_API_KEY=<your-openai-api-key>
+```
+
+Advanced users can set `LLM_CONFIG_FILE` to a custom LLM configuration YAML file. It overrides `LLM_CONFIG_PROFILE`, must be available inside every agent container, and requires any environment variables referenced by that file.
+
 ### 2. Authenticate to the container registry
 
 The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
@@ -85,10 +113,16 @@ Services and host ports:
 
 ### Log in
 
-Default credentials (defined in `backend/app/config.yml` under `local-users`):
+Upon first startup, you will be prompted to create a username and password. Save these credentials as you will need them when you log in.
 
-- Username: `prometheus`
-- Password: `prometheus`
+If you forget your password while running the project locally, start the platform and clear its local user accounts:
+
+```bash
+make up
+make clear-admin-users
+```
+
+The `make clear-admin-users` command deletes all local user accounts. Refresh the application afterward; you will be prompted to create a new username and password. If you use `make up-fg` instead of `make up`, leave it running and run `make clear-admin-users` from a second terminal in the project directory.
 
 ## Local frontend development (hot reload)
 
@@ -131,7 +165,7 @@ Backend settings come from `backend/app/config.yml` (override the path with `PRO
 | `debug` | Enable debug features |
 | `auto-approve-steps` | Skip manual approval between workflow steps |
 | `workflow-suggestions` | Chat suggestions shown on startup |
-| `local-users` | Username/password pairs for local auth |
+| Local users | Created during first startup and managed from the Admin tab; they are not configured in this file. |
 
 The React app itself is configured through `frontend/config.ts` and `VITE_*` environment variables (e.g. `VITE_BACKEND_URL`).
 
