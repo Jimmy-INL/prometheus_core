@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Chat } from "../Chat";
 import { StatusPanel } from "./StatusPanel";
 
@@ -14,14 +14,23 @@ import { StatusPanel } from "./StatusPanel";
  */
 export function Home() {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [statusCollapsed, setStatusCollapsed] = useState(false);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
       <section className="flex min-w-0 flex-1 flex-col border-b border-base-300 lg:border-b-0 lg:border-r">
         <Chat scrollContainerRef={scrollRef} />
       </section>
-      <aside className="flex w-full shrink-0 flex-col lg:w-96 xl:w-[26rem]">
-        <StatusPanel />
+      <aside
+        className={`flex shrink-0 flex-col overflow-hidden transition-[width] duration-200 ${
+          statusCollapsed ? "w-16" : "w-full lg:w-96 xl:w-[26rem]"
+        }`}
+      >
+        <StatusPanel
+          collapsed={statusCollapsed}
+          onCollapse={() => setStatusCollapsed(true)}
+          onExpand={() => setStatusCollapsed(false)}
+        />
       </aside>
     </div>
   );
