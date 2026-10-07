@@ -825,7 +825,7 @@ wheels = [
 [[package]]
 name = "prometheus-api"
 version = "0.13.0"
-source = { git = "https://github.inl.gov/genesis/prometheus_api.git?rev=95c32b5034c8ca84957c386e5bbe87025aed819b#95c32b5034c8ca84957c386e5bbe87025aed819b" }
+source = { git = "https://github.inl.gov/genesis/prometheus_api.git?rev=1914b557818cd6a9c558280c5789d7a67b8a0717#1914b557818cd6a9c558280c5789d7a67b8a0717" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "fsspec" },
@@ -863,7 +863,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "prometheus-api", git = "https://github.inl.gov/genesis/prometheus_api.git?rev=95c32b5034c8ca84957c386e5bbe87025aed819b" },
+    { name = "prometheus-api", git = "https://github.inl.gov/genesis/prometheus_api.git?rev=1914b557818cd6a9c558280c5789d7a67b8a0717" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
