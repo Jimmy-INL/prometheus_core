@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<!-- Explainer page template for /how. Copy the style block and the arrowhead svg unchanged; copy the
+  components you need ("COMPONENT"), change the text, delete the rest. RULES:
+  - Reader: knows Python and git, new to Prometheus. Explain each Prometheus term at first use (glossary.md).
+    Use the code's names (_execute, agent_card.json, client-agent). ASD-STE100: short, active, one idea per sentence.
+  - One self-contained file. No script element, no event-handler attribute, no link element, no CSS import, no remote URL, no web font.
+    Click-to-reveal uses <details>. Keep "only light" and the print block.
+  - No secret: write $LITELLM_MASTER_KEY or <your key>, never a value. Escape < > & as &lt; &gt; &amp;.
+  - Cite each fact: "Source: deck 04, slide 6; prometheus_platform/...:226". Never a PDF page. Only the KB, slides, code.
+  - Use only the colors below. Roles: neutral (user), ui (chat UI), platform (backend, orchestrator),
+    gateway (LiteLLM), agent (your agent), store (DeepLynx, Valkey), ok (success, artifact), bad (failure).
+    Accent by body class: none = blue (platform, chat turn, registry), t-agent = orange (card, code, artifacts),
+    t-git = purple (git).
+  - Page: header (eyebrow "Prometheus explainer · <area>", title, one lead sentence, pills), then panels, then
+    the check panel, then the footer (topic, date, the "facts as of" line of the KB).
+    Overview: 3-5 panels (about 3 min). Details: 6-8 panels; mark deep ones class="panel deep".
+  - Panel: eyebrow (1-4 words), title (at most 10 words, states the point), at most 40 words of prose,
+    ONE visual, at most one callout, a source line. Split a panel that needs more.
+  - Visuals: flow 3-5 boxes (box text at most 12 words); steps 3-6; cols 2-3 cards of 30 words; table at most
+    6 rows x 3 columns; code at most 15 lines (.k .s .j .c spans, .m marks one line); callout (warn = trap,
+    bad = data loss, ok = tip). Lane: inline SVG, viewBox width 880, 3-4 lifelines (path.life), at most 6 numbered
+    messages (line.msg, add "back" for a reply; circle.num + text.numt; text.lbl). Every SVG has role="img",
+    a <title>, text at 13 px or more, one <tspan> per line. Arrows go left to right or top to bottom.
+  - Checks: 2-3 questions, 3-4 options in <ol class="opts" type="A">, one correct, the answer in <details>.
+    Wrong options are real misconceptions (stale-docs.md, troubleshooting.md). Move the correct letter.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="only light"><title>One chat turn, end to end · Prometheus explainer</title>
+<style>
+:root { color-scheme: only light; --ink:#121b2b; --text:#39445a; --muted:#5f6a80; --rule:#e3e7ee; --page:#fff; --panel:#f4f6fa; --panel-line:#b2bac9;
+  --code-bg:#f6f8fb; --chip-bg:#eaeff7; --mark:#fcf4c7; --arrow:#6d788d; --label:#a03043; --kw:#7442ad; --str:#397b51; --key:#2b4f9b;
+  --sans:"Inter","Segoe UI",system-ui,-apple-system,Arial,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --accent:#2b4f9b; --accent-ink:#2b4f9b; --accent-bg:#ecf1f9; }
+body.t-git { --accent:#6a50b8; --accent-ink:#5a3fa8; --accent-bg:#f0ecf9; } body.t-agent { --accent:#e59335; --accent-ink:#a56019; --accent-bg:#fcf4e7; }
+.neutral,.before { --bg:#f4f6fa; --ln:#b2bac9; --ik:#39445a; } .ui { --bg:#ebf5fc; --ln:#7fb9e4; --ik:#1f6fb2; } .platform { --bg:#ecf1f9; --ln:#4263a6; --ik:#2b4f9b; }
+.gateway { --bg:#f0ecf9; --ln:#6a50b8; --ik:#5a3fa8; } .agent,.warn { --bg:#fcf4e7; --ln:#edb777; --ik:#a56019; } .store { --bg:#e9f5f2; --ln:#4fa28c; --ik:#2f7a66; }
+.ok,.after { --bg:#f1f8e7; --ln:#b0d077; --ik:#54791e; } .bad { --bg:#f9ecef; --ln:#bc384f; --ik:#a03043; }
+* { box-sizing:border-box; } html,body { margin:0; background:var(--page); color:var(--text); }
+body { font:17px/1.55 var(--sans); print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+body::before { content:""; position:fixed; inset:0 auto 0 0; width:8px; background:var(--accent); }
+main { max-width:960px; margin:0 auto; padding:0 40px 0 56px; } h1,h2,h3,b { color:var(--ink); }
+h1 { font-size:44px; line-height:1.1; font-weight:800; margin:6px 0 14px; } h2 { font-size:30px; font-weight:800; margin:4px 0 14px; } h3 { font-size:19px; margin:0 0 6px; }
+p { margin:0 0 12px; } .hero { padding:64px 0 36px; } .lead { font-size:19px; }
+.eyebrow { display:flex; align-items:center; gap:10px; font:500 12px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent-ink); }
+.eyebrow::before { content:""; width:16px; height:2px; background:var(--accent); }
+.pill { font:500 12px/1.6 var(--mono); padding:2px 10px; margin-right:8px; border-radius:999px; background:var(--chip-bg); }
+.panel { position:relative; padding:44px 0 40px; border-top:1px solid var(--rule); }
+.panel.deep::after { content:"Details"; position:absolute; top:44px; right:0; padding:1px 10px; font:11px var(--mono); color:var(--muted); border:1px dashed var(--panel-line); border-radius:999px; }
+.src { margin:16px 0 0; font:12.5px/1.5 var(--mono); color:var(--muted); }
+code { font:.86em var(--mono); color:var(--ink); background:var(--chip-bg); padding:1px 6px; border-radius:5px; overflow-wrap:anywhere; }
+.flow { display:flex; margin:22px 0; } .box,.card { padding:14px; font-size:15px; background:var(--bg,var(--panel)); border:1.5px solid var(--ln,var(--panel-line)); border-radius:10px; }
+.box { flex:1; text-align:center; } .box b { display:block; font-size:17px; } .dashed { border-style:dashed; stroke-dasharray:6 4; }
+svg.arrow { flex:0 0 44px; height:16px; align-self:center; } svg.arrow line, svg .msg { stroke:var(--arrow); stroke-width:2; marker-end:url(#arrowhead); } .back { stroke-dasharray:6 5; }
+.steps { list-style:none; counter-reset:s; padding:0; } .steps li { counter-increment:s; position:relative; padding:3px 0 14px 54px; }
+.steps li::before { content:counter(s); position:absolute; left:0; width:34px; height:34px; border-radius:50%; background:var(--accent-ink); color:#fff; font:700 16px/34px var(--sans); text-align:center; }
+.steps b { display:block; } .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin:22px 0; }
+svg rect { fill:var(--bg); stroke:var(--ln); stroke-width:1.5; } svg text { font:600 15px var(--sans); fill:var(--ink); text-anchor:middle; }
+svg .lbl { font:500 13px var(--mono); fill:var(--label); text-anchor:start; } svg .life { stroke:var(--panel-line); stroke-dasharray:3 5; fill:none; }
+svg .num { fill:var(--accent-ink); } svg .numt { font:700 12px var(--sans); fill:#fff; }
+table { width:100%; border-collapse:collapse; margin:20px 0; font-size:15.5px; } td { padding:9px 10px; vertical-align:top; border-bottom:1px solid var(--rule); }
+th { padding:8px 10px; text-align:left; font:500 12px var(--mono); text-transform:uppercase; color:var(--muted); border-bottom:2px solid var(--accent); }
+pre.code { padding:16px 20px; overflow-x:auto; background:var(--code-bg); border-left:4px solid var(--accent); font:14px/1.6 var(--mono); color:var(--ink); }
+pre.code code { padding:0; background:none; font:inherit; } .k { color:var(--kw); } .s { color:var(--str); } .j { color:var(--key); } .c { color:var(--muted); } .m { background:var(--mark); }
+.callout { margin:20px 0; padding:14px 18px; background:var(--bg,var(--accent-bg)); border-left:4px solid var(--ln,var(--accent)); } .callout p { margin:0; }
+.q { margin:18px 0; padding:16px 20px; border:1.5px solid var(--rule); border-radius:10px; } .stem { font-weight:600; color:var(--ink); }
+summary { cursor:pointer; font:500 12.5px var(--mono); text-transform:uppercase; color:var(--accent-ink); }
+.foot { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 18px; padding:14px 0 48px; border-top:1px solid var(--rule); font:12px var(--mono); color:var(--muted); }
+@media (max-width:720px) { main { padding:0 18px 0 30px; } h1 { font-size:34px; } .flow { flex-direction:column; } svg.arrow { margin:14px auto; transform:rotate(90deg); } }
+@media print { body { font-size:11.5pt; } main { max-width:none; } .panel,.q,.flow,.cols,table,pre,.callout,svg { break-inside:avoid; } pre.code code { white-space:pre-wrap; } }
+</style>
+</head>
+<body class="t-agent">
+<!-- COMPONENT: arrowhead. Keep once, first in <body>. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6d788d"/></marker></defs></svg>
+<main>
+<header class="hero"><p class="eyebrow">Prometheus explainer · agents</p><h1>One chat turn, end to end</h1><p class="lead">What happens between a question in the chat and the result of your agent.</p>
+  <p><span class="pill">Overview</span><span class="pill">3 min</span><span class="pill">Python + git, new to Prometheus</span></p></header>
+<section class="panel"><!-- COMPONENT: panel + flow --><p class="eyebrow">The big picture</p><h2>Your agent in one picture</h2>
+  <p>The orchestrator reads your card and calls your skill. Your code does the work and publishes the results.</p>
+  <div class="flow"><div class="box neutral"><b>User</b>asks in the chat</div>
+    <svg class="arrow" viewBox="0 0 44 16" aria-hidden="true"><line x1="2" y1="8" x2="40" y2="8"/></svg>
+    <div class="box platform"><b>Orchestrator LLM</b>reads your card, picks a skill</div>
+    <svg class="arrow" viewBox="0 0 44 16" aria-hidden="true"><line x1="2" y1="8" x2="40" y2="8"/></svg>
+    <div class="box agent dashed"><b>Your <code>_execute</code></b>does the work</div></div>
+  <p class="src">Source: deck 04, slide 2</p></section>
+<!-- COMPONENTS: <ol class="steps"><li><b>Head</b>line</li></ol> · <div class="cols"><div class="card before|after"><h3>..</h3><p>..</p></div></div>
+     <pre class="code"><code>..<span class="k|s|j|c|m">..</span></code></pre> · <table class="ifthen"><thead><tr><th>If…</th><th>Then</th></tr></thead>..</table>
+     <div class="callout warn|bad|ok"><p>..</p></div> -->
+<!-- COMPONENT: checks -->
+<section class="panel"><p class="eyebrow">Check yourself</p><h2>Quick questions</h2>
+  <div class="q"><p class="stem">1. Which card fields does the orchestrator LLM read to pick a skill?</p>
+    <ol class="opts" type="A"><li>The agent <code>description</code> and <code>tags</code></li><li>The skill <code>description</code>, <code>usage_notes</code>, and parameters</li><li><code>examples</code> and <code>output_format</code></li></ol>
+    <details><summary>Show the answer</summary><p><b>B.</b> Each skill becomes one tool with those three parts.</p><p class="src">Source: deck 04, slide 6</p></details></div></section>
+<footer class="foot"><b>PROMETHEUS</b><span>Explainer · One chat turn · 2026-10-05</span><span>Facts as of prometheus_api 95c32b5 (v0.13.0) and prometheus_platform dev 22fed42</span></footer>
+</main>
+</body>
+</html>
