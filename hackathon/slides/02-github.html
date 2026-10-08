@@ -68,9 +68,9 @@ You'll do all three for real at 3:30 pm, with a practice PR. On Day 2 every team
 └── hollowmere_almanac.md</pre>
 <div class="col">
 <ul class="b">
-<li>Everyone has <strong>read</strong> access, so you work in your own <strong>fork</strong> and open PRs to <code>genesis/hackathon</code>.</li>
-<li>Changes reach <code>main</code> only through reviewed PRs.</li>
-<li>The platform repos (<code>prometheus_platform</code>, <code>prometheus_api</code>, the template) are read-only for this hackathon.</li>
+<li>Team <code>open</code> has <strong>write</strong> access. Work in your own <strong>fork</strong> (or a branch) and open PRs to <code>genesis/hackathon</code>.</li>
+<li><code>main</code> is protected: changes reach it only through a PR with one approval, and force-pushes are blocked.</li>
+<li>The platform repos (<code>prometheus_platform</code>, <code>prometheus_api</code>, the template) are read-only for this hackathon. Contributing to the platform later? <strong>Always fork it</strong>: a ruleset allows no branches there except <code>dev</code>.</li>
 </ul>
 </div>
 </div>
@@ -152,6 +152,9 @@ git config rebase.autoStash true</pre>
 <div class="callout">
 Each teammate forks separately. Everyone's PRs meet in <code>genesis/hackathon</code>.</div>
 
+<div class="callout info">
+No <code>gh</code>? Install it (deck 02 bonus) or use the <strong>Fork</strong> and <strong>Compare &amp; pull request</strong> buttons on the web.</div>
+
 </div>
 </div>
 
@@ -190,7 +193,7 @@ gh pr create --repo genesis/hackathon --base main <span class="s">\</span>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">What rebase does</div><h2><code>git pull --rebase upstream dev</code>, visually</h2></div>
+  <div class="head"><div class="eyebrow">What rebase does</div><h2><code>git pull --rebase upstream main</code>, visually</h2><p class="lede">In the hackathon repo. For the platform the same picture applies to <code>upstream/dev</code>.</p></div>
   <div class="content">
 <svg aria-label="Rebase diagram" height="380" role="img" viewbox="0 0 1400 380" width="1400">
 <style>
@@ -208,7 +211,7 @@ gh pr create --repo genesis/hackathon --base main <span class="s">\</span>
 <circle class="dv" cx="100" cy="110" r="15"></circle><circle class="dv" cx="200" cy="110" r="15"></circle>
 <circle class="dv" cx="400" cy="110" r="15"></circle><circle class="dv" cx="520" cy="110" r="15"></circle>
 <circle class="ft" cx="320" cy="180" r="15"></circle><circle class="ft" cx="430" cy="180" r="15"></circle>
-<text class="lb" x="560" y="94">upstream/dev</text>
+<text class="lb" x="560" y="94">upstream/main</text>
 <text class="lb" x="460" y="186">feature/x</text>
 <text class="cm" x="300" y="224">A</text><text class="cm" x="422" y="224">B</text>
 <text class="cm" x="385" y="80">C</text><text class="cm" x="507" y="80">D</text>
@@ -218,26 +221,17 @@ gh pr create --repo genesis/hackathon --base main <span class="s">\</span>
 <circle class="dv" cx="800" cy="110" r="15"></circle><circle class="dv" cx="900" cy="110" r="15"></circle>
 <circle class="dv" cx="1060" cy="110" r="15"></circle><circle class="dv" cx="1220" cy="110" r="15"></circle>
 <circle class="ft" cx="1290" cy="180" r="15"></circle><circle class="ft" cx="1345" cy="180" r="15"></circle>
-<text class="lb" x="1040" y="80">upstream/dev</text>
+<text class="lb" x="1040" y="80">upstream/main</text>
 <text class="cm" x="1045" y="150">C</text><text class="cm" x="1207" y="150">D</text>
 <text class="cm" x="1266" y="224">A′</text><text class="cm" x="1330" y="224">B′</text>
 <text class="lb" x="1150" y="258">feature/x</text>
 <text class="cm" x="20" y="300">Your commits A and B are replayed on top of the new tip D as new commits A′ and B′ (new SHAs).</text>
 <text class="cm" x="20" y="328">That is why the next push needs --force-with-lease, and why rebasing an open PR restarts review.</text>
 </svg>
-<div class="grid g3">
-<div class="card">
-<h4>Conflict?</h4>
-<pre class="xs">git status              <span class="c"># see files</span>
-<span class="c"># edit, then</span>
-git add <span class="p">&lt;file&gt;</span>
-git rebase --continue
-git rebase --abort      <span class="c"># bail out</span></pre>
-</div>
-
+<div class="grid g2">
 <div class="card">
 <h4>Tidy before review</h4>
-<pre class="xs">git rebase -i upstream/dev
+<pre class="xs">git rebase -i upstream/main
 <span class="c"># squash fixups, reword</span>
 git commit --fixup <span class="p">&lt;sha&gt;</span>
 git rebase -i --autosquash …</pre>
@@ -388,7 +382,7 @@ git fetch upstream
 git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
 
 mkdir -p practice/<span class="p">&lt;you&gt;</span>
-cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} <span class="s">\</span>
+cp -r ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md,tests} <span class="s">\</span>
    practice/<span class="p">&lt;you&gt;</span>/
 git status                     <span class="c"># NO .env in the list!</span>
 git add practice/<span class="p">&lt;you&gt;</span>
@@ -412,7 +406,7 @@ Double-check <code>git status</code> before committing: your agent directory con
 </div>
 
   </div>
-  <aside class="notes">genesis/hackathon: main only, unprotected, forking allowed, readable through team open. Consider a .gitignore with .env at the repo root and a ruleset requiring one approval on main.</aside>
+  <aside class="notes">Assumes genesis/hackathon main has a ruleset (1 approval, no force-push) before the event; team open has write access. The repo .gitignore already excludes .env.</aside>
 </section>
 
 <section class="slide">
@@ -471,9 +465,9 @@ Next: <strong>Your local platform</strong> (1:45 pm). Keep your platform running
   <div class="content">
 <div class="grid g3">
 <div class="card"><span class="tag">1 · org membership</span>
-<h4>Read access through the <code>open</code> team</h4>
-<p class="small">The org default permission is <strong>none</strong>. Team <code>open</code> (about 57 members) gives read access to 19 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents… Some agent repos need extra access. <strong>Write access is granted per repo</strong> by repo admins.</p>
-<p class="small">With read access you <strong>fork</strong> and open PRs from your fork.</p>
+<h4>Access through the <code>open</code> team</h4>
+<p class="small">The org default permission is <strong>none</strong>. Team <code>open</code> (88 members) gives access to 20 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents, and <code>hackathon</code> (with <strong>write</strong>). Some agent repos need extra access; repo admins grant it.</p>
+<p class="small">You <strong>fork</strong> and open PRs from your fork. For the platform this is required (only <code>dev</code> may exist as a branch there).</p>
 </div>
 
 <div class="card"><span class="tag">2 · git transport</span>
@@ -494,6 +488,9 @@ export GH_HOST=github.inl.gov</pre>
 </div>
 
 </div>
+
+<div class="callout info">
+<strong><code>gh</code>, the GitHub CLI</strong>, is used in these slides. Install it with <code>brew install gh</code> (needs admin rights), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code> (no admin). Then <code>gh auth login --hostname github.inl.gov</code>. Without <code>gh</code>: the <strong>Fork</strong> button and <strong>Compare &amp; pull request</strong> on the web do the same.</div>
 
 <div class="callout warn">
 No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm will cost you the dry run.</div>
@@ -527,7 +524,7 @@ git config rebase.autoStash true</pre>
 <div class="col">
 <div class="card">
 <h4>Why fork?</h4>
-<p class="small">Most participants have <strong>read</strong> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p>
+<p class="small"><strong>Always fork the platform</strong>: a ruleset blocks creating any branch on <code>genesis/prometheus_platform</code> except <code>dev</code>, so the PR has to go from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Forking works the same way for every other genesis repo.</p>
 </div>
 
 <div class="card">
@@ -728,7 +725,7 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 </div>
 <div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
 <div class="row" style="gap:24px">
-<div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 95c32b5</code> (v0.13.0)</span></div>
+<div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 1914b55</code> (v0.13.0)</span></div>
 <div class="box orange" style="flex:1"><b>prometheus_agent_template → your agent</b><span class="small"><code>agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
 </div>
 </div>
@@ -748,7 +745,7 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 <p class="small">For IDE and tests outside Docker, install the same commit:</p>
 <pre class="xs">uv pip install <span class="s">\</span>
  <span class="s">&quot;git+https://github.inl.gov/genesis/\</span>
-<span class="s">prometheus_api.git@95c32b5&quot;</span></pre>
+<span class="s">prometheus_api.git@1914b55&quot;</span></pre>
 </div>
 
 </div>
@@ -771,7 +768,7 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 <tbody>
 <tr class="hl">
 <td>platform <code>Makefile:22</code></td>
-<td><code>95c32b5</code> (v0.13.0 = <code>main</code>)</td>
+<td><code>1914b55</code> (v0.13.0 = <code>main</code>)</td>
 </tr>
 <tr>
 <td>platform <code>.env.example</code></td>
@@ -791,11 +788,11 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 </tr>
 <tr>
 <td>platform <code>backend/</code> and <code>tests/pyproject.toml</code></td>
-<td><code>rev = &quot;95c32b5…&quot;</code>, matching the Makefile</td>
+<td><code>rev = &quot;1914b55…&quot;</code>, matching the Makefile</td>
 </tr>
 <tr>
 <td><code>prometheus_api</code> <code>main</code></td>
-<td><code>95c32b5</code>, v0.13.0 (adds LLM tool calling), the platform pin</td>
+<td><code>1914b55</code>, v0.13.0 (LLM tool calling, AskSage profile), the platform pin</td>
 </tr>
 </tbody>
 </table>
@@ -1008,7 +1005,7 @@ git config rebase.autoStash true</pre>
 <div class="col">
 <div class="card">
 <h4>Why fork?</h4>
-<p class="small">Most participants have <strong>read</strong> access to the genesis repos. A fork gives you a place to push; the PR goes from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Contributors with write access may push branches to the org repo instead, which is common in practice.</p>
+<p class="small"><strong>Always fork the platform</strong>: a ruleset blocks creating any branch on <code>genesis/prometheus_platform</code> except <code>dev</code>, so the PR has to go from <code>&lt;you&gt;:feature/x</code> to <code>genesis:dev</code>. Forking works the same way for every other genesis repo.</p>
 </div>
 
 <div class="card">
@@ -1143,8 +1140,7 @@ Drop HS256 identity support; RS256 only,
     split keys by role in compose
 Configure agents by LLM profile, not by
     MODEL_NAME
-Stop a large STEP from 413ing behind the
-    sandbox&#x27;s request-body cap</pre>
+Register the anl_asksage LLM config profile</pre>
 <div class="callout bad">
 Avoid: <code>wip</code>, <code>fix</code>, <code>changes</code>, <code>address comments</code> as the only description of a change.</div>
 
@@ -1269,7 +1265,7 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 </tbody>
 </table>
 <div class="callout warn">
-<strong>Fork PRs to prometheus_api</strong> currently get no CI runs at all, so the six required checks never report. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.</div>
+<strong>Fork PRs to prometheus_api</strong> currently get no CI runs, so the six required checks never report and a maintainer has to merge them. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.</div>
 
 </div>
 </div>
@@ -1371,7 +1367,7 @@ unchecked; bad elements fail late.
 
 <span class="p">## Config / environment changes</span>
 <span class="k">-</span> New env var <span class="s">`MESHQA_MAX_ELEMENTS`</span> (default 2e6)
-<span class="k">-</span> Base image: PROMETHEUS_API_BASE_IMAGE_HASH=95c32b5</pre>
+<span class="k">-</span> Base image: PROMETHEUS_API_BASE_IMAGE_HASH=1914b55</pre>
 <div class="col">
 <ul class="b">
 <li><strong>Title</strong>: an imperative sentence, like the commit subject (&quot;Add…&quot;, &quot;Fix…&quot;, &quot;Stop…&quot;).</li>

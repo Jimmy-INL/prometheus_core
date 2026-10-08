@@ -69,9 +69,9 @@ hackathon/                # github.inl.gov/genesis/hackathon
 
 |||
 
-- Everyone has **read** access, so you work in your own **fork** and open PRs to `genesis/hackathon`.
-- Changes reach `main` only through reviewed PRs.
-- The platform repos (`prometheus_platform`, `prometheus_api`, the template) are read-only for this hackathon.
+- Team `open` has **write** access. Work in your own **fork** (or a branch) and open PRs to `genesis/hackathon`.
+- `main` is protected: changes reach it only through a PR with one approval, and force-pushes are blocked.
+- The platform repos (`prometheus_platform`, `prometheus_api`, the template) are read-only for this hackathon. Contributing to the platform later? **Always fork it**: a ruleset allows no branches there except `dev`.
 :::
 
 ---
@@ -132,6 +132,10 @@ git config rebase.autoStash true
 ::: callout
 Each teammate forks separately. Everyone's PRs meet in `genesis/hackathon`.
 :::
+
+::: callout info
+No `gh`? Install it (deck 02 bonus) or use the **Fork** and **Compare & pull request** buttons on the web.
+:::
 ::::
 
 ---
@@ -169,7 +173,8 @@ For the platform repo the integration branch is `dev`: `git pull --rebase upstre
 
 ---
 
-## `git pull --rebase upstream dev`, visually {eyebrow="What rebase does"}
+## `git pull --rebase upstream main`, visually {eyebrow="What rebase does"}
+> In the hackathon repo. For the platform the same picture applies to `upstream/dev`.
 
 <svg aria-label="Rebase diagram" height="380" role="img" viewbox="0 0 1400 380" width="1400">
 <style>
@@ -187,7 +192,7 @@ For the platform repo the integration branch is `dev`: `git pull --rebase upstre
 <circle class="dv" cx="100" cy="110" r="15"></circle><circle class="dv" cx="200" cy="110" r="15"></circle>
 <circle class="dv" cx="400" cy="110" r="15"></circle><circle class="dv" cx="520" cy="110" r="15"></circle>
 <circle class="ft" cx="320" cy="180" r="15"></circle><circle class="ft" cx="430" cy="180" r="15"></circle>
-<text class="lb" x="560" y="94">upstream/dev</text>
+<text class="lb" x="560" y="94">upstream/main</text>
 <text class="lb" x="460" y="186">feature/x</text>
 <text class="cm" x="300" y="224">A</text><text class="cm" x="422" y="224">B</text>
 <text class="cm" x="385" y="80">C</text><text class="cm" x="507" y="80">D</text>
@@ -197,7 +202,7 @@ For the platform repo the integration branch is `dev`: `git pull --rebase upstre
 <circle class="dv" cx="800" cy="110" r="15"></circle><circle class="dv" cx="900" cy="110" r="15"></circle>
 <circle class="dv" cx="1060" cy="110" r="15"></circle><circle class="dv" cx="1220" cy="110" r="15"></circle>
 <circle class="ft" cx="1290" cy="180" r="15"></circle><circle class="ft" cx="1345" cy="180" r="15"></circle>
-<text class="lb" x="1040" y="80">upstream/dev</text>
+<text class="lb" x="1040" y="80">upstream/main</text>
 <text class="cm" x="1045" y="150">C</text><text class="cm" x="1207" y="150">D</text>
 <text class="cm" x="1266" y="224">A′</text><text class="cm" x="1330" y="224">B′</text>
 <text class="lb" x="1150" y="258">feature/x</text>
@@ -205,24 +210,12 @@ For the platform repo the integration branch is `dev`: `git pull --rebase upstre
 <text class="cm" x="20" y="328">That is why the next push needs --force-with-lease, and why rebasing an open PR restarts review.</text>
 </svg>
 
-:::: grid 3
-::: card
-#### Conflict?
-
-```bash {.xs}
-git status              # see files
-# edit, then
-git add <file>
-git rebase --continue
-git rebase --abort      # bail out
-```
-:::
-
+:::: grid 2
 ::: card
 #### Tidy before review
 
 ```bash {.xs}
-git rebase -i upstream/dev
+git rebase -i upstream/main
 # squash fixups, reword
 git commit --fixup <sha>
 git rebase -i --autosquash …
@@ -387,7 +380,7 @@ git fetch upstream
 git switch -c feature/hello-<you> upstream/main
 
 mkdir -p practice/<you>
-cp ../hello-<you>/{agent.py,agent_card.json,README.md} \
+cp -r ../hello-<you>/{agent.py,agent_card.json,README.md,tests} \
    practice/<you>/
 git status                     # NO .env in the list!
 git add practice/<you>
@@ -412,7 +405,7 @@ Double-check `git status` before committing: your agent directory contains a `.e
 :::
 ::::
 
-Note: genesis/hackathon: main only, unprotected, forking allowed, readable through team open. Consider a .gitignore with .env at the repo root and a ruleset requiring one approval on main.
+Note: Assumes genesis/hackathon main has a ruleset (1 approval, no force-push) before the event; team open has write access. The repo .gitignore already excludes .env.
 
 ---
 
@@ -481,13 +474,13 @@ For participants who could not finish the homework: GitHub access, tokens, and f
 
 :::: grid 3
 ::: card tag="1 · org membership"
-#### Read access through the `open` team
+#### Access through the `open` team
 
 {.small}
-The org default permission is **none**. Team `open` (about 57 members) gives read access to 19 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents… Some agent repos need extra access. **Write access is granted per repo** by repo admins.
+The org default permission is **none**. Team `open` (88 members) gives access to 20 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents, and `hackathon` (with **write**). Some agent repos need extra access; repo admins grant it.
 
 {.small}
-With read access you **fork** and open PRs from your fork.
+You **fork** and open PRs from your fork. For the platform this is required (only `dev` may exist as a branch there).
 :::
 
 ::: card tag="2 · git transport"
@@ -522,6 +515,10 @@ echo $GITHUB_PAT | docker login \
 ```
 :::
 ::::
+
+::: callout info
+**`gh`, the GitHub CLI**, is used in these slides. Install it with `brew install gh` (needs admin rights), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin` (no admin). Then `gh auth login --hostname github.inl.gov`. Without `gh`: the **Fork** button and **Compare & pull request** on the web do the same.
+:::
 
 ::: callout warn
 No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm will cost you the dry run.
@@ -560,7 +557,7 @@ git config rebase.autoStash true
 #### Why fork?
 
 {.small}
-Most participants have **read** access to the genesis repos. A fork gives you a place to push; the PR goes from `<you>:feature/x` to `genesis:dev`. Contributors with write access may push branches to the org repo instead, which is common in practice.
+**Always fork the platform**: a ruleset blocks creating any branch on `genesis/prometheus_platform` except `dev`, so the PR has to go from `<you>:feature/x` to `genesis:dev`. Forking works the same way for every other genesis repo.
 :::
 
 ::: card
@@ -751,7 +748,7 @@ Hands-on is at 3:30 pm: you will open a practice PR to `genesis/hackathon`, the 
 </div>
 <div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
 <div class="row" style="gap:24px">
-<div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 95c32b5</code> (v0.13.0)</span></div>
+<div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 1914b55</code> (v0.13.0)</span></div>
 <div class="box orange" style="flex:1"><b>prometheus_agent_template → your agent</b><span class="small"><code>agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
 </div>
 </div>
@@ -780,7 +777,7 @@ For IDE and tests outside Docker, install the same commit:
 ```bash {.xs}
 uv pip install \
  "git+https://github.inl.gov/genesis/\
-prometheus_api.git@95c32b5"
+prometheus_api.git@1914b55"
 ```
 :::
 ::::
@@ -794,13 +791,13 @@ prometheus_api.git@95c32b5"
 {.sm}
 | Location | Value today |
 |---|---|
-| platform `Makefile:22` | `95c32b5` (v0.13.0 = `main`) {.hl} |
+| platform `Makefile:22` | `1914b55` (v0.13.0 = `main`) {.hl} |
 | platform `.env.example` | `#PROMETHEUS_API_BASE_IMAGE_HASH=` (keep in sync) |
 | platform `docker-compose.yml` | `${PROMETHEUS_API_BASE_IMAGE_HASH:-}`, empty default |
 | template `docker-compose.yml` | `${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}` |
 | template README / TUTORIAL | `2b3dbcf`, **stale** (v0.8.0) |
-| platform `backend/` and `tests/pyproject.toml` | `rev = "95c32b5…"`, matching the Makefile |
-| `prometheus_api` `main` | `95c32b5`, v0.13.0 (adds LLM tool calling), the platform pin |
+| platform `backend/` and `tests/pyproject.toml` | `rev = "1914b55…"`, matching the Makefile |
+| `prometheus_api` `main` | `1914b55`, v0.13.0 (LLM tool calling, AskSage profile), the platform pin |
 :::
 
 |||
@@ -970,7 +967,7 @@ git config rebase.autoStash true
 #### Why fork?
 
 {.small}
-Most participants have **read** access to the genesis repos. A fork gives you a place to push; the PR goes from `<you>:feature/x` to `genesis:dev`. Contributors with write access may push branches to the org repo instead, which is common in practice.
+**Always fork the platform**: a ruleset blocks creating any branch on `genesis/prometheus_platform` except `dev`, so the PR has to go from `<you>:feature/x` to `genesis:dev`. Forking works the same way for every other genesis repo.
 :::
 
 ::: card
@@ -1097,8 +1094,7 @@ Drop HS256 identity support; RS256 only,
     split keys by role in compose
 Configure agents by LLM profile, not by
     MODEL_NAME
-Stop a large STEP from 413ing behind the
-    sandbox's request-body cap
+Register the anl_asksage LLM config profile
 ```
 
 ::: callout bad
@@ -1158,7 +1154,7 @@ Checks are strict (the branch must be up to date). There is no ruff or mypy job 
 | gmsh_agent, agent-sandbox-mcp | none |
 
 ::: callout warn
-**Fork PRs to prometheus_api** currently get no CI runs at all, so the six required checks never report. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.
+**Fork PRs to prometheus_api** currently get no CI runs, so the six required checks never report and a maintainer has to merge them. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.
 :::
 ::::
 
@@ -1221,7 +1217,7 @@ unchecked; bad elements fail late.
 
 ## Config / environment changes
 - New env var `MESHQA_MAX_ELEMENTS` (default 2e6)
-- Base image: PROMETHEUS_API_BASE_IMAGE_HASH=95c32b5
+- Base image: PROMETHEUS_API_BASE_IMAGE_HASH=1914b55
 ```
 
 |||
