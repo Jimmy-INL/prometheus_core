@@ -795,7 +795,7 @@ prometheus_api.git@1914b55"
 | platform `.env.example` | `#PROMETHEUS_API_BASE_IMAGE_HASH=` (keep in sync) |
 | platform `docker-compose.yml` | `${PROMETHEUS_API_BASE_IMAGE_HASH:-}`, empty default |
 | template `docker-compose.yml` | `${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}` |
-| template README / TUTORIAL | `2b3dbcf`, **stale** (v0.8.0) |
+| template README / TUTORIAL | the `.env` value (it used to hard-code `2b3dbcf`, v0.8.0) |
 | platform `backend/` and `tests/pyproject.toml` | `rev = "1914b55…"`, matching the Makefile |
 | `prometheus_api` `main` | `1914b55`, v0.13.0 (LLM tool calling, AskSage profile), the platform pin |
 :::
