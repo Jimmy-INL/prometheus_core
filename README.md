@@ -54,9 +54,14 @@ cp .env.example .env
 To fill in the random-secret values in one pass instead of editing each by hand:
 
 ```bash
-for VAR in ADMIN_DB_PASSWORD AGENT_SECRET REDIS_PASSWORD BACKEND_JWT_SECRET LITELLM_MASTER_KEY LITELLM_DB_PASSWORD; do
-  perl -i -pe "s/^${VAR}=.*/${VAR}=$(python3 -c 'import secrets; print(secrets.token_hex(16))')/" .env
-done
+python3 -c "
+import re, secrets, pathlib
+path = pathlib.Path('.env')
+text = path.read_text()
+for var in ['ADMIN_DB_PASSWORD', 'AGENT_SECRET', 'REDIS_PASSWORD', 'BACKEND_JWT_SECRET', 'LITELLM_MASTER_KEY', 'LITELLM_DB_PASSWORD']:
+    text = re.sub(rf'^{var}=.*', f'{var}={secrets.token_hex(16)}', text, flags=re.M)
+path.write_text(text)
+"
 ```
 
 The LLM profile set in `LLM_CONFIG_PROFILE` (default `registry`) determines which
