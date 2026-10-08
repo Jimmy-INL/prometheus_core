@@ -312,6 +312,7 @@ Status lines appear live only with <code>&quot;capabilities&quot;: {&quot;stream
 <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px;">
 <pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
 
+ctx = str(context.context_id)
 answers = self.get_provided_inputs(context)
 x = params.get(<span class="s">&quot;x_column&quot;</span>) <span class="k">or</span> answers.get(<span class="s">&quot;x_column&quot;</span>)
 <span class="k">if</span> <span class="k">not</span> x:
@@ -431,6 +432,8 @@ Which provider answers is set by <code>LLM_CONFIG_PROFILE</code> in your agent's
 </div>
 
   </div>
+  <aside class="notes">Assumes the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY (today only the ANTHROPIC, OPENAI and AMSC keys are forwarded), and that the template agent.py LLM example has the proxy_url/with_api_key pattern.
+::::</aside>
 </section>
 
 <section class="slide">
@@ -690,7 +693,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 <p><strong>Outdated in the template docs</strong> (use this deck's versions):</p>
 <ul class="b xs" style="margin-top:6px">
 <li>curl examples use A2A v0.3 <code>message/send</code>, which now returns "Method not found"</li>
-<li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>95c32b5</code> (= <code>main</code>, v0.13.0)</li>
+<li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>1914b55</code> (= <code>main</code>, v0.13.0)</li>
 <li>local testing also needs <code>USER_IDENTITY_REQUIRED=false</code></li>
 <li>the tutorial's minimal workflow YAML is missing the required <code>description</code></li>
 <li>verifying <code>/v1/agents</code> needs the master-key header</li>
@@ -1048,7 +1051,7 @@ printf &#x27;Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n&#x27; \
 <tr>
 <td><code>skills[].requires_approval</code></td>
 <td>ext.</td>
-<td><code>true</code> → Approve/Reject before that call (<code>plan_ready</code>); covers the next call only</td>
+<td><code>true</code> → Approve/Reject before the call (<code>plan_ready</code>); one Approve covers every gated call in that step</td>
 </tr>
 <tr>
 <td><code>skills[].expected_duration_seconds</code></td>
@@ -1183,7 +1186,7 @@ docker logs hello-world-agent <span class="n">2</span>&gt;&amp;<span class="n">1
 <div class="arrow-h" style="width:40px"></div>
 <div class="box navy" style="flex:1"><b>② fetch the full card</b><span class="mono">GET {your url}/api/agent-card</span><span class="small">LiteLLM drops <code>inputSchema</code>, so the <b>direct</b> URL matters</span></div>
 <div class="arrow-h" style="width:40px"></div>
-<div class="box navy" style="flex:1"><b>③ one tool per skill</b><span class="small">LangChain <code>StructuredTool</code>, name = skill id, args = <code>inputSchema</code>. Cached 60 s in Valkey.</span></div>
+<div class="box navy" style="flex:1"><b>③ one tool per skill</b><span class="small">built by the orchestrator loop (<code>agent_loop.build_tool_catalog</code>): name = skill id, args = <code>inputSchema</code>. Cards cached 60 s in Valkey.</span></div>
 </div>
 <div class="arrow-v"><span>the orchestrator LLM calls your skill as a tool</span></div>
 <div class="row" style="gap:0; align-items:stretch">
@@ -1268,7 +1271,7 @@ Standalone curl testing without any platform: <code>EXTERNAL_AGENT_HOST=localhos
 <pre class="sm">cd hello-world
 uv sync &amp;&amp; source .venv/bin/activate
 uv pip install <span class="s">\</span>
- <span class="s">&quot;git+https://github.inl.gov/genesis/prometheus_api.git@95c32b5&quot;</span>
+ <span class="s">&quot;git+https://github.inl.gov/genesis/prometheus_api.git@1914b55&quot;</span>
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false <span class="s">\</span>
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory <span class="s">\</span>
@@ -1591,7 +1594,7 @@ path = <span class="k">await</span> self.get_artifact_file_path(
 <div class="col">
 <div class="card">
 <h4>Before you run: <code>&quot;requires_approval&quot;: true</code></h4>
-<p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval. Approval covers that call only; if the user types text instead of clicking, the call is dropped and the model re-plans. <em>Planned: a single up-front approval for any plan that will include <code>requires_approval</code> skills.</em></p>
+<p class="small">Declarative, in the card (or in a workflow's <code>metadata</code>). The orchestrator returns <code>plan_ready</code>; the UI shows the plan with Approve/Reject; your agent is called only after approval. One Approve covers every approval-gated call in that step (usually just one); if the user types text instead of clicking, the calls are dropped and the model re-plans. <em>Planned: multi-agent workflows that show the whole plan up front, to accept or change.</em></p>
 </div>
 
 <div class="card">
@@ -1874,7 +1877,7 @@ model_list:
 
 <div class="card"><span class="tag">C · platform proxy alias</span>
 <p class="small">Add <code>small</code>/<code>large</code>/<code>vision</code>/<code>embedding</code>/<code>default</code> entries to <code>prometheus_platform/litellm_config.yaml</code>, then <code>make restart</code>. Every agent on the <code>registry</code> profile gets them, with no agent change.</p>
-<p class="small">Other profiles need their key forwarded: the template compose forwards <code>ANTHROPIC</code>, <code>OPENAI</code>, and <code>AMSC</code> keys but <strong>not</strong> <code>INL_LITELLM_API_KEY</code>, <code>INL_HPC_API_KEY</code>, or <code>EMBEDDING_API_KEY</code>. Add them to <code>environment:</code>.</p>
+<p class="small">The template compose forwards every profile key (<code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>ASKSAGE_API_KEY</code>, <code>EMBEDDING_API_KEY</code>) from your <code>.env</code>. A key of your own needs an <code>environment:</code> line.</p>
 <p class="small">Model strings follow LiteLLM: <code>openai/…</code> + <code>api_base</code> for OpenAI-compatible gateways, <code>hosted_vllm/…</code>, <code>anthropic/…</code>.</p>
 </div>
 
@@ -1922,7 +1925,7 @@ answer = r.text</pre>
 <li>Structured output = force a single tool whose schema is your output model.</li>
 </ul>
 <div class="callout warn">
-Needs base image <strong>≥ v0.13.0</strong>: the template's default <code>latest</code> has it. The platform pin <code>95c32b5</code> is v0.13.0 too; the client-agent itself runs on this API.</div>
+Needs base image <strong>≥ v0.13.0</strong>: the template's default <code>latest</code> has it. The platform pin <code>1914b55</code> is v0.13.0 too; the client-agent itself runs on this API.</div>
 
 </div>
 </div>

@@ -278,6 +278,7 @@ Status lines appear live only with `"capabilities": {"streaming": true}` in the 
 ```python {.sm}
 from prometheus_api.agent import MissingInput
 
+ctx = str(context.context_id)
 answers = self.get_provided_inputs(context)
 x = params.get("x_column") or answers.get("x_column")
 if not x:
@@ -359,6 +360,8 @@ answer = r.text
 ::: callout
 Which provider answers is set by `LLM_CONFIG_PROFILE` in your agent's `.env`: `inl_litellm`, `amsc`, or `anl_asksage` (deck 03). The master key is attached only for the platform's own proxy; otherwise your profile's key is used.
 :::
+
+Note: Assumes the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY (today only the ANTHROPIC, OPENAI and AMSC keys are forwarded), and that the template agent.py LLM example has the proxy_url/with_api_key pattern.
 ::::
 
 ---
@@ -575,7 +578,7 @@ if __name__ == "__main__":
 
 <ul class="b xs" style="margin-top:6px">
 <li>curl examples use A2A v0.3 <code>message/send</code>, which now returns "Method not found"</li>
-<li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>95c32b5</code> (= <code>main</code>, v0.13.0)</li>
+<li>pin <code>prometheus_api@2b3dbcf</code> is v0.8.0; use the platform's <code>1914b55</code> (= <code>main</code>, v0.13.0)</li>
 <li>local testing also needs <code>USER_IDENTITY_REQUIRED=false</code></li>
 <li>the tutorial's minimal workflow YAML is missing the required <code>description</code></li>
 <li>verifying <code>/v1/agents</code> needs the master-key header</li>
@@ -834,7 +837,7 @@ How the orchestrator LLM decides whether and how to call you (and your result JS
 | Field | Required? | Meaning / consumer |
 |---|---|---|
 | `skills[].inputSchema` | ext. | Sent as the tool's JSON Schema (`x_*` keys stripped) and enforced. A required input the model can't fill → follow-up form (enum → dropdown). Optional fields are never asked for by the platform. {.hl} |
-| `skills[].requires_approval` | ext. | `true` → Approve/Reject before that call (`plan_ready`); covers the next call only |
+| `skills[].requires_approval` | ext. | `true` → Approve/Reject before the call (`plan_ready`); one Approve covers every gated call in that step |
 | `skills[].expected_duration_seconds` | ext. | Only for the plan card's time estimate. The call timeout is a fixed 900 s. |
 | `skills[].provides`, `derivation_rules`, `execution_priority` | optional | Ignored by the tool-calling loop; drop them |
 | `skills[].output_format`, `skills[].examples` | — | **Not read** by the orchestrator today (`examples` is a standard A2A field). Document for humans; put routing hints in `description`. |
@@ -932,7 +935,7 @@ docker logs hello-world-agent 2>&1 | grep "Registered '"
 <div class="arrow-h" style="width:40px"></div>
 <div class="box navy" style="flex:1"><b>② fetch the full card</b><span class="mono">GET {your url}/api/agent-card</span><span class="small">LiteLLM drops <code>inputSchema</code>, so the <b>direct</b> URL matters</span></div>
 <div class="arrow-h" style="width:40px"></div>
-<div class="box navy" style="flex:1"><b>③ one tool per skill</b><span class="small">LangChain <code>StructuredTool</code>, name = skill id, args = <code>inputSchema</code>. Cached 60 s in Valkey.</span></div>
+<div class="box navy" style="flex:1"><b>③ one tool per skill</b><span class="small">built by the orchestrator loop (<code>agent_loop.build_tool_catalog</code>): name = skill id, args = <code>inputSchema</code>. Cards cached 60 s in Valkey.</span></div>
 </div>
 <div class="arrow-v"><span>the orchestrator LLM calls your skill as a tool</span></div>
 <div class="row" style="gap:0; align-items:stretch">
@@ -998,7 +1001,7 @@ Standalone curl testing without any platform: `EXTERNAL_AGENT_HOST=localhost EXT
 cd hello-world
 uv sync && source .venv/bin/activate
 uv pip install \
- "git+https://github.inl.gov/genesis/prometheus_api.git@95c32b5"
+ "git+https://github.inl.gov/genesis/prometheus_api.git@1914b55"
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false \
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory \
@@ -1194,7 +1197,7 @@ Priority: `json_type` → MIME → tags → extension. **Set `mime_type`.** `fil
 #### Before you run: `"requires_approval": true`
 
 {.small}
-Declarative, in the card (or in a workflow's `metadata`). The orchestrator returns `plan_ready`; the UI shows the plan with Approve/Reject; your agent is called only after approval. Approval covers that call only; if the user types text instead of clicking, the call is dropped and the model re-plans. *Planned: a single up-front approval for any plan that will include `requires_approval` skills.*
+Declarative, in the card (or in a workflow's `metadata`). The orchestrator returns `plan_ready`; the UI shows the plan with Approve/Reject; your agent is called only after approval. One Approve covers every approval-gated call in that step (usually just one); if the user types text instead of clicking, the calls are dropped and the model re-plans. *Planned: multi-agent workflows that show the whole plan up front, to accept or change.*
 :::
 
 ::: card
@@ -1419,7 +1422,7 @@ A PR to `prometheus_api` (base `main`).
 Add `small`/`large`/`vision`/`embedding`/`default` entries to `prometheus_platform/litellm_config.yaml`, then `make restart`. Every agent on the `registry` profile gets them, with no agent change.
 
 {.small}
-Other profiles need their key forwarded: the template compose forwards `ANTHROPIC`, `OPENAI`, and `AMSC` keys but **not** `INL_LITELLM_API_KEY`, `INL_HPC_API_KEY`, or `EMBEDDING_API_KEY`. Add them to `environment:`.
+The template compose forwards every profile key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AMSC_I2_API_KEY`, `INL_LITELLM_API_KEY`, `INL_HPC_API_KEY`, `ASKSAGE_API_KEY`, `EMBEDDING_API_KEY`) from your `.env`. A key of your own needs an `environment:` line.
 
 {.small}
 Model strings follow LiteLLM: `openai/…` + `api_base` for OpenAI-compatible gateways, `hosted_vllm/…`, `anthropic/…`.
@@ -1470,7 +1473,7 @@ answer = r.text
 - Structured output = force a single tool whose schema is your output model.
 
 ::: callout warn
-Needs base image **≥ v0.13.0**: the template's default `latest` has it. The platform pin `95c32b5` is v0.13.0 too; the client-agent itself runs on this API.
+Needs base image **≥ v0.13.0**: the template's default `latest` has it. The platform pin `1914b55` is v0.13.0 too; the client-agent itself runs on this API.
 :::
 ::::
 
