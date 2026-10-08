@@ -19,7 +19,7 @@ COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
 
 # Override this to pin a specific prometheus_api base image.
-PROMETHEUS_API_BASE_IMAGE_HASH ?= 95c32b5
+PROMETHEUS_API_BASE_IMAGE_HASH ?= 1914b55
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include

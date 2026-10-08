@@ -217,7 +217,7 @@ with 6 holes" can then start from inputs the model no longer sees in the transcr
 
 ### 3.6 LLM client and bounds
 
-* Uses the `prometheus_api.llm_client` tool-calling API (base image ≥ `95c32b5`).
+* Uses the `prometheus_api.llm_client` tool-calling API (base image ≥ `1914b55`).
   Tools are `ToolDefinition`s sent with `tool_choice="auto"`, calls come from
   `response.tool_calls` (`arguments_error` set on malformed JSON), and the transcript is
   built with `assistant_message(response)` / `tool_result_message(call_id, content)`.

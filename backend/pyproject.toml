@@ -55,7 +55,7 @@ dev = [
 # PROMETHEUS_API_BASE_IMAGE_HASH in the root Makefile.
 # Working on prometheus_api locally? Override with:
 #   uv pip install -e /path/to/prometheus_api
-prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", rev = "95c32b5034c8ca84957c386e5bbe87025aed819b" }
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", rev = "1914b557818cd6a9c558280c5789d7a67b8a0717" }
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

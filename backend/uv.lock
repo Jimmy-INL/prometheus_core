@@ -391,7 +391,7 @@ dev = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "fakeredis", specifier = ">=2.38" },
     { name = "mypy", specifier = ">=1.15" },
-    { name = "prometheus-api", git = "https://github.inl.gov/genesis/prometheus_api.git?rev=95c32b5034c8ca84957c386e5bbe87025aed819b" },
+    { name = "prometheus-api", git = "https://github.inl.gov/genesis/prometheus_api.git?rev=1914b557818cd6a9c558280c5789d7a67b8a0717" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
     { name = "ruff", specifier = ">=0.11" },
@@ -2331,7 +2331,7 @@ wheels = [
 [[package]]
 name = "prometheus-api"
 version = "0.13.0"
-source = { git = "https://github.inl.gov/genesis/prometheus_api.git?rev=95c32b5034c8ca84957c386e5bbe87025aed819b#95c32b5034c8ca84957c386e5bbe87025aed819b" }
+source = { git = "https://github.inl.gov/genesis/prometheus_api.git?rev=1914b557818cd6a9c558280c5789d7a67b8a0717#1914b557818cd6a9c558280c5789d7a67b8a0717" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "fsspec" },

@@ -19,7 +19,7 @@ dependencies = [
 
 [tool.uv.sources]
 # Match the prometheus_api base image used by the running platform.
-prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", rev = "95c32b5034c8ca84957c386e5bbe87025aed819b" }
+prometheus-api = { git = "https://github.inl.gov/genesis/prometheus_api.git", rev = "1914b557818cd6a9c558280c5789d7a67b8a0717" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
