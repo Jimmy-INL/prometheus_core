@@ -1,0 +1,14 @@
+# Secrets: never commit an .env file
+.env*
+!.env.example
+
+# Pages that /explain makes
+.explainers/
+
+# Python and tool caches
+__pycache__/
+*.py[cod]
+.venv/
+
+# Claude Code worktrees of background sessions
+.claude/worktrees/
