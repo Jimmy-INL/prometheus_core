@@ -81,7 +81,7 @@ function RailButton({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className={`flex items-center justify-center rounded-lg transition-colors ${
+      className={`flex shrink-0 items-center justify-center rounded-lg transition-colors ${
         size === 32 ? "size-8" : "size-10"
       } ${
         active
@@ -161,15 +161,9 @@ export function StatusPanel({ collapsed, onCollapse, onExpand }: StatusPanelProp
             Artifacts{artifacts.length > 0 && ` (${artifacts.length})`}
           </button>
         </div>
-        <button
-          type="button"
-          title="Collapse status panel"
-          aria-label="Collapse status panel"
-          onClick={onCollapse}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-base-content/60 transition-colors hover:bg-base-300 hover:text-base-content"
-        >
+        <RailButton size={32} label="Collapse status panel" onClick={onCollapse}>
           <PanelRight size={18} />
-        </button>
+        </RailButton>
       </div>
 
       {tab === "jobs" ? (
