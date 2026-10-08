@@ -26,7 +26,7 @@
 <div class="card acc">
 <div class="kpi"><span class="v">2</span><span class="l">~15 min</span></div>
 <h3>Scaffold</h3>
-<p class="small">Clone <code>prometheus_agent_template</code> and run <code>setup_agent.py</code> with a <strong>unique</strong> name (<code>hello-&lt;you&gt;</code>).</p>
+<p class="small">Update the template you cloned for homework and run <code>setup_agent.py</code> with a <strong>unique</strong> name (<code>hello-&lt;you&gt;</code>).</p>
 </div>
 
 <div class="card acc">
@@ -63,7 +63,7 @@ Folder layout: <code>~/prometheus/{prometheus_platform, prometheus_agent_templat
   <div class="content">
 <div class="grid g2" style="gap:26px;">
 <pre class="xs">cd ~/prometheus/prometheus_platform
-git pull                      <span class="c"># latest dev</span>
+git pull --rebase upstream dev   <span class="c"># latest dev</span>
 make up
 make ps
 
@@ -92,13 +92,14 @@ Platform not up yet? Use the <strong>bonus slide</strong> at the end of this dec
   <div class="head"><div class="eyebrow">Refresh · 2</div><h2>Agent: scaffold and edit</h2></div>
   <div class="content">
 <pre class="sm">cd ~/prometheus/prometheus_agent_template   <span class="c"># cloned for homework</span>
-git pull
+git pull               <span class="c"># or: git pull --rebase upstream main (fork)</span>
 python3 setup_agent.py
 <span class="c">#  name: Hello &lt;You&gt;   → card &quot;Hello &lt;You&gt; Agent&quot;</span>
 <span class="c">#  skill id: hello_&lt;you&gt;_greeting   (unique!)</span>
 <span class="c">#  output dir: ../hello-&lt;you&gt;</span>
 <span class="c">#  copy secrets from ../prometheus_platform/.env? yes</span>
 cd ../hello-<span class="p">&lt;you&gt;</span>
+grep PROMETHEUS_API_BASE_IMAGE_HASH .env   <span class="c"># 1914b55, set by setup_agent.py</span>
 
 <span class="c"># edit agent_card.json: skill description + usage_notes</span>
 <span class="c">#   &quot;Greets a person by name. Use when the user asks</span>
@@ -110,7 +111,9 @@ cd ../hello-<span class="p">&lt;you&gt;</span>
 <span class="c">#   return {&quot;status&quot;: &quot;success&quot;,</span>
 <span class="c">#           &quot;greeting&quot;: f&quot;Hello, {name}, from &lt;you&gt;!&quot;}</span>
 
-uv sync &amp;&amp; uv run pytest    <span class="c"># update the tests too</span>
+uv sync
+uv pip install <span class="s">&quot;git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55&quot;</span>
+uv run pytest    <span class="c"># update the tests; keep one send_status_update</span>
 uv run ruff check .
 make up          <span class="c"># joins the platform network</span>
 make logs</pre>
@@ -162,6 +165,14 @@ docker restart client-agent</pre>
 <td><code>ModuleNotFoundError</code> in the container</td>
 <td>add a <code>COPY</code> line to the Dockerfile</td>
 </tr>
+<tr>
+<td><code>No module named 'prometheus_api'</code> in <code>uv run pytest</code></td>
+<td><code>uv pip install &quot;git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55&quot;</code></td>
+</tr>
+<tr>
+<td>test fails: no status update sent</td>
+<td>keep a <code>send_status_update</code> in <code>_execute</code>, or drop that assertion</td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -183,7 +194,7 @@ git fetch upstream
 git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
 
 mkdir -p practice/<span class="p">&lt;you&gt;</span>
-cp ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md} <span class="s">\</span>
+cp -r ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md,tests} <span class="s">\</span>
    practice/<span class="p">&lt;you&gt;</span>/
 git status                     <span class="c"># NO .env in the list!</span>
 git add practice/<span class="p">&lt;you&gt;</span>
@@ -231,6 +242,10 @@ Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <c
 <tr>
 <td><code>gh</code> talks to github.com</td>
 <td><code>export GH_HOST=github.inl.gov</code></td>
+</tr>
+<tr>
+<td>no <code>gh</code></td>
+<td><code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>; or use the Fork / Compare &amp; pull request buttons</td>
 </tr>
 </tbody>
 </table>

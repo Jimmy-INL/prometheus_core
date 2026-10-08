@@ -28,7 +28,7 @@ Your platform from the homework is up and current, and you are logged in with an
 ### Scaffold
 
 {.small}
-Clone `prometheus_agent_template` and run `setup_agent.py` with a **unique** name (`hello-<you>`).
+Update the template you cloned for homework and run `setup_agent.py` with a **unique** name (`hello-<you>`).
 :::
 
 ::: card acc
@@ -71,7 +71,7 @@ Folder layout: `~/prometheus/{prometheus_platform, prometheus_agent_template, he
 :::: grid 2 gap=26px
 ```bash {.xs}
 cd ~/prometheus/prometheus_platform
-git pull                      # latest dev
+git pull --rebase upstream dev   # latest dev
 make up
 make ps
 
@@ -100,13 +100,14 @@ Platform not up yet? Use the **bonus slide** at the end of this deck, and the bo
 
 ```bash {.sm}
 cd ~/prometheus/prometheus_agent_template   # cloned for homework
-git pull
+git pull               # or: git pull --rebase upstream main (fork)
 python3 setup_agent.py
 #  name: Hello <You>   → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
 #  output dir: ../hello-<you>
 #  copy secrets from ../prometheus_platform/.env? yes
 cd ../hello-<you>
+grep PROMETHEUS_API_BASE_IMAGE_HASH .env   # 1914b55, set by setup_agent.py
 
 # edit agent_card.json: skill description + usage_notes
 #   "Greets a person by name. Use when the user asks
@@ -118,7 +119,9 @@ cd ../hello-<you>
 #   return {"status": "success",
 #           "greeting": f"Hello, {name}, from <you>!"}
 
-uv sync && uv run pytest    # update the tests too
+uv sync
+uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55"
+uv run pytest    # update the tests; keep one send_status_update
 uv run ruff check .
 make up          # joins the platform network
 make logs
@@ -153,6 +156,8 @@ docker restart client-agent
 | never routed | sharpen the description; `docker restart client-agent` |
 | LLM 401 (if you added LLM calls) | the key for your `LLM_CONFIG_PROFILE` in `.env` |
 | `ModuleNotFoundError` in the container | add a `COPY` line to the Dockerfile |
+| `No module named 'prometheus_api'` in `uv run pytest` | `uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55"` |
+| test fails: no status update sent | keep a `send_status_update` in `_execute`, or drop that assertion |
 :::
 
 ---
@@ -171,7 +176,7 @@ git fetch upstream
 git switch -c feature/hello-<you> upstream/main
 
 mkdir -p practice/<you>
-cp ../hello-<you>/{agent.py,agent_card.json,README.md} \
+cp -r ../hello-<you>/{agent.py,agent_card.json,README.md,tests} \
    practice/<you>/
 git status                     # NO .env in the list!
 git add practice/<you>
@@ -207,6 +212,7 @@ Repo **`genesis/hackathon`**, base `main`. `--force-with-lease` only on your own
 | rebase conflict | edit → `git add` → `git rebase --continue` (or `--abort`) |
 | push rejected (non-fast-forward) | after a rebase: `git push --force-with-lease` |
 | `gh` talks to github.com | `export GH_HOST=github.inl.gov` |
+| no `gh` | `brew install gh`, or the release binary in `~/.local/bin`; or use the Fork / Compare & pull request buttons |
 ::::
 
 Note: Practice PRs go to genesis/hackathon main under practice/&lt;user&gt;/; team agents on Day 2 go under agents/&lt;team_name&gt;/.
