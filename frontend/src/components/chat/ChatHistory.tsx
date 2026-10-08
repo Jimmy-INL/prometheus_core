@@ -3,9 +3,13 @@
  *
  * Fetches `GET /api/conversations/recent` (already user-scoped server-side —
  * see `backend/app/routers/conversations.py`) and re-fetches whenever
- * `historyVersion` changes (a turn completed, a new chat started, or a past
- * one was opened — see `lib/store/chat.ts`). Degrades to the header alone
- * when Redis is unavailable, matching the endpoint's graceful-degrade shape.
+ * `historyVersion` changes (a turn completed, New Chat was clicked, or a past
+ * chat was opened — see `lib/store/chat.ts`). Sending a new chat's first turn
+ * does not refetch: while that turn runs and the server list lacks the chat, a
+ * local pending row stands in for it at the top (`lib/store/pendingHistoryRow.ts`),
+ * and the server row replaces it once a refetch lists it. Degrades to the
+ * header alone when Redis is unavailable, matching the endpoint's
+ * graceful-degrade shape.
  * Opening a row calls `onOpenConversation` first, so the shell shows Home.
  *
  * `historyVersion` only bumps for events on the *currently open* conversation,
@@ -17,10 +21,11 @@
  * Response Handling" note for why that's future work, not this).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { chatStore, useChatState } from "@/lib/store/chat";
+import { withPendingRow } from "@/lib/store/pendingHistoryRow";
 import type { ConversationSummary } from "@/lib/api/types";
 import { ChatHistoryItem } from "./ChatHistoryItem";
 
@@ -32,16 +37,27 @@ interface Props {
 }
 
 export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
-  const { conversationId, resumingConversationId, historyVersion } = useChatState();
+  const { conversationId, resumingConversationId, historyVersion, items, awaiting } = useChatState();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Whether the last fetch returned `available: true`; the local pending row is
+  // merged only then, so a Valkey outage keeps the header-only state.
+  const [available, setAvailable] = useState(false);
+  // Ids deleted here, so a deleted open conversation gets no local pending row back.
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(() => new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(() => {
     void api
       .getRecentConversations()
-      .then((res) => setConversations(res.available ? res.conversations : []))
-      .catch(() => setConversations([]))
+      .then((res) => {
+        setAvailable(res.available);
+        setConversations(res.available ? res.conversations : []);
+      })
+      .catch(() => {
+        setAvailable(false);
+        setConversations([]);
+      })
       .finally(() => setLoaded(true));
   }, []);
 
@@ -51,7 +67,22 @@ export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
     refresh();
   }, [historyVersion, refresh]);
 
-  const anyPending = conversations.some((c) => c.pending);
+  const firstUser = items.find((it) => it.kind === "user");
+  const firstQuery = firstUser?.kind === "user" ? firstUser.text : null;
+  const rows = useMemo(
+    () =>
+      available
+        ? withPendingRow(conversations, {
+            conversationId: conversationId && !deletedIds.has(conversationId) ? conversationId : null,
+            firstQuery,
+            awaiting,
+            now: new Date().toISOString(),
+          })
+        : conversations,
+    [available, conversations, conversationId, deletedIds, firstQuery, awaiting],
+  );
+
+  const anyPending = rows.some((c) => c.pending);
   useEffect(() => {
     if (!anyPending) return;
     pollRef.current = setInterval(refresh, PENDING_POLL_MS);
@@ -71,9 +102,9 @@ export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
         New Chat
       </button>
 
-      {loaded && conversations.length > 0 && (
+      {loaded && rows.length > 0 && (
         <div className="flex flex-col gap-0.5">
-          {conversations.map((c) => (
+          {rows.map((c) => (
             <ChatHistoryItem
               key={c.conversation_id}
               conversation={c}
@@ -90,11 +121,12 @@ export function ChatHistory({ onNewChat, onOpenConversation }: Props) {
                   prev.map((it) => (it.conversation_id === c.conversation_id ? { ...it, title } : it)),
                 )
               }
-              onDeleted={() =>
+              onDeleted={() => {
+                setDeletedIds((prev) => new Set(prev).add(c.conversation_id));
                 setConversations((prev) =>
                   prev.filter((it) => it.conversation_id !== c.conversation_id),
-                )
-              }
+                );
+              }}
             />
           ))}
         </div>

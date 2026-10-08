@@ -42,7 +42,9 @@ function relativeDay(timestamp: string): string {
 
 export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onDeleted }: Props) {
   const [renaming, setRenaming] = useState(false);
-  const [title, setTitle] = useState(conversation.title || conversation.query || "Untitled chat");
+  const label = conversation.title || conversation.query || "Untitled chat";
+  // Holds the rename input only; the row itself renders `label` from props.
+  const [title, setTitle] = useState(label);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -51,9 +53,9 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
 
   async function submitRename(): Promise<void> {
     const next = title.trim();
-    if (!next || next === conversation.title) {
+    if (!next || next === label) {
       setRenaming(false);
-      setTitle(conversation.title || conversation.query || "Untitled chat");
+      setTitle(label);
       return;
     }
     setBusy(true);
@@ -95,7 +97,7 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
             if (e.key === "Enter") void submitRename();
             if (e.key === "Escape") {
               setRenaming(false);
-              setTitle(conversation.title || conversation.query || "Untitled chat");
+              setTitle(label);
             }
           }}
           onBlur={() => void submitRename()}
@@ -104,8 +106,6 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
       </div>
     );
   }
-
-  const label = conversation.title || conversation.query || "Untitled chat";
 
   return (
     <div
@@ -124,7 +124,7 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
             active ? "font-semibold text-base-content" : "text-base-content/80"
           }`}
         >
-          {title}
+          {label}
         </span>
         {conversation.pending && (
           <Loader2
@@ -151,6 +151,7 @@ export function ChatHistoryItem({ conversation, active, onSelect, onRenamed, onD
             <button
               onClick={() => {
                 closeMenu();
+                setTitle(label);
                 setRenaming(true);
               }}
             >

@@ -346,7 +346,9 @@ first turn — see `agents/client-agent/orchestrator/chat_flow.py`), which wins
 over the raw first query. Soft-deleted conversations are excluded. `pending`
 is true while a turn is actively running against that conversation right now
 (`agent:status:{id}.final is False`) — a conversation the caller isn't
-currently viewing may still have work in flight.
+currently viewing may still have work in flight. A new conversation is listed
+from the start of its first turn, with the raw first query as its `title` and
+`pending: true`, until the turn ends and the LLM-generated title lands.
 
 ```json
 {
