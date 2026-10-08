@@ -124,6 +124,7 @@ LITELLM_MASTER_KEY=your-litellm-master-key
 LLM_CONFIG_PROFILE=openai
 LLM_CONFIG_FILE=
 OPENAI_API_KEY=your-openai-key
+ASKSAGE_API_KEY=your-asksage-key
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -183,6 +184,7 @@ my-analysis-agent:
     - INL_HPC_API_KEY=${INL_HPC_API_KEY:-}
     - INL_LITELLM_API_KEY=${INL_LITELLM_API_KEY:-}
     - AMSC_I2_API_KEY=${AMSC_I2_API_KEY:-}
+    - ASKSAGE_API_KEY=${ASKSAGE_API_KEY:-}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:

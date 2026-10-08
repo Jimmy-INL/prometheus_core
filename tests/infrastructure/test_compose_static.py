@@ -80,6 +80,7 @@ def test_client_agent_receives_selectable_llm_configuration(compose_data):
         "INL_HPC_API_KEY",
         "INL_LITELLM_API_KEY",
         "AMSC_I2_API_KEY",
+        "ASKSAGE_API_KEY",
     ):
         assert client_env[key] == f"${{{key}:-}}"
 

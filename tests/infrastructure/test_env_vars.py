@@ -21,6 +21,7 @@ LLM_CONFIG_VARS = [
     "INL_HPC_API_KEY",
     "INL_LITELLM_API_KEY",
     "AMSC_I2_API_KEY",
+    "ASKSAGE_API_KEY",
 ]
 
 
