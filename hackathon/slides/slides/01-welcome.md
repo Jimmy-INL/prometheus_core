@@ -25,7 +25,7 @@ Note: ANL welcoming address goes first. Then walk the agenda, the architecture o
 </div>
 
 ::: callout info
-We assume your platform already starts with `make up-fg` and DeepLynx is set up. Not quite there? Each deck ends with **bonus catch-up slides**, and mentors will help.
+We assume your platform already starts with `make up` and DeepLynx is set up. Not quite there? Each deck ends with **bonus catch-up slides**, and mentors will help.
 :::
 
 ---
@@ -249,7 +249,7 @@ The PNG artifact renders in the conversation, with the orchestrator's summary.
 | Routing the user's request to your skill | a good card |
 | File storage, upload handling, viewers | artifacts, DeepLynx |
 | Forms for missing inputs and follow-up questions | `required` parameters, `send_input_required` |
-| Live progress in the chat | `send_status_update` |
+| Live progress in the chat | `send_status_update`, with `"streaming": true` in the card |
 | Approval before costly steps | `"requires_approval": true` |
 | Background tasks for long jobs | `declare_long_running` |
 | LLM access, any of several providers | `self.llm_client(...)` + `LLM_CONFIG_PROFILE` |
@@ -346,10 +346,11 @@ For participants who could not finish the homework. Work through these with a me
 | Access to `github.inl.gov/genesis` | open `github.inl.gov/genesis/prometheus_platform` in the browser | ask the organizer to add you to the org; deck 02 bonus |
 | Docker installed and running | `docker info`, `docker compose version` (≥ 2.20) | install Docker Desktop and start it |
 | Both repos cloned | `ls ~/prometheus` shows `prometheus_platform` and `prometheus_agent_template` | deck 02 bonus (clone commands) |
-| PAT created, Docker logged in | `docker pull containers.github.inl.gov/genesis/prometheus_api:95c32b5` | deck 03 bonus (registry login) |
-| Platform starts | `make up-fg` in `prometheus_platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
+| PAT created, Docker logged in | `docker pull containers.github.inl.gov/genesis/prometheus_api:1914b55` | deck 03 bonus (registry login) |
+| Platform starts | `make up` in `prometheus_platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
 | DeepLynx (if no `deeplynx.inl.gov` access) | `http://localhost:3000` shows the DeepLynx UI | deck 03 bonus (local DeepLynx) |
 | `uv` (for the agent session) | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| `gh` (decks 02 and 05) | `gh auth status --hostname github.inl.gov` | `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. No `gh`? Use the Fork and "Compare & pull request" buttons on the web. |
 
 ---
 
@@ -560,7 +561,7 @@ A required input the model couldn't fill, an `ask_user` question, or an agent's 
 
 ::: card tag="plan_ready"
 {.small}
-The next call has `requires_approval`. Approve/Reject covers that call only; steps that already ran stay done. *Planned: one up-front approval when a plan contains such skills.*
+The next step has a `requires_approval` call. One Approve covers every approval-gated call in that step (usually just one); steps that already ran stay done. *Planned: multi-agent workflows that show the whole plan up front, to accept or change.*
 :::
 
 ::: card tag="completed / answer"
@@ -686,11 +687,11 @@ Without DeepLynx configured, user uploads are **not stored** and agents cannot s
 | `agents/form-filler-agent` | form-filler-agent | `fill_form`: extract structured data per a JSON schema | yes |
 | `agents/osti-research-agent` | osti-research-agent | `search_literature`: OSTI search, PDF download, synthesis | yes |
 | `agents/synthesis-agent` | synthesis-agent | `synthesize_material_analysis`. **About 100 lines: the best small example.** | yes |
-| `debug-agents/artifact-debug-agent` | artifact-debug-agent | `create_svg_artifact`, `convert_svg_to_png`, `create_json_artifact`, plus a workflow | `DEBUG_AGENTS` {.hl} |
-| `debug-agents/corrosion-agent` | corrosion-analysis-agent | Mock specialist; demonstrates `send_input_required` and context state | `DEBUG_AGENTS` {.hl} |
-| `debug-agents/material-data-agent` | material-data-agent | `list_materials`, `get_material_data`, `get_regulatory_limits`… | `DEBUG_AGENTS` {.hl} |
-| `debug-agents/radiation-agent`, `thermal-agent` | …-analysis-agent | Mock specialists; thermal emits a JSON type with its own viewer | `DEBUG_AGENTS` {.hl} |
-| `debug-agents/thread-pattern-agent` | thread-pattern-debug-agent | Reference for `PrometheusWorker` and `declare_long_running` | `DEBUG_AGENTS` {.hl} |
+| `agents/debug-agents/artifact-debug-agent` | artifact-debug-agent | `create_svg_artifact`, `convert_svg_to_png`, `create_json_artifact`, plus a workflow | `DEBUG_AGENTS` {.hl} |
+| `agents/debug-agents/corrosion-agent` | corrosion-analysis-agent | Mock specialist; demonstrates `send_input_required` and context state | `DEBUG_AGENTS` {.hl} |
+| `agents/debug-agents/material-data-agent` | material-data-agent | `list_materials`, `get_material_data`, `get_regulatory_limits`… | `DEBUG_AGENTS` {.hl} |
+| `agents/debug-agents/radiation-agent`, `thermal-agent` | …-analysis-agent | Mock specialists; thermal emits a JSON type with its own viewer | `DEBUG_AGENTS` {.hl} |
+| `agents/debug-agents/thread-pattern-agent` | thread-pattern-debug-agent | Reference for `PrometheusWorker` and `declare_long_running` | `DEBUG_AGENTS` {.hl} |
 
 {.tiny}
 The route key is the card `name` lowercased with spaces turned into hyphens. The platform workflow `comprehensive_material_analysis` chains the debug agents, so it only works with `DEBUG_AGENTS=true`.
@@ -774,8 +775,8 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 </div>
 <div class="arrow-v"><span>CI builds the base image  containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
-<div class="box sky" style="width:520px"><b>prometheus_platform</b> <span class="small">(default branch <code>dev</code>)</span><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in the <code>Makefile</code>.</span></div>
-<div class="box orange" style="width:520px"><b>prometheus_agent_template</b><span><code>setup_agent.py</code> scaffolds a new agent repo. Its <code>Dockerfile</code> is <code>FROM</code> the base image (default tag <code>latest</code>).</span></div>
+<div class="box sky" style="width:520px"><b>prometheus_platform</b> <span class="small">(default branch <code>dev</code>)</span><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in the <code>Makefile</code> (only in-tree agents read it).</span></div>
+<div class="box orange" style="width:520px"><b>prometheus_agent_template</b><span><code>setup_agent.py</code> scaffolds a new agent and writes the platform's pin into its <code>.env</code>. Its <code>docker-compose.yml</code> falls back to <code>latest</code> if none is set.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>
@@ -787,7 +788,7 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 </div>
 
 ::: callout
-No git submodules and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
+No git submodules required, and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
 :::
 
 ---
@@ -798,14 +799,14 @@ No git submodules and no pip dependency between platform and agents. The **base 
 | You may read… | Reality on dev / main |
 |---|---|
 | Chainlit UI on :8500 | React SPA :5150 + FastAPI backend :8600 |
-| `message/send`, `params.context.skillId` | `SendMessage`, `metadata.skillId`, `contextId` |
+| `message/send`, `params.context.skillId` (old template README/TUTORIAL curl) | `SendMessage`, `metadata.skillId`, `contextId`, header `A2A-Version: 1.0` |
 | implement `process_analysis()` | implement `_execute(params, context, event_queue)` |
 | `request_user_approval(...)` | does not exist; use `requires_approval` or `send_input_required` |
 | login `prometheus` / `prometheus` | a setup wizard creates the first admin |
 | image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in the `Makefile` |
 | `PROMETHEUS_DEBUG` | `DEBUG_AGENTS=true` |
-| `planner.py`, upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` |
-| pin `prometheus_api@2b3dbcf` | that is v0.8.0; the platform uses `95c32b5` (v0.13.0) |
+| an up-front planner (`planner.py`), upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` (PR #104) |
+| pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | that is v0.8.0; the platform uses `1914b55` (v0.13.0), and new agents get it in `.env` |
 :::
 
 ---

@@ -33,7 +33,7 @@
 <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A team</h3><p class="small">4–5 people, a name, and a room for Day 2.</p></div>
 </div>
 <div class="callout info">
-We assume your platform already starts with <code>make up-fg</code> and DeepLynx is set up. Not quite there? Each deck ends with <strong>bonus catch-up slides</strong>, and mentors will help.</div>
+We assume your platform already starts with <code>make up</code> and DeepLynx is set up. Not quite there? Each deck ends with <strong>bonus catch-up slides</strong>, and mentors will help.</div>
 
   </div>
 </section>
@@ -287,7 +287,7 @@ What you will use from today: <strong>uploads and artifacts</strong> (01, 03), <
 </tr>
 <tr>
 <td>Live progress in the chat</td>
-<td><code>send_status_update</code></td>
+<td><code>send_status_update</code>, with <code>&quot;streaming&quot;: true</code> in the card</td>
 </tr>
 <tr>
 <td>Approval before costly steps</td>
@@ -438,12 +438,12 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 <tr>
 <td>PAT created, Docker logged in</td>
-<td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:95c32b5</code></td>
+<td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:1914b55</code></td>
 <td>deck 03 bonus (registry login)</td>
 </tr>
 <tr>
 <td>Platform starts</td>
-<td><code>make up-fg</code> in <code>prometheus_platform</code>, then <code>http://localhost:5150</code></td>
+<td><code>make up</code> in <code>prometheus_platform</code>, then <code>http://localhost:5150</code></td>
 <td>deck 03 bonus (<code>.env</code>, &quot;the stack won't start&quot;)</td>
 </tr>
 <tr>
@@ -455,6 +455,11 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 <td><code>uv</code> (for the agent session)</td>
 <td><code>uv --version</code></td>
 <td><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></td>
+</tr>
+<tr>
+<td><code>gh</code> (decks 02 and 05)</td>
+<td><code>gh auth status --hostname github.inl.gov</code></td>
+<td><code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login --hostname github.inl.gov</code>. No <code>gh</code>? Use the Fork and &quot;Compare &amp; pull request&quot; buttons on the web.</td>
 </tr>
 </tbody>
 </table>
@@ -775,7 +780,7 @@ Per skill the model sees your <strong>description</strong>, <code>usage_notes</c
 </div>
 
 <div class="card"><span class="tag">plan_ready</span>
-<p class="small">The next call has <code>requires_approval</code>. Approve/Reject covers that call only; steps that already ran stay done. <em>Planned: one up-front approval when a plan contains such skills.</em></p>
+<p class="small">The next step has a <code>requires_approval</code> call. One Approve covers every approval-gated call in that step (usually just one); steps that already ran stay done. <em>Planned: multi-agent workflows that show the whole plan up front, to accept or change.</em></p>
 </div>
 
 <div class="card"><span class="tag">completed / answer</span>
@@ -958,31 +963,31 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 <td>yes</td>
 </tr>
 <tr class="hl">
-<td><code>debug-agents/artifact-debug-agent</code></td>
+<td><code>agents/debug-agents/artifact-debug-agent</code></td>
 <td>artifact-debug-agent</td>
 <td><code>create_svg_artifact</code>, <code>convert_svg_to_png</code>, <code>create_json_artifact</code>, plus a workflow</td>
 <td><code>DEBUG_AGENTS</code></td>
 </tr>
 <tr class="hl">
-<td><code>debug-agents/corrosion-agent</code></td>
+<td><code>agents/debug-agents/corrosion-agent</code></td>
 <td>corrosion-analysis-agent</td>
 <td>Mock specialist; demonstrates <code>send_input_required</code> and context state</td>
 <td><code>DEBUG_AGENTS</code></td>
 </tr>
 <tr class="hl">
-<td><code>debug-agents/material-data-agent</code></td>
+<td><code>agents/debug-agents/material-data-agent</code></td>
 <td>material-data-agent</td>
 <td><code>list_materials</code>, <code>get_material_data</code>, <code>get_regulatory_limits</code>…</td>
 <td><code>DEBUG_AGENTS</code></td>
 </tr>
 <tr class="hl">
-<td><code>debug-agents/radiation-agent</code>, <code>thermal-agent</code></td>
+<td><code>agents/debug-agents/radiation-agent</code>, <code>thermal-agent</code></td>
 <td>…-analysis-agent</td>
 <td>Mock specialists; thermal emits a JSON type with its own viewer</td>
 <td><code>DEBUG_AGENTS</code></td>
 </tr>
 <tr class="hl">
-<td><code>debug-agents/thread-pattern-agent</code></td>
+<td><code>agents/debug-agents/thread-pattern-agent</code></td>
 <td>thread-pattern-debug-agent</td>
 <td>Reference for <code>PrometheusWorker</code> and <code>declare_long_running</code></td>
 <td><code>DEBUG_AGENTS</code></td>
@@ -1056,8 +1061,8 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 </div>
 <div class="arrow-v"><span>CI builds the base image  containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
-<div class="box sky" style="width:520px"><b>prometheus_platform</b> <span class="small">(default branch <code>dev</code>)</span><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in the <code>Makefile</code>.</span></div>
-<div class="box orange" style="width:520px"><b>prometheus_agent_template</b><span><code>setup_agent.py</code> scaffolds a new agent repo. Its <code>Dockerfile</code> is <code>FROM</code> the base image (default tag <code>latest</code>).</span></div>
+<div class="box sky" style="width:520px"><b>prometheus_platform</b> <span class="small">(default branch <code>dev</code>)</span><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in the <code>Makefile</code> (only in-tree agents read it).</span></div>
+<div class="box orange" style="width:520px"><b>prometheus_agent_template</b><span><code>setup_agent.py</code> scaffolds a new agent and writes the platform's pin into its <code>.env</code>. Its <code>docker-compose.yml</code> falls back to <code>latest</code> if none is set.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>
@@ -1068,7 +1073,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 </div>
 </div>
 <div class="callout">
-No git submodules and no pip dependency between platform and agents. The <strong>base Docker image</strong> delivers the SDK; the <strong>registry</strong> connects services at runtime. More on this at 1:00 pm.</div>
+No git submodules required, and no pip dependency between platform and agents. The <strong>base Docker image</strong> delivers the SDK; the <strong>registry</strong> connects services at runtime. More on this at 1:00 pm.</div>
 
   </div>
 </section>
@@ -1090,8 +1095,8 @@ No git submodules and no pip dependency between platform and agents. The <strong
 <td>React SPA :5150 + FastAPI backend :8600</td>
 </tr>
 <tr>
-<td><code>message/send</code>, <code>params.context.skillId</code></td>
-<td><code>SendMessage</code>, <code>metadata.skillId</code>, <code>contextId</code></td>
+<td><code>message/send</code>, <code>params.context.skillId</code> (old template README/TUTORIAL curl)</td>
+<td><code>SendMessage</code>, <code>metadata.skillId</code>, <code>contextId</code>, header <code>A2A-Version: 1.0</code></td>
 </tr>
 <tr>
 <td>implement <code>process_analysis()</code></td>
@@ -1114,12 +1119,12 @@ No git submodules and no pip dependency between platform and agents. The <strong
 <td><code>DEBUG_AGENTS=true</code></td>
 </tr>
 <tr>
-<td><code>planner.py</code>, upload auto-binding (<code>file-uploads.md</code>)</td>
-<td>the tool-calling loop, <code>orchestrator/agent_loop.py</code></td>
+<td>an up-front planner (<code>planner.py</code>), upload auto-binding (<code>file-uploads.md</code>)</td>
+<td>the tool-calling loop, <code>orchestrator/agent_loop.py</code> (PR #104)</td>
 </tr>
 <tr>
-<td>pin <code>prometheus_api@2b3dbcf</code></td>
-<td>that is v0.8.0; the platform uses <code>95c32b5</code> (v0.13.0)</td>
+<td>pin <code>prometheus_api@2b3dbcf</code> (old template README/TUTORIAL)</td>
+<td>that is v0.8.0; the platform uses <code>1914b55</code> (v0.13.0), and new agents get it in <code>.env</code></td>
 </tr>
 </tbody>
 </table>
