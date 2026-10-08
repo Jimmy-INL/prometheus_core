@@ -115,7 +115,7 @@ make down                   <span class="c"># stop</span></pre>
   <div class="content">
 <div class="steps">
 <div class="step"><div><h4>Open <code>http://localhost:5150</code></h4>
-<p class="small">On first start a setup wizard creates your admin user.</p>
+<p class="small">On first start a setup wizard asks for a username and password. Any local values work (not your INL login); the first user becomes admin.</p>
 </div></div>
 <div class="step"><div><h4>Admin › Signing Keys → generate, then activate</h4>
 <p class="small">The platform signs every chat turn with it, so agents know which user is asking.</p>
@@ -218,7 +218,7 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 </tr>
 </tbody>
 </table>
-<p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>. AskSage arrives with the next SDK release, before the hackathon. Its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>).</p>
+<p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>; AskSage is included in the platform pin (<code>1914b55</code>), and its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>). Leave <code>LLM_CONFIG_PROFILE</code> unset and you get <code>registry</code>, which only defines <code>medium</code>: <code>small</code>, <code>large</code> and <code>vision</code> raise <code>LLMAliasError</code>. Pick one of these three.</p>
 </div>
 <div class="col">
 <pre class="sm"># your agent&#x27;s .env: pick one
@@ -235,6 +235,7 @@ INL_LITELLM_API_KEY=…
 </div>
 
   </div>
+  <aside class="notes">Assumes the template compose forwards INL_LITELLM_API_KEY, ASKSAGE_API_KEY, EMBEDDING_API_KEY and INL_HPC_API_KEY, and that LiteLLM trusts the INL certificate (registry profile). Check both before presenting.</aside>
 </section>
 
 <section class="slide">
@@ -278,7 +279,7 @@ EOF</pre>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Something is off</div><h2>The six problems you are most likely to hit</h2></div>
+  <div class="head"><div class="eyebrow">Something is off</div><h2>The problems you are most likely to hit</h2></div>
   <div class="content">
 <table class="t sm">
 <thead>
@@ -307,6 +308,10 @@ EOF</pre>
 <tr>
 <td>&quot;DeepLynx storage is not configured&quot;</td>
 <td>set the <code>DEEPLYNX_*</code> lines, <code>make restart</code></td>
+</tr>
+<tr>
+<td>Backend fails: <code>password authentication failed for user &quot;admin&quot;</code></td>
+<td>a second platform checkout reuses the same Docker volumes: restore the old <code>ADMIN_DB_PASSWORD</code> and <code>ADMIN_DB_ENCRYPTION_KEY</code> in <code>.env</code>, or <code>make down-v</code> (deletes users and keys)</td>
 </tr>
 <tr>
 <td>Something else</td>
@@ -375,6 +380,10 @@ EOF</pre>
 <td><code>make up</code> generates keys with <code>openssl rand</code>.</td>
 </tr>
 <tr>
+<td><strong><code>gh</code>, the GitHub CLI</strong></td>
+<td>Used for forks and PRs. <code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login --hostname github.inl.gov</code>.</td>
+</tr>
+<tr>
 <td><strong>Access to <code>containers.github.inl.gov</code></strong></td>
 <td>A PAT with <code>read:packages</code>, then <code>docker login</code>. You need to be on the INL network or VPN.</td>
 </tr>
@@ -418,7 +427,7 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov <span class="s">\</spa
 
 <span class="c"># smoke test: can you pull the pinned base image?</span>
 docker pull <span class="s">\</span>
-  containers.github.inl.gov/genesis/prometheus_api:95c32b5</pre>
+  containers.github.inl.gov/genesis/prometheus_api:1914b55</pre>
 <div class="col">
 <div class="card">
 <h4>Why the registry?</h4>
@@ -520,7 +529,7 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 <tbody>
 <tr>
 <td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td>
-<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>95c32b5</code>.</td>
+<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>1914b55</code>.</td>
 </tr>
 <tr>
 <td><code>unauthorized</code> / <code>denied</code> pulling the base image</td>
@@ -834,7 +843,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <tr>
 <td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td>
 <td>commented</td>
-<td>Override the Makefile pin (<code>95c32b5</code>)</td>
+<td>Override the Makefile pin (<code>1914b55</code>)</td>
 </tr>
 <tr>
 <td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td>
@@ -969,7 +978,7 @@ make ps ; make logs SERVICE=client-agent</pre>
 <pre class="sm"><span class="c"># Override this to pin a</span>
 <span class="c"># specific base image.</span>
 PROMETHEUS_API_BASE_IMAGE_HASH <span class="s">\</span>
-<span class="h">  ?= 95c32b5</span>
+<span class="h">  ?= 1914b55</span>
 export <span class="s">\</span>
   PROMETHEUS_API_BASE_IMAGE_HASH</pre>
 <p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p>
@@ -1002,7 +1011,7 @@ args:
 <div class="card">
 <h4>Try another SDK version</h4>
 <pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre>
-<p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>95c32b5</code> is v0.13.0, the same as <code>latest</code> today. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
+<p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>1914b55</code> is v0.13.0, the same as <code>latest</code> today (they can drift apart after the next <code>prometheus_api</code> merge). The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
 </div>
 
 <div class="card">
@@ -1202,7 +1211,7 @@ args:
 <div class="col">
 <div class="steps">
 <div class="step"><div><h4>Open <code>http://localhost:5150</code></h4>
-<p class="small">On a fresh admin-db the <strong>setup wizard</strong> appears. Create the first user; it becomes <code>admin</code>. (The old <code>prometheus/prometheus</code> login in the README no longer exists.)</p>
+<p class="small">On a fresh admin-db the <strong>setup wizard</strong> appears. Create the first user with any local username and password (not your INL login); it becomes <code>admin</code>. (The old <code>prometheus/prometheus</code> login in the README no longer exists.)</p>
 </div></div>
 <div class="step"><div><h4>Admin › Signing Keys</h4>
 <p class="small">Generate a key and <strong>activate</strong> it. From then on the backend mints an RS256 <code>userToken</code> for every chat turn and publishes the public key at <code>/.well-known/jwks.json</code>.</p>
@@ -1481,7 +1490,7 @@ general_settings:   <span class="c"># unchanged</span>
 </tr>
 <tr>
 <td><code>anl_asksage</code></td>
-<td>ANL AskSage (prometheus_api PR #65)</td>
+<td>ANL AskSage (in the <code>1914b55</code> pin)</td>
 <td><code>ASKSAGE_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
 <td>gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large</td>
 </tr>

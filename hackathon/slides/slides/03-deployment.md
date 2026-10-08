@@ -100,7 +100,7 @@ make down                   # stop
 #### Open `http://localhost:5150`
 
 {.small}
-On first start a setup wizard creates your admin user.
+On first start a setup wizard asks for a username and password. Any local values work (not your INL login); the first user becomes admin.
 
 #### Admin › Signing Keys → generate, then activate
 
@@ -174,7 +174,7 @@ Your code asks for a **flavor** (`small`, `medium`, `large`, `vision`, `embeddin
 | `anl_asksage` | ANL AskSage | `ASKSAGE_API_KEY` |
 
 {.small}
-The profiles ship with the SDK in `prometheus_api/llm_configs/`. AskSage arrives with the next SDK release, before the hackathon. Its embeddings use Voyage (`EMBEDDING_API_KEY`).
+The profiles ship with the SDK in `prometheus_api/llm_configs/`; AskSage is included in the platform pin (`1914b55`), and its embeddings use Voyage (`EMBEDDING_API_KEY`). Leave `LLM_CONFIG_PROFILE` unset and you get `registry`, which only defines `medium`: `small`, `large` and `vision` raise `LLMAliasError`. Pick one of these three.
 
 |||
 
@@ -193,6 +193,8 @@ INL_LITELLM_API_KEY=…
 {.small}
 Then `make up` in your agent's folder. Keys stay in `.env`, never in code or the repo.
 :::
+
+Note: Assumes the template compose forwards INL_LITELLM_API_KEY, ASKSAGE_API_KEY, EMBEDDING_API_KEY and INL_HPC_API_KEY, and that LiteLLM trusts the INL certificate (registry profile). Check both before presenting.
 
 ---
 
@@ -235,7 +237,7 @@ Then upload a file in the chat. It should appear in the DeepLynx UI under your p
 
 ---
 
-## The six problems you are most likely to hit {eyebrow="Something is off"}
+## The problems you are most likely to hit {eyebrow="Something is off"}
 
 {.sm widths="470px|"}
 | Symptom | Fix |
@@ -245,6 +247,7 @@ Then upload a file in the chat. It should appear in the DeepLynx UI under your p
 | LLM call gets HTTP 401 | the key for your `LLM_CONFIG_PROFILE` is missing or wrong in the agent's `.env` |
 | "Unknown LLM config profile" | a typo in `LLM_CONFIG_PROFILE`, or an SDK image without that profile |
 | "DeepLynx storage is not configured" | set the `DEEPLYNX_*` lines, `make restart` |
+| Backend fails: `password authentication failed for user "admin"` | a second platform checkout reuses the same Docker volumes: restore the old `ADMIN_DB_PASSWORD` and `ADMIN_DB_ENCRYPTION_KEY` in `.env`, or `make down-v` (deletes users and keys) |
 | Something else | `make logs SERVICE=<name>`; the appendix has the full troubleshooting tables |
 
 ---
@@ -292,6 +295,7 @@ For participants whose platform does not start yet: prerequisites, registry logi
 |---|---|
 | **Docker + Compose v2** | The Makefile calls `docker compose -p prometheus_platform`. The compose files use `include:` and `additional_contexts`, so Compose ≥ 2.20 with BuildKit is needed. Check: `docker info`, `docker compose version`. |
 | **GNU make, git, openssl** | `make up` generates keys with `openssl rand`. |
+| **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. |
 | **Access to `containers.github.inl.gov`** | A PAT with `read:packages`, then `docker login`. You need to be on the INL network or VPN. |
 | **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
 | **uv + Python 3.12** | Only for running things outside Docker: tests, a host-run agent, `setup_agent.py`. `uv --version` |
@@ -321,7 +325,7 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov \
 
 # smoke test: can you pull the pinned base image?
 docker pull \
-  containers.github.inl.gov/genesis/prometheus_api:95c32b5
+  containers.github.inl.gov/genesis/prometheus_api:1914b55
 ```
 
 |||
@@ -388,7 +392,7 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 {.sm widths="470px|"}
 | Symptom | Cause → fix |
 |---|---|
-| `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line or set it to `95c32b5`. |
+| `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line or set it to `1914b55`. |
 | `unauthorized` / `denied` pulling the base image | Run `docker login containers.github.inl.gov` with a PAT that has `read:packages`; be on the INL network or VPN. |
 | `.env not found` from `check-prerequisites` | `cp .env.example .env` |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
@@ -602,7 +606,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
 | `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
-| `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the Makefile pin (`95c32b5`) |
+| `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the Makefile pin (`1914b55`) |
 | `DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID` | commented | Storage for uploads and `deeplynx://` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | 104857600 | 100 MiB upload cap |
 | `HTTP(S)_PROXY`, `NO_PROXY` | commented | Build args for Python images only |
@@ -677,7 +681,7 @@ make ps ; make logs SERVICE=client-agent
 # Override this to pin a
 # specific base image.
 PROMETHEUS_API_BASE_IMAGE_HASH \
-  ?= 95c32b5
+  ?= 1914b55
 export \
   PROMETHEUS_API_BASE_IMAGE_HASH
 ```
@@ -727,7 +731,7 @@ make PROMETHEUS_API_BASE_IMAGE_HASH=latest up
 ```
 
 {.small}
-Then read `AGENT_MIGRATIONS.md`. The pin `95c32b5` is v0.13.0, the same as `latest` today. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
+Then read `AGENT_MIGRATIONS.md`. The pin `1914b55` is v0.13.0, the same as `latest` today (they can drift apart after the next `prometheus_api` merge). The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
 :::
 
 ::: card
@@ -839,7 +843,7 @@ Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TE
 #### Open `http://localhost:5150`
 
 {.small}
-On a fresh admin-db the **setup wizard** appears. Create the first user; it becomes `admin`. (The old `prometheus/prometheus` login in the README no longer exists.)
+On a fresh admin-db the **setup wizard** appears. Create the first user with any local username and password (not your INL login); it becomes `admin`. (The old `prometheus/prometheus` login in the README no longer exists.)
 
 #### Admin › Signing Keys
 
@@ -1050,7 +1054,7 @@ Then `make restart` and check `curl -H "Authorization: Bearer $LITELLM_MASTER_KE
 | `inl_hpc` | `https://api.hpc.inl.gov/llm/v1` (vLLM) | `INL_HPC_API_KEY` | gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed |
 | `anthropic` | direct | `ANTHROPIC_API_KEY` (+ `EMBEDDING_API_KEY`) | opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large |
 | `amsc` | American Science Cloud | `AMSC_I2_API_KEY` | sonnet · haiku · sonnet · opus · opus · ada-002 |
-| `anl_asksage` | ANL AskSage (prometheus_api PR #65) | `ASKSAGE_API_KEY` (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
+| `anl_asksage` | ANL AskSage (in the `1914b55` pin) | `ASKSAGE_API_KEY` (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
 | `openai` | direct | `OPENAI_API_KEY` | gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large |
 
 :::: grid 2
