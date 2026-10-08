@@ -26,12 +26,17 @@ graph TD
 ## Prerequisites
 
 - Docker and Docker Compose
-- [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image)
+  - **Windows:** run the stack from a WSL2 distro, not from Windows directly. See
+    [Windows + WSL2 setup](docs/docs/windows-wsl2-setup.md) for enabling WSL2
+    integration in Docker Desktop before continuing below.
+- [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image) — 90 days is the recommended expiration
 - [uv](https://docs.astral.sh/uv/) and Python — only required to run the Python components outside Docker:
   - Backend: **3.12+**
   - Client-agent: **3.12+**
   - Infrastructure tests: **3.13+**
 - Node.js + npm — only required to run the React `frontend/` dev server outside Docker
+- `make` and `openssl` — on a minimal distro/WSL image these may not be preinstalled
+  (RHEL-based: `sudo dnf groupinstall "Development Tools"` and `sudo dnf install openssl`)
 
 ## Quickstart
 
@@ -41,9 +46,29 @@ graph TD
 cp .env.example .env
 # Required: AGENT_SECRET, REDIS_PASSWORD, BACKEND_JWT_SECRET,
 #           LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT,
-#           and the API keys referenced by the selected LLM_CONFIG_PROFILE
+#           ADMIN_DB_PASSWORD, and the API keys referenced by the selected
+#           LLM_CONFIG_PROFILE
 # Optional: DEEPLYNX_*, HTTP_PROXY / HTTPS_PROXY / NO_PROXY
 ```
+
+To fill in the random-secret values in one pass instead of editing each by hand:
+
+```bash
+python3 -c "
+import re, secrets, pathlib
+path = pathlib.Path('.env')
+text = path.read_text()
+for var in ['ADMIN_DB_PASSWORD', 'AGENT_SECRET', 'REDIS_PASSWORD', 'BACKEND_JWT_SECRET', 'LITELLM_MASTER_KEY', 'LITELLM_DB_PASSWORD']:
+    text = re.sub(rf'^{var}=.*', f'{var}={secrets.token_hex(16)}', text, flags=re.M)
+path.write_text(text)
+"
+```
+
+If you haven't generated multi-user identity signing keys yet (see
+[Multi-user setup](docs/docs/dev-docs/multi-user-setup.md)), set
+`USER_IDENTITY_REQUIRED=false` in `.env` — otherwise agents reject every
+request with `No 'userToken' found in message metadata` because the backend
+has no `USER_IDENTITY_PRIVATE_KEY` to mint one.
 
 #### Choose an LLM profile
 
@@ -77,7 +102,7 @@ Advanced users can set `LLM_CONFIG_FILE` to a custom LLM configuration YAML file
 
 The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
 
-The PAT (Personal Access Token) requires `read:packages` permissions.
+The PAT (Personal Access Token) requires `read:packages` permissions. 90 days is the recommended expiration.
 
 ```bash
 export GITHUB_PAT=<your-token>
@@ -92,13 +117,33 @@ echo $GITHUB_PAT | docker login containers.github.inl.gov \
 make up      # build + start everything (detached)
 make logs    # tail all services (SERVICE=<name> to filter)
 make ps      # show running services
-make down    # stop everything (down-v also drops volumes)
-make clear-litellm-db  # stop services + remove only LiteLLM's Postgres volume
 ```
 
 `make up` runs `make generate` first, which scans `agents/*/docker-compose.yml` and writes `docker-compose.agents.yml`. **Do not hand-edit that file** — re-run `make generate` after adding or removing an agent (or use `make ng-up` to skip regeneration).
 
 Launch and restart targets clear LiteLLM's Postgres volume before starting services. This removes stale LiteLLM agent registrations while preserving Valkey conversation and artifact state.
+
+The first run also builds every agent image and pulls the `prometheus_api` base
+image, so it's slower than later runs — expect roughly **5 to 15 minutes**
+depending on your connection and machine. Use `make up-fg` instead of `make up`
+to watch that build/startup happen in the foreground rather than waiting on a
+detached container with no output.
+
+`make ps` once everything is healthy looks like:
+
+```
+NAME                  IMAGE                                     SERVICE               STATUS
+admin-db              postgres:16-alpine                        admin-db              Up (healthy)
+agent-valkey          valkey/valkey-bundle:9.1.0                 redis                 Up
+backend               prometheus_platform-backend                backend               Up (healthy)
+client-agent          prometheus_platform-client-agent           client-agent          Up
+form-filler-agent     prometheus_platform-form-filler-agent      form-filler-agent     Up
+frontend-dev          prometheus_platform-frontend-dev           frontend-dev          Up
+litellm-db            postgres:16-alpine                         litellm-db            Up (healthy)
+litellm-proxy         ghcr.io/berriai/litellm:v1.92.0            litellm               Up (healthy)
+osti-research-agent   prometheus_platform-osti-research-agent    osti-research-agent   Up
+synthesis-agent       prometheus_platform-synthesis-agent        synthesis-agent       Up
+```
 
 Services and host ports:
 
@@ -110,6 +155,13 @@ Services and host ports:
 | LiteLLM gateway | http://localhost:9977 (`LITELLM_LOCAL_PORT`) | Agent registry + LLM proxy |
 | Valkey | localhost:6379 | Redis-compatible state, status, artifact metadata |
 | Postgres (LiteLLM) | internal only | Persistent agent registrations |
+
+### Stop or reset the stack
+
+```bash
+make down              # stop everything (down-v also drops volumes)
+make clear-litellm-db  # stop services + remove only LiteLLM's Postgres volume
+```
 
 ### Log in
 
@@ -261,10 +313,12 @@ _TBD — common issues and fixes will be collected here as they come up._
 
 ## Documentation
 
+- [Windows + WSL2 setup](docs/docs/windows-wsl2-setup.md) - installing and verifying Docker Desktop's WSL2 integration before running `make up`
 - [Architecture](docs/docs/dev-docs/architecture.md)
 - [Client-agent developer guide](agents/client-agent/README.md)
 - [Adding agents](docs/docs/dev-docs/adding-agents.md)
 - [Artifacts](docs/docs/dev-docs/artifacts.md)
+- [Multi-user setup](docs/docs/dev-docs/multi-user-setup.md) - identity JWTs, credential broker, running single-user without signing keys
 - [Visualization plugins](docs/docs/dev-docs/visualization-plugins.md)
 - [Migration guide](docs/docs/dev-docs/migration.md) - what changed from the original projects and why
 - [Self-hosted DeepLynx](docs/docs/local-deeplynx.md) - roll out your own DeepLynx instance and connect the platform to it
