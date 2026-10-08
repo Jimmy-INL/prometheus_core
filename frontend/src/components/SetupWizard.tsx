@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api/client";
 import { setCurrentUser } from "@/lib/store/session";
+import { AuthError, AuthField, AuthLayout } from "./AuthLayout";
 
 interface Props {
   onSuccess: () => void;
@@ -20,6 +21,7 @@ export function SetupWizard({ onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
+    if (loading) return;
     if (!username.trim() || !password) {
       setError("Username and password are required");
       return;
@@ -49,77 +51,41 @@ export function SetupWizard({ onSuccess }: Props) {
   };
 
   return (
-    <div className="relative flex items-center justify-center h-screen bg-base-100 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_60%_50%,rgba(79,70,229,0.15),transparent_70%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_80%,rgba(99,102,241,0.08),transparent_60%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-size-[64px_64px]" />
+    <AuthLayout
+      title="Welcome — set up your admin account"
+      subtitle="This platform has no users yet. Create the first account below; it will be an administrator."
+      onSubmit={handleSubmit}
+    >
+      <AuthError message={error} />
 
-      <div>
-        <div className="relative w-full max-w-lg px-6 space-y-8">
-          <div className="grid justify-items-center -mt-6">
-            <img src="/logo_dark.png" alt="Prometheus" />
-            <span className="text-lg text-base-content/50 -mt-6">AI orchestration for nuclear engineering</span>
-          </div>
-        </div>
-      </div>
+      <AuthField
+        label="Username"
+        placeholder="username"
+        autoComplete="username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        autoFocus
+      />
+      <AuthField
+        label="Password"
+        type="password"
+        placeholder="••••••••"
+        autoComplete="new-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      <AuthField
+        label="Confirm password"
+        type="password"
+        placeholder="••••••••"
+        autoComplete="new-password"
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+      />
 
-      <div className="relative w-full max-w-sm px-6 space-y-8">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h1 className="text-base font-medium">Welcome — set up your admin account</h1>
-            <p className="text-xs text-base-content/50">
-              This platform has no users yet. Create the first account below; it will be an administrator.
-            </p>
-          </div>
-          {error && (
-            <div role="alert" className="alert alert-error text-xs">
-              {error}
-            </div>
-          )}
-          <div className="space-y-2">
-            <label className="label">
-              <span className="label-text text-xs uppercase tracking-wider">Username</span>
-            </label>
-            <input
-              className="input input-bordered w-full"
-              placeholder="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="label">
-              <span className="label-text text-xs uppercase tracking-wider">Password</span>
-            </label>
-            <input
-              className="input input-bordered w-full"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="label">
-              <span className="label-text text-xs uppercase tracking-wider">Confirm password</span>
-            </label>
-            <input
-              className="input input-bordered w-full"
-              type="password"
-              placeholder="••••••••"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
-          <button className="btn btn-primary w-full" onClick={handleSubmit} disabled={loading}>
-            {loading ? "Creating account..." : "Create admin account"}
-          </button>
-        </div>
-      </div>
-    </div>
+      <button type="submit" className="btn btn-primary w-full" disabled={loading}>
+        {loading ? "Creating account..." : "Create admin account"}
+      </button>
+    </AuthLayout>
   );
 }
