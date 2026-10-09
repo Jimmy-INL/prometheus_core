@@ -1,10 +1,16 @@
-name: Tests
+name: SDK Tests
 
 on:
   push:
     branches: [main]
+    paths:
+      - "sdk/**"
+      - ".github/workflows/sdk-tests.yml"
   pull_request:
-    branches: [main]
+    branches: [main, dev]
+    paths:
+      - "sdk/**"
+      - ".github/workflows/sdk-tests.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
@@ -12,7 +18,14 @@ concurrency:
 
 env:
   REGISTRY_URL: containers.github.inl.gov
-  REGISTRY_PACKAGE_URL: containers.github.inl.gov/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  # Pinned: agent repositories pull the SDK base image by this name, which
+  # predates the monorepo, so it must not follow the repository name.
+  IMAGE_NAME: prometheus_api
+  REGISTRY_PACKAGE_URL: containers.github.inl.gov/${{ github.repository_owner }}/prometheus_api
+
+defaults:
+  run:
+    working-directory: sdk
 
 jobs:
   python:
@@ -33,6 +46,8 @@ jobs:
       image: ${{ matrix.image }}
     steps:
       - name: Install git
+        # Runs before checkout, so sdk/ does not exist yet.
+        working-directory: /
         run: |
           apt-get update
           apt-get install -y --no-install-recommends git
@@ -67,7 +82,7 @@ jobs:
           COMMIT_TAG="$(git rev-parse HEAD | cut -c1-7)"
 
           VALUES=(
-            "build-tag=${{ github.event.repository.name }}-build:run-${{ github.run_id }}"
+            "build-tag=${IMAGE_NAME}-build:run-${{ github.run_id }}"
             "cache-uri=${REGISTRY_PACKAGE_URL}-cache"
             "current-tag=${DATE_TAG}-${COMMIT_TAG}"
           )
@@ -137,7 +152,7 @@ jobs:
 
           docker run \
             --mount "type=bind,source=${{ github.workspace }},target=${{ github.workspace }}" \
-            --workdir "${{ github.workspace }}" \
+            --workdir "${{ github.workspace }}/sdk" \
             --platform "linux/${{ matrix.platform }}" \
             --rm \
             "$BUILD_TAG" \
@@ -173,6 +188,10 @@ jobs:
     needs:
       - docker-prepare
       - docker
+    # No checkout in this job, so sdk/ does not exist.
+    defaults:
+      run:
+        working-directory: .
     steps:
       - name: Registry login
         run: |
