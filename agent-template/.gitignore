@@ -1,0 +1,15 @@
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+.env
+
+# Common Python-related files
+app/__pycache__/
+
+# Log files
+logs/
+*.log
+
+# Editor directories and files
+.vscode/
+!.vscode/extensions.json
+.DS_Store

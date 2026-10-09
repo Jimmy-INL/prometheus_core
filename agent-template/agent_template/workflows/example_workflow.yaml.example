@@ -1,0 +1,30 @@
+id: TEMPLATE_SLUG.example_workflow
+name: TEMPLATE_NAME Example Workflow
+version: "1.0.0"
+description: Example agent-owned workflow for TEMPLATE_NAME. Rename this file to .yaml to publish it.
+inputs:
+  required:
+    - input_data
+  optional: []
+execution:
+  mode: sequential
+  max_concurrency: 1
+  on_error: fail_fast
+steps:
+  - id: run_primary_skill
+    skill_id: TEMPLATE_SKILL_ID
+    is_final: true
+    params:
+      input_data:
+        from: input.input_data
+outputs:
+  final:
+    from: step.run_primary_skill.result
+metadata:
+  requires_approval: false
+  estimated_duration_seconds: 30
+  owner: TEMPLATE_SLUG
+ui:
+  category: TEMPLATE_NAME
+  display_name: TEMPLATE_NAME Example Workflow
+  summary: Example workflow that invokes the primary TEMPLATE_NAME skill.
