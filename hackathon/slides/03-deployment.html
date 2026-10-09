@@ -95,7 +95,7 @@ Platform not starting yet? Work through the bonus slides at the end of this deck
   <div class="head"><div class="eyebrow">Day to day</div><h2>Four commands, one trap</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
-<pre class="sm">cd ~/prometheus/prometheus_platform
+<pre class="sm">cd ~/prometheus/prometheus_platform/platform
 make up                     <span class="c"># build and start</span>
 make restart                <span class="c"># restart, no rebuild</span>
 make logs SERVICE=client-agent
@@ -182,7 +182,7 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 </tr>
 </tbody>
 </table>
-<p class="small">Read them in <code>prometheus_platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
+<p class="small">Read them in <code>prometheus_platform/platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
   </div>
 </section>
 
@@ -218,7 +218,7 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 </tr>
 </tbody>
 </table>
-<p class="small">The profiles ship with the SDK in <code>prometheus_api/llm_configs/</code>; AskSage is included in the platform pin (<code>1914b55</code>), and its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>). Leave <code>LLM_CONFIG_PROFILE</code> unset and you get <code>registry</code>, which only defines <code>medium</code>: <code>small</code>, <code>large</code> and <code>vision</code> raise <code>LLMAliasError</code>. Pick one of these three.</p>
+<p class="small">The profiles ship with the SDK in <code>sdk/prometheus_api/llm_configs/</code>, AskSage included; its embeddings use Voyage (<code>EMBEDDING_API_KEY</code>). Leave <code>LLM_CONFIG_PROFILE</code> unset and you get <code>registry</code>, which only defines <code>medium</code>: <code>small</code>, <code>large</code> and <code>vision</code> raise <code>LLMAliasError</code>. Pick one of these three.</p>
 </div>
 <div class="col">
 <pre class="sm"># your agent&#x27;s .env: pick one
@@ -345,7 +345,7 @@ EOF</pre>
 
 <div class="card">
 <h3>Next: Building an agent (2:45 pm)</h3>
-<p class="body">Have your clone of <code>prometheus_agent_template</code> next to the platform, and <code>uv --version</code> working.</p>
+<p class="body">The agent template is already in your clone (<code>prometheus_platform/agent-template/</code>). Have <code>uv --version</code> working.</p>
 </div>
 
 </div>
@@ -415,7 +415,7 @@ EOF</pre>
 <div class="grid g2" style="gap:30px;">
 <pre class="sm"><span class="c"># your fork (see previous session), default branch dev</span>
 git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
-cd prometheus_platform
+cd prometheus_platform/platform     <span class="c"># the stack lives here</span>
 git remote add upstream <span class="s">\</span>
   git@github.inl.gov:genesis/prometheus_platform.git
 git switch dev
@@ -425,9 +425,9 @@ export GITHUB_PAT=ghp_…
 echo $GITHUB_PAT | docker login containers.github.inl.gov <span class="s">\</span>
   --username <span class="p">&lt;github-username&gt;</span> --password-stdin
 
-<span class="c"># smoke test: can you pull the pinned base image?</span>
+<span class="c"># smoke test: can you pull the base image?</span>
 docker pull <span class="s">\</span>
-  containers.github.inl.gov/genesis/prometheus_api:1914b55</pre>
+  containers.github.inl.gov/genesis/prometheus_api:latest</pre>
 <div class="col">
 <div class="card">
 <h4>Why the registry?</h4>
@@ -449,7 +449,7 @@ docker pull <span class="s">\</span>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Step 2</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Step 2 · in prometheus_platform/platform</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
   <div class="content">
 <div class="grid g32" style="gap:28px;">
 <table class="t sm">
@@ -529,7 +529,7 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 <tbody>
 <tr>
 <td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td>
-<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line or set it to <code>1914b55</code>.</td>
+<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line, or set it to the value in <code>platform/Makefile</code>.</td>
 </tr>
 <tr>
 <td><code>unauthorized</code> / <code>denied</code> pulling the base image</td>
@@ -677,7 +677,7 @@ docker compose up          <span class="c"># add -d to detach</span></pre>
 <p class="small"><strong>⑤</strong> API Keys → <strong>&quot;+ Generate New&quot;</strong>. Copy the <strong>key and secret</strong> now: the secret is shown only once.</p>
 </div>
 <div class="col">
-<p class="small"><strong>⑥</strong> In <code>prometheus_platform/.env</code>:</p>
+<p class="small"><strong>⑥</strong> In <code>prometheus_platform/platform/.env</code>:</p>
 <pre class="sm">DEEPLYNX_KEY=…
 DEEPLYNX_SECRET=…
 DEEPLYNX_BASE_URL=http://host.docker.internal:5000/api/v1/
@@ -843,7 +843,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <tr>
 <td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td>
 <td>commented</td>
-<td>Override the Makefile pin (<code>1914b55</code>)</td>
+<td>Override the pin in <code>platform/Makefile</code></td>
 </tr>
 <tr>
 <td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td>
@@ -974,11 +974,11 @@ make ps ; make logs SERVICE=client-agent</pre>
   <div class="content">
 <div class="grid g3" style="gap:22px;">
 <div class="col">
-<h4 class="acc">① Makefile (the pin)</h4>
+<h4 class="acc">① platform/Makefile (the pin)</h4>
 <pre class="sm"><span class="c"># Override this to pin a</span>
 <span class="c"># specific base image.</span>
 PROMETHEUS_API_BASE_IMAGE_HASH <span class="s">\</span>
-<span class="h">  ?= 1914b55</span>
+<span class="h">  ?= <span class="p">&lt;tag&gt;</span></span>
 export <span class="s">\</span>
   PROMETHEUS_API_BASE_IMAGE_HASH</pre>
 <p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p>
@@ -1011,7 +1011,7 @@ args:
 <div class="card">
 <h4>Try another SDK version</h4>
 <pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre>
-<p class="small">Then read <code>AGENT_MIGRATIONS.md</code>. The pin <code>1914b55</code> is v0.13.0, the same as <code>latest</code> today (they can drift apart after the next <code>prometheus_api</code> merge). The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
+<p class="small">Then read <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code>. The pin and <code>latest</code> can differ: <code>latest</code> moves with every SDK change merged to <code>dev</code>. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
 </div>
 
 <div class="card">
@@ -1030,7 +1030,7 @@ args:
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">What the base image provides</div><h2>Inside <code>prometheus_api/Dockerfile</code></h2></div>
+  <div class="head"><div class="eyebrow">What the base image provides</div><h2>Inside <code>sdk/Dockerfile</code></h2></div>
   <div class="content">
 <div class="grid g2" style="gap:28px;">
 <pre class="xs"><span class="k">FROM</span> <span class="s">ghcr.io/astral-sh/uv:0.11.25-python3.12-trixie-slim\</span>
@@ -1421,7 +1421,7 @@ With the default <code>registry</code> profile, flavors are looked up in the pla
   <div class="head"><div class="eyebrow">LLM configuration for the deployment</div><h2>Adding flavors to the platform proxy</h2></div>
   <div class="content">
 <div class="col">
-<pre class="sm"><span class="c"># prometheus_platform/litellm_config.yaml</span>
+<pre class="sm"><span class="c"># prometheus_platform/platform/litellm_config.yaml</span>
 model_list:
   - model_name: medium
     litellm_params:
@@ -1490,7 +1490,7 @@ general_settings:   <span class="c"># unchanged</span>
 </tr>
 <tr>
 <td><code>anl_asksage</code></td>
-<td>ANL AskSage (in the <code>1914b55</code> pin)</td>
+<td>ANL AskSage</td>
 <td><code>ASKSAGE_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
 <td>gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large</td>
 </tr>
@@ -1613,7 +1613,7 @@ No DeepLynx configured → uploads show &quot;DeepLynx storage is not configured
 </tr>
 </tbody>
 </table>
-<p class="tiny"><code>DEEPLYNX_TIMEOUT</code>, <code>_MAX_RETRIES</code>, and <code>_VERIFY_SSL</code> appear in <code>prometheus_api/.env.example</code> but are ignored; pass them as <code>ConnectionConfig</code> arguments instead.</p>
+<p class="tiny"><code>DEEPLYNX_TIMEOUT</code>, <code>_MAX_RETRIES</code>, and <code>_VERIFY_SSL</code> appear in <code>sdk/.env.example</code> but are ignored; pass them as <code>ConnectionConfig</code> arguments instead.</p>
 </div>
 
   </div>

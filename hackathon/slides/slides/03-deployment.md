@@ -78,7 +78,7 @@ Behind them: the orchestrator (`client-agent`), three agents, a state store, and
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-cd ~/prometheus/prometheus_platform
+cd ~/prometheus/prometheus_platform/platform
 make up                     # build and start
 make restart                # restart, no rebuild
 make logs SERVICE=client-agent
@@ -156,7 +156,7 @@ make DEBUG_AGENTS=true up        # adds the reference agents
 | `thread-pattern-agent` | run long work in the background | "Run a background task" |
 
 {.small}
-Read them in `prometheus_platform/agents/debug-agents/`. Each is a short, complete example of one platform feature.
+Read them in `prometheus_platform/platform/agents/debug-agents/`. Each is a short, complete example of one platform feature.
 
 ---
 
@@ -174,7 +174,7 @@ Your code asks for a **flavor** (`small`, `medium`, `large`, `vision`, `embeddin
 | `anl_asksage` | ANL AskSage | `ASKSAGE_API_KEY` |
 
 {.small}
-The profiles ship with the SDK in `prometheus_api/llm_configs/`; AskSage is included in the platform pin (`1914b55`), and its embeddings use Voyage (`EMBEDDING_API_KEY`). Leave `LLM_CONFIG_PROFILE` unset and you get `registry`, which only defines `medium`: `small`, `large` and `vision` raise `LLMAliasError`. Pick one of these three.
+The profiles ship with the SDK in `sdk/prometheus_api/llm_configs/`, AskSage included; its embeddings use Voyage (`EMBEDDING_API_KEY`). Leave `LLM_CONFIG_PROFILE` unset and you get `registry`, which only defines `medium`: `small`, `large` and `vision` raise `LLMAliasError`. Pick one of these three.
 
 |||
 
@@ -277,7 +277,7 @@ Raise your hand now. Mentors fix environment problems during the break, so that 
 ### Next: Building an agent (2:45 pm)
 
 {.body}
-Have your clone of `prometheus_agent_template` next to the platform, and `uv --version` working.
+The agent template is already in your clone (`prometheus_platform/agent-template/`). Have `uv --version` working.
 :::
 ::::
 
@@ -313,7 +313,7 @@ Podman: the template README mentions it, but the platform Makefile only drives `
 ```bash {.sm}
 # your fork (see previous session), default branch dev
 git clone git@github.inl.gov:<you>/prometheus_platform.git
-cd prometheus_platform
+cd prometheus_platform/platform     # the stack lives here
 git remote add upstream \
   git@github.inl.gov:genesis/prometheus_platform.git
 git switch dev
@@ -323,9 +323,9 @@ export GITHUB_PAT=ghp_…
 echo $GITHUB_PAT | docker login containers.github.inl.gov \
   --username <github-username> --password-stdin
 
-# smoke test: can you pull the pinned base image?
+# smoke test: can you pull the base image?
 docker pull \
-  containers.github.inl.gov/genesis/prometheus_api:1914b55
+  containers.github.inl.gov/genesis/prometheus_api:latest
 ```
 
 |||
@@ -351,7 +351,7 @@ Docker stores the login in your credential helper. The PAT never goes into `.env
 
 ---
 
-## `cp .env.example .env`: the required values {eyebrow="Bonus · Step 2"}
+## `cp .env.example .env`: the required values {eyebrow="Bonus · Step 2 · in prometheus_platform/platform"}
 
 :::: grid 32 gap=28px
 {.sm}
@@ -392,7 +392,7 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 {.sm widths="470px|"}
 | Symptom | Cause → fix |
 |---|---|
-| `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line or set it to `1914b55`. |
+| `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line, or set it to the value in `platform/Makefile`. |
 | `unauthorized` / `denied` pulling the base image | Run `docker login containers.github.inl.gov` with a PAT that has `read:packages`; be on the INL network or VPN. |
 | `.env not found` from `check-prerequisites` | `cp .env.example .env` |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
@@ -492,7 +492,7 @@ Pulled new DeepLynx changes? `docker compose up --build`.
 |||
 
 {.small}
-**⑥** In `prometheus_platform/.env`:
+**⑥** In `prometheus_platform/platform/.env`:
 
 ```text {.sm}
 DEEPLYNX_KEY=…
@@ -606,7 +606,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
 | `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
-| `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the Makefile pin (`1914b55`) |
+| `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the pin in `platform/Makefile` |
 | `DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID` | commented | Storage for uploads and `deeplynx://` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | 104857600 | 100 MiB upload cap |
 | `HTTP(S)_PROXY`, `NO_PROXY` | commented | Build args for Python images only |
@@ -675,13 +675,13 @@ make ps ; make logs SERVICE=client-agent
 ## From one Makefile line to every `FROM` {eyebrow="How the platform selects the base image"}
 
 ::: grid 3 gap=22px
-#### ① Makefile (the pin) {.acc}
+#### ① platform/Makefile (the pin) {.acc}
 
 ```bash {.sm hl=4}
 # Override this to pin a
 # specific base image.
 PROMETHEUS_API_BASE_IMAGE_HASH \
-  ?= 1914b55
+  ?= <tag>
 export \
   PROMETHEUS_API_BASE_IMAGE_HASH
 ```
@@ -731,7 +731,7 @@ make PROMETHEUS_API_BASE_IMAGE_HASH=latest up
 ```
 
 {.small}
-Then read `AGENT_MIGRATIONS.md`. The pin `1914b55` is v0.13.0, the same as `latest` today (they can drift apart after the next `prometheus_api` merge). The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
+Then read `sdk/docs/agent/AGENT_MIGRATIONS.md`. The pin and `latest` can differ: `latest` moves with every SDK change merged to `dev`. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
 :::
 
 ::: card
@@ -751,7 +751,7 @@ Compose's default is empty. Always build through `make`, or export the variable 
 
 ---
 
-## Inside `prometheus_api/Dockerfile` {eyebrow="What the base image provides"}
+## Inside `sdk/Dockerfile` {eyebrow="What the base image provides"}
 
 ::: grid 2 gap=28px
 ```docker {.xs}
@@ -1018,7 +1018,7 @@ With the default `registry` profile, flavors are looked up in the platform's Lit
 
 ::: col
 ```yaml {.sm hl=7-15}
-# prometheus_platform/litellm_config.yaml
+# prometheus_platform/platform/litellm_config.yaml
 model_list:
   - model_name: medium
     litellm_params:
@@ -1054,7 +1054,7 @@ Then `make restart` and check `curl -H "Authorization: Bearer $LITELLM_MASTER_KE
 | `inl_hpc` | `https://api.hpc.inl.gov/llm/v1` (vLLM) | `INL_HPC_API_KEY` | gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed |
 | `anthropic` | direct | `ANTHROPIC_API_KEY` (+ `EMBEDDING_API_KEY`) | opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large |
 | `amsc` | American Science Cloud | `AMSC_I2_API_KEY` | sonnet · haiku · sonnet · opus · opus · ada-002 |
-| `anl_asksage` | ANL AskSage (in the `1914b55` pin) | `ASKSAGE_API_KEY` (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
+| `anl_asksage` | ANL AskSage | `ASKSAGE_API_KEY` (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
 | `openai` | direct | `OPENAI_API_KEY` | gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large |
 
 :::: grid 2
@@ -1131,7 +1131,7 @@ No DeepLynx configured → uploads show "DeepLynx storage is not configured" and
 | Nothing on :5000 (macOS) | AirPlay Receiver has the port. |
 
 {.tiny}
-`DEEPLYNX_TIMEOUT`, `_MAX_RETRIES`, and `_VERIFY_SSL` appear in `prometheus_api/.env.example` but are ignored; pass them as `ConnectionConfig` arguments instead.
+`DEEPLYNX_TIMEOUT`, `_MAX_RETRIES`, and `_VERIFY_SSL` appear in `sdk/.env.example` but are ignored; pass them as `ConnectionConfig` arguments instead.
 :::
 
 ---
