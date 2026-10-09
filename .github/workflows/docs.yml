@@ -16,7 +16,7 @@ jobs:
 
       - name: Build zensical
         run: |
-          cd docs
+          cd platform/docs
           uv sync
           uv run zensical build --clean
 
@@ -24,4 +24,4 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/site
+          publish_dir: ./platform/docs/site
