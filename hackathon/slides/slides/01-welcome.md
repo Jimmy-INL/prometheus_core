@@ -260,35 +260,34 @@ How to use each one: the agent session at 2:45 pm.
 
 ---
 
-## Four repositories you will touch {eyebrow="The code"}
+## Two repositories you will touch {eyebrow="The code"}
 
-:::: grid 2
-::: card tag="run it"
+:::: cols 1.15fr 1fr gap=28px
+```text {.sm}
+prometheus_platform/      # genesis/prometheus_platform, dev
+├── platform/             # the stack: make up here
+├── sdk/                  # prometheus_api (in your image)
+└── agent-template/       # setup_agent.py
+
+hackathon/                # genesis/hackathon, main
+├── practice/<you>/       # today
+└── agents/<team_name>/   # tomorrow: your team's agent
+```
+
+|||
+
+::: card tag="one clone"
 ### prometheus_platform
 
 {.small}
-The whole stack. You start it with `make up` and leave it alone.
-:::
-
-::: card tag="start from it"
-### prometheus_agent_template
-
-{.small}
-`setup_agent.py` creates your agent's files.
-:::
-
-::: card tag="read its docs"
-### prometheus_api
-
-{.small}
-The SDK: `PrometheusAgent`, LLMClient, DeepLynx client. Already inside your agent's Docker image.
+A monorepo since Oct 9: the platform, the SDK (`sdk/`, formerly `prometheus_api`), and the agent template (`agent-template/`, formerly `prometheus_agent_template`). Run commands from inside the directory you work on.
 :::
 
 ::: card acc tag="your code"
 ### hackathon
 
 {.small}
-`genesis/hackathon`: practice PRs today, your team's agent in `agents/<team_name>/` tomorrow.
+Practice PRs today, your team's agent in `agents/<team_name>/` tomorrow.
 :::
 ::::
 
@@ -304,7 +303,7 @@ The code moves fast and some docs lag behind. When a doc disagrees with these sl
 | What | Where |
 |---|---|
 | The mentors | in the room, all day |
-| Agent developer guide | `prometheus_api/docs/agent/GUIDE.md` |
+| Agent developer guide | `sdk/docs/agent/GUIDE.md` in `prometheus_platform` |
 | These slides | `index.html`; every deck has an appendix (key `A`) |
 | Org and repos | `github.inl.gov/genesis` |
 | Issues and tasks | JIRA project `PPLT` |
@@ -345,9 +344,9 @@ For participants who could not finish the homework. Work through these with a me
 |---|---|---|
 | Access to `github.inl.gov/genesis` | open `github.inl.gov/genesis/prometheus_platform` in the browser | ask the organizer to add you to the org; deck 02 bonus |
 | Docker installed and running | `docker info`, `docker compose version` (≥ 2.20) | install Docker Desktop and start it |
-| Both repos cloned | `ls ~/prometheus` shows `prometheus_platform` and `prometheus_agent_template` | deck 02 bonus (clone commands) |
-| PAT created, Docker logged in | `docker pull containers.github.inl.gov/genesis/prometheus_api:1914b55` | deck 03 bonus (registry login) |
-| Platform starts | `make up` in `prometheus_platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
+| Platform cloned | `ls ~/prometheus/prometheus_platform` shows `platform`, `sdk`, `agent-template` | deck 02 bonus (clone commands) |
+| PAT created, Docker logged in | `docker pull containers.github.inl.gov/genesis/prometheus_api:latest` | deck 03 bonus (registry login) |
+| Platform starts | `make up` in `prometheus_platform/platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
 | DeepLynx (if no `deeplynx.inl.gov` access) | `http://localhost:3000` shows the DeepLynx UI | deck 03 bonus (local DeepLynx) |
 | `uv` (for the agent session) | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | `gh` (decks 02 and 05) | `gh auth status --hostname github.inl.gov` | `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. No `gh`? Use the Fork and "Compare & pull request" buttons on the web. |
@@ -489,7 +488,7 @@ All containers share one bridge network, `prometheus_platform_agent-network`. Th
 | **agents/\*** | per agent | `agents/<name>/docker-compose.yml` | — (8008 artifact-debug) | Included automatically by `make generate` |
 
 {.tiny}
-Source: `prometheus_platform/docker-compose.yml` on `dev`. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in `frontend/` plus the FastAPI `backend/` replace it.
+Source: `platform/docker-compose.yml` on `dev`. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in `frontend/` plus the FastAPI `backend/` replace it.
 
 ---
 
@@ -633,7 +632,7 @@ Older docs show v0.3 syntax (`message/send`, `role: "user"`, `params.context.ski
 | **DeepLynx key + secret** | Agents/backend → DeepLynx | `DEEPLYNX_KEY/SECRET/ORG_ID/PROJECT_ID`. They are global by default (`CREDENTIAL_BROKER=env`), or per user via Vault. |
 
 {.tiny}
-Reference: `prometheus_platform/docs/docs/dev-docs/encryption-and-keys.md` and `multi-user-setup.md`, both current on `dev`.
+Reference: `platform/docs/docs/dev-docs/encryption-and-keys.md` and `multi-user-setup.md`, both current on `dev`.
 
 ---
 
@@ -767,28 +766,28 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 
 ---
 
-## How the code is organized {eyebrow="Three core repositories"}
+## How the code is organized {eyebrow="One monorepo, three directories"}
 
 <div class="dg">
 <div class="row" style="justify-content:center">
-<div class="box navy" style="width:560px"><b>prometheus_api</b><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
+<div class="box navy" style="width:560px"><b>sdk/</b> <span class="small">(formerly <code>prometheus_api</code>)</span><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
 </div>
-<div class="arrow-v"><span>CI builds the base image  containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span></div>
+<div class="arrow-v"><span>CI on dev builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
-<div class="box sky" style="width:520px"><b>prometheus_platform</b> <span class="small">(default branch <code>dev</code>)</span><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in the <code>Makefile</code> (only in-tree agents read it).</span></div>
-<div class="box orange" style="width:520px"><b>prometheus_agent_template</b><span><code>setup_agent.py</code> scaffolds a new agent and writes the platform's pin into its <code>.env</code>. Its <code>docker-compose.yml</code> falls back to <code>latest</code> if none is set.</span></div>
+<div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
+<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and writes the platform's pin into its <code>.env</code>. Its <code>docker-compose.yml</code> falls back to <code>latest</code> if none is set.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>
 <div class="arrow-v" style="width:520px"><span>scaffolds</span></div>
 </div>
 <div class="row" style="justify-content:center">
-<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in <code>genesis/hackathon</code>, under <code>agents/&lt;team_name&gt;/</code>)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or clone them into <code>prometheus_platform/agents/&lt;name&gt;/</code>.</span></div>
+<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in <code>genesis/hackathon</code>, under <code>agents/&lt;team_name&gt;/</code>)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or put them in <code>platform/agents/&lt;name&gt;/</code>.</span></div>
 </div>
 </div>
 
 ::: callout
-No git submodules required, and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
+One clone of `genesis/prometheus_platform` (default branch `dev`) holds all three directories; no submodules, and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
 :::
 
 ---
@@ -803,10 +802,11 @@ No git submodules required, and no pip dependency between platform and agents. T
 | implement `process_analysis()` | implement `_execute(params, context, event_queue)` |
 | `request_user_approval(...)` | does not exist; use `requires_approval` or `send_input_required` |
 | login `prometheus` / `prometheus` | a setup wizard creates the first admin |
-| image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in the `Makefile` |
+| image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in `platform/Makefile` |
 | `PROMETHEUS_DEBUG` | `DEBUG_AGENTS=true` |
 | an up-front planner (`planner.py`), upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` (PR #104) |
-| pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | that is v0.8.0; the platform uses `1914b55` (v0.13.0), and new agents get it in `.env` |
+| pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | an old-repo hash (v0.8.0); new agents get the platform's pin in `.env` |
+| repos `genesis/prometheus_api`, `genesis/prometheus_agent_template` | `sdk/` and `agent-template/` in `genesis/prometheus_platform`; old hashes were rewritten |
 :::
 
 ---
@@ -814,16 +814,16 @@ No git submodules required, and no pip dependency between platform and agents. T
 ## When docs disagree, trust the code. These are current: {eyebrow="A warning about documentation"}
 
 :::: col
-- `prometheus_api/docs/agent/GUIDE.md`: the full agent developer guide
-- `prometheus_api/docs/agent/AGENT_MIGRATIONS.md`: what changed in each version
-- `prometheus_api/docs/ENV_SETUP.md`: every environment variable
-- `prometheus_api/specs/*.md`: the requirements contract (REQ-/BEH- IDs)
+- `sdk/docs/agent/GUIDE.md`: the full agent developer guide
+- `sdk/docs/agent/AGENT_MIGRATIONS.md`: what changed in each version
+- `sdk/docs/ENV_SETUP.md`: every environment variable
+- `sdk/specs/*.md`: the requirements contract (REQ-/BEH- IDs)
 - `…/dev-docs/agent-loop-orchestration.md`: how the orchestrator works
-- `prometheus_platform/docs/docs/workflow-templates.md` (says "planner tool": read "orchestrator tool")
+- `platform/docs/docs/workflow-templates.md` (says "planner tool": read "orchestrator tool")
 - `…/dev-docs/multi-user-setup.md`, `encryption-and-keys.md`
 - `…/docs/docs/local-deeplynx.md`
-- `agents/client-agent/README.md` (still lists the removed `matcher.py`)
-- `prometheus_agent_template/TUTORIAL.md`, with the caveats in this deck
+- `platform/agents/client-agent/README.md` (still lists the removed `matcher.py`)
+- `agent-template/TUTORIAL.md`, with the caveats in this deck
 
 ::: callout warn
 The published docs site (`gh-pages`) was last deployed in February 2026, and only pushes to `main` rebuild it. Read the docs in the repo on `dev`.
