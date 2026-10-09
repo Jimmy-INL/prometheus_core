@@ -96,10 +96,9 @@ Platform not up yet? Use the <strong>bonus slide</strong> at the end of this dec
 python3 setup_agent.py
 <span class="c">#  name: Hello &lt;You&gt;   → card &quot;Hello &lt;You&gt; Agent&quot;</span>
 <span class="c">#  skill id: hello_&lt;you&gt;_greeting   (unique!)</span>
-<span class="c">#  output dir: ~/prometheus/hello-&lt;you&gt;</span>
+<span class="c">#  output dir: ../../hello-&lt;you&gt;   (no ~)</span>
 <span class="c">#  copy secrets from ../platform/.env? yes</span>
 cd ~/prometheus/hello-<span class="p">&lt;you&gt;</span>
-grep PROMETHEUS_API_BASE_IMAGE_HASH .env   <span class="c"># the platform pin</span>
 
 <span class="c"># edit agent_card.json: skill description + usage_notes</span>
 <span class="c">#   &quot;Greets a person by name. Use when the user asks</span>

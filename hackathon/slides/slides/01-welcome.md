@@ -775,7 +775,7 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 <div class="arrow-v"><span>CI on dev builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
-<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and writes the platform's pin into its <code>.env</code>. Its <code>docker-compose.yml</code> falls back to <code>latest</code> if none is set.</span></div>
+<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>. Its <code>docker-compose.yml</code> builds on <code>latest</code> unless <code>PROMETHEUS_API_BASE_IMAGE_HASH</code> is set.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>

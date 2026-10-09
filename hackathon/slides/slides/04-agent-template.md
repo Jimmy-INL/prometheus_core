@@ -87,7 +87,7 @@ cd ~/prometheus/prometheus_platform/agent-template
 python3 setup_agent.py
 #  name:      Neutron Table Plot   (" Agent" is appended)
 #  skill id:  neutron_extract_table
-#  output:    ~/prometheus/hackathon/agents/neutron
+#  output:    ../../hackathon/agents/neutron   (no ~)
 #  copy secrets from ../platform/.env? yes
 ```
 
@@ -606,7 +606,7 @@ No CI for `agent-template/`. Generated agents get tests and ruff config, but no 
 | Class name | PascalCase | `HelloWorldAgent` |
 | Primary skill ID | `<snake>_analysis` | `hello_world_analysis` |
 | Skill name / description | "… Analysis" | skill fields |
-| Output directory | `../<slug>` | a new folder; for the hackathon `~/prometheus/hackathon/agents/<team_name>` |
+| Output directory | `../<slug>` | a new folder (`~` is not expanded); for the hackathon `../../hackathon/agents/<team_name>` |
 | Trim comments? | no | strips the teaching comments in `agent.py` |
 :::
 

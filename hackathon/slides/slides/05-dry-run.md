@@ -104,10 +104,9 @@ cd ~/prometheus/prometheus_platform/agent-template   # same clone
 python3 setup_agent.py
 #  name: Hello <You>   → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
-#  output dir: ~/prometheus/hello-<you>
+#  output dir: ../../hello-<you>   (no ~)
 #  copy secrets from ../platform/.env? yes
 cd ~/prometheus/hello-<you>
-grep PROMETHEUS_API_BASE_IMAGE_HASH .env   # the platform pin
 
 # edit agent_card.json: skill description + usage_notes
 #   "Greets a person by name. Use when the user asks
