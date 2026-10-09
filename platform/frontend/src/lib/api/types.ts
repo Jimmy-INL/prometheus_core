@@ -27,6 +27,8 @@ export type RenderHint =
   | "mermaid"
   | "thermal"
   | "report"
+  | "code"
+  | "table"
   | "reference"
   | "file"
   | "unknown";

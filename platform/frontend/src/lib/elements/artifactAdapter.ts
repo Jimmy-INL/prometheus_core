@@ -28,6 +28,8 @@
 
 import { api } from "@/lib/api/client";
 import type { ArtifactMeta } from "@/lib/api/types";
+import { languageForArtifact } from "@/lib/highlight/language";
+import { delimiterFor } from "@/lib/table/csv";
 import type { AnyElement } from "./elements";
 
 /** Best-effort mermaid diagram source from an inline body (string or `{diagram|chart|content}`). */
@@ -137,6 +139,35 @@ function buildElement(artifact: ArtifactMeta): AnyElement {
           markdown: typeof artifact.json_body === "string" ? artifact.json_body : "",
           title: artifact.name,
           url,
+        },
+      };
+
+    case "code":
+      return {
+        ...base,
+        type: "custom",
+        name: "CodeViewer",
+        // Inline body when present; otherwise CodeElement fetches source from `url`.
+        props: {
+          source: typeof artifact.json_body === "string" ? artifact.json_body : "",
+          title: artifact.name,
+          url,
+          language: languageForArtifact(artifact),
+        },
+      };
+
+    case "table":
+      return {
+        ...base,
+        type: "custom",
+        name: "TableViewer",
+        // Inline body when present; otherwise TableElement fetches the text from `url`.
+        props: {
+          source: typeof artifact.json_body === "string" ? artifact.json_body : "",
+          title: artifact.name,
+          url,
+          // Only TSV is known up front; CSV-ish delimiters are detected from the content.
+          delimiter: delimiterFor(artifact.name, artifact.mime_type),
         },
       };
 

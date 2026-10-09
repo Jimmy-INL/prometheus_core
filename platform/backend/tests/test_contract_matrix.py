@@ -141,17 +141,43 @@ async def test_map_response_unknown_status_collapses_to_answer_not_500(session_s
 # --------------------------------------------------------------------------- #
 
 # Keyed by the artifact "type" vocabulary in docs/docs/dev-docs/artifacts.md. The
-# doc's classifier types collapse onto our RenderHint set: "data" → json (JSON/CSV
-# share the JSONViewer) and markdown/plain "report" → report (rendered inline; A-1),
+# doc's classifier types collapse onto our RenderHint set: "data" → json (the tag
+# folds into the JSON viewer; CSV/TSV is its own "table" hint) and markdown/plain "report" → report (rendered inline; A-1),
 # while a report tagged onto a concrete PDF stays pdf. Each row is a realistic catalog
 # dict as an agent emits it.
 _ARTIFACT_MATRIX = [
     ("pdf", {"artifact_id": "p", "mime_type": "application/pdf"}, "pdf"),
     ("data-json", {"artifact_id": "d1", "mime_type": "application/json"}, "json"),
-    ("data-csv", {"artifact_id": "d2", "mime_type": "text/csv"}, "file"),  # A-9: CSV → download
+    ("table-csv-mime", {"artifact_id": "d2", "mime_type": "text/csv"}, "table"),  # A-9: CSV → table viewer
+    ("table-tsv-ext", {"artifact_id": "d4", "name": "results.tsv"}, "table"),
+    (
+        "table-plaintext-csv-name",
+        {"artifact_id": "d5", "mime_type": "text/plain", "name": "results.csv"},
+        "table",
+    ),
     ("data-tag", {"artifact_id": "d3", "tags": ["data"]}, "json"),
     ("report-pdf", {"artifact_id": "r1", "mime_type": "application/pdf", "tags": ["report"]}, "pdf"),
     ("report-markdown", {"artifact_id": "r2", "mime_type": "text/markdown"}, "report"),
+    ("code-yaml-mime", {"artifact_id": "y1", "mime_type": "application/yaml"}, "code"),
+    ("code-yaml-ext", {"artifact_id": "y2", "name": "config.yml"}, "code"),
+    (
+        "code-plaintext-yaml-name",
+        {"artifact_id": "y3", "mime_type": "text/plain", "name": "config.yaml"},
+        "code",
+    ),
+    ("code-moose-ext", {"artifact_id": "y4", "name": "input.i"}, "code"),
+    ("code-python-mime", {"artifact_id": "y5", "mime_type": "text/x-python"}, "code"),
+    ("code-toml-ext", {"artifact_id": "y6", "name": "pyproject.toml"}, "code"),
+    ("code-xml-mime", {"artifact_id": "y7", "mime_type": "application/xml"}, "code"),
+    ("code-dockerfile-basename", {"artifact_id": "y8", "name": "Dockerfile"}, "code"),
+    (
+        "code-cmake-plaintext-basename",
+        {"artifact_id": "y9", "mime_type": "text/plain", "name": "CMakeLists.txt"},
+        "code",
+    ),
+    ("code-log-ext", {"artifact_id": "y10", "name": "run.log"}, "code"),
+    # Agent text parts default to "artifact.txt" + text/plain: must stay a report.
+    ("report-plaintext-default-name", {"artifact_id": "r3", "mime_type": "text/plain", "name": "artifact.txt"}, "report"),
     ("file-zip", {"artifact_id": "f1", "mime_type": "application/octet-stream", "name": "logs.zip"}, "file"),
     ("file-inp", {"artifact_id": "f2", "name": "model.inp"}, "file"),
     ("ifc-mime", {"artifact_id": "i1", "mime_type": "application/ifc"}, "ifc"),
