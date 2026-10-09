@@ -44,9 +44,8 @@ git config pull.rebase true
 cd ~/prometheus/prometheus_platform/agent-template
 python3 setup_agent.py
 #  name:   &lt;Team&gt; Table Plot     (" Agent" is appended)
-#  output: ~/prometheus/hackathon/agents/&lt;team_name&gt;
-cd ~/prometheus/hackathon/agents/&lt;team_name&gt;
-grep BASE_IMAGE_HASH .env    # the platform pin</pre>
+#  output: ../../hackathon/agents/&lt;team_name&gt;  (no ~)
+cd ~/prometheus/hackathon/agents/&lt;team_name&gt;</pre>
       <p>No <code>gh</code>? <code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>, then <code>gh auth login --hostname github.inl.gov</code>. Or use the Fork and "Compare &amp; pull request" buttons on the web.</p>
     </section>
 
@@ -121,6 +120,8 @@ return {"status": "success", "artifact_id": ref.artifact_id}</pre>
                               message="Parsing 4 tables…")
 
 from prometheus_api.agent import MissingInput
+ctx = str(context.context_id)
+self.save_context_state(ctx, {"table": table_id})
 await self.send_input_required(context, event_queue,
     missing_inputs=[MissingInput(name="x_column",
         type="enum", options=list(df.columns),
@@ -128,8 +129,7 @@ await self.send_input_required(context, event_queue,
         user_prompt="Which column goes on the x axis?")],
     hint="Choose the columns to plot.")
 return {}
-# resumed call: self.get_provided_inputs(context)
-# save what you need first: self.save_context_state(ctx, {...})</pre>
+# resumed call: self.get_provided_inputs(context)</pre>
     </section>
 
     <section>
@@ -146,7 +146,7 @@ async with self.llm_client(context, config=cfg) as llm:
     call = await acall_tool(llm, prompt, tool=PICK,
                             model="small")
     idx = call.arguments["index"]</pre>
-      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Provider in your agent's <code>.env</code>: <code>LLM_CONFIG_PROFILE=inl_litellm</code> + <code>INL_LITELLM_API_KEY</code>, or <code>amsc</code> + <code>AMSC_I2_API_KEY</code>, or <code>anl_asksage</code> + <code>ASKSAGE_API_KEY</code>.</p>
+      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Provider in your agent's <code>.env</code>: <code>LLM_CONFIG_PROFILE=inl_litellm</code> + <code>INL_LITELLM_API_KEY</code>, or <code>amsc</code> + <code>AMSC_I2_API_KEY</code>, or <code>anl_asksage</code> + <code>ASKSAGE_API_KEY</code>. Add the key yourself: <code>setup_agent.py</code> copies only the profile name.</p>
     </section>
 
     <section>
@@ -168,11 +168,12 @@ async with self.llm_client(context, config=cfg) as llm:
       <h2>When it breaks</h2>
       <table class="t">
         <tr><th>Symptom</th><th>Fix</th></tr>
-        <tr><td>Not in <code>/agents</code></td><td><code>docker restart &lt;slug&gt;-agent</code>; <code>make logs</code></td></tr>
+        <tr><td>Not in <code>/agents</code></td><td><code>docker restart &lt;slug&gt;-agent</code>, else <code>make up</code>; <code>make logs</code></td></tr>
         <tr><td>Never called</td><td>sharpen <code>description</code> / <code>usage_notes</code></td></tr>
         <tr><td>LLM 401</td><td>the profile's key in <code>.env</code></td></tr>
         <tr><td>"Unknown LLM config profile"</td><td>check the <code>LLM_CONFIG_PROFILE</code> spelling</td></tr>
         <tr><td>Upload ignored, plot missing</td><td>DeepLynx settings; <code>mime_type="image/png"</code></td></tr>
+        <tr><td>"not stored as a platform artifact"</td><td>re-upload in a fresh conversation; <code>docker logs client-agent 2&gt;&amp;1 | grep 'Failed to upload'</code></td></tr>
         <tr><td>"No 'userToken' found"</td><td>activate a signing key (Admin)</td></tr>
         <tr><td><code>ModuleNotFoundError</code></td><td><code>pyproject.toml</code>, Dockerfile <code>COPY</code></td></tr>
       </table>
