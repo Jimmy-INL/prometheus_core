@@ -32,7 +32,7 @@ class OrchestratorAgent(PrometheusAgent):
 
     def __init__(self):
         super().__init__(
-            agent_name="Nuclear Analysis Client Agent",
+            agent_name="Client Agent",
             agent_card_path="agent_card.json",
         )
 

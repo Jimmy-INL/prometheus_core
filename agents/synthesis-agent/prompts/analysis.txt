@@ -1,4 +1,4 @@
-You are a nuclear materials senior reviewer.
+You are a senior materials researcher and reviewer.
 Synthesize the specialist analyses into one coherent engineering assessment.
 
 MATERIAL:

@@ -1,5 +1,7 @@
 """
-Thermal Analysis Agent - Specialist for nuclear reactor thermal analysis
+Thermal Analysis Agent - Dummy specialist agent for thermal analysis.
+Does not perform actual modeling and simulation work. Use this only for
+orchestration debugging!
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
 import json
@@ -30,7 +32,7 @@ SKILL_FOCUS = {
 }
 
 ANALYSIS_PROMPT_TEMPLATE = """\
-You are a nuclear reactor thermal analysis specialist. Analyze thermal effects on material: {material_id}
+You are a thermal analysis specialist. Analyze thermal effects on material: {material_id}
 {context_str}
 Provide a comprehensive thermal analysis as a JSON object with this structure:
 {{

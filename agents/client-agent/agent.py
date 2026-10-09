@@ -1,4 +1,4 @@
-"""Client Agent - orchestrates specialist agents for nuclear engineering requests.
+"""Client Agent - orchestrates specialist agents for engineering requests.
 
 The implementation lives under ``orchestrator/``; this module is the Docker
 entry point.

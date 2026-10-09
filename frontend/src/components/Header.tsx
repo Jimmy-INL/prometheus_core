@@ -31,7 +31,7 @@ export function Header({ title, onLogout, onToggleSettings }: Props) {
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-base-300 bg-base-200 px-6">
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center gap-1 text-[10px] text-base-content/40">
-          <span>INL / MARVEL</span>
+          <span>INL / Prometheus</span>
           <span>/</span>
           <span className="text-primary">{title}</span>
         </div>

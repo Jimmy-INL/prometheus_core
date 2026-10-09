@@ -1,5 +1,7 @@
 """
-Radiation Damage Agent - Specialist for nuclear reactor radiation damage analysis
+Radiation Damage Agent -  Dummy specialist agent for radiation damage analysis.
+Does not perform actual modeling and simulation work. Use this only for
+orchestration debugging!
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
 import json
@@ -30,7 +32,7 @@ SKILL_FOCUS = {
 }
 
 ANALYSIS_PROMPT_TEMPLATE = """\
-You are a nuclear reactor radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
+You are a radiation damage specialist. Analyze radiation-induced damage for material: {material_id}
 {context_str}
 Provide a comprehensive radiation damage analysis as a JSON object with this structure:
 {{
