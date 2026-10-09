@@ -266,7 +266,7 @@ platform/
     src/                    # App, components, viewers, lib (backend contract adapter)
     public/                 # Static assets, custom-element JSX, IFC/VTK JS bundles
     Dockerfile              # dev (Vite) + prod (nginx) build stages
-    nginx.conf              # prod SPA + /api proxy config
+    nginx/                  # prod nginx template (SPA, /api proxy via $BACKEND_UPSTREAM, /healthz)
 
   agents/
     client-agent/           # A2A orchestrator
