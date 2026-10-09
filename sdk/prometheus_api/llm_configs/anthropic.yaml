@@ -1,0 +1,39 @@
+# Anthropic inference scaffold. Replace model IDs for the target account.
+# Anthropic does not supply embeddings; map that flavor to the chosen embedding provider.
+
+model_list:
+  - model_name: default
+    litellm_params:
+      model: claude-opus-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: https://api.anthropic.com/v1
+
+  - model_name: small
+    litellm_params:
+      model: claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: https://api.anthropic.com/v1
+
+  - model_name: medium
+    litellm_params:
+      model: claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: https://api.anthropic.com/v1
+
+  - model_name: large
+    litellm_params:
+      model: claude-fable-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: https://api.anthropic.com/v1
+
+  - model_name: vision
+    litellm_params:
+      model: claude-opus-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      api_base: https://api.anthropic.com/v1
+
+  - model_name: embedding
+    litellm_params:
+      model: voyage-4-large
+      api_key: os.environ/EMBEDDING_API_KEY
+      api_base: https://api.voyageai.com/v1

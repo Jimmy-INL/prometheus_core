@@ -1,0 +1,123 @@
+##@
+##@ Help
+##@
+
+.PHONY: help
+help: ##@ (Default) Print listing of key targets with their descriptions
+	@printf "\nUsage: make <command>\n"
+	@grep -F -h "##@" $(MAKEFILE_LIST) | grep -Fv grep | grep -Fv 'FS =' | sed 's/\\$$//' | \
+	awk 'BEGIN {FS = ":*[[:space:]]*##@[[:space:]]*"}; \
+	{ \
+			if($$2 == "") \
+					next; \
+			else if($$0 ~ /^#/) \
+					printf "\n\n%s\n", $$2; \
+			else if($$1 == "") \
+					printf "     %-20s%s\n", "", $$2; \
+			else \
+					printf "\n    \033[34m%-20s\033[0m %s", $$1, $$2; \
+	}'
+	@printf "\n\n"
+
+##@
+##@ Checks
+##@
+
+.PHONY: lint format typecheck check fix test test-unit test-integration test-all hooks
+
+lint: ##@ Run ruff linter (report only)
+	uv run ruff check .
+
+format: ##@ Run ruff formatter (report only)
+	uv run ruff format --check .
+
+typecheck: ##@ Run mypy type checker
+	uv run mypy prometheus_api/
+
+test: ##@ Run unit tests (default test target)
+test: test-unit
+
+test-unit: ##@ Run unit tests without integration tests
+	uv run pytest -m "not integration"
+
+test-integration: ##@ Run integration tests (requires .env with DeepLynx credentials)
+	uv run pytest -m integration
+
+test-all: ##@ Run all tests, including integration tests
+	uv run pytest
+
+fix: ##@ Auto-fix ruff lint issues and format
+	uv run ruff check --fix .
+	uv run ruff format .
+
+check: ##@ Run all checks (lint + format + typecheck)
+check: lint format typecheck
+
+hooks: ##@ Install pre-commit and pre-push hooks
+	uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+
+.PHONY: test-install
+test-install: ##@ Verify package installs and imports correctly in a clean venv
+	@echo "Building package..."
+	@uv build --quiet
+	@TMPVENV=$$(mktemp -d) && \
+	uv venv --python 3.12 "$$TMPVENV" --quiet && \
+	VIRTUAL_ENV="$$TMPVENV" uv pip install --quiet dist/prometheus_api-*.whl && \
+	echo "Testing imports..." && \
+	"$$TMPVENV/bin/python" -c "\
+from prometheus_api import __version__; \
+from prometheus_api.llm_configs import LLM_CONFIG_PROFILES, get_llm_config_path; \
+from prometheus_api.storage_client import StorageClient, AsyncStorageClient, ConnectionConfig; \
+from prometheus_api.agent import PrometheusAgent; \
+assert all(get_llm_config_path(profile).is_file() for profile in LLM_CONFIG_PROFILES); \
+print(f'prometheus-api {__version__} OK')" && \
+	rm -rf "$$TMPVENV" dist/ *.egg-info && \
+	echo "Install check passed" || \
+	(rm -rf "$$TMPVENV" dist/ *.egg-info; echo "Install check FAILED"; exit 1)
+
+##@
+##@ Versioning
+##@
+
+.PHONY: version bump-patch bump-minor bump-major
+
+version: ##@ Show current version
+	@uv version --short
+
+bump-patch: ##@ Bump patch version (0.2.0 → 0.2.1)
+	@uv version --bump patch
+
+bump-minor: ##@ Bump minor version (0.2.0 → 0.3.0)
+	@uv version --bump minor
+
+bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
+	@uv version --bump major
+
+##@
+##@ Container
+##@
+
+IMAGE_REPO ?= containers.github.inl.gov/genesis/prometheus_api
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+PUSH_LATEST ?= false
+
+BUILD_PUSH_TAGS := -t "$(IMAGE_REPO):$(IMAGE_TAG)"
+ifeq ($(PUSH_LATEST),true)
+  BUILD_PUSH_TAGS += -t "$(IMAGE_REPO):latest"
+endif
+
+build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, default: git short hash)
+	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
+	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
+	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
+
+build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>])
+ifndef IMAGE_REPO
+	$(error IMAGE_REPO is required. Example: make build-push IMAGE_REPO=containers.github.inl.gov/genesis PUSH_LATEST=true)
+endif
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--push \
+		$(BUILD_PUSH_TAGS) \
+		.
+	@echo "Done$(if $(filter true,$(PUSH_LATEST)), — also tagged as latest)"

@@ -1,0 +1,291 @@
+"""Streaming utilities for large file uploads."""
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+import uuid
+
+if TYPE_CHECKING:
+    from ..client import StorageClient
+    from ..async_client import AsyncStorageClient
+
+from ..models.file import FileMetadata
+
+
+class ChunkedUploader:
+    """Handles chunked file uploads for large files."""
+
+    def __init__(self, client: "StorageClient", chunk_size: int = 5 * 1024 * 1024):
+        """Initialize chunked uploader.
+
+        Args:
+            client: Storage client instance
+            chunk_size: Size of each chunk in bytes (default 5MB)
+        """
+        self.client = client
+        self.chunk_size = chunk_size
+
+    def upload(
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
+    ) -> FileMetadata:
+        """Upload a file in chunks.
+
+        Args:
+            file_path: Path to the file to upload
+            name: Optional custom name
+            description: Optional description
+
+        Returns:
+            File metadata
+
+        Raises:
+            ValueError: If file doesn't exist
+        """
+        if not file_path.exists():
+            raise ValueError(f"File does not exist: {file_path}")
+
+        file_size = file_path.stat().st_size
+        total_chunks = (file_size + self.chunk_size - 1) // self.chunk_size
+        file_name = name or file_path.name
+
+        # Start upload session
+        upload_id = self._start_upload(file_name, file_size)
+
+        # Upload chunks
+        try:
+            with open(file_path, "rb") as f:
+                for chunk_num in range(total_chunks):
+                    chunk_data = f.read(self.chunk_size)
+                    self._upload_chunk(upload_id, chunk_num, chunk_data)
+
+            # Complete upload
+            return self._complete_upload(upload_id, file_name, description, total_chunks)
+
+        except Exception as e:
+            # Attempt to cancel upload on error
+            try:
+                self._cancel_upload(upload_id)
+            except Exception:
+                pass
+            raise e
+
+    def _start_upload(self, file_name: str, file_size: int) -> str:
+        """Start a chunked upload session.
+
+        Args:
+            file_name: Name of the file
+            file_size: Total file size in bytes
+
+        Returns:
+            Upload session ID
+        """
+        response = self.client._request(
+            "POST",
+            f"{self.client.files._base_path}/files/upload/start",
+            json={
+                "file_name": file_name,
+                "file_size": file_size,
+                "chunk_size": self.chunk_size,
+            },
+        )
+
+        data = response.json()
+        upload_id = data.get("upload_id") if isinstance(data, dict) else None
+        return str(upload_id or uuid.uuid4())
+
+    def _upload_chunk(self, upload_id: str, chunk_num: int, chunk_data: bytes) -> None:
+        """Upload a single chunk.
+
+        Args:
+            upload_id: Upload session ID
+            chunk_num: Chunk number (0-indexed)
+            chunk_data: Chunk data bytes
+        """
+        files = {"chunk": (f"chunk_{chunk_num}", chunk_data)}
+
+        self.client._request(
+            "POST",
+            f"{self.client.files._base_path}/files/upload/chunk",
+            files=files,
+            data={
+                "upload_id": upload_id,
+                "chunk_number": chunk_num,
+            },
+        )
+
+    def _complete_upload(
+        self, upload_id: str, file_name: str, description: Optional[str], total_chunks: int
+    ) -> FileMetadata:
+        """Complete the chunked upload.
+
+        Args:
+            upload_id: Upload session ID
+            file_name: File name
+            description: Optional description
+            total_chunks: Total number of chunks
+
+        Returns:
+            File metadata
+        """
+        payload = {
+            "upload_id": upload_id,
+            "file_name": file_name,
+            "total_chunks": total_chunks,
+        }
+
+        if description:
+            payload["description"] = description
+
+        response = self.client._request(
+            "POST", f"{self.client.files._base_path}/files/upload/complete", json=payload
+        )
+
+        return self.client.files._parse_file_metadata(response.json())
+
+    def _cancel_upload(self, upload_id: str) -> None:
+        """Cancel an upload session.
+
+        Args:
+            upload_id: Upload session ID
+        """
+        self.client._request("DELETE", f"{self.client.files._base_path}/files/upload/{upload_id}")
+
+
+class AsyncChunkedUploader:
+    """Async version of chunked file uploader."""
+
+    def __init__(self, client: "AsyncStorageClient", chunk_size: int = 5 * 1024 * 1024):
+        """Initialize async chunked uploader.
+
+        Args:
+            client: Async storage client instance
+            chunk_size: Size of each chunk in bytes (default 5MB)
+        """
+        self.client = client
+        self.chunk_size = chunk_size
+
+    async def upload(
+        self, file_path: Path, name: Optional[str] = None, description: Optional[str] = None
+    ) -> FileMetadata:
+        """Upload a file in chunks asynchronously.
+
+        Args:
+            file_path: Path to the file to upload
+            name: Optional custom name
+            description: Optional description
+
+        Returns:
+            File metadata
+
+        Raises:
+            ValueError: If file doesn't exist
+        """
+        if not file_path.exists():
+            raise ValueError(f"File does not exist: {file_path}")
+
+        file_size = file_path.stat().st_size
+        total_chunks = (file_size + self.chunk_size - 1) // self.chunk_size
+        file_name = name or file_path.name
+
+        # Start upload session
+        upload_id = await self._start_upload(file_name, file_size)
+
+        # Upload chunks
+        try:
+            with open(file_path, "rb") as f:
+                for chunk_num in range(total_chunks):
+                    chunk_data = f.read(self.chunk_size)
+                    await self._upload_chunk(upload_id, chunk_num, chunk_data)
+
+            # Complete upload
+            return await self._complete_upload(upload_id, file_name, description, total_chunks)
+
+        except Exception as e:
+            # Attempt to cancel upload on error
+            try:
+                await self._cancel_upload(upload_id)
+            except Exception:
+                pass
+            raise e
+
+    async def _start_upload(self, file_name: str, file_size: int) -> str:
+        """Start a chunked upload session.
+
+        Args:
+            file_name: Name of the file
+            file_size: Total file size in bytes
+
+        Returns:
+            Upload session ID
+        """
+        response = await self.client._request(
+            "POST",
+            f"{self.client.files._base_path}/files/upload/start",
+            json={
+                "file_name": file_name,
+                "file_size": file_size,
+                "chunk_size": self.chunk_size,
+            },
+        )
+
+        data = response.json()
+        upload_id = data.get("upload_id") if isinstance(data, dict) else None
+        return str(upload_id or uuid.uuid4())
+
+    async def _upload_chunk(self, upload_id: str, chunk_num: int, chunk_data: bytes) -> None:
+        """Upload a single chunk.
+
+        Args:
+            upload_id: Upload session ID
+            chunk_num: Chunk number (0-indexed)
+            chunk_data: Chunk data bytes
+        """
+        files = {"chunk": (f"chunk_{chunk_num}", chunk_data)}
+
+        await self.client._request(
+            "POST",
+            f"{self.client.files._base_path}/files/upload/chunk",
+            files=files,
+            data={
+                "upload_id": upload_id,
+                "chunk_number": chunk_num,
+            },
+        )
+
+    async def _complete_upload(
+        self, upload_id: str, file_name: str, description: Optional[str], total_chunks: int
+    ) -> FileMetadata:
+        """Complete the chunked upload.
+
+        Args:
+            upload_id: Upload session ID
+            file_name: File name
+            description: Optional description
+            total_chunks: Total number of chunks
+
+        Returns:
+            File metadata
+        """
+        payload = {
+            "upload_id": upload_id,
+            "file_name": file_name,
+            "total_chunks": total_chunks,
+        }
+
+        if description:
+            payload["description"] = description
+
+        response = await self.client._request(
+            "POST", f"{self.client.files._base_path}/files/upload/complete", json=payload
+        )
+
+        return self.client.files._parse_file_metadata(response.json())
+
+    async def _cancel_upload(self, upload_id: str) -> None:
+        """Cancel an upload session.
+
+        Args:
+            upload_id: Upload session ID
+        """
+        await self.client._request(
+            "DELETE", f"{self.client.files._base_path}/files/upload/{upload_id}"
+        )
