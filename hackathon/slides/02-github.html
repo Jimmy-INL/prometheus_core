@@ -70,7 +70,7 @@ You'll do all three for real at 3:30 pm, with a practice PR. On Day 2 every team
 <ul class="b">
 <li>Team <code>open</code> has <strong>write</strong> access. Work in your own <strong>fork</strong> (or a branch) and open PRs to <code>genesis/hackathon</code>.</li>
 <li><code>main</code> is protected: changes reach it only through a PR with one approval, and force-pushes are blocked.</li>
-<li>The platform repos (<code>prometheus_platform</code>, <code>prometheus_api</code>, the template) are read-only for this hackathon. Contributing to the platform later? <strong>Always fork it</strong>: a ruleset allows no branches there except <code>dev</code>.</li>
+<li><code>genesis/prometheus_platform</code> (the platform, the SDK in <code>sdk/</code>, the template in <code>agent-template/</code>) is read-only for this hackathon. Contributing to the platform later? <strong>Always fork it</strong>: a ruleset allows no branches there except <code>dev</code>.</li>
 </ul>
 </div>
 </div>
@@ -528,12 +528,14 @@ git config rebase.autoStash true</pre>
 </div>
 
 <div class="card">
-<h4>Clone side by side</h4>
-<p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p>
+<h4>One clone, three directories</h4>
+<p class="small">The template and the SDK live inside the platform repo, so there is nothing else to clone. <code>setup_agent.py</code> finds <code>../platform/.env</code> and copies its secrets into your new agent.</p>
 <pre class="xs">~/prometheus/
 ├── prometheus_platform/
-├── prometheus_agent_template/
-└── my-agent/            # generated</pre>
+│   ├── platform/        # make up here
+│   ├── sdk/
+│   └── agent-template/  # setup_agent.py
+└── hackathon/           # your agents go here</pre>
 </div>
 
 </div>
@@ -543,15 +545,16 @@ git config rebase.autoStash true</pre>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Homework</div><h2>Clone the agent template</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Homework</div><h2>Clone the platform monorepo</h2></div>
   <div class="content">
 <pre>cd ~/prometheus
-git clone git@github.inl.gov:genesis/prometheus_agent_template.git
+git clone git@github.inl.gov:genesis/prometheus_platform.git
 <span class="c"># no SSH key? use HTTPS and let gh handle credentials:</span>
 gh auth login --hostname github.inl.gov
-git clone https://github.inl.gov/genesis/prometheus_agent_template.git</pre>
+git clone https://github.inl.gov/genesis/prometheus_platform.git
+ls prometheus_platform    <span class="c"># agent-template  platform  sdk  README.md  CODEOWNERS</span></pre>
 <div class="callout">
-Keep it next to <code>prometheus_platform</code>: <code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy the platform secrets into your new agent.</div>
+The agent template is <code>prometheus_platform/agent-template/</code>; there is no separate repo to clone any more. Already cloned <code>prometheus_agent_template</code> for an earlier homework? That repo is archived now; use <code>agent-template/</code> in the monorepo.</div>
 
   </div>
 </section>
@@ -569,8 +572,8 @@ Keep it next to <code>prometheus_platform</code>: <code>setup_agent.py</code> lo
 <div class="card acc">
 <h3>Find your way</h3>
 <ul class="b sm">
-<li>Know the three core repos and what lives where</li>
-<li>Understand how <code>prometheus_api</code> reaches every agent (the base image)</li>
+<li>Know the monorepo (<code>platform/</code>, <code>sdk/</code>, <code>agent-template/</code>) and what lives where</li>
+<li>Understand how the SDK reaches every agent (the <code>prometheus_api</code> base image)</li>
 <li>Know which branch each repo integrates on</li>
 </ul>
 </div>
@@ -607,21 +610,19 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <div class="col">
-<h3 class="acc">⚙️ Platform: the three core repos</h3>
-<div class="card">
-<h4>🧰 prometheus_api</h4>
-<p class="small">&quot;Agent base class and storage helpers.&quot; It also contains LLMClient, identity, and the artifact catalog.</p>
-</div>
-
+<h3 class="acc">⚙️ Platform: one monorepo</h3>
 <div class="card">
 <h4>🚀 prometheus_platform</h4>
-<p class="small">&quot;Orchestration, agent registry, frontend, core agents.&quot;</p>
+<p class="small">Default branch <code>dev</code>. Since Oct 9 it holds three directories, each with its own <code>Makefile</code> and tests:</p>
+<ul class="b xs">
+<li><code>platform/</code>: orchestration, agent registry, frontend, core agents</li>
+<li><code>sdk/</code>: <code>prometheus_api</code>, the agent base class, LLMClient and storage helpers (formerly <code>genesis/prometheus_api</code>)</li>
+<li><code>agent-template/</code>: start your own agent here (formerly <code>genesis/prometheus_agent_template</code>)</li>
+</ul>
 </div>
 
-<div class="card">
-<h4>🤖 prometheus_agent_template</h4>
-<p class="small">&quot;Get started on writing your own Prometheus agent here!&quot;</p>
-</div>
+<div class="callout info">
+The old repos take no new work (<code>prometheus_agent_template</code> is archived), and their commit hashes were rewritten in the monorepo.</div>
 
 </div>
 <div class="col">
@@ -668,9 +669,8 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 <div class="col">
 <h4 class="acc">Core platform</h4>
 <table class="t xs">
-<tr><td><b>prometheus_platform</b></td><td>default <code>dev</code></td></tr>
-<tr><td><b>prometheus_api</b></td><td><code>main</code> · v0.13.0</td></tr>
-<tr><td><b>prometheus_agent_template</b></td><td><code>main</code></td></tr>
+<tr><td><b>prometheus_platform</b></td><td>default <code>dev</code>: <code>platform/</code>, <code>sdk/</code> (v0.13.0), <code>agent-template/</code></td></tr>
+<tr><td>prometheus_api, prometheus_agent_template</td><td>superseded by the monorepo</td></tr>
 <tr><td>.github</td><td>org profile + wiki bot</td></tr>
 </table>
 <h4 class="acc" style="margin-top:6px" class="acc">Tooling</h4>
@@ -719,14 +719,14 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
   <div class="content">
 <div class="dg">
 <div class="row" style="gap:0; align-items:stretch">
-<div class="box navy" style="width:330px"><b>prometheus_api</b><span class="small">package <code>prometheus-api</code></span><span class="small">push to <code>main</code> → CI "Tests"</span></div>
+<div class="box navy" style="width:330px"><b>sdk/</b><span class="small">package <code>prometheus-api</code></span><span class="small">push to <code>dev</code> → CI "SDK Tests"</span></div>
 <div class="arrow-h" style="width:120px"><span>docker build</span></div>
 <div class="box violet" style="flex:1"><b>Base image</b><span class="mono">containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span><span class="small">Python 3.12 + uv + git + prometheus_api + a2a-sdk/starlette/uvicorn/litellm/httpx/redis/fsspec + INL CA bundle</span></div>
 </div>
 <div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
 <div class="row" style="gap:24px">
-<div class="box sky" style="flex:1"><b>prometheus_platform</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= 1914b55</code> (v0.13.0)</span></div>
-<div class="box orange" style="flex:1"><b>prometheus_agent_template → your agent</b><span class="small"><code>agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
+<div class="box sky" style="flex:1"><b>platform/</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>platform/Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= &lt;tag&gt;</code></span></div>
+<div class="box orange" style="flex:1"><b>agent-template/ → your agent</b><span class="small"><code>agent-template/agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
 </div>
 </div>
 <div class="grid g3">
@@ -742,10 +742,9 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 
 <div class="card">
 <h4>Local venvs</h4>
-<p class="small">For IDE and tests outside Docker, install the same commit:</p>
-<pre class="xs">uv pip install <span class="s">\</span>
- <span class="s">&quot;git+https://github.inl.gov/genesis/\</span>
-<span class="s">prometheus_api.git@1914b55&quot;</span></pre>
+<p class="small">For IDE and tests outside Docker, install the SDK from your clone:</p>
+<pre class="xs">uv pip install -e <span class="s">\</span>
+  ~/prometheus/prometheus_platform/sdk</pre>
 </div>
 
 </div>
@@ -767,32 +766,28 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 </thead>
 <tbody>
 <tr class="hl">
-<td>platform <code>Makefile:22</code></td>
-<td><code>1914b55</code> (v0.13.0 = <code>main</code>)</td>
+<td><code>platform/Makefile:22</code></td>
+<td>the image tag (<code>?= …</code>), the one to change</td>
 </tr>
 <tr>
-<td>platform <code>.env.example</code></td>
+<td><code>platform/.env.example</code></td>
 <td><code>#PROMETHEUS_API_BASE_IMAGE_HASH=</code> (keep in sync)</td>
 </tr>
 <tr>
-<td>platform <code>docker-compose.yml</code></td>
+<td><code>platform/docker-compose.yml</code></td>
 <td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-}</code>, empty default</td>
 </tr>
 <tr>
-<td>template <code>docker-compose.yml</code></td>
+<td><code>agent-template/agent_template/docker-compose.yml</code></td>
 <td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}</code></td>
 </tr>
 <tr>
 <td>template README / TUTORIAL</td>
-<td>the <code>.env</code> value (it used to hard-code <code>2b3dbcf</code>, v0.8.0)</td>
+<td>the <code>.env</code> value (old copies hard-code an old-repo hash)</td>
 </tr>
 <tr>
-<td>platform <code>backend/</code> and <code>tests/pyproject.toml</code></td>
-<td><code>rev = &quot;1914b55…&quot;</code>, matching the Makefile</td>
-</tr>
-<tr>
-<td><code>prometheus_api</code> <code>main</code></td>
-<td><code>1914b55</code>, v0.13.0 (LLM tool calling, AskSage profile), the platform pin</td>
+<td><code>platform/backend/</code> and <code>platform/tests/pyproject.toml</code></td>
+<td>a <code>prometheus-api</code> git <code>rev</code>, for local tests only</td>
 </tr>
 </tbody>
 </table>
@@ -801,12 +796,12 @@ Hands-on is at 3:30 pm: you will open a practice PR to <code>genesis/hackathon</
 <div class="col">
 <h4 class="acc">Tag schemes in the registry</h4>
 <ul class="b sm">
-<li><strong>CI</strong> (push to <code>main</code>): <code>:&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and <code>:latest</code>, multi-arch (amd64 + arm64).</li>
+<li><strong>CI</strong> (push to <code>dev</code> touching <code>sdk/**</code>): <code>:&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and <code>:latest</code>, multi-arch (amd64 + arm64). The image keeps the name <code>prometheus_api</code>.</li>
 <li><strong>Manual</strong> <code>make build-push</code>: <code>:&lt;git short sha&gt;</code>, which is the format the pins use.</li>
 <li>It is a <strong>tag</strong>, not a sha256 digest. The variable is called <code>…_HASH</code> because the tag is a commit hash.</li>
 </ul>
 <div class="callout">
-Bumping the SDK in the platform = changing that one Makefile line, then reading <code>prometheus_api/docs/agent/AGENT_MIGRATIONS.md</code> for everything that changed in between.</div>
+Bumping the SDK in the platform = changing that one line in <code>platform/Makefile</code>, then reading <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code> for everything that changed in between.</div>
 
 <div class="callout warn">
 Running <code>docker compose up</code> in the platform <strong>without</strong> <code>make</code> gives an empty tag and a broken <code>FROM</code>. Always go through <code>make</code>.</div>
@@ -818,10 +813,10 @@ Running <code>docker compose up</code> in the platform <strong>without</strong> 
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">Inside the repos</div><h2>Where things live</h2></div>
+  <div class="head"><div class="eyebrow">Inside the monorepo</div><h2>Where things live</h2></div>
   <div class="content">
 <div class="grid g3" style="gap:18px;">
-<pre class="xs">prometheus_platform/  (dev)
+<pre class="xs">platform/  (prometheus_platform, dev)
 ├── Makefile             # up, restart, logs…
 ├── docker-compose.yml   # core services
 ├── .env.example
@@ -839,7 +834,7 @@ Running <code>docker compose up</code> in the platform <strong>without</strong> 
 ├── docs/   # zensical site
 ├── AGENTS.md · CLAUDE.md
 └── README.md</pre>
-<pre class="xs">prometheus_api/  (main)
+<pre class="xs">sdk/  (formerly prometheus_api)
 ├── prometheus_api/
 │   ├── agent/        # PrometheusAgent,
 │   │                 #  identity, registry,
@@ -854,8 +849,8 @@ Running <code>docker compose up</code> in the platform <strong>without</strong> 
 ├── examples/
 ├── Dockerfile · Makefile
 ├── llm_config.example.yaml
-└── .github/workflows/tests.yml</pre>
-<pre class="xs">prometheus_agent_template/
+└── (CI: .github/workflows/sdk-tests.yml)</pre>
+<pre class="xs">agent-template/
 ├── setup_agent.py     # scaffolder
 ├── TUTORIAL.md        # 1,200+ lines
 ├── README.md
@@ -938,19 +933,9 @@ Only <code>release/*</code> and <code>hotfix/*</code> ever merge into <code>main
 </thead>
 <tbody>
 <tr class="hl">
-<td><strong>prometheus_platform</strong></td>
+<td><strong>prometheus_platform</strong> (<code>platform/</code>, <code>sdk/</code>, <code>agent-template/</code>)</td>
 <td><code>dev</code> (default branch)</td>
 <td><code>--base dev</code></td>
-</tr>
-<tr>
-<td><strong>prometheus_api</strong></td>
-<td><code>main</code></td>
-<td><code>--base main</code></td>
-</tr>
-<tr>
-<td><strong>prometheus_agent_template</strong></td>
-<td><code>main</code></td>
-<td><code>--base main</code></td>
 </tr>
 <tr>
 <td>agent repos (gmsh_agent…)</td>
@@ -970,7 +955,7 @@ Only <code>release/*</code> and <code>hotfix/*</code> ever merge into <code>main
 <h4 class="acc">Where we are today</h4>
 <ul class="b sm">
 <li>Platform <code>dev</code> carries all recent work. <code>main</code> has not been updated since April 2026: the first formal release is still ahead of us.</li>
-<li>There are no version tags or <code>release/*</code> / <code>hotfix/*</code> branches yet. <code>prometheus_api</code> versions live in <code>pyproject.toml</code> (0.13.0) plus <code>docs/agent/AGENT_MIGRATIONS.md</code>.</li>
+<li>There are no version tags or <code>release/*</code> / <code>hotfix/*</code> branches yet. SDK versions live in <code>sdk/pyproject.toml</code> (0.13.0) plus <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code>.</li>
 <li>Existing branch names are mixed (<code>admin_setup_ui</code>, <code>fix/certs</code>, <code>task/…</code>, and <code>feat/…</code> in api). <strong>New branches: <code>feature/&lt;short-desc&gt;</code></strong>.</li>
 </ul>
 </div>
@@ -1009,12 +994,14 @@ git config rebase.autoStash true</pre>
 </div>
 
 <div class="card">
-<h4>Clone side by side</h4>
-<p class="small"><code>setup_agent.py</code> looks for <code>../prometheus_platform/.env</code> to copy secrets into your new agent. Keep this layout:</p>
+<h4>One clone, three directories</h4>
+<p class="small">The template and the SDK live inside the platform repo, so there is nothing else to clone. <code>setup_agent.py</code> finds <code>../platform/.env</code> and copies its secrets into your new agent.</p>
 <pre class="xs">~/prometheus/
 ├── prometheus_platform/
-├── prometheus_agent_template/
-└── my-agent/            # generated</pre>
+│   ├── platform/        # make up here
+│   ├── sdk/
+│   └── agent-template/  # setup_agent.py
+└── hackathon/           # your agents go here</pre>
 </div>
 
 </div>
@@ -1064,7 +1051,7 @@ gh pr create --repo genesis/prometheus_platform <span class="s">\</span>
 </div>
 
 <div class="callout warn">
-Force-pushing is only for <strong>your own feature branch</strong>. The protected branches (platform <code>dev</code>, api and template <code>main</code>) reject force-pushes, and nobody force-pushes shared branches anyway.</div>
+Force-pushing is only for <strong>your own feature branch</strong>. The protected branches (platform <code>dev</code>, hackathon <code>main</code>) reject force-pushes, and nobody force-pushes shared branches anyway.</div>
 
 </div>
 
@@ -1168,27 +1155,27 @@ Avoid: <code>wip</code>, <code>fix</code>, <code>changes</code>, <code>address c
 <td>The template ships 2 tests with mocked <code>RequestContext</code> and <code>EventQueue</code>.</td>
 </tr>
 <tr>
-<td><strong>prometheus_platform</strong> infra</td>
+<td><strong><code>platform/</code></strong> infra</td>
 <td><code>make test-static</code></td>
 <td>No Docker needed. <code>make test-integration</code> and <code>make test-system</code> need the stack running.</td>
 </tr>
 <tr>
-<td>platform <code>frontend/</code></td>
+<td><code>platform/frontend/</code></td>
 <td><code>cd frontend &amp;&amp; make install &amp;&amp; make check</code></td>
 <td>eslint + tsc</td>
 </tr>
 <tr>
-<td>platform <code>agents/&lt;name&gt;</code></td>
+<td><code>platform/agents/&lt;name&gt;</code></td>
 <td><code>cd agents/&lt;name&gt; &amp;&amp; uv run pytest</code></td>
 <td>client-agent: <code class="wrap">PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests</code></td>
 </tr>
 <tr>
-<td><strong>prometheus_api</strong></td>
+<td><strong><code>sdk/</code></strong></td>
 <td><code>make check &amp;&amp; make test</code><br><code>make hooks</code> (once)</td>
 <td><code>check</code> = ruff lint + ruff format --check + mypy. The hooks run ruff on commit and mypy + unit tests on push.</td>
 </tr>
 <tr>
-<td>prometheus_agent_template</td>
+<td><code>agent-template/</code></td>
 <td><code>make check &amp;&amp; make test</code></td>
 <td>Tests <code>setup_agent.py</code> itself.</td>
 </tr>
@@ -1200,7 +1187,7 @@ Avoid: <code>wip</code>, <code>fix</code>, <code>changes</code>, <code>address c
 </tbody>
 </table>
 <div class="callout warn">
-For the platform, the template, and the agent repos, <strong>these local checks are the only CI</strong>. Nothing automated runs on those PRs.</div>
+Outside <code>sdk/</code>, <strong>these local checks are the only CI</strong>: nothing automated runs for <code>platform/</code>, <code>agent-template/</code> or the agent repos.</div>
 
   </div>
 </section>
@@ -1210,8 +1197,8 @@ For the platform, the template, and the agent repos, <strong>these local checks 
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <div class="col">
-<h4 class="acc">prometheus_api · <code>.github/workflows/tests.yml</code></h4>
-<p class="small">On a push or PR to <code>main</code>, on self-hosted runners (group <code>genesis</code>):</p>
+<h4 class="acc"><code>sdk/</code> · <code>.github/workflows/sdk-tests.yml</code></h4>
+<p class="small">On a push to <code>dev</code> or a PR to <code>dev</code>/<code>main</code> that touches <code>sdk/**</code>, on self-hosted runners (group <code>genesis</code>):</p>
 <table class="t sm">
 <thead>
 <tr>
@@ -1238,7 +1225,7 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 </tr>
 </tbody>
 </table>
-<p class="small">Checks are strict (the branch must be up to date). There is no ruff or mypy job yet, so run <code>make check</code> yourself.</p>
+<p class="small">There is no ruff or mypy job yet, so run <code>make check</code> yourself.</p>
 </div>
 <div class="col">
 <h4 class="acc">Everything else</h4>
@@ -1251,12 +1238,8 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 </thead>
 <tbody>
 <tr>
-<td>prometheus_platform <code>dev</code></td>
+<td><code>platform/</code>, <code>agent-template/</code></td>
 <td><strong>none</strong>. <code>docs.yml</code> builds the docs site only on a push to <code>main</code>.</td>
-</tr>
-<tr>
-<td>prometheus_agent_template</td>
-<td>none</td>
 </tr>
 <tr>
 <td>gmsh_agent, agent-sandbox-mcp</td>
@@ -1265,7 +1248,7 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 </tbody>
 </table>
 <div class="callout warn">
-<strong>Fork PRs to prometheus_api</strong> currently get no CI runs, so the six required checks never report and a maintainer has to merge them. With write access, push your branch to the org repo and open the PR from there; otherwise ask a maintainer to re-open it from an org branch.</div>
+<strong>Fork PRs</strong> may need a maintainer to approve the workflow run before the SDK checks report.</div>
 
 </div>
 </div>
@@ -1288,37 +1271,30 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 </thead>
 <tbody>
 <tr class="hl">
-<td><strong>platform <code>dev</code></strong></td>
+<td><strong>prometheus_platform <code>dev</code></strong> (all three directories)</td>
 <td>1</td>
 <td>dismiss stale · last-push approval · threads resolved</td>
 <td>—</td>
 <td>no force-push, no delete</td>
 </tr>
 <tr>
-<td><strong>api <code>main</code></strong></td>
-<td>1</td>
-<td>same, plus code-owner review (CODEOWNERS covers only <code>/.github</code>)</td>
-<td>6 jobs, strict</td>
-<td>no force-push, no delete</td>
-</tr>
-<tr>
-<td><strong>template <code>main</code></strong></td>
-<td>1</td>
-<td>dismiss stale · last-push approval · threads resolved</td>
+<td>prometheus_platform, any other branch</td>
 <td>—</td>
-<td>no force-push, no delete</td>
+<td>ruleset &quot;no new branches&quot;: only <code>dev</code> may be created</td>
+<td>—</td>
+<td>fork instead</td>
 </tr>
 <tr>
-<td>gmsh_agent, agent-sandbox-mcp, hackathon <code>main</code></td>
+<td><strong>hackathon <code>main</code></strong></td>
+<td>1</td>
+<td>—</td>
+<td>—</td>
+<td>no force-push</td>
+</tr>
+<tr>
+<td>gmsh_agent, agent-sandbox-mcp <code>main</code></td>
 <td>—</td>
 <td>unprotected</td>
-<td>—</td>
-<td>—</td>
-</tr>
-<tr>
-<td>platform <code>main</code></td>
-<td>—</td>
-<td>its ruleset targets no branch yet</td>
 <td>—</td>
 <td>—</td>
 </tr>
@@ -1327,7 +1303,7 @@ For the platform, the template, and the agent repos, <strong>these local checks 
 <div class="grid g3">
 <div class="card">
 <h4>PR required</h4>
-<p class="small">No one pushes to <code>dev</code> or api/template <code>main</code> directly, not even admins (no bypass actors).</p>
+<p class="small">No one pushes to platform <code>dev</code> or hackathon <code>main</code> directly, not even admins (no bypass actors).</p>
 </div>
 
 <div class="card">
@@ -1367,7 +1343,7 @@ unchecked; bad elements fail late.
 
 <span class="p">## Config / environment changes</span>
 <span class="k">-</span> New env var <span class="s">`MESHQA_MAX_ELEMENTS`</span> (default 2e6)
-<span class="k">-</span> Base image: PROMETHEUS_API_BASE_IMAGE_HASH=1914b55</pre>
+<span class="k">-</span> Base image: PROMETHEUS_API_BASE_IMAGE_HASH from platform/Makefile</pre>
 <div class="col">
 <ul class="b">
 <li><strong>Title</strong>: an imperative sentence, like the commit subject (&quot;Add…&quot;, &quot;Fix…&quot;, &quot;Stop…&quot;).</li>
@@ -1386,8 +1362,8 @@ unchecked; bad elements fail late.
 <div class="grid g2" style="gap:30px;">
 <div class="col">
 <ul class="b">
-<li>List the <strong>commands you ran</strong>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>prometheus_api/AGENTS.md</code>).</li>
-<li><strong>prometheus_api API changes</strong>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li>
+<li>List the <strong>commands you ran</strong>, and any env var, Docker image, credential, or DeepLynx behavior change (<code>sdk/AGENTS.md</code>).</li>
+<li><strong>SDK (<code>sdk/</code>) API changes</strong>: bump the version (<code>make bump-minor</code>/<code>bump-patch</code>), add a section to <code>docs/agent/AGENT_MIGRATIONS.md</code>, and update <code>specs/</code> with tests that cite the REQ IDs.</li>
 <li>UI change? Add a screenshot.</li>
 <li>Open as <strong>draft</strong> (<code>gh pr create --draft</code>) while it is still in progress.</li>
 </ul>
