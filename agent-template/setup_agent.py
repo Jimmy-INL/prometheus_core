@@ -18,7 +18,7 @@ import shutil
 import sys
 from pathlib import Path
 
-PLATFORM_ENV_PATH = Path(__file__).resolve().parent.parent / "prometheus_platform" / ".env"
+PLATFORM_ENV_PATH = Path(__file__).resolve().parent.parent / "platform" / ".env"
 PLATFORM_SECRET_KEYS = (
     "AGENT_SECRET",
     "REDIS_PASSWORD",
@@ -278,7 +278,7 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
             return
 
     lines = [
-        "# Created by setup_agent.py from ../prometheus_platform/.env.",
+        "# Created by setup_agent.py from ../platform/.env.",
         "# Contains shared platform secrets needed by this agent.",
         "",
     ]

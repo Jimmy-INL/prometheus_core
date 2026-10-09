@@ -57,16 +57,9 @@ my-agent/
 └── .env.example
 ```
 
-if your `prometheus_platform` checkout is next to `prometheus_agent_template`
-
-```
-├── prometheus_agent_template
-└── prometheus_platform
-```
-
-the `setup_agent.py` script will optionally inspect your `prometheus_platform/.env` file and
-copy over all required secrets to make the newly instantiated agent register with the platform
-out of the box.
+if you have created the platform's `.env` (`platform/.env` in this repository),
+the `setup_agent.py` script will optionally inspect it and copy over all required
+secrets to make the newly instantiated agent register with the platform out of the box.
 
 > Prefer to do it by hand? Copy `agent_template/` and replace the `TEMPLATE_*`
 > placeholders yourself. See [`TUTORIAL.md`](TUTORIAL.md).

@@ -91,3 +91,10 @@ def test_select_platform_env_values_includes_llm_config_profile(tmp_path):
 
     assert selected["LLM_CONFIG_PROFILE"] == "inl_hpc"
     assert "MODEL_NAME" not in selected
+
+
+def test_platform_env_path_points_at_monorepo_platform_dir():
+    """The template lives at agent-template/ in the monorepo; the platform it
+    copies secrets from is the sibling platform/ directory."""
+    assert setup_agent.PLATFORM_ENV_PATH.name == ".env"
+    assert (setup_agent.PLATFORM_ENV_PATH.parent / "docker-compose.yml").is_file()
