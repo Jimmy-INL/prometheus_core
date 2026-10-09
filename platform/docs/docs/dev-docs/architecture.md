@@ -207,6 +207,7 @@ All services are containerized via Docker Compose:
 | OSTI Research | osti-research-agent | 8007 | Specialist |
 | Artifact Debug | artifact-debug-agent | 8008 | Testing |
 | Synthesis Agent | synthesis-agent | 8009 | Specialist |
+| Code Render Debug | code-render-debug-agent | 8010 | Testing |
 | Redis | agent-redis | 6379 | State/status |
 | React Frontend (dev) | frontend-dev | 5150 | UI (dev profile) |
 | React Frontend (prod) | frontend-prod | 8080 | UI (prod profile) |

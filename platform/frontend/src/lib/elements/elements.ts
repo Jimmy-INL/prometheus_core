@@ -13,6 +13,7 @@
  */
 
 import { lazy, type ComponentType } from "react";
+import { normalizeMime } from "../mime";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +31,8 @@ export type ElementKind =
   | "mermaid"        // Mermaid custom element
   | "thermal"        // ThermalAnalysisViewer custom element
   | "report"         // markdown report rendered inline (render_hint === "report")
+  | "code"           // plain source text, e.g. YAML (render_hint === "code")
+  | "table"          // CSV / TSV sortable table (render_hint === "table")
   | "reference"      // citation card (render_hint === "reference")
   | "unknown";
 
@@ -73,10 +76,6 @@ const IMAGE_MIME_TYPES = new Set([
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
-function normalizeMime(mime?: string): string {
-  return (mime ?? "").split(";", 1)[0].trim().toLowerCase();
-}
-
 function isImageFile(el: AnyElement): boolean {
   const mime = normalizeMime(el.mime);
   if (IMAGE_MIME_TYPES.has(mime)) return true;
@@ -105,6 +104,8 @@ export function classifyElement(el: AnyElement): ElementKind {
       // (see prometheus.thermal_analysis.result.v1 plugin __init__.py).
       case "ThermalAnalysisViewer": return "thermal";
       case "ReportViewer":        return "report";
+      case "CodeViewer":          return "code";
+      case "TableViewer":         return "table";
       case "ReferenceViewer":     return "reference";
       case "SVGViewer":           return "image";
       default:                    return "unknown";
@@ -156,6 +157,8 @@ const MeshViewerElement = import.meta.env.DEV
 // worker, no long-lived render window), so re-suspending on HMR is harmless
 // here — no DEV/prod branch needed.
 const MermaidElement = lazy(() => import("../../viewers/MermaidElement"));
+// Lazy so highlight.js and its grammars load only when a code artifact is shown.
+const CodeElement = lazy(() => import("../../viewers/CodeElement"));
 import { PdfViewerElement }                from "../../viewers/PdfViewerElement";
 import { FileDownloadElement }             from "../../viewers/FileDownloadElement";
 import { ImageViewerElement }              from "../../viewers/ImageViewerElement";
@@ -164,6 +167,7 @@ import { FollowUpSuggestionsElement }      from "../../viewers/FollowUpSuggestio
 import { PlanViewerElement }               from "../../viewers/PlanViewerElement";
 import { ThermalAnalysisElement }          from "../../viewers/ThermalAnalysisElement";
 import { ReportElement }                   from "../../viewers/ReportElement";
+import { TableElement }                    from "../../viewers/TableElement";
 import { ReferenceElement }                from "../../viewers/ReferenceElement";
 
 export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null>> = {
@@ -178,6 +182,8 @@ export const VIEWER_REGISTRY: Partial<Record<ElementKind, ViewerComponent | null
   mermaid:      MermaidElement,
   thermal:      ThermalAnalysisElement,
   report:       ReportElement,
+  code:         CodeElement,
+  table:        TableElement,
   reference:    ReferenceElement,
   unknown:      null,
 };

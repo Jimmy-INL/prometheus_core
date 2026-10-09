@@ -83,11 +83,58 @@ _JSON_MIMETYPES = {"application/json"}
 # branch, message_handler.py:855). Kept out of _FILE_MIMETYPES so these render
 # inline rather than downloading (A-1).
 _REPORT_MIMETYPES = {"text/markdown", "text/plain"}
-# CAD step MIMEs (message_handler.py:33) + archives + CSV → downloadable file.
-# CSV lives here, not with JSON (A-9): the JSONViewer can't parse CSV, so hand it to
-# the download path (until a table viewer exists) rather than error the viewer.
+# Source / config text → inline-rendered, syntax-highlighted source (not Markdown:
+# comments/indentation would mangle). Maps MIME → the extension used when inline text is
+# served without a file name. Keep in step with MIME_LANGUAGES in
+# frontend/src/lib/highlight/index.ts. ``application/json`` is deliberately absent: it
+# keeps the interactive JSON tree viewer.
+# text/x-moose is a vendor type (not IANA-registered) for MOOSE input files; agents may
+# set it so a MOOSE input without a ".i" name still routes to the source viewer.
+_CODE_MIME_EXTENSIONS: dict[str, str] = {
+    "application/yaml": ".yaml",
+    "application/x-yaml": ".yaml",
+    "text/yaml": ".yaml",
+    "text/x-yaml": ".yaml",
+    "text/x-moose": ".i",
+    "application/toml": ".toml",
+    "application/xml": ".xml",
+    "text/xml": ".xml",
+    "text/x-python": ".py",
+    "text/x-script.python": ".py",
+    "application/x-python": ".py",
+    "text/x-c": ".c",
+    "text/x-csrc": ".c",
+    "text/x-chdr": ".h",
+    "text/x-c++src": ".cpp",
+    "text/x-c++hdr": ".hpp",
+    "text/x-fortran": ".f90",
+    "text/x-cmake": ".cmake",
+    "text/x-makefile": ".mk",
+    "application/x-sh": ".sh",
+    "text/x-shellscript": ".sh",
+    "text/x-dockerfile": ".dockerfile",
+    "application/sql": ".sql",
+    "text/x-sql": ".sql",
+    "text/javascript": ".js",
+    "application/javascript": ".js",
+    "application/typescript": ".ts",
+    "text/x-typescript": ".ts",
+    "text/x-diff": ".diff",
+    "text/x-patch": ".patch",
+}
+_CODE_MIMETYPES = set(_CODE_MIME_EXTENSIONS)
+# CSV / TSV → inline table viewer. Maps MIME → download extension (used when inline text
+# is served without a file name). Keep in step with the delimiter handling in
+# frontend/src/lib/table/csv.ts.
+_TABLE_MIME_EXTENSIONS: dict[str, str] = {
+    "text/csv": ".csv",
+    "application/csv": ".csv",
+    "text/tab-separated-values": ".tsv",
+}
+_TABLE_MIMETYPES = set(_TABLE_MIME_EXTENSIONS)
+# CAD step MIMEs (message_handler.py:33) + archives → downloadable file. CSV is not
+# here: it has its own table viewer (the JSONViewer can't parse it — A-9).
 _FILE_MIMETYPES = {
-    "text/csv",
     "application/octet-stream",
     "application/zip",
     "application/gzip",
@@ -116,18 +163,52 @@ _EXTENSION_HINTS: dict[str, RenderHint] = {
     ".svg": "image",
     ".pdf": "pdf",
     ".json": "json",
-    ".csv": "file",  # A-9: CSV downloads, not JSONViewer
+    ".csv": "table",  # A-9: not the JSONViewer; rendered by the table viewer
+    ".tsv": "table",
     ".md": "report",
-    ".txt": "file",
-    ".log": "file",
-    ".inp": "file",
-    ".i": "file",
+    ".i": "code",  # MOOSE input file (HIT/GetPot syntax)
+    **{
+        ext: "code"
+        for ext in (
+            ".yaml", ".yml", ".jsonc", ".toml", ".ini", ".cfg", ".conf",
+            ".xml", ".xsd", ".xdmf", ".xmf",
+            ".py", ".pyi",
+            ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
+            ".f", ".f90", ".f95", ".f03", ".f08", ".for",
+            ".cmake", ".mk", ".dockerfile",
+            ".sh", ".bash", ".zsh",
+            ".sql",
+            ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts",
+            ".diff", ".patch",
+            ".txt", ".log",
+        )
+    },
+    ".inp": "file",  # ambiguous (Abaqus/MCNP/etc.) — stays a download
     ".zip": "file",
     ".tar": "file",
     ".gz": "file",
     ".ipynb": "file",
     ".xlsx": "file",
 }
+
+# Well-known source files identified by their whole file name rather than an extension.
+# Checked before the extension, so ``CMakeLists.txt`` is cmake, not plain text.
+_BASENAME_HINTS: dict[str, RenderHint] = {
+    name: "code"
+    for name in (
+        "Dockerfile",
+        "Containerfile",
+        "Makefile",
+        "makefile",
+        "GNUmakefile",
+        "CMakeLists.txt",
+    )
+}
+# ``.txt`` / ``.log`` only route to ``code`` when nothing else decided. Agent text parts
+# default to the name ``artifact.txt`` (prometheus_api ArtifactReference), so letting
+# them override a text/plain or text/markdown MIME would pull every plain agent reply
+# out of the report viewer.
+_PLAINTEXT_EXTENSIONS = {".txt", ".log"}
 
 
 def _is_conversation_message(artifact: dict[str, Any]) -> bool:
@@ -166,16 +247,38 @@ def artifact_identity(artifact: dict[str, Any]) -> str:
     return "art-" + hashlib.sha256(basis.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def _extension_hint(artifact: dict[str, Any], *, include_plaintext: bool = True) -> Optional[RenderHint]:
+    """Render hint from the file name of ``uri``, then ``name``, or ``None``.
+
+    A well-known whole file name (``Dockerfile``) wins over the extension. With
+    ``include_plaintext=False`` the generic ``.txt`` / ``.log`` extensions are ignored.
+    """
+    for source in (artifact.get("uri"), artifact.get("name")):
+        if not source:
+            continue
+        path = Path(str(source))
+        hint = _BASENAME_HINTS.get(path.name)
+        if hint is not None:
+            return hint
+        suffix = path.suffix.lower()
+        if not include_plaintext and suffix in _PLAINTEXT_EXTENSIONS:
+            continue
+        hint = _EXTENSION_HINTS.get(suffix)
+        if hint is not None:
+            return hint
+    return None
+
+
 def classify_render_hint(artifact: dict[str, Any]) -> RenderHint:
     """Derive the frontend ``render_hint`` for one artifact.
 
     First match wins, in this order:
 
     1. ``json_type`` — explicit semantic type (highest priority).
-    2. **Specific** ``mime_type`` (ifc/mesh/mermaid/image/pdf/json/report).
+    2. **Specific** ``mime_type`` (ifc/mesh/mermaid/image/pdf/json/code/table/report).
     3. ``tags`` — explicit routing hints.
     4. file ``extension`` (of ``uri`` or ``name``).
-    5. **Generic downloadable** ``mime_type`` (octet-stream/zip/csv/step).
+    5. **Generic downloadable** ``mime_type`` (octet-stream/zip/step).
     6. a bare-``json_body`` fallback.
 
     A concrete MIME outranks tags (A-2): an artifact tagged ``data`` but typed
@@ -206,8 +309,17 @@ def classify_render_hint(artifact: dict[str, Any]) -> RenderHint:
             return "pdf"
         if mime in _JSON_MIMETYPES:
             return "json"
+        if mime in _CODE_MIMETYPES:
+            return "code"
+        if mime in _TABLE_MIMETYPES:
+            return "table"
         if mime in _REPORT_MIMETYPES:
-            return "report"
+            # A source file mislabeled text/plain still gets the source viewer, not
+            # Markdown (which would mangle its comments/indentation), and a CSV/TSV
+            # mislabeled text/plain still gets the table viewer. Generic .txt/.log
+            # names don't count: they'd capture every plain-text reply.
+            hint = _extension_hint(artifact, include_plaintext=False)
+            return hint if hint in ("code", "table") else "report"
 
     # 3. tags — explicit routing hints (only when a specific MIME didn't decide).
     tags = artifact.get("tags")
@@ -218,13 +330,9 @@ def classify_render_hint(artifact: dict[str, Any]) -> RenderHint:
                 return hint
 
     # 4. extension — of the URI first, then the name.
-    for source in (artifact.get("uri"), artifact.get("name")):
-        if not source:
-            continue
-        suffix = Path(str(source)).suffix.lower()
-        hint = _EXTENSION_HINTS.get(suffix)
-        if hint is not None:
-            return hint
+    hint = _extension_hint(artifact)
+    if hint is not None:
+        return hint
 
     # 5. generic downloadable MIME — after tags/extension so it can't mask a tag.
     if mime in _FILE_MIMETYPES:
@@ -244,20 +352,33 @@ def artifact_download_payload(
     """Serialize inline artifact content for the content proxy (task 07).
 
     Ports ``_artifact_download_payload`` (message_handler.py:978): a ``json_body``
-    becomes pretty-printed ``.json``; otherwise the first non-empty ``content`` /
-    ``text`` / ``description`` becomes ``.md`` (when markdown) or ``.txt``. Returns
-    ``(bytes, extension, mime_type)`` or ``None`` when there is nothing inline to
-    serve.
+    becomes pretty-printed ``.json``; otherwise ``text_body`` (even when empty), or the
+    first non-empty ``content`` / ``text`` / ``description``, is served with an
+    extension chosen by MIME (``.yaml``, ``.i``, ``.py``, ...), ``.md``
+    (markdown), or ``.txt``. Returns ``(bytes, extension, mime_type)`` or ``None`` when
+    there is nothing inline to serve.
     """
     if artifact.get("json_body") is not None:
         content = json.dumps(artifact["json_body"], indent=2).encode("utf-8")
         return content + b"\n", ".json", "application/json"
 
+    effective_mime = mime_type or "text/plain"
+    normalized = _normalize_mime(effective_mime)
+    if normalized == "text/markdown":
+        extension = ".md"
+    else:
+        extension = _CODE_MIME_EXTENSIONS.get(normalized) or _TABLE_MIME_EXTENSIONS.get(normalized, ".txt")
+
+    # ``text_body`` is the catalog's inline-text field. Check it by presence, not
+    # truthiness: an empty file is still a file and must serve as 200 / zero bytes
+    # rather than falling through to ``description``.
+    text_body = artifact.get("text_body")
+    if text_body is not None:
+        return str(text_body).encode("utf-8"), extension, effective_mime
+
     for key in ("content", "text", "description"):
         value = artifact.get(key)
         if value:
-            effective_mime = mime_type or "text/plain"
-            extension = ".md" if effective_mime == "text/markdown" else ".txt"
             return str(value).encode("utf-8"), extension, effective_mime
 
     return None

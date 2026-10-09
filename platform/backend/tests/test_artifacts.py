@@ -45,12 +45,68 @@ from app.services.artifacts import (
         ({"mime_type": "text/x-mermaid"}, "mermaid"),
         ({"mime_type": "application/pdf"}, "pdf"),
         ({"mime_type": "application/json"}, "json"),
-        ({"mime_type": "text/csv"}, "file"),  # A-9: CSV downloads, not JSONViewer
+        ({"mime_type": "text/csv"}, "table"),  # A-9: not the JSONViewer; the table viewer
+        ({"mime_type": "application/csv"}, "table"),
+        ({"mime_type": "text/tab-separated-values"}, "table"),
+        ({"mime_type": "text/csv; charset=utf-8"}, "table"),
+        ({"name": "results.csv"}, "table"),
+        ({"name": "results.TSV"}, "table"),
+        ({"mime_type": "text/plain", "name": "results.csv"}, "table"),  # mislabeled CSV
+        ({"mime_type": "text/markdown", "name": "results.tsv"}, "table"),
+        ({"mime_type": "text/csv", "tags": ["data"]}, "table"),  # MIME outranks the tag
         ({"mime_type": "image/png"}, "image"),
         ({"mime_type": "image/svg+xml"}, "image"),  # SVG folds into image (React)
         ({"mime_type": "application/octet-stream"}, "file"),
         ({"mime_type": "text/markdown"}, "report"),  # A-1: rendered inline, not downloaded
         ({"mime_type": "text/plain"}, "report"),  # A-1: old app rendered plain text inline too
+        ({"mime_type": "application/yaml"}, "code"),
+        ({"mime_type": "application/x-yaml"}, "code"),
+        ({"mime_type": "text/yaml"}, "code"),
+        ({"mime_type": "text/x-yaml"}, "code"),
+        ({"name": "config.yaml"}, "code"),  # extension fallback
+        ({"name": "config.yml"}, "code"),  # extension fallback
+        # text/plain + a .yaml/.yml name still gets the source viewer, not Markdown.
+        ({"mime_type": "text/plain", "name": "config.yaml"}, "code"),
+        ({"mime_type": "text/x-moose"}, "code"),  # vendor MIME, no registered IANA type
+        ({"name": "input.i"}, "code"),  # MOOSE input extension fallback
+        # text/plain + a .i name still gets the source viewer, not Markdown.
+        ({"mime_type": "text/plain", "name": "input.i"}, "code"),
+        # More source / config languages: MIME, extension, and whole-file-name routes.
+        ({"mime_type": "text/x-python"}, "code"),
+        ({"mime_type": "application/toml"}, "code"),
+        ({"mime_type": "application/xml"}, "code"),
+        ({"mime_type": "text/xml"}, "code"),
+        ({"mime_type": "text/x-c++src"}, "code"),
+        ({"mime_type": "text/x-fortran"}, "code"),
+        ({"mime_type": "application/x-sh"}, "code"),
+        ({"mime_type": "application/sql"}, "code"),
+        ({"mime_type": "text/x-diff"}, "code"),
+        ({"name": "solver.py"}, "code"),
+        ({"name": "pyproject.toml"}, "code"),
+        ({"name": "mesh.xdmf"}, "code"),
+        ({"name": "kernel.F90"}, "code"),  # extension match is case-insensitive
+        ({"name": "main.cpp"}, "code"),
+        ({"name": "run.sh"}, "code"),
+        ({"name": "fix.patch"}, "code"),
+        ({"name": "app.tsx"}, "code"),
+        ({"name": "settings.jsonc"}, "code"),
+        ({"name": "Dockerfile"}, "code"),
+        ({"name": "Makefile"}, "code"),
+        ({"name": "CMakeLists.txt"}, "code"),  # basename beats the generic .txt extension
+        ({"mime_type": "text/plain", "name": "CMakeLists.txt"}, "code"),
+        ({"mime_type": "text/plain", "name": "solver.py"}, "code"),
+        ({"name": "run.log"}, "code"),  # bare .log / .txt names fall back to the source viewer
+        ({"name": "notes.txt"}, "code"),
+        # …but they must not capture ordinary text replies: agent text parts default to
+        # the name "artifact.txt" with a text/plain or text/markdown MIME.
+        ({"mime_type": "text/plain", "name": "artifact.txt"}, "report"),
+        ({"mime_type": "text/markdown", "name": "notes.txt"}, "report"),
+        # A non-source extension keeps report too: only code/table names override the MIME.
+        ({"mime_type": "text/plain", "name": "scan.pdf"}, "report"),
+        # JSON keeps the interactive tree viewer.
+        ({"name": "data.json"}, "json"),
+        ({"mime_type": "application/json", "name": "data.json"}, "json"),
+        ({"name": "model.inp"}, "file"),  # .inp is ambiguous (Abaqus/MCNP/etc.) — stays a download
         ({"mime_type": "model/step"}, "file"),  # CAD → downloadable file
         ({"mime_type": "application/x-ipynb+json"}, "file"),  # notebook → downloadable file
         ({"name": "analysis.ipynb"}, "file"),  # notebook extension fallback
@@ -117,9 +173,72 @@ def test_download_payload_json_body():
     assert b'"a": 1' in content
 
 
+def test_download_payload_markdown_extension_ignores_mime_parameters():
+    content, ext, mime = artifact_download_payload({"text": "# hi"}, mime_type="text/markdown; charset=utf-8")
+    assert ext == ".md" and content == b"# hi"
+    assert mime == "text/markdown; charset=utf-8"  # the returned media type is unchanged
+
+
 def test_download_payload_text_prefers_markdown_extension():
     content, ext, mime = artifact_download_payload({"text": "# hi"}, mime_type="text/markdown")
     assert ext == ".md" and mime == "text/markdown" and content == b"# hi"
+
+
+def test_download_payload_text_prefers_yaml_extension():
+    content, ext, mime = artifact_download_payload({"text": "a: 1\n"}, mime_type="application/yaml")
+    assert ext == ".yaml" and mime == "application/yaml" and content == b"a: 1\n"
+
+
+def test_download_payload_text_prefers_moose_extension():
+    content, ext, mime = artifact_download_payload({"text": "[Mesh]\n[]\n"}, mime_type="text/x-moose")
+    assert ext == ".i" and mime == "text/x-moose" and content == b"[Mesh]\n[]\n"
+
+
+@pytest.mark.parametrize(
+    ("mime", "ext"),
+    [
+        ("text/x-python", ".py"),
+        ("application/toml", ".toml"),
+        ("application/xml; charset=utf-8", ".xml"),
+        ("text/x-c++hdr", ".hpp"),
+        ("text/x-fortran", ".f90"),
+        ("application/x-sh", ".sh"),
+        ("text/x-diff", ".diff"),
+        ("text/plain", ".txt"),
+    ],
+)
+def test_download_payload_text_extension_per_mime(mime, ext):
+    _, got_ext, got_mime = artifact_download_payload({"text": "x"}, mime_type=mime)
+    assert got_ext == ext and got_mime == mime
+
+
+@pytest.mark.parametrize(
+    ("mime", "ext"),
+    [
+        ("text/csv", ".csv"),
+        ("application/csv", ".csv"),
+        ("text/csv; charset=utf-8", ".csv"),
+        ("text/tab-separated-values", ".tsv"),
+    ],
+)
+def test_download_payload_table_extension_per_mime(mime, ext):
+    content, got_ext, got_mime = artifact_download_payload({"text_body": "a,b\n1,2\n"}, mime_type=mime)
+    assert got_ext == ext and got_mime == mime and content == b"a,b\n1,2\n"
+
+
+def test_download_payload_serves_text_body_not_description():
+    content, ext, _ = artifact_download_payload(
+        {"text_body": "print(1)\n", "description": "A python sample"}, mime_type="text/x-python"
+    )
+    assert content == b"print(1)\n" and ext == ".py"
+
+
+def test_download_payload_empty_text_body_is_an_empty_file():
+    # An empty file is still content: it must not fall through to the description.
+    payload = artifact_download_payload({"text_body": "", "description": "empty sample"}, mime_type="text/x-python")
+    assert payload is not None
+    content, ext, _ = payload
+    assert content == b"" and ext == ".py"
 
 
 def test_download_payload_none_when_nothing_inline():
@@ -178,6 +297,47 @@ async def test_content_streams_inline_json_body(monkeypatch, session_store):
     assert resp.headers["content-type"].startswith("application/json")
     assert resp.json() == {"answer": 42}
     assert 'filename="result.json"' in resp.headers["content-disposition"]
+
+
+async def test_content_streams_text_body_inline(monkeypatch, session_store):
+    client = await _authed_client(
+        monkeypatch,
+        session_store,
+        artifacts=[
+            {
+                "artifact_id": "a1",
+                "name": "solver.py",
+                "mime_type": "text/x-python",
+                "text_body": "print('hi')\n",
+                "description": "A python sample",
+            }
+        ],
+    )
+    resp = client.get("/api/artifacts/a1/content")
+    assert resp.status_code == 200
+    assert resp.content == b"print('hi')\n"
+    assert resp.headers["content-disposition"].startswith("inline")
+    assert 'filename="solver.py"' in resp.headers["content-disposition"]
+
+
+async def test_content_empty_text_body_is_200_with_no_bytes(monkeypatch, session_store):
+    client = await _authed_client(
+        monkeypatch,
+        session_store,
+        artifacts=[
+            {
+                "artifact_id": "a1",
+                "name": "empty.py",
+                "mime_type": "text/x-python",
+                "text_body": "",
+                "description": "Empty sample",
+            }
+        ],
+    )
+    resp = client.get("/api/artifacts/a1/content")
+    assert resp.status_code == 200
+    assert resp.content == b""
+    assert resp.headers["content-disposition"].startswith("inline")
 
 
 async def test_content_streams_file_uri(monkeypatch, session_store, tmp_path):

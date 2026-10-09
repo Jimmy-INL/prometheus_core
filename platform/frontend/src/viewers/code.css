@@ -1,0 +1,190 @@
+/* Token colours for CodeElement's highlight.js output.
+ *
+ * The token colours are faithful ports of highlight.js's own bundled "vs"
+ * (light) and "vs2015" (dark) themes — copied verbatim from
+ * node_modules/highlight.js/styles/{vs,vs2015}.css (hljs 11.12.0) and rescoped
+ * under `html[data-theme="…"] .code-viewer` instead of the bare `.hljs` the
+ * package ships, so only this viewer is affected and the right one applies as
+ * the app's `data-theme` attribute (see lib/useTheme.ts) switches.
+ *
+ * The BACKGROUND is not a port, though: those themes' own literal white/#1E1E1E
+ * read as an odd, mismatched patch against the rest of the app (which never
+ * uses literal white or near-black — see --color-base-300 in index.css, a soft
+ * blue-gray in light and a dark navy in dark, not pure white/black). So `.hljs`
+ * uses `--color-base-300`/`--color-base-content` — the same tokens the rest of
+ * the chat UI sits on — instead of the theme's own colours. One rule adapts to
+ * both themes since those vars resolve per-theme already.
+ *
+ * That swap cost some contrast in the light theme specifically: base-300-light
+ * is noticeably dimmer than pure white (0.78 vs 1.0 relative luminance), so a
+ * few vs.css tokens that were already only borderline-legible against white
+ * (symbol #00b0e8 at 2.5:1, meta #2b91af at 3.6:1, attr #f00 at 4.0:1, doctag
+ * #808080 at 4.0:1 — all below the 4.5:1 WCAG AA target even on white) dropped
+ * further. `attr` and `symbol` are two of the most-used scopes in the YAML and
+ * MOOSE grammars (YAML keys, MOOSE parameter names and ORDER/FAMILY/execute_on
+ * flags), so this isn't cosmetic. Those four are blended toward
+ * --color-base-content with `color-mix` (same technique as the comment-color
+ * convention below) until they clear 4.5:1 against base-300-light with margin;
+ * every dark-theme vs2015 token already cleared 4.5:1 against base-300-dark
+ * untouched, so the dark palette below is the literal vs2015 hex, unchanged.
+ *
+ * `.code-viewer code.hljs` is `display: block`, so it fills the parent `<pre>`
+ * with the theme background for any recognized language; a `code` artifact with
+ * no registered language renders the plain `bg-base-100` fallback `<code>` in
+ * CodeElement.tsx instead of a half-applied editor theme.
+ *
+ * Every grammar registered in lib/highlight emits standard hljs scope names,
+ * so no per-language rules are needed. A few scopes neither theme defines
+ * (`function`, `operator`, `punctuation`, `property`, and `number` in "vs")
+ * fall back to the theme's plain text colour — that's the original themes' own
+ * behaviour, not a gap introduced here.
+ */
+
+.code-viewer code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em;
+}
+
+/* "vs" (light) */
+html[data-theme="light"] .code-viewer .hljs {
+  background: var(--color-base-300);
+  color: var(--color-base-content);
+}
+html[data-theme="light"] .code-viewer .hljs-comment,
+html[data-theme="light"] .code-viewer .hljs-quote,
+html[data-theme="light"] .code-viewer .hljs-variable {
+  color: #008000;
+}
+html[data-theme="light"] .code-viewer .hljs-keyword,
+html[data-theme="light"] .code-viewer .hljs-selector-tag,
+html[data-theme="light"] .code-viewer .hljs-built_in,
+html[data-theme="light"] .code-viewer .hljs-name,
+html[data-theme="light"] .code-viewer .hljs-tag {
+  color: #00f;
+}
+html[data-theme="light"] .code-viewer .hljs-string,
+html[data-theme="light"] .code-viewer .hljs-title,
+html[data-theme="light"] .code-viewer .hljs-section,
+html[data-theme="light"] .code-viewer .hljs-attribute,
+html[data-theme="light"] .code-viewer .hljs-literal,
+html[data-theme="light"] .code-viewer .hljs-template-tag,
+html[data-theme="light"] .code-viewer .hljs-template-variable,
+html[data-theme="light"] .code-viewer .hljs-type,
+html[data-theme="light"] .code-viewer .hljs-addition {
+  color: #a31515;
+}
+html[data-theme="light"] .code-viewer .hljs-deletion,
+html[data-theme="light"] .code-viewer .hljs-selector-attr,
+html[data-theme="light"] .code-viewer .hljs-selector-pseudo,
+html[data-theme="light"] .code-viewer .hljs-meta {
+  /* #2b91af was 3.6:1 against vs.css's own white, 2.9:1 against base-300-light */
+  color: color-mix(in oklch, #2b91af 65%, var(--color-base-content) 35%);
+}
+html[data-theme="light"] .code-viewer .hljs-doctag {
+  /* #808080 was 4.0:1 against vs.css's own white, 3.1:1 against base-300-light */
+  color: color-mix(in oklch, #808080 70%, var(--color-base-content) 30%);
+}
+html[data-theme="light"] .code-viewer .hljs-attr {
+  /* #f00 was 4.0:1 against vs.css's own white, 3.2:1 against base-300-light;
+     one of the most-used scopes here (YAML keys, MOOSE parameter names) */
+  color: color-mix(in oklch, #f00 75%, var(--color-base-content) 25%);
+}
+html[data-theme="light"] .code-viewer .hljs-symbol,
+html[data-theme="light"] .code-viewer .hljs-bullet,
+html[data-theme="light"] .code-viewer .hljs-link {
+  /* #00b0e8 was already a weak 2.5:1 against vs.css's own white, 2.0:1 against
+     base-300-light; MOOSE's ORDER/FAMILY/elem_type/execute_on/output_on flags
+     all use this scope, so it needs the most correction of the four */
+  color: color-mix(in oklch, #00b0e8 55%, var(--color-base-content) 45%);
+}
+
+/* "vs2015" (dark) */
+html[data-theme="dark"] .code-viewer .hljs {
+  background: var(--color-base-300);
+  color: var(--color-base-content);
+}
+html[data-theme="dark"] .code-viewer .hljs-keyword,
+html[data-theme="dark"] .code-viewer .hljs-literal,
+html[data-theme="dark"] .code-viewer .hljs-symbol,
+html[data-theme="dark"] .code-viewer .hljs-name {
+  color: #569cd6;
+}
+html[data-theme="dark"] .code-viewer .hljs-link {
+  color: #569cd6;
+  text-decoration: underline;
+}
+html[data-theme="dark"] .code-viewer .hljs-built_in,
+html[data-theme="dark"] .code-viewer .hljs-type {
+  color: #4ec9b0;
+}
+html[data-theme="dark"] .code-viewer .hljs-number,
+html[data-theme="dark"] .code-viewer .hljs-class {
+  color: #b8d7a3;
+}
+html[data-theme="dark"] .code-viewer .hljs-string,
+html[data-theme="dark"] .code-viewer .hljs-meta .hljs-string {
+  color: #d69d85;
+}
+html[data-theme="dark"] .code-viewer .hljs-regexp,
+html[data-theme="dark"] .code-viewer .hljs-template-tag {
+  color: #9a5334;
+}
+html[data-theme="dark"] .code-viewer .hljs-subst,
+html[data-theme="dark"] .code-viewer .hljs-function,
+html[data-theme="dark"] .code-viewer .hljs-title,
+html[data-theme="dark"] .code-viewer .hljs-params,
+html[data-theme="dark"] .code-viewer .hljs-formula {
+  /* same as the base text colour in vs2015 — unstyled by design, not a gap */
+  color: var(--color-base-content);
+}
+html[data-theme="dark"] .code-viewer .hljs-comment,
+html[data-theme="dark"] .code-viewer .hljs-quote {
+  color: #57a64a;
+  font-style: italic;
+}
+html[data-theme="dark"] .code-viewer .hljs-doctag {
+  color: #608b4e;
+}
+html[data-theme="dark"] .code-viewer .hljs-meta,
+html[data-theme="dark"] .code-viewer .hljs-meta .hljs-keyword,
+html[data-theme="dark"] .code-viewer .hljs-tag {
+  color: #9b9b9b;
+}
+html[data-theme="dark"] .code-viewer .hljs-variable,
+html[data-theme="dark"] .code-viewer .hljs-template-variable {
+  color: #bd63c5;
+}
+html[data-theme="dark"] .code-viewer .hljs-attr,
+html[data-theme="dark"] .code-viewer .hljs-attribute {
+  color: #9cdcfe;
+}
+html[data-theme="dark"] .code-viewer .hljs-section {
+  color: gold;
+}
+html[data-theme="dark"] .code-viewer .hljs-bullet,
+html[data-theme="dark"] .code-viewer .hljs-selector-tag,
+html[data-theme="dark"] .code-viewer .hljs-selector-id,
+html[data-theme="dark"] .code-viewer .hljs-selector-class,
+html[data-theme="dark"] .code-viewer .hljs-selector-attr,
+html[data-theme="dark"] .code-viewer .hljs-selector-pseudo {
+  color: #d7ba7d;
+}
+html[data-theme="dark"] .code-viewer .hljs-addition {
+  background-color: #144212;
+  display: inline-block;
+  width: 100%;
+}
+html[data-theme="dark"] .code-viewer .hljs-deletion {
+  background-color: #600;
+  display: inline-block;
+  width: 100%;
+}
+
+/* shared, theme-independent */
+.code-viewer .hljs-emphasis {
+  font-style: italic;
+}
+.code-viewer .hljs-strong {
+  font-weight: bold;
+}
