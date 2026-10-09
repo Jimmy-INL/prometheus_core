@@ -51,8 +51,8 @@ canonical template (in `agent_template/`) into a new directory, replacing the
 `TEMPLATE_*` placeholders with your agent's name, slug, class, and primary skill:
 
 ```bash
-git clone git@github.inl.gov:genesis/prometheus_agent_template.git
-cd prometheus_agent_template
+git clone git@github.inl.gov:genesis/prometheus_platform.git
+cd prometheus_platform/agent-template
 python setup_agent.py
 ```
 
@@ -95,14 +95,14 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 # you develop against locally matches what runs in the container. Find the
 # hash in your .env (PROMETHEUS_API_BASE_IMAGE_HASH) or the platform Makefile,
 # and re-run this when the platform bumps it:
-uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@2b3dbcf"
+uv pip install "git+https://github.inl.gov/genesis/prometheus_platform.git@3407a82#subdirectory=sdk"
 ```
 
 > **Why pin?** `prometheus_api` evolves without backward-compatibility
 > guarantees. An unpinned install tracks `main` and can silently break your
 > agent; the pin keeps local dev and the Docker base image on the same
 > version. When you bump the hash, read the
-> [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md).
+> [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/AGENT_MIGRATIONS.md).
 
 ---
 
@@ -626,8 +626,8 @@ Documents that the container listens on port 8000 and sets the default startup c
 You don't normally need to build manually — `make up` does it. But to check that your Dockerfile is correct:
 
 ```bash
-# Get the current hash from prometheus_platform/Makefile or your .env
-export PROMETHEUS_API_BASE_IMAGE_HASH=2b3dbcf
+# Get the current hash from platform/Makefile or your .env
+export PROMETHEUS_API_BASE_IMAGE_HASH=<hash>
 
 docker build \
   --build-arg PROMETHEUS_API_BASE_IMAGE_HASH=$PROMETHEUS_API_BASE_IMAGE_HASH \
@@ -758,11 +758,11 @@ host-published platform services from inside the container; inside the container
 
 If you want your agent to be part of the main platform stack and launched by the
 platform's `make up`, copy your project directory into
-`prometheus_platform/agents/<your-agent-name>/`. The platform's Makefile
+`platform/agents/<your-agent-name>/`. The platform's Makefile
 discovers `docker-compose.yml` files inside `agents/*/` and owns the top-level
 network definition.
 
-Then, from the `prometheus_platform` directory:
+Then, from the `platform/` directory:
 
 ```bash
 make generate   # re-discovers agents and regenerates docker-compose.agents.yml
@@ -775,7 +775,7 @@ make up         # starts everything including your new agent
 |----------|------------------|
 | Agent runs in its own repo on the same Docker host as the platform | Internal network mode |
 | Platform must reach the agent through a host or remote port | External port mode |
-| Agent is maintained inside `prometheus_platform/agents/` | In-tree deployment |
+| Agent is maintained inside `platform/agents/` | In-tree deployment |
 
 Most purpose-built agents use internal network mode during integration testing.
 
@@ -891,8 +891,8 @@ Registration retries with exponential backoff (default: 10 attempts, up to 30 se
 
 ### External repository deployment
 
-1. Make sure the platform is running (`make up` from `prometheus_platform/`).
-2. Fill in your `.env` with the same `AGENT_SECRET`, `LITELLM_MASTER_KEY`, `REDIS_PASSWORD`, and `REGISTRY_URL` values that the platform uses (copy from `prometheus_platform/.env`).
+1. Make sure the platform is running (`make up` from `platform/`).
+2. Fill in your `.env` with the same `AGENT_SECRET`, `LITELLM_MASTER_KEY`, `REDIS_PASSWORD`, and `REGISTRY_URL` values that the platform uses (copy from `platform/.env`).
 3. Start your agent: `make up`
 4. Verify registration: `curl -s http://localhost:9977/v1/agents | python -m json.tool` (replace `9977` with `LITELLM_LOCAL_PORT` from the platform's `.env`). Your agent's name should appear in the list.
 
@@ -900,8 +900,8 @@ If you need the agent to restart automatically when the platform does, add it to
 
 ### In-tree deployment
 
-1. Copy your project directory to `prometheus_platform/agents/<your-agent-name>/`.
-2. From `prometheus_platform/`:
+1. Copy your project directory to `platform/agents/<your-agent-name>/`.
+2. From `platform/`:
    ```bash
    make generate   # picks up your new docker-compose.yml
    make up         # or make restart if platform is already running
@@ -1050,7 +1050,7 @@ USER_IDENTITY_AUD=prometheus-agents     # must match the operator's setting
 If your agent fetches per-user credentials for a third-party resource (a
 database, an HPC cluster, etc.) rather than just reading `user_id`, see the
 credential-broker section of
-[MULTI_USER.md](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md)
+[MULTI_USER.md](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/MULTI_USER.md)
 in `prometheus_api` — `self.get_credential(resource)` and
 `requires_user_isolation` are the two pieces you'll want.
 
@@ -1083,7 +1083,7 @@ await self.send_artifact_reference(
 )
 ```
 
-See [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) for the full artifact API including DeepLynx uploads.
+See [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/QUICK_START.md) for the full artifact API including DeepLynx uploads.
 
 ### Consuming artifacts from other agents
 
@@ -1172,7 +1172,7 @@ async def _execute(self, params, context, event_queue):
     ...
 ```
 
-See the `INPUT_REQUIRED` section in [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) for the full pattern and important rules.
+See the `INPUT_REQUIRED` section in [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/QUICK_START.md) for the full pattern and important rules.
 
 ### Multiple skills
 
@@ -1210,7 +1210,7 @@ artifact = await self.send_deeplynx_artifact(
 # artifact.uri  →  "deeplynx://organizations/1/projects/2/items/42"
 ```
 
-See [PrometheusAgent Quick Start — DeepLynx artifact](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md#deeplynx-artifact) and [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md).
+See [PrometheusAgent Quick Start — DeepLynx artifact](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/QUICK_START.md#deeplynx-artifact) and [StorageClient Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/storage-client/GUIDE.md).
 
 ### Per-conversation state
 
@@ -1228,7 +1228,7 @@ As of prometheus_api 0.7.0, `context.context_id` is the **stable conversation
 ID** propagated by the orchestrator: state saved in one call is visible to
 later calls — including calls to *other* skills of your agent — within the
 same conversation. If you need per-invocation scoping instead, key by
-`context.task_id` (see the [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md)).
+`context.task_id` (see the [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/AGENT_MIGRATIONS.md)).
 
 ---
 
@@ -1236,12 +1236,12 @@ same conversation. If you need per-invocation scoping instead, key by
 
 | Document | Description |
 |----------|-------------|
-| [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
-| [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
-| [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/AGENT_MIGRATIONS.md) | **Check this when bumping `PROMETHEUS_API_BASE_IMAGE_HASH`** — behavior changes per prometheus_api version, with migration steps |
-| [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
-| [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
-| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
-| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md) | `params["user_id"]`, per-user credentials, process isolation |
-| [Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS setup for this template |
-| [`examples/agent_patterns.py`](https://github.inl.gov/genesis/prometheus_api/blob/main/examples/agent_patterns.py) | Runnable reference implementation |
+| [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
+| [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
+| [Agent Migration Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/AGENT_MIGRATIONS.md) | **Check this when bumping `PROMETHEUS_API_BASE_IMAGE_HASH`** — behavior changes per prometheus_api version, with migration steps |
+| [Environment Setup](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/ENV_SETUP.md) | All environment variables for agents and storage |
+| [StorageClient Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
+| [HPC Notes](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/hpc.md) | Running on INL HPC with Podman |
+| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/MULTI_USER.md) | `params["user_id"]`, per-user credentials, process isolation |
+| [Identity Key Management](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS setup for this template |
+| [`examples/agent_patterns.py`](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/examples/agent_patterns.py) | Runnable reference implementation |

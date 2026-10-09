@@ -13,7 +13,7 @@ durability).
 Redis calls are offloaded with :func:`asyncio.to_thread` so the synchronous
 ``redis-py`` client never blocks the event loop the A2A request handler runs on.
 
-See ``prometheus_platform/docs/dev-docs/background-tasks.md`` (Layer A).
+See ``platform/docs/dev-docs/background-tasks.md`` (Layer A).
 """
 
 from __future__ import annotations

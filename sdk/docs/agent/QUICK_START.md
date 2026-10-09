@@ -5,7 +5,7 @@ Subclass `PrometheusAgent`, implement `_execute`, return a dict. The base class 
 ## Install
 
 ```bash
-pip install git+https://github.inl.gov/genesis/prometheus_api.git
+pip install "git+https://github.inl.gov/genesis/prometheus_platform.git#subdirectory=sdk"
 ```
 
 The agent stack is included in the base package.

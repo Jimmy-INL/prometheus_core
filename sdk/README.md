@@ -15,8 +15,8 @@ A Python toolkit for building data-driven applications with storage operations a
 See [INSTALL.md](INSTALL.md) for full options. Quick paths:
 
 - **Runtime:** `docker pull containers.github.inl.gov/genesis/prometheus_api:latest`
-- **As a library:** `pip install git+https://github.inl.gov/genesis/prometheus_api.git`
-- **For development:** `git clone … && cd prometheus_api && uv sync` (then `make check`, `make test`)
+- **As a library:** `pip install "git+https://github.inl.gov/genesis/prometheus_platform.git#subdirectory=sdk"`
+- **For development:** `git clone … && cd prometheus_platform/sdk && uv sync` (then `make check`, `make test`)
 
 ## Quick Start - StorageClient
 
@@ -131,7 +131,7 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 
 | Document | Description |
 |----------|-------------|
-| [**Writing an Agent (Tutorial)**](https://github.inl.gov/genesis/prometheus_agent_template) | Step-by-step guide and scaffolder for building, containerizing, and deploying a new specialist agent (lives in the `prometheus_agent_template` repo) |
+| [**Writing an Agent (Tutorial)**](https://github.inl.gov/genesis/prometheus_platform/tree/dev/agent-template) | Step-by-step guide and scaffolder for building, containerizing, and deploying a new specialist agent (lives in the `agent-template/` directory of this monorepo) |
 | [StorageClient Guide](docs/storage-client/GUIDE.md) | Complete StorageClient API reference |
 | [StorageClient Quick Start](docs/storage-client/QUICK_START.md) | Condensed reference and examples |
 | [PrometheusAgent Guide](docs/agent/GUIDE.md) | Complete PrometheusAgent documentation |

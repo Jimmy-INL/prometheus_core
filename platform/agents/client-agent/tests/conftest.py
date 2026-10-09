@@ -25,20 +25,19 @@ def _import_light_modules() -> None:
 try:
     _import_light_modules()
 except ImportError:
-    # Convenience fallback for a side-by-side checkout of prometheus_api.
+    # Convenience fallback for the monorepo's sdk/ directory.
     # These modules need only pydantic/httpx/redis, so this works without the
     # agent runtime (a2a-sdk, litellm) installed.
-    _SIBLING = Path(__file__).resolve().parents[4] / "prometheus_api"
+    _SIBLING = Path(__file__).resolve().parents[4] / "sdk"
     if _SIBLING.is_dir():
         sys.path.insert(0, str(_SIBLING))
     try:
         _import_light_modules()
-    except ImportError as exc:  # no sibling checkout either — tell the dev what to do
+    except ImportError as exc:  # no sdk/ either — tell the dev what to do
         raise ImportError(
             "client-agent tests need the prometheus_api package. Install it "
             "into your test environment:\n"
-            "  uv pip install git+https://github.inl.gov/genesis/prometheus_api.git\n"
-            "or clone prometheus_api next to this repository."
+            "  uv pip install -e ../../../sdk   (from agents/client-agent/)"
         ) from exc
 
 

@@ -351,4 +351,4 @@ Specialist agent (e.g. data-agent)
 - [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) — RS256 key generation and distribution, third-party agent integration, key rotation
 - [PrometheusAgent Developer Guide](GUIDE.md) — general agent authoring
 - [QUICK_START.md](QUICK_START.md) — minimal working agent
-- Platform docs: `prometheus_platform/docs/dev-docs/multi-user-setup.md`
+- Platform docs: `platform/docs/docs/dev-docs/multi-user-setup.md`

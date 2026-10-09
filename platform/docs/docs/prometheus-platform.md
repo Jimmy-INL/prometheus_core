@@ -46,6 +46,7 @@ for the schema, ownership model, and authoring rules.
 ### Docker Compose (recommended)
 
 ```bash
+cd platform
 cp .env.example .env
 # Set: AGENT_SECRET, REDIS_PASSWORD, BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,
 #      LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT, LLM_CONFIG_PROFILE, and the
@@ -56,7 +57,7 @@ docker-compose up --build
 ### Local development
 
 ```bash
-cd prometheus_platform/frontend && make install
+cd platform/frontend && make install
 make dev        # React dev server (http://localhost:5150)
 ```
 

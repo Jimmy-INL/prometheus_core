@@ -241,7 +241,7 @@ Notable environment variables (see `.env.example` for the full list):
 ## Project structure
 
 ```
-prometheus_platform/
+platform/
   Makefile                  # Top-level orchestration (Compose, generate, tests)
   docker-compose.yml        # Core infra: Valkey, LiteLLM, Postgres, client-agent, backend, frontend
   docker-compose.agents.yml # Auto-generated from agents/*/docker-compose.yml — do not edit

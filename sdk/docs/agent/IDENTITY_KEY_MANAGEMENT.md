@@ -268,7 +268,7 @@ platform — `PyJWKClient` re-fetches on unknown `kid`.
 - [MULTI_USER.md](./MULTI_USER.md) — full identity and credential reference
 - [AGENT_MIGRATIONS.md](./AGENT_MIGRATIONS.md) — migration steps, including HS256 removal and the 0.12.1 admin-UI/JWKS-host update
 - [ENV_SETUP.md](../ENV_SETUP.md) — environment variable reference
-- Platform docs: `prometheus_platform/docs/docs/dev-docs/multi-user-setup.md`
+- Platform docs: `platform/docs/docs/dev-docs/multi-user-setup.md`
   (operator-facing: first-run setup, admin UI usage, OIDC providers) and
-  `prometheus_platform/docs/docs/dev-docs/encryption-and-keys.md` (every secret
+  `platform/docs/docs/dev-docs/encryption-and-keys.md` (every secret
   and key in the platform, what encrypts what, and where each one lives)

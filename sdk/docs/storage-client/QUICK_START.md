@@ -3,13 +3,13 @@
 ## Installation
 
 ```bash
-pip install git+https://github.inl.gov/genesis/prometheus_api.git
+pip install "git+https://github.inl.gov/genesis/prometheus_platform.git#subdirectory=sdk"
 ```
 
 Or install in development mode:
 ```bash
-git clone https://github.inl.gov/genesis/prometheus_api.git
-cd prometheus_api
+git clone https://github.inl.gov/genesis/prometheus_platform.git
+cd prometheus_platform/sdk
 uv sync
 ```
 

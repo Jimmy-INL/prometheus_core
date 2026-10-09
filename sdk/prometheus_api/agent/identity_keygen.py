@@ -2,7 +2,7 @@
 
 Ships in the ``prometheus_api`` package, so it is available inside every agent
 container (built ``FROM`` the base image) with no extra installation — including
-third-party agents built from ``prometheus_agent_template``.
+third-party agents built from the ``agent-template/`` scaffold.
 
 Usage
 -----

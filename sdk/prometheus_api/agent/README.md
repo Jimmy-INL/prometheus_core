@@ -74,7 +74,7 @@ substantive updates. Heartbeats carry no message and are tagged
 ## Installation
 
 ```bash
-pip install git+https://github.inl.gov/genesis/prometheus_api.git
+pip install "git+https://github.inl.gov/genesis/prometheus_platform.git#subdirectory=sdk"
 ```
 
 The agent stack is part of the base package.

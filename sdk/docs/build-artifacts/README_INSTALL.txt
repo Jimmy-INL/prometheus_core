@@ -3,12 +3,12 @@ QUICK INSTALLATION GUIDE
 
 Install from GitHub:
 
-    pip install git+https://github.inl.gov/genesis/prometheus_api.git
+    pip install "git+https://github.inl.gov/genesis/prometheus_platform.git#subdirectory=sdk"
 
 Or clone and install in development mode:
 
-    git clone https://github.inl.gov/genesis/prometheus_api.git
-    cd prometheus_api
+    git clone https://github.inl.gov/genesis/prometheus_platform.git
+    cd prometheus_platform/sdk
     pip install -e .
 
 Setup credentials:

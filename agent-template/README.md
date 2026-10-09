@@ -1,7 +1,8 @@
 # Prometheus Agent Template
 
 A template for building specialist agents for the [Prometheus](https://github.inl.gov/genesis/prometheus_platform)
-multi-agent platform. Agents speak the Agent-to-Agent (A2A) protocol; the
+multi-agent platform (it lives in the `agent-template/` directory of that
+monorepo). Agents speak the Agent-to-Agent (A2A) protocol; the
 platform's orchestrator discovers them, routes user requests to them, and renders
 their responses in the Prometheus web UI.
 
@@ -34,8 +35,8 @@ dependencies — builds are small and fast.
 ### Scaffold a new agent
 
 ```bash
-git clone git@github.inl.gov:genesis/prometheus_agent_template.git
-cd prometheus_agent_template
+git clone git@github.inl.gov:genesis/prometheus_platform.git
+cd prometheus_platform/agent-template
 python setup_agent.py
 ```
 
@@ -75,9 +76,9 @@ cp .env.example .env          # fill in real values
 # Local (fast iteration):
 uv sync && source .venv/bin/activate
 # Pin prometheus_api to the platform's base image hash (see .env):
-uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@2b3dbcf"
+uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_platform.git@3407a82#subdirectory=sdk"
 # or https
-uv pip install "git+https://github.inl.gov/genesis/prometheus_api.git@2b3dbcf"
+uv pip install "git+https://github.inl.gov/genesis/prometheus_platform.git@3407a82#subdirectory=sdk"
 AGENT_SECRET_REQUIRED=false python agent.py
 
 # Tests / lint:
@@ -124,17 +125,17 @@ make test       # pytest
 
 ## Further reading
 
-These live in the [`prometheus_api`](https://github.inl.gov/genesis/prometheus_api) repository:
+These live in the SDK ([`sdk/`](https://github.inl.gov/genesis/prometheus_platform/tree/dev/sdk)) directory of the monorepo:
 
 | Document | Description |
 |----------|-------------|
-| [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
-| [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
-| [Environment Setup](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/ENV_SETUP.md) | All environment variables for agents and storage |
-| [StorageClient Guide](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
-| [HPC Notes](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/hpc.md) | Running on INL HPC with Podman |
-| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/MULTI_USER.md) | Verifying which platform user is calling your agent, per-user credentials |
-| [Identity Key Management](https://github.inl.gov/genesis/prometheus_api/blob/main/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS for third-party agents (this template) |
+| [PrometheusAgent Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/GUIDE.md) | Full API reference, pitfalls, lifecycle hooks |
+| [PrometheusAgent Quick Start](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/QUICK_START.md) | Condensed recipes for every helper |
+| [Environment Setup](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/ENV_SETUP.md) | All environment variables for agents and storage |
+| [StorageClient Guide](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/storage-client/GUIDE.md) | Reading and writing to DeepLynx |
+| [HPC Notes](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/hpc.md) | Running on INL HPC with Podman |
+| [Multi-User Identity & Credentials](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/MULTI_USER.md) | Verifying which platform user is calling your agent, per-user credentials |
+| [Identity Key Management](https://github.inl.gov/genesis/prometheus_platform/blob/dev/sdk/docs/agent/IDENTITY_KEY_MANAGEMENT.md) | RS256 keys, `prometheus-identity-keygen`, JWKS for third-party agents (this template) |
 
 ## Support
 

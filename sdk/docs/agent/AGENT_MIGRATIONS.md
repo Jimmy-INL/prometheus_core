@@ -72,7 +72,7 @@ Migration steps:
 
 See [IDENTITY_KEY_MANAGEMENT.md](./IDENTITY_KEY_MANAGEMENT.md) (updated:
 "Option B", "Key rotation") for the full picture, and
-`prometheus_platform/docs/docs/dev-docs/encryption-and-keys.md` for how this
+`platform/docs/docs/dev-docs/encryption-and-keys.md` for how this
 fits into the platform's other secrets.
 
 ## 0.12.0
