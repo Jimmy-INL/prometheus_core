@@ -237,7 +237,7 @@ Your agent lives in `genesis/hackathon` under `agents/<team_name>/`. Everyone fo
 #### Scaffold with two stub skills
 
 {.small}
-`setup_agent.py` with output directory `../hackathon/agents/<team_name>`, then add the second skill to the card and a dispatch on `params["skill_id"]`. Push.
+`setup_agent.py`; at the *Output directory* prompt type `../../hackathon/agents/<team_name>` (`~` is not expanded). Then add the second skill to the card and a dispatch on `params["skill_id"]`. Push.
 
 #### Check routing first
 
@@ -461,7 +461,7 @@ These go in the card's `skills` array, with `"capabilities": {"streaming": true}
 |---|---|
 | **Get the file** | `path = await self.get_artifact_file_path(params["document_artifact_id"], context=context, artifacts=params.get("artifacts"))` |
 | **Find tables** | Regex over `\|`-rows plus the separator line, or a markdown parser (`markdown-it-py`). Keep the bold line above as the caption. |
-| **Pick the table** | An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. LLMs handle "center line" vs "centerline" well. |
+| **Pick the table** | An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. Match on meaning: the orchestrator paraphrases the user's words in `table_description`. |
 | **Clean values** | `1,020` → 1020; `—`, `-`, empty → missing; keep text columns as text |
 | **Match columns** | The LLM with the header list and the user's words; parse units in `[…]` or `(…)`; mind `t` vs `T` |
 | **Plot** | `matplotlib` with the `Agg` backend; label axes with units; title from the caption |
@@ -476,6 +476,8 @@ These go in the card's `skills` array, with `"capabilities": {"streaming": true}
 ```python {.sm}
 from prometheus_api.agent import MissingInput
 
+ctx = str(context.context_id)
+# df: the table loaded from params["table_artifact_id"]
 columns = list(df.columns)
 if not x_col or not y_cols:
     self.save_context_state(ctx, {"table": table_id})
@@ -502,6 +504,19 @@ A string list in `options` becomes a dropdown in the chat's follow-up form, with
 
 ---
 
+## Fail loudly, not plausibly {eyebrow="Implementation hints"}
+> Each row is a failure seen in testing. A wrong but confident answer scores zero; an honest error can still score.
+
+{widths="300px|"}
+| Case | What to do |
+|---|---|
+| **No caption fits** | Return an error that lists the captions you found. A forced LLM pick always returns *some* table: "the rainfall data" picked the Emmental log. |
+| **The y column is text** | Reject it or ask again. Testing produced a "Machine type vs Machine type" plot. |
+| **Not a text file** | Check the extension or `mime_type` before `read_text()`. A PDF raised `UnicodeDecodeError`, visible to judges in the logs. |
+| **Paraphrased request** | `table_description` is the orchestrator's wording, not the user's ("population" arrived as "the main data table in the Lunar Cheese annual report"). Match on meaning. |
+
+---
+
 ## Prerequisites {eyebrow="Before you start"}
 
 {widths="420px|"}
@@ -520,9 +535,11 @@ A string list in `options` becomes a dropdown in the chat's follow-up form, with
 | Make sure… | Why |
 |---|---|
 | `"streaming": true` | So "Parsing 4 tables…" and "Plotting T \[K\] vs t \[min\]…" appear live |
-| Your LLM profile and its key are in `.env`; pick the flavor per call | `LLM_CONFIG_PROFILE=inl_litellm` (or `amsc`, `anl_asksage`) plus its key. Attach `LITELLM_MASTER_KEY` only when `cfg.proxy_url` is set (the platform proxy). |
+| Your LLM profile and its key are in `.env`; pick the flavor per call | `LLM_CONFIG_PROFILE=inl_litellm` (or `amsc`, `anl_asksage`) plus its key, copied into the agent's `.env` yourself (`setup_agent.py` copies only the profile name). Attach `LITELLM_MASTER_KEY` only when `cfg.proxy_url` is set (the platform proxy). |
 | Results stay small | Return the artifact ID, caption, and column names, not 10,000 rows. The data lives in the artifact. |
 | You test with a **fresh conversation** each time | Earlier uploads and results stay in the catalog and transcript the orchestrator LLM sees, and can make it pick the wrong file. |
+
+Note: inl_litellm and anl_asksage assume the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY; check before presenting.
 
 ---
 
@@ -554,7 +571,7 @@ A string list in `options` becomes a dropdown in the chat's follow-up form, with
 #### Platform features
 
 {.xs}
-- An agent-owned workflow `extract → plot` (a slash command)
+- An `extract → plot` workflow with no follow-up questions, started by a natural-language request
 - Input-required when two tables match equally well
 - Tool calling for column matching
 - The CSV of the extracted table as a second artifact
@@ -592,7 +609,7 @@ Robustness beats features. A two-skill agent that handles every hidden prompt sc
 1. Live status updates (streaming)
 2. LLM matching with tool calling or structured output
 3. Asks for missing columns with the real names as choices
-4. A workflow YAML chaining extract → plot
+4. A workflow YAML chaining extract → plot (no follow-up questions)
 5. A third useful skill
 6. A 5-minute demo: conversation, plot, code walkthrough
 :::

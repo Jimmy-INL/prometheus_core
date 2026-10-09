@@ -372,7 +372,7 @@ Tune for the conventions, not for the practice file. Hard-coding &quot;Brie Basi
 <p class="small">Your agent lives in <code>genesis/hackathon</code> under <code>agents/&lt;team_name&gt;/</code>. Everyone forks the repo; one teammate opens the first PR with the scaffold. Practice files go in <code>agents/&lt;team_name&gt;/tests/fixtures/</code>.</p>
 </div></div>
 <div class="step"><div><h4>Scaffold with two stub skills</h4>
-<p class="small"><code>setup_agent.py</code> with output directory <code>../hackathon/agents/&lt;team_name&gt;</code>, then add the second skill to the card and a dispatch on <code>params[&quot;skill_id&quot;]</code>. Push.</p>
+<p class="small"><code>setup_agent.py</code>; at the <em>Output directory</em> prompt type <code>../../hackathon/agents/&lt;team_name&gt;</code> (<code>~</code> is not expanded). Then add the second skill to the card and a dispatch on <code>params[&quot;skill_id&quot;]</code>. Push.</p>
 </div></div>
 <div class="step"><div><h4>Check routing first</h4>
 <p class="small">Upload the practice report, try the example prompt, and see both stubs called in order. The extract stub must already emit a real artifact, or the orchestrator has no id to pass to plot.</p>
@@ -593,7 +593,7 @@ The orchestrator chains them for a request like <em>&quot;Extract the table with
 </tr>
 <tr>
 <td><strong>Pick the table</strong></td>
-<td>An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. LLMs handle &quot;center line&quot; vs &quot;centerline&quot; well.</td>
+<td>An LLM given only the captions (a forced tool call returning an index), embeddings, or fuzzy matching. Match on meaning: the orchestrator paraphrases the user's words in <code>table_description</code>.</td>
 </tr>
 <tr>
 <td><strong>Clean values</strong></td>
@@ -624,6 +624,8 @@ The orchestrator chains them for a request like <em>&quot;Extract the table with
 <div class="col">
 <pre class="sm"><span class="k">from</span> prometheus_api.agent <span class="k">import</span> MissingInput
 
+ctx = str(context.context_id)
+<span class="c"># df: the table loaded from params[&quot;table_artifact_id&quot;]</span>
 columns = list(df.columns)
 <span class="k">if</span> <span class="k">not</span> x_col <span class="k">or</span> <span class="k">not</span> y_cols:
     self.save_context_state(ctx, {<span class="s">&quot;table&quot;</span>: table_id})
@@ -645,6 +647,38 @@ columns = list(df.columns)
 <p class="small">A string list in <code>options</code> becomes a dropdown in the chat's follow-up form, with your <code>hint</code> as the message. With <code>resolvable_from_context=False</code> (the default) the user is asked. If they type a reply instead, the orchestrator calls you again with new arguments.</p>
 </div>
 
+  </div>
+</section>
+
+<section class="slide appendix">
+  <div class="head"><div class="eyebrow">Implementation hints</div><h2>Fail loudly, not plausibly</h2><p class="lede">Each row is a failure seen in testing. A wrong but confident answer scores zero; an honest error can still score.</p></div>
+  <div class="content">
+<table class="t">
+<thead>
+<tr>
+<th style="width:300px">Case</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>No caption fits</strong></td>
+<td>Return an error that lists the captions you found. A forced LLM pick always returns <em>some</em> table: &quot;the rainfall data&quot; picked the Emmental log.</td>
+</tr>
+<tr>
+<td><strong>The y column is text</strong></td>
+<td>Reject it or ask again. Testing produced a &quot;Machine type vs Machine type&quot; plot.</td>
+</tr>
+<tr>
+<td><strong>Not a text file</strong></td>
+<td>Check the extension or <code>mime_type</code> before <code>read_text()</code>. A PDF raised <code>UnicodeDecodeError</code>, visible to judges in the logs.</td>
+</tr>
+<tr>
+<td><strong>Paraphrased request</strong></td>
+<td><code>table_description</code> is the orchestrator's wording, not the user's (&quot;population&quot; arrived as &quot;the main data table in the Lunar Cheese annual report&quot;). Match on meaning.</td>
+</tr>
+</tbody>
+</table>
   </div>
 </section>
 
@@ -697,7 +731,7 @@ columns = list(df.columns)
 </tr>
 <tr>
 <td>Your LLM profile and its key are in <code>.env</code>; pick the flavor per call</td>
-<td><code>LLM_CONFIG_PROFILE=inl_litellm</code> (or <code>amsc</code>, <code>anl_asksage</code>) plus its key. Attach <code>LITELLM_MASTER_KEY</code> only when <code>cfg.proxy_url</code> is set (the platform proxy).</td>
+<td><code>LLM_CONFIG_PROFILE=inl_litellm</code> (or <code>amsc</code>, <code>anl_asksage</code>) plus its key, copied into the agent's <code>.env</code> yourself (<code>setup_agent.py</code> copies only the profile name). Attach <code>LITELLM_MASTER_KEY</code> only when <code>cfg.proxy_url</code> is set (the platform proxy).</td>
 </tr>
 <tr>
 <td>Results stay small</td>
@@ -710,6 +744,7 @@ columns = list(df.columns)
 </tbody>
 </table>
   </div>
+  <aside class="notes">inl_litellm and anl_asksage assume the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY; check before presenting.</aside>
 </section>
 
 <section class="slide appendix">
@@ -740,7 +775,7 @@ columns = list(df.columns)
 <div class="card">
 <h4>Platform features</h4>
 <ul class="b xs">
-<li>An agent-owned workflow <code>extract → plot</code> (a slash command)</li>
+<li>An <code>extract → plot</code> workflow with no follow-up questions, started by a natural-language request</li>
 <li>Input-required when two tables match equally well</li>
 <li>Tool calling for column matching</li>
 <li>The CSV of the extracted table as a second artifact</li>
@@ -779,7 +814,7 @@ Robustness beats features. A two-skill agent that handles every hidden prompt sc
 <li>Live status updates (streaming)</li>
 <li>LLM matching with tool calling or structured output</li>
 <li>Asks for missing columns with the real names as choices</li>
-<li>A workflow YAML chaining extract → plot</li>
+<li>A workflow YAML chaining extract → plot (no follow-up questions)</li>
 <li>A third useful skill</li>
 <li>A 5-minute demo: conversation, plot, code walkthrough</li>
 </ol>
