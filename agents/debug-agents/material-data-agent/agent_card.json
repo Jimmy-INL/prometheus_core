@@ -1,6 +1,6 @@
 {
   "name": "Material Data Agent",
-  "description": "Specialist agent for retrieving and managing nuclear reactor material property data. Provides access to material specifications, historical performance data, and regulatory compliance information.",
+  "description": "Specialist agent for retrieving and managing material property data. Provides access to material specifications, historical performance data, and regulatory compliance information.",
   "version": "1.0.0",
   "capabilities": {
     "streaming": true,
@@ -55,7 +55,9 @@
             "description": "The unique identifier of the material to retrieve (e.g., SS316, SS316L, SS304, SS347)"
           }
         },
-        "required": ["material_id"]
+        "required": [
+          "material_id"
+        ]
       }
     },
     {
@@ -74,7 +76,9 @@
             "description": "The unique identifier of the material"
           }
         },
-        "required": ["material_id"]
+        "required": [
+          "material_id"
+        ]
       }
     },
     {
@@ -93,7 +97,9 @@
             "description": "The unique identifier of the material"
           }
         },
-        "required": ["material_id"]
+        "required": [
+          "material_id"
+        ]
       }
     },
     {
@@ -112,7 +118,9 @@
             "description": "The unique identifier of the material"
           }
         },
-        "required": ["material_id"]
+        "required": [
+          "material_id"
+        ]
       }
     }
   ]

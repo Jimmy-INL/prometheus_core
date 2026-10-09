@@ -49,7 +49,7 @@ def create_llm(context: Any = None) -> AsyncLLMClient:
     return AsyncLLMClient.from_a2a_context(
         context if context is not None else _llm_request_context.get(),
         config=config,
-        app_name="Nuclear Analysis Client Agent",
+        app_name="Client Agent",
     )
 
 

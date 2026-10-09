@@ -1,5 +1,7 @@
 """
-Corrosion Analysis Agent - Specialist for nuclear reactor corrosion analysis
+Corrosion Analysis Agent - Dummy specialist agent for corrosion analysis based
+on LLM queries. Does not perform actual modeling and simulation work. Use this
+only for orchestration debugging!
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
 import json
@@ -30,7 +32,7 @@ SKILL_FOCUS = {
 }
 
 ANALYSIS_PROMPT_TEMPLATE = """\
-You are a nuclear reactor corrosion specialist. Analyze the corrosion state of material: {material_id}
+You are a corrosion specialist. Analyze the corrosion state of material: {material_id}
 {context_str}
 Provide a comprehensive corrosion analysis as a JSON object with the following structure:
 {{
@@ -50,7 +52,7 @@ Provide a comprehensive corrosion analysis as a JSON object with the following s
     "confidence": <float 0-1>
 }}
 
-Focus on realistic nuclear reactor corrosion scenarios. Consider general corrosion, pitting, stress corrosion cracking (SCC), flow-accelerated corrosion, and intergranular attack."""
+Focus on realistic materials corrosion scenarios. Consider general corrosion, pitting, stress corrosion cracking (SCC), flow-accelerated corrosion, and intergranular attack."""
 
 
 def _build_corrosion_summary(material_id: str, analysis: Dict[str, Any]) -> str:

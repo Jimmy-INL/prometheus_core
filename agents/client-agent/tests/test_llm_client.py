@@ -13,7 +13,7 @@ def test_runtime_client_uses_proxy_configuration(monkeypatch):
 
     assert client.config.proxy_url == "http://litellm:4000"
     assert client.config.api_key == "proxy-key"
-    assert client.config.app_name == "Nuclear Analysis Client Agent"
+    assert client.config.app_name == "Client Agent"
 
 
 def test_runtime_client_preserves_direct_profile_key(monkeypatch, tmp_path):

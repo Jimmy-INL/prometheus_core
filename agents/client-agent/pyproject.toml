@@ -1,7 +1,7 @@
 [project]
 name = "client-agent"
 version = "0.1.0"
-description = "LangGraph orchestrator for multi-agent nuclear analysis workflows"
+description = "LangGraph orchestrator for multi-agent analysis workflows"
 requires-python = ">=3.12"
 dependencies = [
     "langchain-core>=0.3.0",

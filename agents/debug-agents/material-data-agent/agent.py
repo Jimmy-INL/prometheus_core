@@ -1,5 +1,8 @@
 """
-Data Agent - Specialist for nuclear material data retrieval
+Data Agent - Dummy specialist agent for material data retrieval.
+Does not perform actual modeling and simulation work and contains a
+small dataset generated with an open LLM model. Use this only for
+orchestration debugging!
 Implements A2A protocol using prometheus_api with Bearer token authentication
 """
 import json
@@ -13,7 +16,7 @@ from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events import EventQueue
 
 ANALYSIS_PROMPT_TEMPLATE = """\
-You are a nuclear materials engineer. Analyze this material data and provide expert insights.
+You are a materials engineer. Analyze this material data and provide expert insights.
 
 Material ID: {material_id}
 Data: {material_json}
