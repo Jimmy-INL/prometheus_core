@@ -74,7 +74,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 {.sm widths="40px|500px|"}
 | # | Must-have | How the judges verify it |
 |---|---|---|
-| 1 | Built from `prometheus_agent_template`; a `PrometheusAgent` subclass | Read `agent.py` at the submitted SHA |
+| 1 | Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass | Read `agent.py` at the submitted SHA |
 | 2 | At least **two skills**, extract and plot, with team-prefixed IDs | Read `agent_card.json`; `GET /api/agent-card` on the running agent |
 | 3 | Registers with the platform; appears under `/agents` | `curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/agents`, then `/agents` in the chat |
 | 4 | Natural-language requests are **routed by the orchestrator** | The practice prompt on the practice file calls both skills; the status stream or client-agent log shows the calls |

@@ -41,12 +41,12 @@ cd hackathon
 git remote add upstream git@github.inl.gov:genesis/hackathon.git
 git config pull.rebase true
 
-cd ~/prometheus/prometheus_agent_template
+cd ~/prometheus/prometheus_platform/agent-template
 python3 setup_agent.py
 #  name:   &lt;Team&gt; Table Plot     (" Agent" is appended)
-#  output: ../hackathon/agents/&lt;team_name&gt;
-cd ../hackathon/agents/&lt;team_name&gt;
-grep BASE_IMAGE_HASH .env    # → 1914b55, the platform pin</pre>
+#  output: ~/prometheus/hackathon/agents/&lt;team_name&gt;
+cd ~/prometheus/hackathon/agents/&lt;team_name&gt;
+grep BASE_IMAGE_HASH .env    # the platform pin</pre>
       <p>No <code>gh</code>? <code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>, then <code>gh auth login --hostname github.inl.gov</code>. Or use the Fork and "Compare &amp; pull request" buttons on the web.</p>
     </section>
 
@@ -160,7 +160,7 @@ async with self.llm_client(context, config=cfg) as llm:
       <ul>
         <li>Your imports in <code>pyproject.toml</code> (pandas, matplotlib); never <code>prometheus_api</code></li>
         <li><code>MPLBACKEND=Agg</code>; a <code>COPY</code> line in the <code>Dockerfile</code> per extra module</li>
-        <li><code>uv run pytest</code> and <code>uv run ruff check .</code> must pass (first <code>uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55"</code>)</li>
+        <li><code>uv run pytest</code> and <code>uv run ruff check .</code> must pass (first <code>uv pip install -e ~/prometheus/prometheus_platform/sdk</code>)</li>
       </ul>
     </section>
 

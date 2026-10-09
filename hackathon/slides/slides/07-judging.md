@@ -105,7 +105,7 @@ Note: Set the submission deadline and a place to collect submissions.
 ## Seven must-haves {eyebrow="Stage 1 · the gate"}
 
 :::: grid 2 gap=30px
-1. Built from `prometheus_agent_template`; a `PrometheusAgent` subclass
+1. Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass
 2. At least **two skills** (extract, plot) with team-prefixed IDs
 3. Registers with the platform; listed under `/agents`
 4. Natural-language requests are **routed by the orchestrator**
