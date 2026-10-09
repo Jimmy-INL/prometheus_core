@@ -75,12 +75,19 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 | # | Must-have | How the judges verify it |
 |---|---|---|
 | 1 | Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass | Read `agent.py` at the submitted SHA |
-| 2 | At least **two skills**, extract and plot, with team-prefixed IDs | Read `agent_card.json`; `GET /api/agent-card` on the running agent |
+| 2 | At least **two skills**, extract and plot, with team-prefixed IDs | Read `agent_card.json`; fetch the live card through `client-agent` (command below) |
 | 3 | Registers with the platform; appears under `/agents` | `curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/agents`, then `/agents` in the chat |
 | 4 | Natural-language requests are **routed by the orchestrator** | The practice prompt on the practice file calls both skills; the status stream or client-agent log shows the calls |
 | 5 | Extract emits a table artifact; plot emits an **image** that renders | `/artifacts` lists both; the PNG shows in the chat |
-| 6 | Tests pass and lint is clean | `uv run pytest && uv run ruff check .` in a fresh clone of the SHA |
+| 6 | Tests pass and lint is clean | Fresh clone of the SHA: `uv sync`, the SDK (below), `uv run pytest && uv run ruff check .` |
 | 7 | A PR reviewed by someone outside the team | An approval from a non-team member, with at least one resolved thread |
+
+```bash {.xs}
+# 2 · no host port: read the card from inside client-agent
+docker exec client-agent python -c "import json,urllib.request as u; c=json.load(u.urlopen('http://<slug>-agent:8000/api/agent-card')); print(c['name'], [s['id'] for s in c['skills']])"
+# 6 · install the SDK
+uv pip install "git+https://github.inl.gov/genesis/prometheus_platform.git@dev#subdirectory=sdk"
+```
 
 ::: callout warn
 A team that misses the gate still takes the hidden test, gets written feedback, and can win category awards. It is not ranked for the Prometheus Prize or the runner-up.
@@ -112,6 +119,8 @@ Judges bring a **markdown file and a CSV file nobody has seen**, written with th
 
 - The team may not touch the keyboard or explain the prompt to the agent.
 - Each prompt gets **one** attempt; follow-up questions are answered by the judge. "Offers the real names" counts only for the agent's dropdown, not a free-text question from the orchestrator.
+- An upload that fails on the platform side (the chat says the file "was not stored as a platform artifact") is redone in a fresh conversation and doesn't use the attempt. Confirm with `docker logs client-agent 2>&1 | grep 'Failed to upload'`.
+- Score the plot itself, not the orchestrator's summary of it. A text-vs-text plot was summarized as "the count of each machine type".
 - A timeout of 3 minutes per prompt.
 - Plotting extra series alongside the right one, or asking a sensible clarifying question, is fine.
 - Plotting the wrong columns or the wrong table scores zero for that item, even if the plot looks good.
@@ -164,7 +173,7 @@ Each judge scores every criterion from 1 to 5. Points = score ÷ 5 × weight. Ex
 | 1 | Live status updates (`"streaming": true`) | progress messages in the UI during the run ("Found 4 tables…", "Plotting T \[K\] vs t \[min\]…") |
 | 2 | LLM matching with tool calling or structured output | a bounded tool loop or a forced tool call in the code, and its effect in the hidden test |
 | 3 | Asks for missing columns, offering the real names | a dropdown with the file's column names in the follow-up form |
-| 4 | A workflow YAML chaining extract → plot | the workflow started from the chat or a slash command |
+| 4 | A workflow YAML chaining extract → plot | the workflow started by a natural-language request (don't require the slash command: it needs a typed artifact id) |
 | 5 | A third useful skill | e.g. `list_tables`, `describe_table`, or `convert_units`, routed from a natural-language request |
 | 6 | A 5-minute demo: conversation, plot, code walkthrough | all three parts within the time limit |
 

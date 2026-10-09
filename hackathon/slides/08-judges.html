@@ -93,7 +93,7 @@
 <tr>
 <td>2</td>
 <td>At least <strong>two skills</strong>, extract and plot, with team-prefixed IDs</td>
-<td>Read <code>agent_card.json</code>; <code>GET /api/agent-card</code> on the running agent</td>
+<td>Read <code>agent_card.json</code>; fetch the live card through <code>client-agent</code> (command below)</td>
 </tr>
 <tr>
 <td>3</td>
@@ -113,7 +113,7 @@
 <tr>
 <td>6</td>
 <td>Tests pass and lint is clean</td>
-<td><code>uv run pytest &amp;&amp; uv run ruff check .</code> in a fresh clone of the SHA</td>
+<td>Fresh clone of the SHA: <code>uv sync</code>, the SDK (below), <code>uv run pytest &amp;&amp; uv run ruff check .</code></td>
 </tr>
 <tr>
 <td>7</td>
@@ -122,6 +122,10 @@
 </tr>
 </tbody>
 </table>
+<pre class="xs"><span class="c"># 2 · no host port: read the card from inside client-agent</span>
+docker exec client-agent python -c <span class="s">&quot;import json,urllib.request as u; c=json.load(u.urlopen(&#x27;http://<span class="p">&lt;slug&gt;</span>-agent:8000/api/agent-card&#x27;)); print(c[&#x27;name&#x27;], [s[&#x27;id&#x27;] for s in c[&#x27;skills&#x27;]])&quot;</span>
+<span class="c"># 6 · install the SDK</span>
+uv pip install <span class="s">&quot;git+https://github.inl.gov/genesis/prometheus_platform.git@dev#subdirectory=sdk&quot;</span></pre>
 <div class="callout warn">
 A team that misses the gate still takes the hidden test, gets written feedback, and can win category awards. It is not ranked for the Prometheus Prize or the runner-up.</div>
 
@@ -173,6 +177,8 @@ A team that misses the gate still takes the hidden test, gets written feedback, 
 <ul class="b">
 <li>The team may not touch the keyboard or explain the prompt to the agent.</li>
 <li>Each prompt gets <strong>one</strong> attempt; follow-up questions are answered by the judge. &quot;Offers the real names&quot; counts only for the agent's dropdown, not a free-text question from the orchestrator.</li>
+<li>An upload that fails on the platform side (the chat says the file &quot;was not stored as a platform artifact&quot;) is redone in a fresh conversation and doesn't use the attempt. Confirm with <code>docker logs client-agent 2&gt;&amp;1 | grep 'Failed to upload'</code>.</li>
+<li>Score the plot itself, not the orchestrator's summary of it. A text-vs-text plot was summarized as &quot;the count of each machine type&quot;.</li>
 <li>A timeout of 3 minutes per prompt.</li>
 <li>Plotting extra series alongside the right one, or asking a sensible clarifying question, is fine.</li>
 <li>Plotting the wrong columns or the wrong table scores zero for that item, even if the plot looks good.</li>
@@ -309,7 +315,7 @@ The prompts and files are revealed to everybody after the last team's test.</div
 <tr>
 <td>4</td>
 <td>A workflow YAML chaining extract → plot</td>
-<td>the workflow started from the chat or a slash command</td>
+<td>the workflow started by a natural-language request (don't require the slash command: it needs a typed artifact id)</td>
 </tr>
 <tr>
 <td>5</td>
