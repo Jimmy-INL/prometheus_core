@@ -87,7 +87,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 
 {.sm}
 - Code must be written during the hackathon. Libraries and existing org code are welcome, with attribution in the README.
-- The test runs on **your** local platform (`prometheus_platform@dev`), in a fresh conversation, with the judges at the keyboard.
+- The test runs on **your** local platform (`genesis/prometheus_platform` `dev` at the commit announced on Day 2, \[SHA\]; agents on the `latest` base image), in a fresh conversation, with the judges at the keyboard.
 - Any LLM profile is allowed. Say which one you use.
 - No changes to the platform itself are needed or scored.
 - Teams can win at most **two** awards.
@@ -98,7 +98,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 :::
 ::::
 
-Note: Set the submission deadline and a place to collect submissions.
+Note: Set the submission deadline, a place to collect submissions, and the platform SHA. Gate #7 relies on the genesis/hackathon ruleset on main; check it exists.
 
 ---
 
@@ -116,7 +116,7 @@ Note: Set the submission deadline and a place to collect submissions.
 |||
 
 ::: callout
-Judges check each one on your demo machine with the practice file, and in a fresh clone of your submitted commit.
+Judges check each one on your demo machine with the practice file, and in a fresh clone of your submitted commit. Try #6 there first; install the SDK before `uv run pytest`.
 :::
 
 ::: callout warn
@@ -150,6 +150,7 @@ Judges bring a **markdown file and a CSV file nobody has seen**, written with th
 
 - The team may not touch the keyboard or explain the prompt to the agent.
 - Each prompt gets **one** attempt; follow-up questions are answered by the judge. "Offers the real names" counts only for the agent's dropdown, not a free-text question from the orchestrator.
+- An upload that fails on the platform side (the chat says the file "was not stored as a platform artifact") is redone in a fresh conversation and doesn't use the attempt.
 - A timeout of 3 minutes per prompt.
 - Plotting extra series alongside the right one, or asking a sensible clarifying question, is fine.
 - Plotting the wrong columns or the wrong table scores zero for that item, even if the plot looks good.
@@ -186,7 +187,7 @@ Each judge scores every criterion from 1 to 5. Points = score ÷ 5 × weight. Ex
 | 1 | Live status updates (`"streaming": true`) | progress messages in the UI during the run ("Found 4 tables…", "Plotting T \[K\] vs t \[min\]…") |
 | 2 | LLM matching with tool calling or structured output | a bounded tool loop or a forced tool call in the code, and its effect in the hidden test |
 | 3 | Asks for missing columns, offering the real names | a dropdown with the file's column names in the follow-up form |
-| 4 | A workflow YAML chaining extract → plot | the workflow started from the chat or a slash command |
+| 4 | A workflow YAML chaining extract → plot | the workflow started by a natural-language request, with no follow-up questions |
 | 5 | A third useful skill | e.g. `list_tables`, `describe_table`, or `convert_units`, routed from a natural-language request |
 | 6 | A 5-minute demo: conversation, plot, code walkthrough | all three parts within the time limit |
 
