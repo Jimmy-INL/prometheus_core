@@ -27,11 +27,17 @@ export function AuthLayout({ title, subtitle, onSubmit, children }: AuthLayoutPr
 
       <div className="relative mx-auto grid min-h-dvh w-full max-w-6xl items-center gap-10 px-6 py-12 lg:grid-cols-2 lg:gap-16 lg:px-12">
         {/* Brand lockup */}
-        <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
-          <img src="/logo_dark.png" alt="Prometheus" className="w-56 max-w-full sm:w-64 lg:w-72" />
-          <span className="mt-4 text-base text-base-content/50 sm:text-lg">
-            AI orchestration for nuclear engineering
-          </span>
+        <div className="flex justify-center lg:justify-start">
+          <div className="flex w-fit flex-col items-center text-center ">
+            <img
+              src="/logo_dark.png"
+              alt="Prometheus"
+              className="w-72 max-w-full sm:w-96 lg:w-md"
+            />
+            <span className="-mt-4.5 text-base text-base-content/50 sm:text-lg">
+              AI orchestration for nuclear engineering
+            </span>
+          </div>
         </div>
 
         {/* Form card */}

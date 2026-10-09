@@ -52,7 +52,7 @@ export function SetupWizard({ onSuccess }: Props) {
 
   return (
     <AuthLayout
-      title="Welcome — set up your admin account"
+      title="Welcome, set up your admin account"
       subtitle="This platform has no users yet. Create the first account below; it will be an administrator."
       onSubmit={handleSubmit}
     >
