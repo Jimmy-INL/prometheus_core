@@ -28,7 +28,7 @@ Your platform from the homework is up and current, and you are logged in with an
 ### Scaffold
 
 {.small}
-Update the template you cloned for homework and run `setup_agent.py` with a **unique** name (`hello-<you>`).
+Run `setup_agent.py` from `agent-template/` in your platform clone, with a **unique** name (`hello-<you>`).
 :::
 
 ::: card acc
@@ -60,7 +60,7 @@ Use **your own** card name and skill ID. The registry replaces agents with the s
 :::
 
 ::: callout info
-Folder layout: `~/prometheus/{prometheus_platform, prometheus_agent_template, hello-<you>}`. `setup_agent.py` then finds the platform's `.env`.
+Folder layout: `~/prometheus/prometheus_platform/{platform, sdk, agent-template}` plus your `~/prometheus/hello-<you>`. `setup_agent.py` finds `../platform/.env` by itself.
 :::
 ::::
 
@@ -72,6 +72,7 @@ Folder layout: `~/prometheus/{prometheus_platform, prometheus_agent_template, he
 ```bash {.xs}
 cd ~/prometheus/prometheus_platform
 git pull --rebase upstream dev   # latest dev
+cd platform
 make up
 make ps
 
@@ -99,15 +100,14 @@ Platform not up yet? Use the **bonus slide** at the end of this deck, and the bo
 ## Agent: scaffold and edit {eyebrow="Refresh · 2"}
 
 ```bash {.sm}
-cd ~/prometheus/prometheus_agent_template   # cloned for homework
-git pull               # or: git pull --rebase upstream main (fork)
+cd ~/prometheus/prometheus_platform/agent-template   # same clone
 python3 setup_agent.py
 #  name: Hello <You>   → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
-#  output dir: ../hello-<you>
-#  copy secrets from ../prometheus_platform/.env? yes
-cd ../hello-<you>
-grep PROMETHEUS_API_BASE_IMAGE_HASH .env   # 1914b55, set by setup_agent.py
+#  output dir: ~/prometheus/hello-<you>
+#  copy secrets from ../platform/.env? yes
+cd ~/prometheus/hello-<you>
+grep PROMETHEUS_API_BASE_IMAGE_HASH .env   # the platform pin
 
 # edit agent_card.json: skill description + usage_notes
 #   "Greets a person by name. Use when the user asks
@@ -120,7 +120,7 @@ grep PROMETHEUS_API_BASE_IMAGE_HASH .env   # 1914b55, set by setup_agent.py
 #           "greeting": f"Hello, {name}, from <you>!"}
 
 uv sync
-uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55"
+uv pip install -e ~/prometheus/prometheus_platform/sdk
 uv run pytest    # update the tests; keep one send_status_update
 uv run ruff check .
 make up          # joins the platform network
@@ -156,7 +156,7 @@ docker restart client-agent
 | never routed | sharpen the description; `docker restart client-agent` |
 | LLM 401 (if you added LLM calls) | the key for your `LLM_CONFIG_PROFILE` in `.env` |
 | `ModuleNotFoundError` in the container | add a `COPY` line to the Dockerfile |
-| `No module named 'prometheus_api'` in `uv run pytest` | `uv pip install "git+ssh://git@github.inl.gov/genesis/prometheus_api.git@1914b55"` |
+| `No module named 'prometheus_api'` in `uv run pytest` | `uv pip install -e ~/prometheus/prometheus_platform/sdk` |
 | test fails: no status update sent | keep a `send_status_update` in `_execute`, or drop that assertion |
 :::
 
@@ -236,6 +236,7 @@ cd prometheus_platform
 git remote add upstream \
   git@github.inl.gov:genesis/prometheus_platform.git
 git fetch upstream
+cd platform            # the stack lives here
 
 echo $GITHUB_PAT | docker login containers.github.inl.gov \
   --username <you> --password-stdin        # PAT: read:packages
@@ -295,6 +296,7 @@ git remote add origin \
 git pull --rebase upstream dev
 
 # 2. the stack from the homework
+cd platform
 make up
 make ps
 
