@@ -83,12 +83,12 @@ if __name__ == "__main__":
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-cd ~/prometheus/prometheus_agent_template
+cd ~/prometheus/prometheus_platform/agent-template
 python3 setup_agent.py
 #  name:      Neutron Table Plot   (" Agent" is appended)
 #  skill id:  neutron_extract_table
-#  output:    ../hackathon/agents/neutron
-#  copy secrets from ../prometheus_platform/.env? yes
+#  output:    ~/prometheus/hackathon/agents/neutron
+#  copy secrets from ../platform/.env? yes
 ```
 
 ::: callout bad
@@ -239,7 +239,7 @@ return {"status": "success", "artifact_id": ref.artifact_id}
 - `ConnectionConfig` comes from `prometheus_api.storage_client` and reads `DEEPLYNX_*` from your `.env`.
 
 ::: callout
-Working example: the platform's `agents/debug-agents/artifact-debug-agent` publishes images exactly like this.
+Working example: `platform/agents/debug-agents/artifact-debug-agent` publishes images exactly like this.
 :::
 ::::
 
@@ -320,7 +320,7 @@ Your agent sends a heartbeat every 15 s from its event loop. Blocking code (a so
 | minutes to hours | `await self.declare_long_running(context, event_queue, estimate_seconds=1800)`: the chat turn ends, and the result arrives later as a background task (`/tasks`) {.hl} |
 
 {.small}
-Working example: the platform's `agents/debug-agents/thread-pattern-agent`. Details in the appendix.
+Working example: `platform/agents/debug-agents/thread-pattern-agent`. Details in the appendix.
 
 ---
 
@@ -482,6 +482,8 @@ async def test_finds_census(context, event_queue, monkeypatch):
 - Keep your own test files in `tests/fixtures/`.
 
 ```bash {.sm}
+uv sync
+uv pip install -e ~/prometheus/prometheus_platform/sdk
 uv run pytest
 uv run ruff check .
 ```
@@ -557,7 +559,7 @@ if __name__ == "__main__":
 
 ---
 
-## `prometheus_agent_template` at a glance {eyebrow="The template repository"}
+## `agent-template/` at a glance {eyebrow="The template, inside prometheus_platform"}
 
 :::: grid 2 gap=30px
 {.sm}
@@ -578,7 +580,7 @@ if __name__ == "__main__":
 
 <ul class="b xs" style="margin-top:6px">
 <li>curl examples use A2A v0.3 <code>message/send</code>, which now returns "Method not found"</li>
-<li>older copies pin <code>prometheus_api@2b3dbcf</code> (v0.8.0); use the platform's <code>1914b55</code> (= <code>main</code>, v0.13.0)</li>
+<li>older copies install <code>prometheus_api</code> from the old repo; install from <code>sdk/</code> in the monorepo instead</li>
 <li>local testing also needs <code>USER_IDENTITY_REQUIRED=false</code></li>
 <li>the tutorial's minimal workflow YAML is missing the required <code>description</code></li>
 <li>verifying <code>/v1/agents</code> needs the master-key header</li>
@@ -586,7 +588,7 @@ if __name__ == "__main__":
 :::
 
 {.small}
-No CI in this repo. Generated agents get tests and ruff config, but no workflow files.
+No CI for `agent-template/`. Generated agents get tests and ruff config, but no workflow files.
 ::::
 
 ---
@@ -604,7 +606,7 @@ No CI in this repo. Generated agents get tests and ruff config, but no workflow 
 | Class name | PascalCase | `HelloWorldAgent` |
 | Primary skill ID | `<snake>_analysis` | `hello_world_analysis` |
 | Skill name / description | "… Analysis" | skill fields |
-| Output directory | `../<slug>` | a new folder **outside** the template repo |
+| Output directory | `../<slug>` | a new folder; for the hackathon `~/prometheus/hackathon/agents/<team_name>` |
 | Trim comments? | no | strips the teaching comments in `agent.py` |
 :::
 
@@ -614,7 +616,7 @@ No CI in this repo. Generated agents get tests and ruff config, but no workflow 
 #### It copies the platform secrets for you
 
 {.small}
-If `../prometheus_platform/.env` exists, it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. It never copies the private key.
+If `../platform/.env` exists (the platform in the same clone), it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. It never copies the private key.
 :::
 
 ::: callout bad
@@ -625,7 +627,7 @@ If `../prometheus_platform/.env` exists, it offers to write the agent's `.env` w
 # non-interactive (accept defaults, answer the rest)
 printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
   | python3 setup_agent.py
-# last "yes" = copy ../prometheus_platform/.env
+# last "yes" = copy ../platform/.env
 ```
 ::::
 
@@ -980,7 +982,7 @@ Restart the agent (re-registers), then refresh discovery or restart the client-a
 | **Docker, internal network**<br><span class="small">(recommended)</span> | `make up` in the agent dir. It joins `prometheus_platform_agent-network` via `docker-compose.net_internal.yml`. | `http://<service>:8000`. `REGISTRY_URL`, `REDIS_URL`, and `JWKS_URL` resolve by service name. Start the platform first. {.hl} |
 | **Docker, external port** | `EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up` | `EXTERNAL_AGENT_URL=http://host.docker.internal:8042`. Point `REGISTRY_URL`/`REDIS_URL`/`JWKS_URL` at `host.docker.internal:9977/6379/8600`. Linux adds `docker-compose.linux.yml`. |
 | **Host Python**<br><span class="small">(fastest edit loop)</span> | `python agent.py` in a venv with `prometheus_api` installed | Set `REGISTRY_URL=http://localhost:9977`, `REDIS_URL=redis://localhost:6379`, `JWKS_URL=http://localhost:8600/.well-known/jwks.json`, `EXTERNAL_AGENT_URL=http://host.docker.internal:8000` |
-| **In-tree** | Copy into `prometheus_platform/agents/<name>/`, then `make generate && make up` in the platform | Auto-included (one directory level). Uses the platform's base-image pin. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
+| **In-tree** | Copy into `prometheus_platform/platform/agents/<name>/`, then `make generate && make up` in `platform/` | Auto-included (one directory level). Uses the platform's base-image pin. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
 
 :::: grid 2
 ::: callout warn
@@ -1000,8 +1002,8 @@ Standalone curl testing without any platform: `EXTERNAL_AGENT_HOST=localhost EXT
 ```bash {.sm}
 cd hello-world
 uv sync && source .venv/bin/activate
-uv pip install \
- "git+https://github.inl.gov/genesis/prometheus_api.git@1914b55"
+uv pip install -e \
+  ~/prometheus/prometheus_platform/sdk     # the SDK from your clone
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false \
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory \
@@ -1261,7 +1263,7 @@ The base class sends a heartbeat every `PROMETHEUS_HEARTBEAT_INTERVAL` (15 s) **
 | CPU-bound pure Python | a process pool (the GIL) |
 
 {.small}
-Reference: `agents/debug-agents/thread-pattern-agent` in the platform (skills `run_blocking_task`, `run_background_task`).
+Reference: `platform/agents/debug-agents/thread-pattern-agent` (skills `run_blocking_task`, `run_background_task`).
 
 |||
 
@@ -1364,7 +1366,7 @@ Six flavors, a fixed contract. There is no "fast/smart" naming and no `MODEL_NAM
 <div class="dg">
 <div class="box violet"><b><code>LLM_CONFIG_FILE</code></b> set?<span class="small">→ your YAML (path inside the container, <code>~</code> expanded)</span></div>
 <div class="arrow-v" style="height:28px"><span>else</span></div>
-<div class="box violet"><b><code>LLM_CONFIG_PROFILE</code></b> set?<span class="small">→ <code>prometheus_api/llm_configs/&lt;name&gt;.yaml</code></span></div>
+<div class="box violet"><b><code>LLM_CONFIG_PROFILE</code></b> set?<span class="small">→ <code>sdk/prometheus_api/llm_configs/&lt;name&gt;.yaml</code></span></div>
 <div class="arrow-v" style="height:28px"><span>else</span></div>
 <div class="box violet"><b><code>registry</code></b><span class="small"><code>proxy_url: os.environ/REGISTRY_URL</code> → LiteLLM</span></div>
 </div>
@@ -1396,7 +1398,7 @@ model_list:
 ```
 
 {.small}
-Start from `prometheus_api/llm_config.example.yaml`. Mount it into the container and set `LLM_CONFIG_FILE=/app/llm_config.yaml`. The keys must be in the **process** env: add them to compose `environment:`.
+Start from `sdk/llm_config.example.yaml`. Mount it into the container and set `LLM_CONFIG_FILE=/app/llm_config.yaml`. The keys must be in the **process** env: add them to compose `environment:`.
 :::
 
 ---
@@ -1406,7 +1408,7 @@ Start from `prometheus_api/llm_config.example.yaml`. Mount it into the container
 :::: grid 2 gap=24px
 ::: card tag="B · new installed profile"
 {.sm}
-1. Add `prometheus_api/llm_configs/<name>.yaml` with **all six** flavors
+1. Add `sdk/prometheus_api/llm_configs/<name>.yaml` with **all six** flavors
 2. Add the name to `LLM_CONFIG_PROFILES` in `llm_configs/__init__.py`
 3. Update `tests/test_llm_configs.py`, `specs/005`, README/ENV_SETUP
 4. Bump the version, and note it in `AGENT_MIGRATIONS.md`
@@ -1419,7 +1421,7 @@ A PR to `prometheus_api` (base `main`).
 
 ::: card tag="C · platform proxy alias"
 {.small}
-Add `small`/`large`/`vision`/`embedding`/`default` entries to `prometheus_platform/litellm_config.yaml`, then `make restart`. Every agent on the `registry` profile gets them, with no agent change.
+Add `small`/`large`/`vision`/`embedding`/`default` entries to `platform/litellm_config.yaml`, then `make restart`. Every agent on the `registry` profile gets them, with no agent change.
 
 {.small}
 The template compose forwards every profile key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AMSC_I2_API_KEY`, `INL_LITELLM_API_KEY`, `INL_HPC_API_KEY`, `ASKSAGE_API_KEY`, `EMBEDDING_API_KEY`) from your `.env`. A key of your own needs an `environment:` line.
@@ -1473,7 +1475,7 @@ answer = r.text
 - Structured output = force a single tool whose schema is your output model.
 
 ::: callout warn
-Needs base image **≥ v0.13.0**: the template's default `latest` has it. The platform pin `1914b55` is v0.13.0 too; the client-agent itself runs on this API.
+Needs base image **≥ v0.13.0**: the template's default `latest` has it, and so does the platform's pin; the client-agent itself runs on this API.
 :::
 ::::
 
@@ -1528,7 +1530,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 - If a step pauses for input, the whole template **re-runs** with the answers merged into its inputs: bind them as optional inputs (`{from: input.x_column, optional: true}`).
 
 {.small}
-Full schema: `prometheus_platform/docs/docs/workflow-templates.md`. Examples: `agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml` and `agents/client-agent/workflows/comprehensive_material_analysis.yaml` (DAG, approval).
+Full schema: `platform/docs/docs/workflow-templates.md`. Examples: `platform/agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml` and `platform/agents/client-agent/workflows/comprehensive_material_analysis.yaml` (DAG, approval).
 :::
 
 ---
@@ -1694,14 +1696,14 @@ networks:
 #### Read next {.acc}
 
 <table class="t sm">
-<tr><td><code>prometheus_api/docs/agent/GUIDE.md</code></td><td>the complete guide</td></tr>
+<tr><td><code>sdk/docs/agent/GUIDE.md</code></td><td>the complete guide</td></tr>
 <tr><td><code>…/docs/agent/QUICK_START.md</code></td><td>the minimal agent</td></tr>
 <tr><td><code>…/docs/ENV_SETUP.md</code></td><td>every env var, LLM config</td></tr>
 <tr><td><code>…/docs/agent/LLM_CLIENT_MIGRATION.md</code></td><td>tool loops, from vendor SDKs</td></tr>
 <tr><td><code>…/docs/agent/MULTI_USER.md</code></td><td>identity, credentials</td></tr>
 <tr><td><code>…/examples/agent_patterns.py</code>, <code>llm_tool_calling_usage.py</code></td><td>runnable patterns</td></tr>
-<tr><td>platform <code>agents/synthesis-agent/</code></td><td>about 100 lines, the LLM pattern</td></tr>
-<tr><td>platform <code>agents/debug-agents/*</code></td><td>every helper in use</td></tr>
+<tr><td><code>platform/agents/synthesis-agent/</code></td><td>about 100 lines, the LLM pattern</td></tr>
+<tr><td><code>platform/agents/debug-agents/*</code></td><td>every helper in use</td></tr>
 </table>
 
 ::: callout good
