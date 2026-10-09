@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { AuthProvider } from "@/lib/api/types";
 import { setCurrentUser } from "@/lib/store/session";
+import { AuthError, AuthField, AuthLayout } from "./AuthLayout";
 
 interface Props {
   onSuccess: () => void;
@@ -24,6 +25,7 @@ export function Login({ onSuccess }: Props) {
   }, []);
 
   const handleSubmit = async () => {
+    if (loading) return;
     setLoading(true);
     setError("");
     try {
@@ -38,76 +40,50 @@ export function Login({ onSuccess }: Props) {
   };
 
   return (
-    <div className="relative flex items-center justify-center h-screen bg-base-100 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_60%_50%,rgba(79,70,229,0.15),transparent_70%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_80%,rgba(99,102,241,0.08),transparent_60%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-size-[64px_64px]" />
+    <AuthLayout
+      title="Sign in"
+      subtitle="Enter your INL credentials to continue"
+      onSubmit={handleSubmit}
+    >
+      <AuthError message={error} />
 
-      <div>
-        <div className="relative w-full max-w-lg px-6 space-y-8">
-          <div className="grid justify-items-center -mt-6">
-            <img src="/logo_dark.png" alt="Prometheus" />
-            <span className="text-lg text-base-content/50 -mt-6">AI orchestration for nuclear engineering</span>
-          </div>
-        </div>
-      </div>
+      <AuthField
+        label="Username"
+        placeholder="username"
+        autoComplete="username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        autoFocus
+      />
+      <AuthField
+        label="Password"
+        type="password"
+        placeholder="••••••••"
+        autoComplete="current-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
 
-      <div className="relative w-full max-w-sm px-6 space-y-8">
-        <div className="space-y-3">
-          {error && (
-            <div role="alert" className="alert alert-error text-xs">
-              {error}
-            </div>
-          )}
+      <button type="submit" className="btn btn-primary w-full" disabled={loading}>
+        {loading ? "Signing in..." : "Sign in"}
+      </button>
+
+      {providers.length > 0 && (
+        <>
+          <div className="divider text-xs text-base-content/40">or</div>
           <div className="space-y-2">
-            <label className="label">
-              <span className="label-text text-xs uppercase tracking-wider">Username</span>
-            </label>
-            <input
-              className="input input-bordered w-full"
-              placeholder="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              autoFocus
-            />
+            {providers.map((provider) => (
+              <a
+                key={provider.provider_id}
+                className="btn btn-outline w-full"
+                href={api.loginUrl(provider.provider_id)}
+              >
+                Sign in with {provider.display_name}
+              </a>
+            ))}
           </div>
-          <div className="space-y-2">
-            <label className="label">
-              <span className="label-text text-xs uppercase tracking-wider">Password</span>
-            </label>
-            <input
-              className="input input-bordered w-full"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
-          <button
-            className="btn btn-primary w-full"
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-          {providers.length > 0 && (
-            <>
-              <div className="divider text-xs text-base-content/40">or</div>
-              {providers.map((provider) => (
-                <a
-                  key={provider.provider_id}
-                  className="btn btn-outline w-full"
-                  href={api.loginUrl(provider.provider_id)}
-                >
-                  Sign in with {provider.display_name}
-                </a>
-              ))}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    </AuthLayout>
   );
 }
