@@ -461,7 +461,7 @@ Next: <strong>Your local platform</strong> (1:45 pm). Keep your platform running
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Access</div><h2>Getting in: org, git, and registry</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Access</div><h2>Getting in: org, git, and the base image</h2></div>
   <div class="content">
 <div class="grid g3">
 <div class="card"><span class="tag">1 · org membership</span>
@@ -479,12 +479,11 @@ Next: <strong>Your local platform</strong> (1:45 pm). Keep your platform running
 export GH_HOST=github.inl.gov</pre>
 </div>
 
-<div class="card"><span class="tag">3 · container registry</span>
-<h4>PAT with <code>read:packages</code></h4>
-<p class="small">Needed to pull the <code>prometheus_api</code> base image. Create a classic token at <code>github.inl.gov/settings/tokens/new</code>:</p>
-<pre class="xs">echo $GITHUB_PAT | docker login <span class="s">\</span>
-  containers.github.inl.gov <span class="s">\</span>
-  --username <span class="p">&lt;you&gt;</span> --password-stdin</pre>
+<div class="card"><span class="tag">3 · base image</span>
+<h4>Built locally, no registry</h4>
+<p class="small">The <code>prometheus_api</code> base image is built from <code>sdk/</code> in your clone. One line in <code>platform/.env</code>:</p>
+<pre class="xs">LOCAL_SDK=true</pre>
+<p class="small">On the INL network you can pull it instead: <code>docker login containers.github.inl.gov</code> with a PAT (<code>read:packages</code>).</p>
 </div>
 
 </div>

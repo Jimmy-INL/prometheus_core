@@ -93,6 +93,29 @@ def test_select_platform_env_values_includes_llm_config_profile(tmp_path):
     assert "MODEL_NAME" not in selected
 
 
+def test_select_platform_env_values_points_at_local_base_image_with_local_sdk(tmp_path):
+    """A LOCAL_SDK=true platform has no registry access, so the agent must
+    build FROM the base image the platform built locally, not the registry."""
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=shared-secret\nLOCAL_SDK=true\n", encoding="utf-8")
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert selected["PROMETHEUS_API_BASE_IMAGE_REPO"] == "prometheus_api"
+    assert selected["PROMETHEUS_API_BASE_IMAGE_HASH"] == "local"
+    assert "LOCAL_SDK" not in selected
+
+
+def test_select_platform_env_values_leaves_base_image_alone_without_local_sdk(tmp_path):
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=shared-secret\nLOCAL_SDK=false\n", encoding="utf-8")
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert "PROMETHEUS_API_BASE_IMAGE_REPO" not in selected
+    assert "PROMETHEUS_API_BASE_IMAGE_HASH" not in selected
+
+
 def test_platform_env_path_points_at_monorepo_platform_dir():
     """The template lives at agent-template/ in the monorepo; the platform it
     copies secrets from is the sibling platform/ directory."""

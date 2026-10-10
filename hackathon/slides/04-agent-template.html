@@ -770,7 +770,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 <div class="col">
 <div class="card acc">
 <h4>It copies the platform secrets for you</h4>
-<p class="small">If <code>../platform/.env</code> exists (the platform in the same clone), it offers to write the agent's <code>.env</code> with <code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code>, <code>USER_IDENTITY_PUBLIC_KEY/ISS/AUD</code>, <code>LLM_CONFIG_PROFILE</code>, and every <code>DEEPLYNX_*</code>. It never copies the private key.</p>
+<p class="small">If <code>../platform/.env</code> exists (the platform in the same clone), it offers to write the agent's <code>.env</code> with <code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code>, <code>USER_IDENTITY_PUBLIC_KEY/ISS/AUD</code>, <code>LLM_CONFIG_PROFILE</code>, and every <code>DEEPLYNX_*</code>. With <code>LOCAL_SDK=true</code> in the platform it also points your agent at <code>prometheus_api:local</code>, the base image the platform built. It never copies the private key.</p>
 </div>
 
 <div class="callout bad">

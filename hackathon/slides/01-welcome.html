@@ -437,9 +437,9 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 <td>deck 02 bonus (clone commands)</td>
 </tr>
 <tr>
-<td>PAT created, Docker logged in</td>
-<td><code>docker pull containers.github.inl.gov/genesis/prometheus_api:latest</code></td>
-<td>deck 03 bonus (registry login)</td>
+<td>Base image builds</td>
+<td><code>LOCAL_SDK=true</code> in <code>platform/.env</code>, then <code>make base-image</code> in <code>prometheus_platform/platform</code></td>
+<td>deck 03 bonus (step 1)</td>
 </tr>
 <tr>
 <td>Platform starts</td>
@@ -592,7 +592,7 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 <tr>
 <td><strong>Base image</strong></td>
-<td><code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td>
+<td><code>prometheus_api</code>, built from <code>sdk/</code> (<code>LOCAL_SDK=true</code> → <code>prometheus_api:local</code>) or pulled from <code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td>
 </tr>
 </tbody>
 </table>
@@ -1112,7 +1112,7 @@ One clone of <code>genesis/prometheus_platform</code> (default branch <code>dev<
 </tr>
 <tr>
 <td>image from mooseharbor, pinned in compose</td>
-<td><code>containers.github.inl.gov</code>, pinned in <code>platform/Makefile</code></td>
+<td><code>containers.github.inl.gov</code>, pinned in <code>platform/Makefile</code>, or built locally from <code>sdk/</code> with <code>LOCAL_SDK=true</code></td>
 </tr>
 <tr>
 <td><code>PROMETHEUS_DEBUG</code></td>

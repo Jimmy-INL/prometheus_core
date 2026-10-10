@@ -29,7 +29,7 @@ graph TD
   - **Windows:** run the stack from a WSL2 distro, not from Windows directly. See
     [Windows + WSL2 setup](docs/docs/windows-wsl2-setup.md) for enabling WSL2
     integration in Docker Desktop before continuing below.
-- [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image) — 90 days is the recommended expiration
+- Either a [PAT](https://github.inl.gov/settings/tokens/new) for `containers.github.inl.gov` (to pull the `prometheus_api` base image) — 90 days is the recommended expiration — or `LOCAL_SDK=true` to build that image from `../sdk` instead (see step 2)
 - [uv](https://docs.astral.sh/uv/) and Python — only required to run the Python components outside Docker:
   - Backend: **3.12+**
   - Client-agent: **3.12+**
@@ -98,7 +98,19 @@ OPENAI_API_KEY=<your-openai-api-key>
 
 Advanced users can set `LLM_CONFIG_FILE` to a custom LLM configuration YAML file. It overrides `LLM_CONFIG_PROFILE`, must be available inside every agent container, and requires any environment variables referenced by that file.
 
-### 2. Authenticate to the container registry
+### 2. Get the base image
+
+Every Python service is built `FROM` the `prometheus_api` base image. Pick one of the two options below.
+
+#### Option A: build it locally (no registry access needed)
+
+```bash
+echo "LOCAL_SDK=true" >> .env
+```
+
+`make up` (and `make build`, `make ng-up`) then first runs `make base-image`, which builds `prometheus_api:local` from `../sdk` for your machine's architecture, and builds every service `FROM` it. The pinned `PROMETHEUS_API_BASE_IMAGE_HASH` is ignored; you get whatever SDK is checked out next to the platform. After pulling SDK changes, the next `make up` rebuilds it (Docker's cache keeps that fast when nothing changed).
+
+#### Option B: pull it from the container registry
 
 The `prometheus_api` base image is pulled from INL's Github with a [PAT](https://github.inl.gov/settings/tokens/new):
 
@@ -123,8 +135,8 @@ make ps      # show running services
 
 Launch and restart targets clear LiteLLM's Postgres volume before starting services. This removes stale LiteLLM agent registrations while preserving Valkey conversation and artifact state.
 
-The first run also builds every agent image and pulls the `prometheus_api` base
-image, so it's slower than later runs — expect roughly **5 to 15 minutes**
+The first run also builds every agent image and pulls (or, with `LOCAL_SDK=true`,
+builds) the `prometheus_api` base image, so it's slower than later runs — expect roughly **5 to 15 minutes**
 depending on your connection and machine. Use `make up-fg` instead of `make up`
 to watch that build/startup happen in the foreground rather than waiting on a
 detached container with no output.

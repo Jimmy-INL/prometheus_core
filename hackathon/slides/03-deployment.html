@@ -357,7 +357,7 @@ EOF</pre>
 <section class="slide section bonus">
   <div class="num">+</div>
   <h2>Bonus: catch-up slides</h2>
-  <p class="lede">For participants whose platform does not start yet: prerequisites, registry login, <code>.env</code>, startup failures, and a local DeepLynx.</p>
+  <p class="lede">For participants whose platform does not start yet: prerequisites, clone, <code>.env</code> (with the local base image), startup failures, and a local DeepLynx.</p>
 </section>
 
 <section class="slide bonus">
@@ -384,8 +384,8 @@ EOF</pre>
 <td>Used for forks and PRs. <code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login --hostname github.inl.gov</code>.</td>
 </tr>
 <tr>
-<td><strong>Access to <code>containers.github.inl.gov</code></strong></td>
-<td>A PAT with <code>read:packages</code>, then <code>docker login</code>. You need to be on the INL network or VPN.</td>
+<td><strong>The <code>prometheus_api</code> base image</strong></td>
+<td>Nothing to set up: <code>LOCAL_SDK=true</code> in <code>.env</code> builds it from <code>sdk/</code> on your laptop. (With INL network access you can pull it from <code>containers.github.inl.gov</code> instead: a PAT with <code>read:packages</code>, then <code>docker login</code>.)</td>
 </tr>
 <tr>
 <td><strong>An LLM credential</strong></td>
@@ -410,7 +410,7 @@ EOF</pre>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Step 1</div><h2>Clone and log in to the registry</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Step 1</div><h2>Clone, and where the base image comes from</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <pre class="sm"><span class="c"># your fork (see previous session), default branch dev</span>
@@ -420,27 +420,23 @@ git remote add upstream <span class="s">\</span>
   git@github.inl.gov:genesis/prometheus_platform.git
 git switch dev
 
-<span class="c"># registry login: PAT with read:packages</span>
-export GITHUB_PAT=ghp_…
-echo $GITHUB_PAT | docker login containers.github.inl.gov <span class="s">\</span>
-  --username <span class="p">&lt;github-username&gt;</span> --password-stdin
-
-<span class="c"># smoke test: can you pull the base image?</span>
-docker pull <span class="s">\</span>
-  containers.github.inl.gov/genesis/prometheus_api:latest</pre>
+<span class="c"># smoke test: can you build the base image?</span>
+make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
+<span class="c"># next step: LOCAL_SDK=true in .env, so make up</span>
+<span class="c"># builds every service FROM it</span></pre>
 <div class="col">
 <div class="card">
-<h4>Why the registry?</h4>
-<p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Without a login, the first <code>make up</code> fails at the very first <code>FROM</code> line.</p>
+<h4>Why a base image?</h4>
+<p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM</code> the <code>prometheus_api</code> image. With <code>LOCAL_SDK=true</code>, <code>make up</code> first builds it from <code>../sdk</code> as <code>prometheus_api:local</code>: no registry, no login, no VPN.</p>
 </div>
 
 <div class="card">
-<h4>Where do tokens go?</h4>
-<p class="small">Docker stores the login in your credential helper. The PAT never goes into <code>.env</code> or into a repo.</p>
+<h4>Or pull it from the registry</h4>
+<p class="small">On the INL network you can skip <code>LOCAL_SDK</code> and pull the pinned image: <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>. Docker keeps the login in your credential helper; the PAT never goes into <code>.env</code>.</p>
 </div>
 
 <div class="callout warn">
-<code>unauthorized</code> or <code>denied</code> on pull? The PAT is missing the <code>read:packages</code> scope, your account lacks org access, or you are off the INL network.</div>
+<code>LOCAL_SDK=true</code> builds whatever is in <code>sdk/</code>, not the pin in <code>platform/Makefile</code>. After <code>git pull</code>, the next <code>make up</code> rebuilds it.</div>
 
 </div>
 </div>
@@ -496,6 +492,10 @@ docker pull <span class="s">\</span>
 <td><code>LITELLM_LOCAL_PORT=9977</code></td>
 <td>Already set. Compose has <strong>no default</strong> for it, so keep the line.</td>
 </tr>
+<tr class="hl">
+<td><code>LOCAL_SDK=true</code></td>
+<td>Build the base image from <code>../sdk</code> instead of pulling it</td>
+</tr>
 <tr>
 <td><code>ADMIN_DB_ENCRYPTION_KEY=</code></td>
 <td>Leave empty: <code>make up</code> writes a Fernet key into <code>.env</code></td>
@@ -533,7 +533,11 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 </tr>
 <tr>
 <td><code>unauthorized</code> / <code>denied</code> pulling the base image</td>
-<td>Run <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>; be on the INL network or VPN.</td>
+<td>You are pulling from the registry: set <code>LOCAL_SDK=true</code> in <code>.env</code>, or <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code> (INL network or VPN).</td>
+</tr>
+<tr>
+<td><code>pull access denied for prometheus_api</code></td>
+<td><code>LOCAL_SDK=true</code> is set, but <code>docker compose</code> ran without make, so <code>prometheus_api:local</code> was never built. Run <code>make base-image</code>, or always go through <code>make up</code>.</td>
 </tr>
 <tr>
 <td><code>.env not found</code> from <code>check-prerequisites</code></td>
@@ -841,6 +845,11 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <td>Only what the chosen profile needs</td>
 </tr>
 <tr>
+<td><code>LOCAL_SDK</code></td>
+<td><code>false</code></td>
+<td><code>true</code>: build the base image from <code>../sdk</code> (<code>prometheus_api:local</code>)</td>
+</tr>
+<tr>
 <td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td>
 <td>commented</td>
 <td>Override the pin in <code>platform/Makefile</code></td>
@@ -940,6 +949,8 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <div class="row" style="align-items:stretch; gap:0;">
 <div class="box gray" style="flex:1"><strong>check-prerequisites</strong><span class="small"><code>.env</code> exists, docker is running</span></div>
 <div class="arrow-h" style="width:30px"></div>
+<div class="box violet dash" style="flex:1"><strong>base-image</strong><span class="small">if <code>LOCAL_SDK</code>: build the SDK image</span></div>
+<div class="arrow-h" style="width:30px"></div>
 <div class="box sky" style="flex:1"><strong>generate</strong><span class="small">writes <code>docker-compose.agents.yml</code> (<code>include:</code> of <code>agents/*/docker-compose.yml</code>)</span></div>
 <div class="arrow-h" style="width:30px"></div>
 <div class="box sky" style="flex:1"><strong>ensure-admin-encryption-key</strong><span class="small">Fernet key into <code>.env</code> if empty</span></div>
@@ -951,6 +962,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 
 <div class="grid g2" style="gap:26px;">
 <pre class="sm">make up                        <span class="c"># build + start, detached</span>
+make LOCAL_SDK=true up         <span class="c"># base image from ../sdk</span>
 make up-fg                     <span class="c"># same, logs in foreground</span>
 make DEBUG_AGENTS=true up      <span class="c"># + mock agents</span>
 make PROFILE=prod up           <span class="c"># nginx frontend on :8080</span>
@@ -975,35 +987,39 @@ make ps ; make logs SERVICE=client-agent</pre>
 <div class="grid g3" style="gap:22px;">
 <div class="col">
 <h4 class="acc">① platform/Makefile (the pin)</h4>
-<pre class="sm"><span class="c"># Override this to pin a</span>
-<span class="c"># specific base image.</span>
-PROMETHEUS_API_BASE_IMAGE_HASH <span class="s">\</span>
-<span class="h">  ?= <span class="p">&lt;tag&gt;</span></span>
-export <span class="s">\</span>
-  PROMETHEUS_API_BASE_IMAGE_HASH</pre>
-<p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins.</p>
+<pre class="sm">ifeq (<span class="k">$(</span>LOCAL_SDK<span class="k">)</span>,true)
+…_REPO := prometheus_api
+…_HASH := local   <span class="c"># make base-image</span>
+<span class="h"><span class="k">else</span></span>
+<span class="h">…_REPO ?= containers.github.inl.gov/…</span>
+…_HASH ?= <span class="p">&lt;tag&gt;</span>
+endif</pre>
+<p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins. <code>…</code> = <code>PROMETHEUS_API_BASE_IMAGE</code>.</p>
 </div>
 <div class="col">
 <h4 class="acc">② compose (build arg)</h4>
 <pre class="sm"><span class="c"># docker-compose.yml</span>
 x-build-args:
+  PROMETHEUS_API_BASE_IMAGE_REPO: …
   PROMETHEUS_API_BASE_IMAGE_HASH:
     ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
 <span class="c"># agents/&lt;x&gt;/docker-compose.yml</span>
 args:
+  - PROMETHEUS_API_BASE_IMAGE_REPO=…
   - PROMETHEUS_API_BASE_IMAGE_HASH=
       ${PROMETHEUS_API_BASE_IMAGE_HASH}</pre>
 </div>
 <div class="col">
 <h4 class="acc">③ every Dockerfile</h4>
-<pre class="sm"><span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_HASH
-<span class="k">FROM</span> <span class="s">containers.github.inl.gov/</span>
-  genesis/prometheus_api:
+<pre class="sm"><span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_REPO=<span class="s">\</span>
+  containers.github.inl.gov/genesis/prometheus_api
+<span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_HASH
+<span class="k">FROM</span> <span class="s">${PROMETHEUS_API_BASE_IMAGE_REPO}:\</span>
   <span class="s">${</span>PROMETHEUS_API_BASE_IMAGE_HASH<span class="s">}</span>
 <span class="k">ENV</span> UV_PROJECT_ENVIRONMENT=/usr/local
 <span class="k">RUN</span> uv sync --no-dev <span class="s">\</span>
   --no-install-project --inexact</pre>
-<p class="tiny">(The <code>FROM</code> is one line in the real file.)</p>
+<p class="tiny">(Each <code>ARG</code>/<code>FROM</code> is one line in the real file.)</p>
 </div>
 </div>
 

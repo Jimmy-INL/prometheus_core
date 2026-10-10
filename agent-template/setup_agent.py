@@ -34,6 +34,9 @@ PLATFORM_SECRET_KEYS = (
     # silently defaulting to `registry` when the platform uses something else.
     "LLM_CONFIG_PROFILE",
 )
+# Must match the LOCAL_SDK=true image in platform/Makefile.
+LOCAL_SDK_IMAGE_REPO = "prometheus_api"
+LOCAL_SDK_IMAGE_HASH = "local"
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_GITIGNORE_ENTRIES = (".env",)
 
@@ -220,6 +223,12 @@ def select_platform_env_values(env_path: Path) -> dict[str, str]:
     for key, value in assignments.items():
         if key.startswith("DEEPLYNX_"):
             selected[key] = value
+
+    # A platform built with LOCAL_SDK=true has no registry access; point the
+    # agent at the base image the platform's `make up` built locally.
+    if assignments.get("LOCAL_SDK") == "true":
+        selected["PROMETHEUS_API_BASE_IMAGE_REPO"] = LOCAL_SDK_IMAGE_REPO
+        selected["PROMETHEUS_API_BASE_IMAGE_HASH"] = LOCAL_SDK_IMAGE_HASH
 
     return selected
 

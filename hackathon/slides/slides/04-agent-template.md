@@ -616,7 +616,7 @@ No CI for `agent-template/`. Generated agents get tests and ruff config, but no 
 #### It copies the platform secrets for you
 
 {.small}
-If `../platform/.env` exists (the platform in the same clone), it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. It never copies the private key.
+If `../platform/.env` exists (the platform in the same clone), it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. With `LOCAL_SDK=true` in the platform it also points your agent at `prometheus_api:local`, the base image the platform built. It never copies the private key.
 :::
 
 ::: callout bad

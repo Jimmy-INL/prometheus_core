@@ -12,8 +12,9 @@
 #                  still resolves the source)
 #   --inexact      keep the prometheus-api + deps already preinstalled in the image
 #   --no-install-project  don't install backend itself; the code is COPYed below
+ARG PROMETHEUS_API_BASE_IMAGE_REPO=containers.github.inl.gov/genesis/prometheus_api
 ARG PROMETHEUS_API_BASE_IMAGE_HASH
-FROM containers.github.inl.gov/genesis/prometheus_api:${PROMETHEUS_API_BASE_IMAGE_HASH}
+FROM ${PROMETHEUS_API_BASE_IMAGE_REPO}:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
 WORKDIR /app
 
