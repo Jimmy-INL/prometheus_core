@@ -26,30 +26,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python: 3.12
-            image: ghcr.io/astral-sh/uv:0.11.25-python3.12-trixie-slim@sha256:1b9ee30381d729b07044688631ba4473c72db5c048a5f2a504c40186e65efb86
-          - python: 3.13
-            image: ghcr.io/astral-sh/uv:0.11.25-python3.13-trixie-slim@sha256:dc6831ca75771711b69e2fcaf47f2b4938bcfd7721daf254c1131791249d000d
-          - python: 3.14
-            image: ghcr.io/astral-sh/uv:0.11.25-python3.14-trixie-slim@sha256:2b2e474b3a72e84c92b18a2f011a14adcb045fb361f7d8667ed1f8f55eefdafd
-    runs-on:
-      group: genesis
-    container:
-      image: ${{ matrix.image }}
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-latest
     steps:
-      - name: Install git
-        # Runs before checkout, so sdk/ does not exist yet.
-        working-directory: /
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
       - name: Sync environment
-        run: uv sync --frozen --no-cache
+        run: uv sync --frozen
       - name: Test
-        shell: bash
-        run: |
-          source .venv/bin/activate
-          pytest --color=yes
+        run: uv run --frozen pytest --color=yes
