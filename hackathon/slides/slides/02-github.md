@@ -789,9 +789,9 @@ platform/  (prometheus_core, dev)
 ├── agents/
 │   ├── client-agent/    # orchestrator
 │   ├── form-filler-agent/
-│   ├── osti-research-agent/
 │   ├── synthesis-agent/
-│   └── debug-agents/*/
+│   ├── debug-agents/*/
+│   └── optional/osti-research-agent/
 ├── tests/  # infrastructure/, system/
 ├── docs/   # zensical site
 ├── AGENTS.md · CLAUDE.md

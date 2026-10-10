@@ -460,7 +460,7 @@ Any service that speaks A2A and publishes a card can join. It can live in the pl
 <div class="arrow-v"><span>POST /a2a/{agent_name}</span></div>
 <div class="row" style="gap:14px">
 <div class="box green" style="flex:1"><b>form-filler-agent</b></div>
-<div class="box green" style="flex:1"><b>osti-research-agent</b></div>
+<div class="box green dash" style="flex:1"><b>osti-research-agent</b><span class="mono">OPTIONAL_AGENTS=true</span></div>
 <div class="box green" style="flex:1"><b>synthesis-agent</b></div>
 <div class="box green dash" style="flex:1"><b>debug agents</b><span class="mono">DEBUG_AGENTS=true</span></div>
 <div class="box green dash" style="flex:1"><b>your agent</b><span class="mono">in-tree or external</span></div>
@@ -684,7 +684,7 @@ Without DeepLynx configured, user uploads are **not stored** and agents cannot s
 |---|---|---|---|
 | `agents/client-agent` | nuclear-analysis-client-agent | The orchestrator; excludes itself from discovery | always |
 | `agents/form-filler-agent` | form-filler-agent | `fill_form`: extract structured data per a JSON schema | yes |
-| `agents/osti-research-agent` | osti-research-agent | `search_literature`: OSTI search, PDF download, synthesis | yes |
+| `agents/optional/osti-research-agent` | osti-research-agent | `search_literature`: OSTI search, PDF download, synthesis. Heavy PDF/ML build | `OPTIONAL_AGENTS` {.hl} |
 | `agents/synthesis-agent` | synthesis-agent | `synthesize_material_analysis`. **About 100 lines: the best small example.** | yes |
 | `agents/debug-agents/artifact-debug-agent` | artifact-debug-agent | `create_svg_artifact`, `convert_svg_to_png`, `create_json_artifact`, plus a workflow | `DEBUG_AGENTS` {.hl} |
 | `agents/debug-agents/corrosion-agent` | corrosion-analysis-agent | Mock specialist; demonstrates `send_input_required` and context state | `DEBUG_AGENTS` {.hl} |

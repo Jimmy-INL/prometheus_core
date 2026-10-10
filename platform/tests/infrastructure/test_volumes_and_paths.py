@@ -70,8 +70,10 @@ def test_no_host_bind_mounts_in_agent_compose_files(project_root):
     """Same rule for the per-agent files make generate includes — no agent needs one."""
     import yaml
 
-    paths = sorted(project_root.glob("agents/*/docker-compose.yml")) + sorted(
-        project_root.glob("agents/debug-agents/*/docker-compose.yml")
+    paths = (
+        sorted(project_root.glob("agents/*/docker-compose.yml"))
+        + sorted(project_root.glob("agents/debug-agents/*/docker-compose.yml"))
+        + sorted(project_root.glob("agents/optional/*/docker-compose.yml"))
     )
     assert paths, "no per-agent compose files found"
     for path in paths:

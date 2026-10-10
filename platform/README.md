@@ -125,7 +125,7 @@ make logs    # tail all services (SERVICE=<name> to filter)
 make ps      # show running services
 ```
 
-`make up` runs `make generate` first, which scans `agents/*/docker-compose.yml` and writes `docker-compose.agents.yml`. **Do not hand-edit that file** — re-run `make generate` after adding or removing an agent (or use `make ng-up` to skip regeneration).
+`make up` runs `make generate` first, which scans `agents/*/docker-compose.yml` and writes `docker-compose.agents.yml`. **Do not hand-edit that file** — re-run `make generate` after adding or removing an agent (or use `make ng-up` to skip regeneration). Agents in `agents/debug-agents/` and `agents/optional/` (OSTI research) are skipped unless `DEBUG_AGENTS=true` / `OPTIONAL_AGENTS=true`.
 
 Launch and restart targets clear LiteLLM's Postgres volume before starting services. This removes stale LiteLLM agent registrations while preserving Valkey conversation and artifact state.
 
@@ -147,7 +147,6 @@ form-filler-agent     prometheus_platform-form-filler-agent      form-filler-age
 frontend-dev          prometheus_platform-frontend-dev           frontend-dev          Up
 litellm-db            postgres:16-alpine                         litellm-db            Up (healthy)
 litellm-proxy         ghcr.io/berriai/litellm:v1.92.0            litellm               Up (healthy)
-osti-research-agent   prometheus_platform-osti-research-agent    osti-research-agent   Up
 synthesis-agent       prometheus_platform-synthesis-agent        synthesis-agent       Up
 ```
 
@@ -232,6 +231,8 @@ Notable environment variables (see `.env.example` for the full list):
 |---|---|
 | `LLM_CONFIG_PROFILE` | Installed agent LLM mapping: `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai` |
 | `LLM_CONFIG_FILE` | Optional custom YAML path inside the agent container; overrides `LLM_CONFIG_PROFILE` |
+| `DEBUG_AGENTS` | When `true`, also build and start the mock agents in `agents/debug-agents/` |
+| `OPTIONAL_AGENTS` | When `true`, also build and start the heavy agents in `agents/optional/` (OSTI research; its PDF/ML dependencies make it the slowest image to build) |
 | `PROMETHEUS_SYSTEM_TESTING` | When `true`, Make includes the Compose override that publishes the client-agent on `CLIENT_AGENT_PORT` |
 | Provider API keys | Credentials referenced by the selected profile; see `.env.example` |
 | `AGENT_SECRET_REQUIRED` | Enforce Bearer auth on specialist agents (default `true`) |
@@ -265,7 +266,8 @@ platform/
 
   agents/
     client-agent/           # A2A orchestrator
-    osti-research-agent/    # OSTI literature search
+    optional/               # heavy agents, only with OPTIONAL_AGENTS=true
+      osti-research-agent/  # OSTI literature search (PDF/ML deps, slow build)
     form-filler-agent/      # Dynamic form completion
     artifact-debug-agent/   # Artifact handling test agent
     (debug) corrosion-agent/        # Corrosion analysis specialist

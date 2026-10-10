@@ -39,7 +39,7 @@ make test-infra        # both
 
 Launch and restart targets clear LiteLLM's Postgres volume before starting services so stale agent registrations do not survive across platform launches. Valkey state is left intact.
 
-To temporarily exclude an agent, remove (or rename) its `agents/<name>/docker-compose.yml` and re-run `make generate`. `docker-compose.override.yml` is auto-included if present for local-only tweaks.
+To temporarily exclude an agent, remove (or rename) its `agents/<name>/docker-compose.yml` and re-run `make generate`. Heavy agents that most setups skip live in `agents/optional/<name>/` and are included only with `OPTIONAL_AGENTS=true` (same mechanism as `agents/debug-agents/` + `DEBUG_AGENTS`). `docker-compose.override.yml` is auto-included if present for local-only tweaks.
 
 ## Frontend commands (`frontend/Makefile`)
 
@@ -97,7 +97,7 @@ The client-agent still falls back to each agent's `/.well-known/agent.json` for 
 
 Every specialist subclasses `PrometheusAgent` (provided by the prebuilt `prometheus_api` base image; see `agents/<name>/Dockerfile`). The base class handles HTTP serving, Bearer auth (`AGENT_SECRET`), agent-card serving, LiteLLM registration on startup, A2A JSON-RPC parsing, task lifecycle, and auto-wrapping the `process_analysis()` return value as a JSON artifact. To add a new agent see `docs/docs/dev-docs/adding-agents.md` — the short version: create `agents/<name>/{agent.py, agent_card.json, Dockerfile, docker-compose.yml, pyproject.toml}` and `make generate` will pick it up.
 
-Specialist agents currently in tree: `client-agent`, `corrosion-agent`, `radiation-agent`, `thermal-agent`, `data-agent`, `synthesis-agent`, `osti-research-agent`, `form-filler-agent`, `artifact-debug-agent`, `code-render-debug-agent` (debug agents, included with `DEBUG_AGENTS=true`; `code-render-debug-agent` returns fixed sample files per language to exercise the `code` and `table` viewers).
+Specialist agents currently in tree: `client-agent`, `corrosion-agent`, `radiation-agent`, `thermal-agent`, `data-agent`, `synthesis-agent`, `osti-research-agent`, `form-filler-agent`, `artifact-debug-agent`, `code-render-debug-agent` (debug agents, included with `DEBUG_AGENTS=true`; `osti-research-agent` lives in `agents/optional/` and is only included with `OPTIONAL_AGENTS=true` because its PDF/ML dependencies dominate the build; `code-render-debug-agent` returns fixed sample files per language to exercise the `code` and `table` viewers).
 
 ### Artifacts
 

@@ -121,7 +121,7 @@ make down                   <span class="c"># stop</span></pre>
 <p class="small">The platform signs every chat turn with it, so agents know which user is asking.</p>
 </div></div>
 <div class="step"><div><h4>Type <code>/agents</code> in the chat</h4>
-<p class="small">You should see form-filler, OSTI research, and synthesis.</p>
+<p class="small">You should see form-filler and synthesis (OSTI research only with <code>OPTIONAL_AGENTS=true</code>).</p>
 </div></div>
 </div>
 
@@ -142,7 +142,7 @@ curl -s -H <span class="s">&quot;Authorization: Bearer </span>$LITELLM_MASTER_KE
      localhost:9977/v1/agents | python3 -m json.tool     <span class="c"># registered agents</span></pre>
 <div class="grid g2">
 <div class="callout">
-Then ask the chat something real: &quot;Find recent OSTI papers on SiC cladding&quot;. Watch it with <code>make logs SERVICE=client-agent</code>.</div>
+Then ask the chat something real, e.g. &quot;Extract the material, temperature and pressure from: SS316 pipe at 320 °C and 15 MPa&quot; (form-filler). Watch it with <code>make logs SERVICE=client-agent</code>.</div>
 
 <div class="callout warn">
 A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> header.</div>
@@ -556,7 +556,7 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 </tr>
 <tr>
 <td>Build killed / exit 137</td>
-<td>Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy).</td>
+<td>Out of memory. Raise the Docker Desktop memory limit. The heaviest image, the OSTI agent, is only built with <code>OPTIONAL_AGENTS=true</code>.</td>
 </tr>
 <tr>
 <td>Behind a corporate proxy: downloads time out</td>
@@ -821,6 +821,11 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <td>Include <code>agents/debug-agents/*</code></td>
 </tr>
 <tr>
+<td><code>OPTIONAL_AGENTS</code></td>
+<td><code>false</code></td>
+<td>Include <code>agents/optional/*</code> (OSTI research, slow build)</td>
+</tr>
+<tr>
 <td><code>LLM_CONFIG_PROFILE</code></td>
 <td><code>registry</code></td>
 <td>Which flavor→model map agents use</td>
@@ -951,6 +956,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 make LOCAL_SDK=true up         <span class="c"># base image from ../sdk</span>
 make up-fg                     <span class="c"># same, logs in foreground</span>
 make DEBUG_AGENTS=true up      <span class="c"># + mock agents</span>
+make OPTIONAL_AGENTS=true up   <span class="c"># + OSTI research (slow build)</span>
 make PROFILE=prod up           <span class="c"># nginx frontend on :8080</span>
 make PROFILE= up               <span class="c"># no frontend container…</span>
 make react-dev                 <span class="c"># …run Vite on the host</span>
@@ -1202,7 +1208,7 @@ args:
 </table>
 </div>
 
-<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>LOCAL_SDK</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
+<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>OPTIONAL_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>LOCAL_SDK</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
   </div>
 </section>
 
@@ -1304,7 +1310,7 @@ docker exec client-agent python -c <span class="s">&quot;import urllib.request a
 </tr>
 <tr>
 <td><code>/agents</code></td>
-<td>form-filler, OSTI research, synthesis (plus debug agents)</td>
+<td>form-filler, synthesis (plus debug / optional agents if enabled)</td>
 </tr>
 <tr>
 <td><code>/workflows</code></td>
@@ -1320,7 +1326,7 @@ docker exec client-agent python -c <span class="s">&quot;import urllib.request a
 </tr>
 <tr>
 <td>&quot;Find recent OSTI papers on SiC cladding&quot;</td>
-<td>routes to <code>search_literature</code>; watch the status stream</td>
+<td>with <code>OPTIONAL_AGENTS=true</code>: routes to <code>search_literature</code>; watch the status stream</td>
 </tr>
 </tbody>
 </table>
@@ -1329,7 +1335,7 @@ docker exec client-agent python -c <span class="s">&quot;import urllib.request a
 <div class="col">
 <h4 class="acc">Watch it happen</h4>
 <pre class="sm">make logs SERVICE=client-agent
-make logs SERVICE=osti-research-agent
+make logs SERVICE=form-filler-agent
 make logs SERVICE=litellm</pre>
 <p class="small">In the client-agent log you see discovery (<code>GET /v1/agents</code>), each tool call the loop makes (status &quot;Next step: …&quot;), and the <code>/a2a/{agent}</code> call.</p>
 <div class="callout">
