@@ -2,12 +2,12 @@ name: SDK Tests
 
 on:
   push:
-    branches: [dev]
+    branches: [devel]
     paths:
       - "sdk/**"
       - ".github/workflows/sdk-tests.yml"
   pull_request:
-    branches: [main, dev]
+    branches: [main, devel]
     paths:
       - "sdk/**"
       - ".github/workflows/sdk-tests.yml"
