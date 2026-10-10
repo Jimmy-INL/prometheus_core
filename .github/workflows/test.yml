@@ -31,12 +31,14 @@ jobs:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            range="-1 $HEAD_SHA"
-          else
-            range="$BASE_SHA..$HEAD_SHA"
+          # gitleaks passes without scanning if the range is empty or the base
+          # commit is missing, so check the range with git first
+          count=$(git rev-list --count "$BASE_SHA..$HEAD_SHA")
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No commits to scan in $BASE_SHA..$HEAD_SHA"
+            exit 1
           fi
-          gitleaks git --redact --no-banner --log-opts="$range" .
+          gitleaks git --redact --no-banner --log-opts="$BASE_SHA..$HEAD_SHA" .
 
   sdk-python:
     name: "sdk: python ${{ matrix.python }}"
