@@ -1,0 +1,58 @@
+# ANL AskSage inference scaffold. Select it with LLM_CONFIG_PROFILE=anl_asksage.
+# Put the AskSage static API key in ASKSAGE_API_KEY; do not put it here.
+# openai/ is LiteLLM's OpenAI-compatible provider prefix, not api.openai.com.
+# AskSage does not supply embeddings; map that flavor to the chosen embedding provider.
+
+model_list:
+
+  - model_name: default
+    litellm_params:
+      model: openai/gpt-5.6-terra
+      api_key: os.environ/ASKSAGE_API_KEY
+      api_base: https://api.asksage.anl.gov/server/openai/v1
+      drop_params: true
+      additional_drop_params:
+        - temperature
+
+  - model_name: small
+    litellm_params:
+      model: openai/gpt-5.4-nano
+      api_key: os.environ/ASKSAGE_API_KEY
+      api_base: https://api.asksage.anl.gov/server/openai/v1
+      drop_params: true
+      additional_drop_params:
+        - temperature
+
+  - model_name: medium
+    litellm_params:
+      model: openai/gpt-5.6-terra
+      api_key: os.environ/ASKSAGE_API_KEY
+      api_base: https://api.asksage.anl.gov/server/openai/v1
+      drop_params: true
+      additional_drop_params:
+        - temperature
+
+  - model_name: large
+    litellm_params:
+      model: openai/gpt-5.6-sol
+      api_key: os.environ/ASKSAGE_API_KEY
+      api_base: https://api.asksage.anl.gov/server/openai/v1
+      drop_params: true
+      additional_drop_params:
+        - temperature
+
+  - model_name: vision
+    litellm_params:
+      model: openai/gpt-5.6-luna
+      api_key: os.environ/ASKSAGE_API_KEY
+      api_base: https://api.asksage.anl.gov/server/openai/v1
+      drop_params: true
+      additional_drop_params:
+        - temperature
+
+  - model_name: embedding
+    litellm_params:
+      model: voyage-4-large
+      api_key: os.environ/EMBEDDING_API_KEY
+      api_base: https://api.voyageai.com/v1
+

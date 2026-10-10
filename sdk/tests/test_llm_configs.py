@@ -26,8 +26,6 @@ def test_packaged_llm_config_paths_are_readable():
     )
 
     for profile in LLM_CONFIG_PROFILES:
-        if profile == "anl_asksage":
-            continue
         config_path = get_llm_config_path(profile)
         assert config_path == Path(config_path).resolve()
         assert config_path.is_file()
@@ -45,10 +43,10 @@ def test_packaged_llm_config_paths_are_readable():
             {"os.environ/ANTHROPIC_API_KEY", "os.environ/EMBEDDING_API_KEY"},
         ),
         ("openai", {"os.environ/OPENAI_API_KEY"}),
-        #(
-        #    "anl_asksage",
-        #    {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
-        #),
+        (
+           "anl_asksage",
+           {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
+        ),
     ],
 )
 def test_provider_profiles_scaffold_every_flavor(profile, api_key_references):
