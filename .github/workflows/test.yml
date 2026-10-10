@@ -42,7 +42,6 @@ jobs:
 
   ruff:
     name: "ruff ${{ matrix.project }}"
-    needs: gitleaks
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
