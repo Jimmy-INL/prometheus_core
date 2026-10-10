@@ -1,0 +1,66 @@
+name: platform
+
+on:
+  push:
+    branches: [devel]
+  pull_request:
+    branches: [main, devel]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: platform
+
+jobs:
+  frontend-npm:
+    name: "frontend npm"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Matches the node image in frontend/Dockerfile
+          node-version: "22.19.0"
+          cache: npm
+          cache-dependency-path: platform/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  backend-python:
+    name: "backend python ${{ matrix.python }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        run: |
+          uv sync --frozen --no-install-package prometheus-api
+          uv pip install --no-deps ../../sdk
+      - name: Test
+        run: uv run --frozen --no-sync pytest --color=yes
