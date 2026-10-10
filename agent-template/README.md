@@ -37,11 +37,12 @@ dependencies — builds are small and fast.
 ```bash
 git clone git@github.inl.gov:genesis/prometheus_platform.git
 cd prometheus_platform/agent-template
-python setup_agent.py
+python setup_agent.py                        # prompts for everything
+python setup_agent.py "Plant Analysis" ../plant-agent   # name and output dir given
 ```
 
-The script prompts for the agent name, description, slug, class name, and primary
-skill, then writes a ready-to-edit project to the output directory you choose:
+The script prompts for the agent name (unless given as the first argument),
+description, slug, class name, and primary skill, then writes a ready-to-edit project to the output directory you choose:
 
 ```
 my-agent/

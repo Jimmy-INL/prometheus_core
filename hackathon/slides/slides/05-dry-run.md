@@ -101,10 +101,9 @@ Platform not up yet? Use the **bonus slide** at the end of this deck, and the bo
 
 ```bash {.sm}
 cd ~/prometheus/prometheus_platform/agent-template   # same clone
-python3 setup_agent.py
-#  name: Hello <You>   → card "Hello <You> Agent"
+python3 setup_agent.py "Hello <You>" ../../hello-<you>   # no ~
+#  → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
-#  output dir: ../../hello-<you>   (no ~)
 #  copy secrets from ../platform/.env? yes
 cd ~/prometheus/hello-<you>
 

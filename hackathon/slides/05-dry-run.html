@@ -93,10 +93,9 @@ Platform not up yet? Use the <strong>bonus slide</strong> at the end of this dec
   <div class="head"><div class="eyebrow">Refresh · 2</div><h2>Agent: scaffold and edit</h2></div>
   <div class="content">
 <pre class="sm">cd ~/prometheus/prometheus_platform/agent-template   <span class="c"># same clone</span>
-python3 setup_agent.py
-<span class="c">#  name: Hello &lt;You&gt;   → card &quot;Hello &lt;You&gt; Agent&quot;</span>
+python3 setup_agent.py <span class="s">&quot;Hello <span class="p">&lt;You&gt;</span>&quot;</span> ../../hello-<span class="p">&lt;you&gt;</span>   <span class="c"># no ~</span>
+<span class="c">#  → card &quot;Hello &lt;You&gt; Agent&quot;</span>
 <span class="c">#  skill id: hello_&lt;you&gt;_greeting   (unique!)</span>
-<span class="c">#  output dir: ../../hello-&lt;you&gt;   (no ~)</span>
 <span class="c">#  copy secrets from ../platform/.env? yes</span>
 cd ~/prometheus/hello-<span class="p">&lt;you&gt;</span>
 
