@@ -293,9 +293,7 @@ async def test_completed_event_emits_mapped_task_done(monkeypatch, fake_redis, e
     assert not await session_store.is_awaiting(SID, "task-1")
 
 
-async def test_non_completed_terminal_emits_bodyless_task_done(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_non_completed_terminal_emits_bodyless_task_done(monkeypatch, fake_redis, event_bus, session_store):
     queue = await event_bus.register(SID)
     await _seed(session_store, awaited=["task-1"])
 
@@ -314,9 +312,7 @@ async def test_non_completed_terminal_emits_bodyless_task_done(
     assert event.message is not None and "failed" in event.message
 
 
-async def test_child_and_unawaited_events_are_ignored(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_child_and_unawaited_events_are_ignored(monkeypatch, fake_redis, event_bus, session_store):
     queue = await event_bus.register(SID)
     await _seed(session_store, awaited=["root-1"])
 
@@ -393,9 +389,7 @@ async def test_fast_finish_guard_announces_once(monkeypatch, fake_redis, event_b
     assert await _rest_before_marker(event_bus, SID, queue) == [[]]
 
 
-async def test_fast_finish_guard_seeds_initial_progress(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_fast_finish_guard_seeds_initial_progress(monkeypatch, fake_redis, event_bus, session_store):
     queue = await event_bus.register(SID)
     await _seed(session_store, awaited=["task-1"])
 
@@ -422,9 +416,7 @@ async def test_history_limit_constant():
 # --------------------------------------------------------------------------- #
 
 
-async def test_announce_restores_id_on_fetch_failure(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_announce_restores_id_on_fetch_failure(monkeypatch, fake_redis, event_bus, session_store):
     await event_bus.register(SID)
     await _seed(session_store, awaited=["task-1"])
 
@@ -487,9 +479,7 @@ async def test_event_queue_is_bounded_and_drops_oldest(monkeypatch, event_bus):
 # --------------------------------------------------------------------------- #
 
 
-async def test_reconcile_announces_when_already_terminal(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_reconcile_announces_when_already_terminal(monkeypatch, fake_redis, event_bus, session_store):
     queue = await event_bus.register(SID)  # a stream is listening
     await _seed(session_store, awaited=["task-1"])
 
@@ -499,9 +489,7 @@ async def test_reconcile_announces_when_already_terminal(
         result={"conversation_id": "c1", "status": "answer", "response_text": "bg done"},
     )
 
-    await events_service.reconcile_backgrounded(
-        event_bus, session_store, SID, fake_redis, "task-1", auto_approve=False
-    )
+    await events_service.reconcile_backgrounded(event_bus, session_store, SID, fake_redis, "task-1", auto_approve=False)
 
     (event,) = await _drain(queue, 1)
     assert isinstance(event, TaskDoneEvent) and event.state == "completed"
@@ -509,17 +497,13 @@ async def test_reconcile_announces_when_already_terminal(
     assert not await session_store.is_awaiting(SID, "task-1")
 
 
-async def test_reconcile_is_noop_without_listeners(
-    monkeypatch, fake_redis, event_bus, session_store
-):
+async def test_reconcile_is_noop_without_listeners(monkeypatch, fake_redis, event_bus, session_store):
     # No register → PUBSUB NUMSUB reports nobody on the channel, on any worker.
     await _seed(session_store, awaited=["task-1"])
 
     _patch_task_events(monkeypatch, snapshot={"state": "completed"}, result={"status": "answer"})
 
-    await events_service.reconcile_backgrounded(
-        event_bus, session_store, SID, fake_redis, "task-1", auto_approve=False
-    )
+    await events_service.reconcile_backgrounded(event_bus, session_store, SID, fake_redis, "task-1", auto_approve=False)
     # Left awaited so the connect-time fast-finish guard catches it when the SSE opens.
     assert await session_store.is_awaiting(SID, "task-1")
 

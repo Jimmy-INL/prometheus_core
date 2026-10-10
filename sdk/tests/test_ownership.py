@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from prometheus_api.agent.ownership import (
     assert_conversation_owner,
@@ -29,6 +29,7 @@ from prometheus_api.agent.ownership import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_redis(owner_value=None, smembers_value=None):
     """Build a minimal Redis mock."""
     r = MagicMock()
@@ -40,6 +41,7 @@ def _make_redis(owner_value=None, smembers_value=None):
 # ---------------------------------------------------------------------------
 # record_conversation_owner
 # ---------------------------------------------------------------------------
+
 
 def test_record_sets_owner_with_nx():
     r = _make_redis()
@@ -87,6 +89,7 @@ def test_record_tolerates_none_redis():
 # get_conversation_owner
 # ---------------------------------------------------------------------------
 
+
 def test_get_returns_owner_string():
     r = _make_redis(owner_value=b"alice")
     with patch("prometheus_api.agent.ownership._get_redis", return_value=r):
@@ -116,6 +119,7 @@ def test_get_returns_none_when_conversation_empty():
 # ---------------------------------------------------------------------------
 # assert_conversation_owner
 # ---------------------------------------------------------------------------
+
 
 def test_assert_passes_for_correct_owner():
     r = _make_redis(owner_value=b"alice")
@@ -155,6 +159,7 @@ def test_assert_skips_when_conversation_empty():
 # ---------------------------------------------------------------------------
 # list_user_conversations
 # ---------------------------------------------------------------------------
+
 
 def test_list_returns_conversation_ids():
     members = {b"conv-a", b"conv-b", b"conv-c"}

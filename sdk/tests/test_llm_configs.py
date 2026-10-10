@@ -56,8 +56,8 @@ def test_packaged_llm_config_paths_are_readable():
         ),
         ("openai", {"os.environ/OPENAI_API_KEY"}),
         (
-           "anl_asksage",
-           {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
+            "anl_asksage",
+            {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
         ),
     ],
 )

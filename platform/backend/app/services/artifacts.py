@@ -182,17 +182,51 @@ _EXTENSION_HINTS: dict[str, RenderHint] = {
     **{
         ext: "code"
         for ext in (
-            ".yaml", ".yml", ".jsonc", ".toml", ".ini", ".cfg", ".conf",
-            ".xml", ".xsd", ".xdmf", ".xmf",
-            ".py", ".pyi",
-            ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
-            ".f", ".f90", ".f95", ".f03", ".f08", ".for",
-            ".cmake", ".mk", ".dockerfile",
-            ".sh", ".bash", ".zsh",
+            ".yaml",
+            ".yml",
+            ".jsonc",
+            ".toml",
+            ".ini",
+            ".cfg",
+            ".conf",
+            ".xml",
+            ".xsd",
+            ".xdmf",
+            ".xmf",
+            ".py",
+            ".pyi",
+            ".c",
+            ".h",
+            ".cpp",
+            ".cc",
+            ".cxx",
+            ".hpp",
+            ".hh",
+            ".hxx",
+            ".f",
+            ".f90",
+            ".f95",
+            ".f03",
+            ".f08",
+            ".for",
+            ".cmake",
+            ".mk",
+            ".dockerfile",
+            ".sh",
+            ".bash",
+            ".zsh",
             ".sql",
-            ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts",
-            ".diff", ".patch",
-            ".txt", ".log",
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".mts",
+            ".diff",
+            ".patch",
+            ".txt",
+            ".log",
         )
     },
     ".inp": "file",  # ambiguous (Abaqus/MCNP/etc.) — stays a download
@@ -252,9 +286,7 @@ def artifact_identity(artifact: dict[str, Any]) -> str:
     explicit = str(artifact.get("artifact_id") or artifact.get("id") or "")
     if explicit:
         return explicit
-    basis = "|".join(
-        str(artifact.get(key) or "") for key in ("uri", "name", "json_type")
-    )
+    basis = "|".join(str(artifact.get(key) or "") for key in ("uri", "name", "json_type"))
     basis += "|" + repr(artifact.get("json_body"))
     return "art-" + hashlib.sha256(basis.encode("utf-8", "replace")).hexdigest()[:16]
 

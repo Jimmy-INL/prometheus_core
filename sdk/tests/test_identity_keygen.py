@@ -39,9 +39,11 @@ def test_generate_keypair_produces_a_matching_pair():
 
     private_pem, public_pem = generate_keypair(key_size=2048)
     private_key = load_pem_private_key(private_pem.encode(), password=None)
-    derived_public_pem = private_key.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    derived_public_pem = (
+        private_key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
     assert derived_public_pem == public_pem
 
 

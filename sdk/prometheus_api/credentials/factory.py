@@ -52,13 +52,16 @@ def _create_broker() -> CredentialBroker:
     backend = os.getenv("CREDENTIAL_BROKER", "env").strip().lower()
     if backend in ("env", ""):
         from .env_broker import EnvCredentialBroker
+
         return EnvCredentialBroker()
     if backend == "vault":
         from .vault_broker import VaultCredentialBroker
+
         return VaultCredentialBroker()
     if backend == "bespoke":
         try:
             import importlib
+
             mod = importlib.import_module("prometheus_api_credentials_bespoke")
             return mod.Broker()
         except ImportError as exc:
@@ -67,6 +70,5 @@ def _create_broker() -> CredentialBroker:
                 "'prometheus_api_credentials_bespoke' is not installed"
             ) from exc
     raise CredentialError(
-        f"Unknown CREDENTIAL_BROKER value {backend!r}. "
-        "Valid values: 'env', 'vault', 'bespoke'."
+        f"Unknown CREDENTIAL_BROKER value {backend!r}. Valid values: 'env', 'vault', 'bespoke'."
     )

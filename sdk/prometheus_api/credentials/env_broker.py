@@ -30,7 +30,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from .broker import Credential, CredentialBroker, CredentialError, CredentialRequest
+from .broker import Credential, CredentialError, CredentialRequest
 
 
 class EnvCredentialBroker:
@@ -97,9 +97,7 @@ def _slurm_factory(req: CredentialRequest) -> Dict[str, Any]:
     user = os.getenv("SLURM_USER", "").strip()
     url = os.getenv("SLURM_REST_URL", "").strip()
     if not token:
-        raise CredentialError(
-            "SLURM credentials not configured: set SLURM_JWT_TOKEN"
-        )
+        raise CredentialError("SLURM credentials not configured: set SLURM_JWT_TOKEN")
     return {"token": token, "user": user, "slurm_rest_url": url}
 
 

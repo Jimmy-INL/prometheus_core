@@ -17,6 +17,7 @@ by ``A2AClient.send()``, ``_extract_from_status`` against a canned A2A payload,
 and the ``task_events`` channel/terminal-state helpers. No live agent or Redis
 is required.
 """
+
 import json
 import uuid
 

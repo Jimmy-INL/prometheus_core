@@ -47,7 +47,6 @@ from .identity import (
     USER_TOKEN_METADATA_KEY,
     identity_scope,
     get_current_identity,
-    mint_user_token,
     verify_user_token,
 )
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -484,6 +483,7 @@ class PrometheusAgentExecutor(AgentExecutor):
         # Subclass _execute() implementations can read params["user_id"] without
         # touching the a2a RequestContext directly.
         from .identity import current_user_id as _current_user_id
+
         uid = _current_user_id()
         if uid is not None and "user_id" not in params:
             params["user_id"] = uid
@@ -2100,6 +2100,7 @@ class PrometheusAgent:
             served over TLS.
             """
             from .identity import get_jwks_document
+
             return JSONResponse(get_jwks_document())
 
         app.router.routes.insert(

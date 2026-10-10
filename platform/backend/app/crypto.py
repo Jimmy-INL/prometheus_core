@@ -35,7 +35,7 @@ def _fernet() -> Fernet:
     if not settings.admin_db_encryption_key:
         raise EncryptionError(
             "ADMIN_DB_ENCRYPTION_KEY is not configured. Generate one with: "
-            "python3 -c \"from cryptography.fernet import Fernet; "
+            'python3 -c "from cryptography.fernet import Fernet; '
             'print(Fernet.generate_key().decode())"'
         )
     try:
@@ -61,6 +61,5 @@ def decrypt(ciphertext: bytes) -> str:
         return _fernet().decrypt(ciphertext).decode()
     except InvalidToken as exc:
         raise EncryptionError(
-            "Could not decrypt value -- ADMIN_DB_ENCRYPTION_KEY may have changed "
-            "since this row was written."
+            "Could not decrypt value -- ADMIN_DB_ENCRYPTION_KEY may have changed since this row was written."
         ) from exc

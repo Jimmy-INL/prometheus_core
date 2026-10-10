@@ -42,6 +42,7 @@ def _get_redis():
     global _redis_client
     if _redis_client is None:
         from prometheus_api.redis_utils import create_redis_client
+
         _redis_client = create_redis_client(ping=False)
     return _redis_client
 
@@ -57,6 +58,7 @@ def _user_convs_key(user_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def record_conversation_owner(conversation_id: str, user_id: str) -> None:
     """Bind *conversation_id* to *user_id* as the owning principal.
@@ -81,7 +83,8 @@ def record_conversation_owner(conversation_id: str, user_id: str) -> None:
     except Exception as exc:
         logger.warning(
             "record_conversation_owner: failed to record owner for %r: %s",
-            conversation_id, exc,
+            conversation_id,
+            exc,
         )
 
 
@@ -100,7 +103,8 @@ def get_conversation_owner(conversation_id: str) -> Optional[str]:
     except Exception as exc:
         logger.warning(
             "get_conversation_owner: failed to fetch owner for %r: %s",
-            conversation_id, exc,
+            conversation_id,
+            exc,
         )
         return None
 
@@ -125,9 +129,7 @@ def assert_conversation_owner(conversation_id: str, user_id: str) -> None:
         # No record yet — not an error; caller will write it.
         return
     if owner != user_id:
-        raise PermissionError(
-            f"Conversation {conversation_id!r} is owned by a different user"
-        )
+        raise PermissionError(f"Conversation {conversation_id!r} is owned by a different user")
 
 
 def list_user_conversations(user_id: str) -> List[str]:
@@ -143,12 +145,7 @@ def list_user_conversations(user_id: str) -> List[str]:
         if r is None:
             return []
         members = r.smembers(_user_convs_key(user_id))
-        return [
-            m.decode("utf-8") if isinstance(m, bytes) else m
-            for m in (members or [])
-        ]
+        return [m.decode("utf-8") if isinstance(m, bytes) else m for m in (members or [])]
     except Exception as exc:
-        logger.warning(
-            "list_user_conversations: failed for user %r: %s", user_id, exc
-        )
+        logger.warning("list_user_conversations: failed for user %r: %s", user_id, exc)
         return []

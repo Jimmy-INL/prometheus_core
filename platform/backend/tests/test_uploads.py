@@ -78,9 +78,7 @@ def test_upload_small_file_returns_descriptor(monkeypatch):
     async def _stub_stage(
         a2a_client, file_path, *, name, conversation_id, element_mime=None, size_bytes=None, user_token=None
     ):
-        captured.update(
-            name=name, conversation_id=conversation_id, size_bytes=size_bytes, user_token=user_token
-        )
+        captured.update(name=name, conversation_id=conversation_id, size_bytes=size_bytes, user_token=user_token)
         return UploadDescriptor(
             upload_id="up-1",
             name=name,
