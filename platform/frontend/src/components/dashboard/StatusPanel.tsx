@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Cpu, FolderOpen } from "lucide-react";
+import { Cpu, FolderOpen, PanelRight } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useChatState } from "@/lib/store/chat";
 import type { ArtifactMeta } from "@/lib/api/types";
@@ -61,32 +61,109 @@ function ArtifactCard({ artifact }: { artifact: ArtifactMeta }) {
   );
 }
 
+/** A single square button in the collapsed icon rail. */
+function RailButton({
+  active,
+  label,
+  size = 40,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  label: string;
+  size?: 32 | 40;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`flex shrink-0 items-center justify-center rounded-lg transition-colors ${
+        size === 32 ? "size-8" : "size-10"
+      } ${
+        active
+          ? "bg-primary/15 text-primary"
+          : "text-base-content/60 hover:bg-base-300 hover:text-base-content"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface StatusPanelProps {
+  /** When true, render the 64px icon rail instead of the full panel. */
+  collapsed: boolean;
+  /** Collapse the panel to the icon rail. */
+  onCollapse: () => void;
+  /** Expand the panel back to its full width. */
+  onExpand: () => void;
+}
+
 /**
  * Right-hand status rail for Home: a DaisyUI tab bar switching between Active
  * Jobs and Artifacts. Artifacts are live off the conversation transcript; job
  * cards get wired in as that data source lands.
+ *
+ * Collapses to a 64px icon rail (Figma `status-rail-collapsed`), symmetric with
+ * the left sidebar: a PanelRight toggle on top, then one icon per tab. Clicking
+ * a tab icon expands the rail straight to that tab. The open/closed width lives
+ * on Home's `<aside>`; `tab` stays here so it survives a collapse/expand.
  */
-export function StatusPanel() {
+export function StatusPanel({ collapsed, onCollapse, onExpand }: StatusPanelProps) {
   const [tab, setTab] = useState<StatusTab>("jobs");
   const artifacts = useConversationArtifacts();
 
+  if (collapsed) {
+    const openTo = (next: StatusTab) => {
+      setTab(next);
+      onExpand();
+    };
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col items-center gap-2.5 bg-base-200 pt-5">
+        <RailButton size={32} label="Expand status panel" onClick={onExpand}>
+          <PanelRight size={16} />
+        </RailButton>
+        <div className="h-2" aria-hidden />
+        <RailButton active={tab === "jobs"} label="Active Jobs" onClick={() => openTo("jobs")}>
+          <Cpu size={20} />
+        </RailButton>
+        <RailButton
+          active={tab === "artifacts"}
+          label={artifacts.length > 0 ? `Artifacts (${artifacts.length})` : "Artifacts"}
+          onClick={() => openTo("artifacts")}
+        >
+          <FolderOpen size={20} />
+        </RailButton>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div role="tablist" className="tabs tabs-border shrink-0 px-6 pt-6">
-        <button
-          role="tab"
-          className={`tab text-xs font-bold uppercase tracking-wide ${tab === "jobs" ? "tab-active" : ""}`}
-          onClick={() => setTab("jobs")}
-        >
-          Active Jobs
-        </button>
-        <button
-          role="tab"
-          className={`tab text-xs font-bold uppercase tracking-wide ${tab === "artifacts" ? "tab-active" : ""}`}
-          onClick={() => setTab("artifacts")}
-        >
-          Artifacts{artifacts.length > 0 && ` (${artifacts.length})`}
-        </button>
+      <div className="flex shrink-0 items-center justify-between px-6 pt-6">
+        <div role="tablist" className="tabs tabs-border">
+          <button
+            role="tab"
+            className={`tab text-xs font-bold uppercase tracking-wide ${tab === "jobs" ? "tab-active" : ""}`}
+            onClick={() => setTab("jobs")}
+          >
+            Active Jobs
+          </button>
+          <button
+            role="tab"
+            className={`tab text-xs font-bold uppercase tracking-wide ${tab === "artifacts" ? "tab-active" : ""}`}
+            onClick={() => setTab("artifacts")}
+          >
+            Artifacts{artifacts.length > 0 && ` (${artifacts.length})`}
+          </button>
+        </div>
+        <RailButton size={32} label="Collapse status panel" onClick={onCollapse}>
+          <PanelRight size={18} />
+        </RailButton>
       </div>
 
       {tab === "jobs" ? (
