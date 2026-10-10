@@ -168,6 +168,7 @@ async with self.llm_client(context, config=cfg) as llm:
       <table class="t">
         <tr><th>Symptom</th><th>Fix</th></tr>
         <tr><td>Not in <code>/agents</code></td><td><code>docker restart &lt;slug&gt;-agent</code>, else <code>make up</code>; <code>make logs</code></td></tr>
+        <tr><td>Base image <code>unauthorized</code></td><td><code>LOCAL_SDK=true</code> in <code>platform/.env</code>; re-run <code>setup_agent.py</code> or set <code>PROMETHEUS_API_BASE_IMAGE_REPO=prometheus_api</code>, <code>…_HASH=local</code> in the agent <code>.env</code></td></tr>
         <tr><td>Never called</td><td>sharpen <code>description</code> / <code>usage_notes</code></td></tr>
         <tr><td>LLM 401</td><td>the profile's key in <code>.env</code></td></tr>
         <tr><td>"Unknown LLM config profile"</td><td>check the <code>LLM_CONFIG_PROFILE</code> spelling</td></tr>

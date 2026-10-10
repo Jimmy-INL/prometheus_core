@@ -462,7 +462,7 @@ idx = call.arguments[<span class="s">&quot;index&quot;</span>]</pre>
 <li>Validate the value anyway (an index within range, a real column name).</li>
 <li>Multi-step tool loops are possible too; see the appendix.</li>
 </ul>
-<p class="small">Needs <code>prometheus_api</code> ≥ v0.13.0, which the template's base image (<code>latest</code>) has.</p>
+<p class="small">Needs <code>prometheus_api</code> ≥ v0.13.0, which <code>prometheus_api:local</code> built from your clone has.</p>
 </div>
 </div>
 
@@ -1250,7 +1250,7 @@ docker logs hello-world-agent <span class="n">2</span>&gt;&amp;<span class="n">1
 <tr>
 <td><strong>In-tree</strong></td>
 <td>Copy into <code>prometheus_core/platform/agents/&lt;name&gt;/</code>, then <code>make generate &amp;&amp; make up</code> in <code>platform/</code></td>
-<td>Auto-included (one directory level). Uses the platform's base-image pin. Copy <code>agents/synthesis-agent/docker-compose.yml</code> as the model.</td>
+<td>Auto-included (one directory level). Uses the platform's <code>prometheus_api:local</code>. Copy <code>agents/synthesis-agent/docker-compose.yml</code> as the model.</td>
 </tr>
 </tbody>
 </table>
@@ -1871,7 +1871,7 @@ model_list:
 <li>Add the name to <code>LLM_CONFIG_PROFILES</code> in <code>llm_configs/__init__.py</code></li>
 <li>Update <code>tests/test_llm_configs.py</code>, <code>specs/005</code>, README/ENV_SETUP</li>
 <li>Bump the version, and note it in <code>AGENT_MIGRATIONS.md</code></li>
-<li>After merge: a new base image, then bump the platform pin</li>
+<li><code>make up</code> in <code>platform/</code> rebuilds <code>prometheus_api:local</code> with it</li>
 <li>Select it with <code>LLM_CONFIG_PROFILE=&lt;name&gt;</code></li>
 </ol>
 <p class="small">A PR to <code>prometheus_api</code> (base <code>main</code>).</p>
@@ -1927,7 +1927,7 @@ answer = r.text</pre>
 <li>Structured output = force a single tool whose schema is your output model.</li>
 </ul>
 <div class="callout warn">
-Needs base image <strong>≥ v0.13.0</strong>: the template's default <code>latest</code> has it, and so does the platform's pin; the client-agent itself runs on this API.</div>
+Needs base image <strong>≥ v0.13.0</strong>: <code>prometheus_api:local</code> from your clone has it; the client-agent itself runs on this API.</div>
 
 </div>
 </div>
@@ -2064,7 +2064,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 <li>Restart and re-upload on kernel death or repeated timeouts</li>
 <li>The sandbox on an <strong>egress-free</strong> network; the agent is on both networks</li>
 </ul>
-<p class="small">Branch <code>agentic-hex-meshing</code> of <code>genesis/gmsh_agent</code> (PR #1): <code>meshing_loop.py</code>, <code>sandbox_client.py</code>, <code>DESIGN.md</code>.</p>
+<p class="small">Branch <code>agentic-hex-meshing</code> of <code>genesis/gmsh_agent</code> on github.inl.gov (PR #1): <code>meshing_loop.py</code>, <code>sandbox_client.py</code>, <code>DESIGN.md</code>.</p>
 </div>
 </div>
 
@@ -2072,7 +2072,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">Building block</div><h2><code>agent-sandbox-mcp</code>: safe execution of LLM-written code</h2></div>
+  <div class="head"><div class="eyebrow">Building block · INL network only</div><h2><code>agent-sandbox-mcp</code>: safe execution of LLM-written code</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:26px;">
 <div class="col">
@@ -2110,7 +2110,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 <p class="tiny">Every cell is appended to <code>notebook.ipynb</code> in the session's scratch dir.</p>
 </div>
 <div class="col">
-<pre class="xs"><span class="c"># your sandbox image</span>
+<pre class="xs"><span class="c"># your sandbox image (INL network only)</span>
 <span class="k">FROM</span> <span class="s">containers.github.inl.gov/genesis/agent-sandbox-mcp:latest</span>
 <span class="k">RUN</span> pip install numpy pandas matplotlib</pre>
 <pre class="xs"><span class="c"># compose: sandbox reachable only by your agent</span>

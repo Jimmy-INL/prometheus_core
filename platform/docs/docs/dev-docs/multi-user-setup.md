@@ -64,10 +64,10 @@ fallback** for a fresh deployment with no keys yet.
 
 Encrypting that private key (and any OIDC client secret, see below) at rest
 needs `ADMIN_DB_ENCRYPTION_KEY` set — `make up`/`make restart` generate one
-into `.env` automatically if it's blank (the `ensure-admin-encryption-key`
-Makefile target), so this is normally nothing to think about. Starting the
-stack any other way (e.g. `docker compose up` directly, or CI) needs it set
-by hand; see the comment above `ADMIN_DB_ENCRYPTION_KEY` in `.env.example`.
+into `.env` automatically if it's blank (`scripts/init_env.py`, via the
+`init-env` Makefile target), so this is normally nothing to think about.
+Starting the stack any other way (e.g. `docker compose up` directly, or CI)
+needs `python3 scripts/init_env.py` run first, or the key set by hand.
 Leaving it unset doesn't block local-password login — only signing-key
 generation and OIDC provider configuration need it, and both fail with an
 actionable error message (not a bare 500) if it's missing.

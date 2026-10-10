@@ -87,7 +87,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 
 {.sm}
 - Code must be written during the hackathon. Libraries and existing org code are welcome, with attribution in the README.
-- The test runs on **your** local platform (`idaholab/prometheus_core` `devel` at the commit announced on Day 2, \[SHA\]; agents on the `latest` base image), in a fresh conversation, with the judges at the keyboard.
+- The test runs on **your** local platform (`idaholab/prometheus_core` `devel` at the commit announced on Day 2, \[SHA\]; built with `LOCAL_SDK=true`), in a fresh conversation, with the judges at the keyboard.
 - Any LLM profile is allowed. Say which one you use.
 - No changes to the platform itself are needed or scored.
 - Teams can win at most **two** awards.

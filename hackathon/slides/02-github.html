@@ -476,10 +476,9 @@ Next: <strong>Your local platform</strong> (1:45 pm). Keep your platform running
 </div>
 
 <div class="card"><span class="tag">3 · base image</span>
-<h4>Built locally, no registry</h4>
+<h4>Built locally</h4>
 <p class="small">The <code>prometheus_api</code> base image is built from <code>sdk/</code> in your clone. One line in <code>platform/.env</code>:</p>
 <pre class="xs">LOCAL_SDK=true</pre>
-<p class="small">On the INL network you can pull it instead: <code>docker login containers.github.inl.gov</code> with a PAT (<code>read:packages</code>).</p>
 </div>
 
 </div>
@@ -567,7 +566,7 @@ The agent template is <code>prometheus_core/agent-template/</code>; there is no 
 <h3>Find your way</h3>
 <ul class="b sm">
 <li>Know the monorepo (<code>platform/</code>, <code>sdk/</code>, <code>agent-template/</code>) and what lives where</li>
-<li>Understand how the SDK reaches every agent (the <code>prometheus_api</code> base image)</li>
+<li>Understand how the SDK reaches every agent (the local <code>prometheus_api</code> base image)</li>
 <li>Know which branch each repo integrates on</li>
 </ul>
 </div>
@@ -704,18 +703,18 @@ For the hackathon you need only <code>prometheus_core</code> and a github.com ac
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">How the repositories relate</div><h2>One SDK, delivered as a base image</h2></div>
+  <div class="head"><div class="eyebrow">How the directories relate</div><h2>One SDK, delivered as a base image</h2></div>
   <div class="content">
 <div class="dg">
 <div class="row" style="gap:0; align-items:stretch">
-<div class="box navy" style="width:330px"><b>sdk/</b><span class="small">package <code>prometheus-api</code></span><span class="small">push to <code>dev</code> → CI "SDK Tests"</span></div>
-<div class="arrow-h" style="width:120px"><span>docker build</span></div>
-<div class="box violet" style="flex:1"><b>Base image</b><span class="mono">containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</span><span class="small">Python 3.12 + uv + git + prometheus_api + a2a-sdk/starlette/uvicorn/litellm/httpx/redis/fsspec + INL CA bundle</span></div>
+<div class="box navy" style="width:330px"><b>sdk/</b><span class="small">package <code>prometheus-api</code></span><span class="small">in your clone</span></div>
+<div class="arrow-h" style="width:160px"><span>make base-image</span></div>
+<div class="box violet" style="flex:1"><b>Base image</b><span class="mono">prometheus_api:local</span><span class="small">Python 3.12 + uv + git + prometheus_api + a2a-sdk/starlette/uvicorn/litellm/httpx/redis/fsspec + CA bundle</span></div>
 </div>
-<div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM …:${PROMETHEUS_API_BASE_IMAGE_HASH}</span></div><div class="arrow-v"><span>FROM …:${…_HASH:-latest}</span></div></div>
+<div class="grid g2" style="gap:24px"><div class="arrow-v"><span>FROM prometheus_api:local</span></div><div class="arrow-v"><span>FROM prometheus_api:local</span></div></div>
 <div class="row" style="gap:24px">
-<div class="box sky" style="flex:1"><b>platform/</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small">pin: <code>platform/Makefile</code> → <code>PROMETHEUS_API_BASE_IMAGE_HASH ?= &lt;tag&gt;</code></span></div>
-<div class="box orange" style="flex:1"><b>agent-template/ → your agent</b><span class="small"><code>agent-template/agent_template/Dockerfile</code></span><span class="small">default tag <code>latest</code> (compose); pin it in your <code>.env</code></span></div>
+<div class="box sky" style="flex:1"><b>platform/</b><span class="small">backend, client-agent, and every <code>agents/*</code> image</span><span class="small"><code>LOCAL_SDK=true</code> in <code>platform/.env</code>: <code>make up</code> builds the image first</span></div>
+<div class="box orange" style="flex:1"><b>agent-template/ → your agent</b><span class="small"><code>agent-template/agent_template/Dockerfile</code></span><span class="small"><code>setup_agent.py</code> writes the local image into your <code>.env</code></span></div>
 </div>
 </div>
 <div class="grid g3">
@@ -738,65 +737,8 @@ For the hackathon you need only <code>prometheus_core</code> and a github.com ac
 
 </div>
 
-  </div>
-</section>
-
-<section class="slide appendix">
-  <div class="head"><div class="eyebrow">Base image tags</div><h2>Where the pin lives, and what tags exist</h2></div>
-  <div class="content">
-<div class="grid g2" style="gap:30px;">
-<div class="col">
-<table class="t sm">
-<thead>
-<tr>
-<th>Location</th>
-<th>Value today</th>
-</tr>
-</thead>
-<tbody>
-<tr class="hl">
-<td><code>platform/Makefile:22</code></td>
-<td>the image tag (<code>?= …</code>), the one to change</td>
-</tr>
-<tr>
-<td><code>platform/.env.example</code></td>
-<td><code>#PROMETHEUS_API_BASE_IMAGE_HASH=</code> (keep in sync)</td>
-</tr>
-<tr>
-<td><code>platform/docker-compose.yml</code></td>
-<td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-}</code>, empty default</td>
-</tr>
-<tr>
-<td><code>agent-template/agent_template/docker-compose.yml</code></td>
-<td><code>${PROMETHEUS_API_BASE_IMAGE_HASH:-latest}</code></td>
-</tr>
-<tr>
-<td>template README / TUTORIAL</td>
-<td>the <code>.env</code> value (old copies hard-code an old-repo hash)</td>
-</tr>
-<tr>
-<td><code>platform/backend/</code> and <code>platform/tests/pyproject.toml</code></td>
-<td>a <code>prometheus-api</code> git <code>rev</code>, for local tests only</td>
-</tr>
-</tbody>
-</table>
-</div>
-
-<div class="col">
-<h4 class="acc">Tag schemes in the registry</h4>
-<ul class="b sm">
-<li><strong>CI</strong> (push to <code>devel</code> touching <code>sdk/**</code>): <code>:&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and <code>:latest</code>, multi-arch (amd64 + arm64). The image keeps the name <code>prometheus_api</code>.</li>
-<li><strong>Manual</strong> <code>make build-push</code>: <code>:&lt;git short sha&gt;</code>, which is the format the pins use.</li>
-<li>It is a <strong>tag</strong>, not a sha256 digest. The variable is called <code>…_HASH</code> because the tag is a commit hash.</li>
-</ul>
 <div class="callout">
-Bumping the SDK in the platform = changing that one line in <code>platform/Makefile</code>, then reading <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code> for everything that changed in between.</div>
-
-<div class="callout warn">
-Running <code>docker compose up</code> in the platform <strong>without</strong> <code>make</code> gives an empty tag and a broken <code>FROM</code>. Always go through <code>make</code>.</div>
-
-</div>
-</div>
+Change something in <code>sdk/</code>? The next <code>make up</code> in <code>platform/</code> rebuilds <code>prometheus_api:local</code>, and every service picks it up. Agents rebuild on their next <code>make up</code>.</div>
 
   </div>
 </section>
@@ -1220,36 +1162,6 @@ Your team repo has <strong>no CI</strong>: these local checks are all there is. 
 </div>
 </div>
 
-<p>---|---|
-| Python 3.12 / 3.13 / 3.14 | <code>uv sync --frozen</code> + <code>pytest</code> in pinned uv images |
-| Docker prepare | computes the tag <code>&lt;YYYYMMDD&gt;-&lt;sha7&gt;</code> and the cache URI |
-| Docker amd64 / arm64 | builds the image and runs pytest <em>inside</em> it against the installed package |
-| <em>(push only)</em> multi-arch | pushes the manifest <code>:&lt;tag&gt;</code> and <code>:latest</code> |</p>
-<p class="small">There is no ruff or mypy job yet, so run <code>make check</code> yourself.</p>
-<p>|||</p>
-<h4 class="acc">Everything else</h4>
-<table class="t sm">
-<thead>
-<tr>
-<th>Repo</th>
-<th>CI</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>platform/</code>, <code>agent-template/</code></td>
-<td><strong>none</strong>. <code>docs.yml</code> builds the docs site only on a push to <code>main</code>.</td>
-</tr>
-<tr>
-<td>gmsh_agent, agent-sandbox-mcp</td>
-<td>none</td>
-</tr>
-</tbody>
-</table>
-<div class="callout warn">
-<strong>Fork PRs</strong> may need a maintainer to approve the workflow run before the SDK checks report.</div>
-
-<p>::::</p>
   </div>
   <aside class="notes">test.yml is on the actions branch of prometheus_core and lands on devel with the CI change.</aside>
 </section>
@@ -1327,7 +1239,7 @@ unchecked; bad elements fail late.
 
 <span class="p">## Config / environment changes</span>
 <span class="k">-</span> New env var <span class="s">`MESHQA_MAX_ELEMENTS`</span> (default 2e6)
-<span class="k">-</span> Base image: PROMETHEUS_API_BASE_IMAGE_HASH from platform/Makefile</pre>
+<span class="k">-</span> Needs a rebuild of prometheus_api:local (SDK change)</pre>
 <div class="col">
 <ul class="b">
 <li><strong>Title</strong>: an imperative sentence, like the commit subject (&quot;Add…&quot;, &quot;Fix…&quot;, &quot;Stop…&quot;).</li>

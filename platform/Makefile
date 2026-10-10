@@ -133,19 +133,12 @@ endif
 ##@
 
 .PHONY: check-prerequisites
-check-prerequisites: ##@ Verify certificates, .env, and Docker before running platform tasks
+check-prerequisites: ##@ Verify Docker before running platform tasks
 	@if [ "$(SKIP_PREREQUISITES)" = "1" ]; then \
 		exit 0; \
 	fi; \
 	printf "\nChecking prerequisites...\n"; \
 	status=0; \
-	if [ -f .env ]; then \
-		printf "  [OK] .env exists.\n"; \
-	else \
-		printf "  [ERROR] .env does not exist.\n"; \
-		printf "          Create the project .env file before running this target.\n"; \
-		status=1; \
-	fi; \
 	if ! command -v docker >/dev/null 2>&1; then \
 		printf "  [ERROR] The docker command is not available.\n"; \
 		printf "          Install Docker and ensure it is available on PATH.\n"; \
@@ -189,7 +182,7 @@ PREREQUISITE_TARGETS := \
 
 $(PREREQUISITE_TARGETS): check-prerequisites
 
-.PHONY: all up up-fg down down-v build base-image build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg ensure-admin-encryption-key clear-litellm-db clear-admin-users help
+.PHONY: all up up-fg down down-v build base-image build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg init-env clear-litellm-db clear-admin-users help
 
 FORCE:
 
@@ -247,54 +240,42 @@ test-system: ##@ Test the user experience on an already-running platform (start 
 
 up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
 up: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-up: $(BASE_IMAGE_DEP) generate ensure-admin-encryption-key clear-litellm-db
+up: $(BASE_IMAGE_DEP) generate init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d
 
 up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
 up-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-up-fg: $(BASE_IMAGE_DEP) generate ensure-admin-encryption-key clear-litellm-db
+up-fg: $(BASE_IMAGE_DEP) generate init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build
 
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
 restart: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-restart: generate ensure-admin-encryption-key clear-litellm-db
+restart: generate init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d
 
 restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
 restart-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-restart-fg: generate ensure-admin-encryption-key clear-litellm-db
+restart-fg: generate init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
-ng-up: $(BASE_IMAGE_DEP) ensure-admin-encryption-key clear-litellm-db
+ng-up: $(BASE_IMAGE_DEP) init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d
 
 ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
-ng-up-fg: $(BASE_IMAGE_DEP) ensure-admin-encryption-key clear-litellm-db
+ng-up-fg: $(BASE_IMAGE_DEP) init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build
 
 ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
-ng-restart: ensure-admin-encryption-key clear-litellm-db
+ng-restart: init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up -d
 
 ng-restart-fg: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating (foreground).
-ng-restart-fg: ensure-admin-encryption-key clear-litellm-db
+ng-restart-fg: init-env clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up
 
-ensure-admin-encryption-key: ##@ Generate ADMIN_DB_ENCRYPTION_KEY in .env if not already set
-	@if [ ! -f .env ]; then \
-		exit 0; \
-	fi; \
-	if grep -qE '^ADMIN_DB_ENCRYPTION_KEY=.+' .env; then \
-		exit 0; \
-	fi; \
-	key=$$(openssl rand -base64 32 | tr '+/' '-_'); \
-	if grep -qE '^ADMIN_DB_ENCRYPTION_KEY=' .env; then \
-		sed -i.bak "s|^ADMIN_DB_ENCRYPTION_KEY=.*|ADMIN_DB_ENCRYPTION_KEY=$$key|" .env && rm -f .env.bak; \
-	else \
-		printf "\nADMIN_DB_ENCRYPTION_KEY=%s\n" "$$key" >> .env; \
-	fi; \
-	printf "Generated ADMIN_DB_ENCRYPTION_KEY in .env (admin-db secrets-at-rest encryption).\n"
+init-env: ##@ Create .env from .env.example if missing, generate blank secrets, check the LLM API key
+	@python3 scripts/init_env.py
 
 clear-litellm-db: ##@ Stop services and remove only the LiteLLM Postgres volume
 	$(COMPOSE) $(CLEAR_COMPOSE_FILES) down --remove-orphans

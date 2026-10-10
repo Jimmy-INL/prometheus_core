@@ -42,33 +42,27 @@ graph TD
 
 ### 1. Configure environment
 
-```bash
-cp .env.example .env
-# Required: AGENT_SECRET, REDIS_PASSWORD, BACKEND_JWT_SECRET,
-#           LITELLM_MASTER_KEY, LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT,
-#           ADMIN_DB_PASSWORD, and the API keys referenced by the selected
-#           LLM_CONFIG_PROFILE
-# Optional: DEEPLYNX_*, HTTP_PROXY / HTTPS_PROXY / NO_PROXY
-```
-
-To fill in the random-secret values in one pass instead of editing each by hand:
+The first `make up` creates `.env` from `.env.example` and generates every
+secret (`AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`,
+`LITELLM_DB_PASSWORD`, `ADMIN_DB_PASSWORD`, `BACKEND_JWT_SECRET`,
+`ADMIN_DB_ENCRYPTION_KEY`). The only thing you have to set is the API key for
+your `LLM_CONFIG_PROFILE` (see below). Without it, `make up` stops and tells
+you which key is missing. To prepare `.env` without starting anything:
 
 ```bash
-python3 -c "
-import re, secrets, pathlib
-path = pathlib.Path('.env')
-text = path.read_text()
-for var in ['ADMIN_DB_PASSWORD', 'AGENT_SECRET', 'REDIS_PASSWORD', 'BACKEND_JWT_SECRET', 'LITELLM_MASTER_KEY', 'LITELLM_DB_PASSWORD']:
-    text = re.sub(rf'^{var}=.*', f'{var}={secrets.token_hex(16)}', text, flags=re.M)
-path.write_text(text)
-"
+python3 scripts/init_env.py   # or: make init-env
+# then set ANTHROPIC_API_KEY (or the key for your chosen profile) in .env
 ```
 
-If you haven't generated multi-user identity signing keys yet (see
-[Multi-user setup](docs/docs/dev-docs/multi-user-setup.md)), set
-`USER_IDENTITY_REQUIRED=false` in `.env` — otherwise agents reject every
-request with `No 'userToken' found in message metadata` because the backend
-has no `USER_IDENTITY_PRIVATE_KEY` to mint one.
+Section 1 of `.env.example` lists what you must set; everything else has a
+working default. Back up `.env` once it exists: losing `ADMIN_DB_ENCRYPTION_KEY`
+makes encrypted admin-db rows unreadable.
+
+Until a signing key exists, agents reject every request with
+`No 'userToken' found in message metadata`. After creating the first admin
+user, generate and activate one under **Admin > Signing Keys** (see
+[Multi-user setup](docs/docs/dev-docs/multi-user-setup.md)), or set
+`USER_IDENTITY_REQUIRED=false` in `.env` for a quick local smoke test.
 
 #### Choose an LLM profile
 

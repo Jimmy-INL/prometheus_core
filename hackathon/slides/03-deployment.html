@@ -385,7 +385,7 @@ EOF</pre>
 </tr>
 <tr>
 <td><strong>The <code>prometheus_api</code> base image</strong></td>
-<td>Nothing to set up: <code>LOCAL_SDK=true</code> in <code>.env</code> builds it from <code>sdk/</code> on your laptop. (With INL network access you can pull it from <code>containers.github.inl.gov</code> instead: a PAT with <code>read:packages</code>, then <code>docker login</code>.)</td>
+<td>Nothing to set up: <code>LOCAL_SDK=true</code> in <code>.env</code> builds it from <code>sdk/</code> on your laptop.</td>
 </tr>
 <tr>
 <td><strong>An LLM credential</strong></td>
@@ -430,13 +430,8 @@ make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
 <p class="small">Every Python service (backend, client-agent, all agents) is built <code>FROM</code> the <code>prometheus_api</code> image. With <code>LOCAL_SDK=true</code>, <code>make up</code> first builds it from <code>../sdk</code> as <code>prometheus_api:local</code>: no registry, no login, no VPN.</p>
 </div>
 
-<div class="card">
-<h4>Or pull it from the registry</h4>
-<p class="small">On the INL network you can skip <code>LOCAL_SDK</code> and pull the pinned image: <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code>. Docker keeps the login in your credential helper; the PAT never goes into <code>.env</code>.</p>
-</div>
-
 <div class="callout warn">
-<code>LOCAL_SDK=true</code> builds whatever is in <code>sdk/</code>, not the pin in <code>platform/Makefile</code>. After <code>git pull</code>, the next <code>make up</code> rebuilds it.</div>
+<code>LOCAL_SDK=true</code> builds whatever is in <code>sdk/</code> in your clone. After <code>git pull</code>, the next <code>make up</code> rebuilds it, so the SDK always matches the platform you pulled.</div>
 
 </div>
 </div>
@@ -528,12 +523,8 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 </thead>
 <tbody>
 <tr>
-<td><code>failed to resolve …prometheus_api:</code> (empty tag) or <code>invalid reference format</code></td>
-<td>Empty <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>: an uncommented empty line in <code>.env</code>, or you ran <code>docker compose</code> without make. Remove the line, or set it to the value in <code>platform/Makefile</code>.</td>
-</tr>
-<tr>
-<td><code>unauthorized</code> / <code>denied</code> pulling the base image</td>
-<td>You are pulling from the registry: set <code>LOCAL_SDK=true</code> in <code>.env</code>, or <code>docker login containers.github.inl.gov</code> with a PAT that has <code>read:packages</code> (INL network or VPN).</td>
+<td><code>unauthorized</code>, <code>denied</code> or <code>invalid reference format</code> for the base image</td>
+<td><code>LOCAL_SDK=true</code> is missing from <code>.env</code>, so the build looks for an image registry. Add the line and run <code>make up</code> again.</td>
 </tr>
 <tr>
 <td><code>pull access denied for prometheus_api</code></td>
@@ -844,15 +835,10 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <td>empty</td>
 <td>Only what the chosen profile needs</td>
 </tr>
-<tr>
+<tr class="hl">
 <td><code>LOCAL_SDK</code></td>
 <td><code>false</code></td>
-<td><code>true</code>: build the base image from <code>../sdk</code> (<code>prometheus_api:local</code>)</td>
-</tr>
-<tr>
-<td><code>PROMETHEUS_API_BASE_IMAGE_HASH</code></td>
-<td>commented</td>
-<td>Override the pin in <code>platform/Makefile</code></td>
+<td><strong>Set it to <code>true</code></strong>: build the base image from <code>../sdk</code> (<code>prometheus_api:local</code>)</td>
 </tr>
 <tr>
 <td><code>DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID</code></td>
@@ -982,37 +968,38 @@ make ps ; make logs SERVICE=client-agent</pre>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">How the platform selects the base image</div><h2>From one Makefile line to every <code>FROM</code></h2></div>
+  <div class="head"><div class="eyebrow">How the platform builds the base image</div><h2>From <code>LOCAL_SDK=true</code> to every <code>FROM</code></h2></div>
   <div class="content">
 <div class="grid g3" style="gap:22px;">
 <div class="col">
-<h4 class="acc">① platform/Makefile (the pin)</h4>
+<h4 class="acc">① platform/Makefile</h4>
 <pre class="sm">ifeq (<span class="k">$(</span>LOCAL_SDK<span class="k">)</span>,true)
 …_REPO := prometheus_api
-…_HASH := local   <span class="c"># make base-image</span>
-<span class="h"><span class="k">else</span></span>
-<span class="h">…_REPO ?= containers.github.inl.gov/…</span>
-…_HASH ?= <span class="p">&lt;tag&gt;</span>
-endif</pre>
-<p class="tiny"><code>-include .env</code> comes first, so <code>.env</code> or the command line wins. <code>…</code> = <code>PROMETHEUS_API_BASE_IMAGE</code>.</p>
+…_HASH := local
+BASE_IMAGE_DEP := base-image
+endif
+
+up: <span class="k">$(</span>BASE_IMAGE_DEP<span class="k">)</span> generate …
+base-image:
+	<span class="k">$(</span>MAKE<span class="k">)</span> -C ../sdk build-local <span class="s">\</span>
+	  LOCAL_IMAGE=prometheus_api:local</pre>
+<p class="tiny"><code>-include .env</code> comes first, so <code>LOCAL_SDK=true</code> in <code>.env</code> is enough. <code>…</code> = <code>PROMETHEUS_API_BASE_IMAGE</code>.</p>
 </div>
 <div class="col">
 <h4 class="acc">② compose (build arg)</h4>
 <pre class="sm"><span class="c"># docker-compose.yml</span>
 x-build-args:
   PROMETHEUS_API_BASE_IMAGE_REPO: …
-  PROMETHEUS_API_BASE_IMAGE_HASH:
-    ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
+  PROMETHEUS_API_BASE_IMAGE_HASH: …
 <span class="c"># agents/&lt;x&gt;/docker-compose.yml</span>
 args:
   - PROMETHEUS_API_BASE_IMAGE_REPO=…
-  - PROMETHEUS_API_BASE_IMAGE_HASH=
-      ${PROMETHEUS_API_BASE_IMAGE_HASH}</pre>
+  - PROMETHEUS_API_BASE_IMAGE_HASH=…</pre>
+<p class="tiny">make exports both variables, so every service gets <code>prometheus_api:local</code>.</p>
 </div>
 <div class="col">
 <h4 class="acc">③ every Dockerfile</h4>
-<pre class="sm"><span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_REPO=<span class="s">\</span>
-  containers.github.inl.gov/genesis/prometheus_api
+<pre class="sm"><span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_REPO
 <span class="k">ARG</span> PROMETHEUS_API_BASE_IMAGE_HASH
 <span class="k">FROM</span> <span class="s">${PROMETHEUS_API_BASE_IMAGE_REPO}:\</span>
   <span class="s">${</span>PROMETHEUS_API_BASE_IMAGE_HASH<span class="s">}</span>
@@ -1025,19 +1012,18 @@ args:
 
 <div class="grid g3">
 <div class="card">
-<h4>Try another SDK version</h4>
-<pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre>
-<p class="small">Then read <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code>. The pin and <code>latest</code> can differ: <code>latest</code> moves with every SDK change merged to <code>devel</code>. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
+<h4>Change the SDK</h4>
+<p class="small">Edit <code>sdk/</code>, then <code>make up</code> (or <code>make base-image</code>): every service is rebuilt on your change. Read <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code> after a pull that bumps the SDK version.</p>
 </div>
 
 <div class="card">
-<h4>Trap: an empty line in <code>.env</code></h4>
-<p class="small">An uncommented <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> overrides the Makefile default with <strong>empty</strong> (make's <code>?=</code> does not apply to defined variables), which breaks the <code>FROM</code>.</p>
+<h4>Your own agent</h4>
+<p class="small"><code>setup_agent.py</code> sees <code>LOCAL_SDK=true</code> in <code>../platform/.env</code> and writes <code>…_REPO=prometheus_api</code> and <code>…_HASH=local</code> into the agent's <code>.env</code>.</p>
 </div>
 
 <div class="card">
 <h4>Trap: plain <code>docker compose</code></h4>
-<p class="small">Compose's default is empty. Always build through <code>make</code>, or export the variable yourself.</p>
+<p class="small">Without make, <code>prometheus_api:local</code> may not exist yet. Always build through <code>make</code>.</p>
 </div>
 
 </div>
@@ -1216,7 +1202,7 @@ args:
 </table>
 </div>
 
-<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_core</code>.</p>
+<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>LOCAL_SDK</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
   </div>
 </section>
 

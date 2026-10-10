@@ -296,7 +296,7 @@ For participants whose platform does not start yet: prerequisites, clone, `.env`
 | **Docker + Compose v2** | The Makefile calls `docker compose -p prometheus_platform`. The compose files use `include:` and `additional_contexts`, so Compose ≥ 2.20 with BuildKit is needed. Check: `docker info`, `docker compose version`. |
 | **GNU make, git, openssl** | `make up` generates keys with `openssl rand`. |
 | **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login`. |
-| **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. (With INL network access you can pull it from `containers.github.inl.gov` instead: a PAT with `read:packages`, then `docker login`.) |
+| **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. |
 | **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
 | **uv + Python 3.12** | Only for running things outside Docker: tests, a host-run agent, `setup_agent.py`. `uv --version` |
 | Node.js 22 (optional) | Only to run the frontend dev server on the host (`make react-dev`). |
@@ -333,15 +333,8 @@ make -C ../sdk build-local    # → prometheus_api:local
 Every Python service (backend, client-agent, all agents) is built `FROM` the `prometheus_api` image. With `LOCAL_SDK=true`, `make up` first builds it from `../sdk` as `prometheus_api:local`: no registry, no login, no VPN.
 :::
 
-::: card
-#### Or pull it from the registry
-
-{.small}
-On the INL network you can skip `LOCAL_SDK` and pull the pinned image: `docker login containers.github.inl.gov` with a PAT that has `read:packages`. Docker keeps the login in your credential helper; the PAT never goes into `.env`.
-:::
-
 ::: callout warn
-`LOCAL_SDK=true` builds whatever is in `sdk/`, not the pin in `platform/Makefile`. After `git pull`, the next `make up` rebuilds it.
+`LOCAL_SDK=true` builds whatever is in `sdk/` in your clone. After `git pull`, the next `make up` rebuilds it, so the SDK always matches the platform you pulled.
 :::
 ::::
 
@@ -389,8 +382,7 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 {.sm widths="470px|"}
 | Symptom | Cause → fix |
 |---|---|
-| `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line, or set it to the value in `platform/Makefile`. |
-| `unauthorized` / `denied` pulling the base image | You are pulling from the registry: set `LOCAL_SDK=true` in `.env`, or `docker login containers.github.inl.gov` with a PAT that has `read:packages` (INL network or VPN). |
+| `unauthorized`, `denied` or `invalid reference format` for the base image | `LOCAL_SDK=true` is missing from `.env`, so the build looks for an image registry. Add the line and run `make up` again. |
 | `pull access denied for prometheus_api` | `LOCAL_SDK=true` is set, but `docker compose` ran without make, so `prometheus_api:local` was never built. Run `make base-image`, or always go through `make up`. |
 | `.env not found` from `check-prerequisites` | `cp .env.example .env` |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
@@ -604,8 +596,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
 | `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
-| `LOCAL_SDK` | `false` | `true`: build the base image from `../sdk` (`prometheus_api:local`) |
-| `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the pin in `platform/Makefile` |
+| `LOCAL_SDK` | `false` | **Set it to `true`**: build the base image from `../sdk` (`prometheus_api:local`) {.hl} |
 | `DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID` | commented | Storage for uploads and `deeplynx://` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | 104857600 | 100 MiB upload cap |
 | `HTTP(S)_PROXY`, `NO_PROXY` | commented | Build args for Python images only |
@@ -674,23 +665,26 @@ make ps ; make logs SERVICE=client-agent
 
 ---
 
-## From one Makefile line to every `FROM` {eyebrow="How the platform selects the base image"}
+## From `LOCAL_SDK=true` to every `FROM` {eyebrow="How the platform builds the base image"}
 
 ::: grid 3 gap=22px
-#### ① platform/Makefile (the pin) {.acc}
+#### ① platform/Makefile {.acc}
 
-```bash {.sm hl=4-5}
+```bash {.sm}
 ifeq ($(LOCAL_SDK),true)
 …_REPO := prometheus_api
-…_HASH := local   # make base-image
-else
-…_REPO ?= containers.github.inl.gov/…
-…_HASH ?= <tag>
+…_HASH := local
+BASE_IMAGE_DEP := base-image
 endif
+
+up: $(BASE_IMAGE_DEP) generate …
+base-image:
+	$(MAKE) -C ../sdk build-local \
+	  LOCAL_IMAGE=prometheus_api:local
 ```
 
 {.tiny}
-`-include .env` comes first, so `.env` or the command line wins. `…` = `PROMETHEUS_API_BASE_IMAGE`.
+`-include .env` comes first, so `LOCAL_SDK=true` in `.env` is enough. `…` = `PROMETHEUS_API_BASE_IMAGE`.
 
 |||
 
@@ -700,22 +694,22 @@ endif
 # docker-compose.yml
 x-build-args:
   PROMETHEUS_API_BASE_IMAGE_REPO: …
-  PROMETHEUS_API_BASE_IMAGE_HASH:
-    ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
+  PROMETHEUS_API_BASE_IMAGE_HASH: …
 # agents/<x>/docker-compose.yml
 args:
   - PROMETHEUS_API_BASE_IMAGE_REPO=…
-  - PROMETHEUS_API_BASE_IMAGE_HASH=
-      ${PROMETHEUS_API_BASE_IMAGE_HASH}
+  - PROMETHEUS_API_BASE_IMAGE_HASH=…
 ```
+
+{.tiny}
+make exports both variables, so every service gets `prometheus_api:local`.
 
 |||
 
 #### ③ every Dockerfile {.acc}
 
 ```docker {.sm}
-ARG PROMETHEUS_API_BASE_IMAGE_REPO=\
-  containers.github.inl.gov/genesis/prometheus_api
+ARG PROMETHEUS_API_BASE_IMAGE_REPO
 ARG PROMETHEUS_API_BASE_IMAGE_HASH
 FROM ${PROMETHEUS_API_BASE_IMAGE_REPO}:\
   ${PROMETHEUS_API_BASE_IMAGE_HASH}
@@ -730,28 +724,24 @@ RUN uv sync --no-dev \
 
 :::: grid 3
 ::: card
-#### Try another SDK version
-
-```bash {.xs}
-make PROMETHEUS_API_BASE_IMAGE_HASH=latest up
-```
+#### Change the SDK
 
 {.small}
-Then read `sdk/docs/agent/AGENT_MIGRATIONS.md`. The pin and `latest` can differ: `latest` moves with every SDK change merged to `devel`. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
+Edit `sdk/`, then `make up` (or `make base-image`): every service is rebuilt on your change. Read `sdk/docs/agent/AGENT_MIGRATIONS.md` after a pull that bumps the SDK version.
 :::
 
 ::: card
-#### Trap: an empty line in `.env`
+#### Your own agent
 
 {.small}
-An uncommented `PROMETHEUS_API_BASE_IMAGE_HASH=` overrides the Makefile default with **empty** (make's `?=` does not apply to defined variables), which breaks the `FROM`.
+`setup_agent.py` sees `LOCAL_SDK=true` in `../platform/.env` and writes `…_REPO=prometheus_api` and `…_HASH=local` into the agent's `.env`.
 :::
 
 ::: card
 #### Trap: plain `docker compose`
 
 {.small}
-Compose's default is empty. Always build through `make`, or export the variable yourself.
+Without make, `prometheus_api:local` may not exist yet. Always build through `make`.
 :::
 ::::
 
@@ -838,7 +828,7 @@ Your agent image adds only your own dependencies. That is why builds are small, 
 :::
 
 {.small}
-Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `PROMETHEUS_API_BASE_IMAGE_HASH`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_core`.
+Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `LOCAL_SDK`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_platform`.
 
 ---
 

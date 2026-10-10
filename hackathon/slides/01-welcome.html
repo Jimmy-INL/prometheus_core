@@ -592,7 +592,7 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 <tr>
 <td><strong>Base image</strong></td>
-<td><code>prometheus_api</code>, built from <code>sdk/</code> (<code>LOCAL_SDK=true</code> → <code>prometheus_api:local</code>) or pulled from <code>containers.github.inl.gov/genesis/prometheus_api:&lt;tag&gt;</code>. Every Python agent is built <code>FROM</code> it.</td>
+<td><code>prometheus_api:local</code>, built on your laptop from <code>sdk/</code> when <code>LOCAL_SDK=true</code> is in <code>platform/.env</code>. Every Python agent is built <code>FROM</code> it.</td>
 </tr>
 </tbody>
 </table>
@@ -1060,10 +1060,10 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 <div class="row" style="justify-content:center">
 <div class="box navy" style="width:560px"><b>sdk/</b> <span class="small">(formerly <code>prometheus_api</code>)</span><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
 </div>
-<div class="arrow-v"><span>CI on devel builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
+<div class="arrow-v"><span>LOCAL_SDK=true: make up builds prometheus_api:local from sdk/</span></div>
 <div class="row" style="gap:40px; justify-content:center">
-<div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
-<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>. Its <code>docker-compose.yml</code> builds on <code>latest</code> unless <code>PROMETHEUS_API_BASE_IMAGE_HASH</code> is set.</span></div>
+<div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> <code>prometheus_api:local</code>.</span></div>
+<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>, including the switch to <code>prometheus_api:local</code>.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>
@@ -1112,8 +1112,8 @@ One clone of <code>idaholab/prometheus_core</code> (default branch <code>devel</
 <td>a setup wizard creates the first admin</td>
 </tr>
 <tr>
-<td>image from mooseharbor, pinned in compose</td>
-<td><code>containers.github.inl.gov</code>, pinned in <code>platform/Makefile</code>, or built locally from <code>sdk/</code> with <code>LOCAL_SDK=true</code></td>
+<td>image from mooseharbor, or a pinned registry image</td>
+<td>built locally from <code>sdk/</code> with <code>LOCAL_SDK=true</code></td>
 </tr>
 <tr>
 <td><code>PROMETHEUS_DEBUG</code></td>
@@ -1125,7 +1125,7 @@ One clone of <code>idaholab/prometheus_core</code> (default branch <code>devel</
 </tr>
 <tr>
 <td>pin <code>prometheus_api@2b3dbcf</code> (old template README/TUTORIAL)</td>
-<td>an old-repo hash (v0.8.0); new agents get the platform's pin in <code>.env</code></td>
+<td>an old-repo hash (v0.8.0); agents now build on <code>prometheus_api:local</code></td>
 </tr>
 <tr>
 <td>repos <code>prometheus_api</code>, <code>prometheus_agent_template</code>, <code>prometheus_platform</code></td>

@@ -396,7 +396,7 @@ idx = call.arguments["index"]
 - Multi-step tool loops are possible too; see the appendix.
 
 {.small}
-Needs `prometheus_api` ≥ v0.13.0, which the template's base image (`latest`) has.
+Needs `prometheus_api` ≥ v0.13.0, which `prometheus_api:local` built from your clone has.
 :::
 
 ---
@@ -982,7 +982,7 @@ Restart the agent (re-registers), then refresh discovery or restart the client-a
 | **Docker, internal network**<br><span class="small">(recommended)</span> | `make up` in the agent dir. It joins `prometheus_platform_agent-network` via `docker-compose.net_internal.yml`. | `http://<service>:8000`. `REGISTRY_URL`, `REDIS_URL`, and `JWKS_URL` resolve by service name. Start the platform first. {.hl} |
 | **Docker, external port** | `EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up` | `EXTERNAL_AGENT_URL=http://host.docker.internal:8042`. Point `REGISTRY_URL`/`REDIS_URL`/`JWKS_URL` at `host.docker.internal:9977/6379/8600`. Linux adds `docker-compose.linux.yml`. |
 | **Host Python**<br><span class="small">(fastest edit loop)</span> | `python agent.py` in a venv with `prometheus_api` installed | Set `REGISTRY_URL=http://localhost:9977`, `REDIS_URL=redis://localhost:6379`, `JWKS_URL=http://localhost:8600/.well-known/jwks.json`, `EXTERNAL_AGENT_URL=http://host.docker.internal:8000` |
-| **In-tree** | Copy into `prometheus_core/platform/agents/<name>/`, then `make generate && make up` in `platform/` | Auto-included (one directory level). Uses the platform's base-image pin. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
+| **In-tree** | Copy into `prometheus_core/platform/agents/<name>/`, then `make generate && make up` in `platform/` | Auto-included (one directory level). Uses the platform's `prometheus_api:local`. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
 
 :::: grid 2
 ::: callout warn
@@ -1412,7 +1412,7 @@ Start from `sdk/llm_config.example.yaml`. Mount it into the container and set `L
 2. Add the name to `LLM_CONFIG_PROFILES` in `llm_configs/__init__.py`
 3. Update `tests/test_llm_configs.py`, `specs/005`, README/ENV_SETUP
 4. Bump the version, and note it in `AGENT_MIGRATIONS.md`
-5. After merge: a new base image, then bump the platform pin
+5. `make up` in `platform/` rebuilds `prometheus_api:local` with it
 6. Select it with `LLM_CONFIG_PROFILE=<name>`
 
 {.small}
@@ -1475,7 +1475,7 @@ answer = r.text
 - Structured output = force a single tool whose schema is your output model.
 
 ::: callout warn
-Needs base image **≥ v0.13.0**: the template's default `latest` has it, and so does the platform's pin; the client-agent itself runs on this API.
+Needs base image **≥ v0.13.0**: `prometheus_api:local` from your clone has it; the client-agent itself runs on this API.
 :::
 ::::
 
@@ -1617,12 +1617,12 @@ The pattern for any "wrap an existing code" agent: **artifact in → worker thre
 - The sandbox on an **egress-free** network; the agent is on both networks
 
 {.small}
-Branch `agentic-hex-meshing` of `genesis/gmsh_agent` (PR #1): `meshing_loop.py`, `sandbox_client.py`, `DESIGN.md`.
+Branch `agentic-hex-meshing` of `genesis/gmsh_agent` on github.inl.gov (PR #1): `meshing_loop.py`, `sandbox_client.py`, `DESIGN.md`.
 :::
 
 ---
 
-## `agent-sandbox-mcp`: safe execution of LLM-written code {eyebrow="Building block"}
+## `agent-sandbox-mcp`: safe execution of LLM-written code {eyebrow="Building block · INL network only"}
 
 :::: grid 2 gap=26px
 {.small}
@@ -1643,7 +1643,7 @@ Every cell is appended to `notebook.ipynb` in the session's scratch dir.
 |||
 
 ```docker {.xs}
-# your sandbox image
+# your sandbox image (INL network only)
 FROM containers.github.inl.gov/genesis/agent-sandbox-mcp:latest
 RUN pip install numpy pandas matplotlib
 ```

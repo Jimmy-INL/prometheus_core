@@ -263,8 +263,7 @@ curl -s localhost:8600/healthz
 {.xs .wrap-code}
 | If… | then |
 |---|---|
-| `FROM …prometheus_api:` error | remove the empty `PROMETHEUS_API_BASE_IMAGE_HASH=` line in `.env` |
-| pull `unauthorized` | `LOCAL_SDK=true` missing in `.env` |
+| `FROM …prometheus_api:` error or pull `unauthorized` | `LOCAL_SDK=true` missing in `.env` |
 | "No 'userToken' found" | activate a signing key |
 | port already in use | `make down`, or change `*_PORT` in `.env` |
 :::

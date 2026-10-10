@@ -433,7 +433,7 @@ Any service that speaks A2A and publishes a card can join. It can live in the pl
 | **Workflow** | A YAML template that chains skills (sequential, parallel, or DAG) with parameter bindings between steps. |
 | **contextId** | The conversation ID. It scopes artifacts, state, and ownership across all agents in one chat. |
 | **Flavor / profile** | An LLM *flavor* (`small`, `medium`, `large`…) is chosen in code; a *profile* chosen by deployment maps flavors to real models. With the default `registry` profile, flavors are looked up in the platform's LiteLLM proxy (`litellm_config.yaml`). |
-| **Base image** | `prometheus_api`, built from `sdk/` (`LOCAL_SDK=true` → `prometheus_api:local`) or pulled from `containers.github.inl.gov/genesis/prometheus_api:<tag>`. Every Python agent is built `FROM` it. |
+| **Base image** | `prometheus_api:local`, built on your laptop from `sdk/` when `LOCAL_SDK=true` is in `platform/.env`. Every Python agent is built `FROM` it. |
 
 ---
 
@@ -774,10 +774,10 @@ Note: These repos are in github.inl.gov/genesis and need INL network access and 
 <div class="row" style="justify-content:center">
 <div class="box navy" style="width:560px"><b>sdk/</b> <span class="small">(formerly <code>prometheus_api</code>)</span><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
 </div>
-<div class="arrow-v"><span>CI on devel builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
+<div class="arrow-v"><span>LOCAL_SDK=true: make up builds prometheus_api:local from sdk/</span></div>
 <div class="row" style="gap:40px; justify-content:center">
-<div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
-<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>. Its <code>docker-compose.yml</code> builds on <code>latest</code> unless <code>PROMETHEUS_API_BASE_IMAGE_HASH</code> is set.</span></div>
+<div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> <code>prometheus_api:local</code>.</span></div>
+<div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>, including the switch to <code>prometheus_api:local</code>.</span></div>
 </div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="arrow-v" style="width:520px"><span>runtime only: register + A2A via LiteLLM</span></div>
@@ -804,10 +804,10 @@ One clone of `idaholab/prometheus_core` (default branch `devel`) holds all three
 | implement `process_analysis()` | implement `_execute(params, context, event_queue)` |
 | `request_user_approval(...)` | does not exist; use `requires_approval` or `send_input_required` |
 | login `prometheus` / `prometheus` | a setup wizard creates the first admin |
-| image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in `platform/Makefile`, or built locally from `sdk/` with `LOCAL_SDK=true` |
+| image from mooseharbor, or a pinned registry image | built locally from `sdk/` with `LOCAL_SDK=true` |
 | `PROMETHEUS_DEBUG` | `DEBUG_AGENTS=true` |
 | an up-front planner (`planner.py`), upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` (PR #104) |
-| pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | an old-repo hash (v0.8.0); new agents get the platform's pin in `.env` |
+| pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | an old-repo hash (v0.8.0); agents now build on `prometheus_api:local` |
 | repos `prometheus_api`, `prometheus_agent_template`, `prometheus_platform` | `sdk/`, `agent-template/` and `platform/` in `idaholab/prometheus_core`; old hashes were rewritten |
 :::
 

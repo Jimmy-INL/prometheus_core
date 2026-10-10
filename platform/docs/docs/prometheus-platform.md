@@ -47,11 +47,9 @@ for the schema, ownership model, and authoring rules.
 
 ```bash
 cd platform
-cp .env.example .env
-# Set: AGENT_SECRET, REDIS_PASSWORD, BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,
-#      LITELLM_DB_PASSWORD, LITELLM_LOCAL_PORT, LLM_CONFIG_PROFILE, and the
-#      provider keys referenced by the selected profile
-docker-compose up --build
+python3 scripts/init_env.py   # creates .env, generates all secrets
+# Set the provider key for LLM_CONFIG_PROFILE (default: ANTHROPIC_API_KEY)
+make up
 ```
 
 ### Local development

@@ -298,11 +298,7 @@ curl -s localhost:8600/healthz</pre>
 </thead>
 <tbody>
 <tr>
-<td><code>FROM …prometheus_api:</code> error</td>
-<td>remove the empty <code>PROMETHEUS_API_BASE_IMAGE_HASH=</code> line in <code>.env</code></td>
-</tr>
-<tr>
-<td>pull <code>unauthorized</code></td>
+<td><code>FROM …prometheus_api:</code> error or pull <code>unauthorized</code></td>
 <td><code>LOCAL_SDK=true</code> missing in <code>.env</code></td>
 </tr>
 <tr>

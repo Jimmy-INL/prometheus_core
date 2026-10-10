@@ -1,6 +1,17 @@
 """Validate .env.example completeness and cross-references with docker-compose.yml."""
 
+import importlib.util
+from pathlib import Path
+
 import pytest
+
+
+def _load_init_env():
+    path = Path(__file__).resolve().parents[2] / "scripts" / "init_env.py"
+    spec = importlib.util.spec_from_file_location("init_env", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 REQUIRED_VARS = [
@@ -10,6 +21,8 @@ REQUIRED_VARS = [
     "BACKEND_JWT_SECRET",
     "LITELLM_MASTER_KEY",
     "LITELLM_DB_PASSWORD",
+    "ADMIN_DB_PASSWORD",
+    "ADMIN_DB_ENCRYPTION_KEY",
 ]
 
 LLM_CONFIG_VARS = [
@@ -53,18 +66,33 @@ def test_all_compose_var_refs_have_entry_or_default(compose_var_refs, env_exampl
     assert not missing, f"Compose references without defaults or .env.example entry: {missing}"
 
 
-def test_no_empty_required_vars(env_example_vars):
-    """Required vars should have placeholder text, not empty values."""
-    for var in REQUIRED_VARS:
-        if var in env_example_vars:
-            assert env_example_vars[var] != "", f"Required variable '{var}' has empty value"
+def test_required_secrets_have_generator(env_example_path):
+    """Required secrets ship blank; scripts/init_env.py fills each from the
+    python3 one-liner in its comment block, so every one must have one."""
+    init_env = _load_init_env()
+    gens = init_env.generators(env_example_path.read_text())
+    missing = [v for v in REQUIRED_VARS if v != "ANTHROPIC_API_KEY" and v not in gens]
+    assert not missing, f"Required secrets without a generator one-liner: {missing}"
 
 
-def test_redis_url_references_redis_password(env_example_vars):
-    redis_url = env_example_vars.get("REDIS_URL", "")
-    assert "${REDIS_PASSWORD}" in redis_url or "REDIS_PASSWORD" in redis_url, (
-        "REDIS_URL should reference REDIS_PASSWORD for password interpolation"
-    )
+def test_init_env_fills_secrets_and_checks_llm_key(tmp_path, env_example_path, monkeypatch):
+    init_env = _load_init_env()
+    example = tmp_path / ".env.example"
+    example.write_text(env_example_path.read_text())
+    env = tmp_path / ".env"
+    monkeypatch.setattr(init_env, "EXAMPLE", example)
+    monkeypatch.setattr(init_env, "ENV", env)
+
+    assert init_env.main() == 1  # ANTHROPIC_API_KEY still blank
+    first = init_env.values(env.read_text())
+    assert all(first[v] for v in REQUIRED_VARS if v != "ANTHROPIC_API_KEY")
+
+    env.write_text(env.read_text().replace("ANTHROPIC_API_KEY=\n", "ANTHROPIC_API_KEY=sk-ant-x\n"))
+    assert init_env.main() == 0
+    second = init_env.values(env.read_text())
+    assert {k: v for k, v in second.items() if k != "ANTHROPIC_API_KEY"} == {
+        k: v for k, v in first.items() if k != "ANTHROPIC_API_KEY"
+    }, "existing values must never be overwritten"
 
 
 def test_port_vars_have_values(env_example_vars):
