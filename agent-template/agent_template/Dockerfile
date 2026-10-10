@@ -3,8 +3,9 @@
 # infrastructure (a2a, starlette, uvicorn).  Its hash is pinned in the
 # platform's Makefile / your .env and passed in as a build argument — you never
 # edit the FROM line directly; you change PROMETHEUS_API_BASE_IMAGE_HASH.
+ARG PROMETHEUS_API_BASE_IMAGE_REPO=containers.github.inl.gov/genesis/prometheus_api
 ARG PROMETHEUS_API_BASE_IMAGE_HASH
-FROM containers.github.inl.gov/genesis/prometheus_api:${PROMETHEUS_API_BASE_IMAGE_HASH}
+FROM ${PROMETHEUS_API_BASE_IMAGE_REPO}:${PROMETHEUS_API_BASE_IMAGE_HASH}
 
 # Accept corporate proxy settings as build arguments (optional).
 ARG HTTP_PROXY

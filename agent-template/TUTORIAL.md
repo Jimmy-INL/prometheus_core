@@ -53,10 +53,12 @@ canonical template (in `agent_template/`) into a new directory, replacing the
 ```bash
 git clone git@github.inl.gov:genesis/prometheus_platform.git
 cd prometheus_platform/agent-template
-python setup_agent.py
+python setup_agent.py                        # prompts for everything
+python setup_agent.py "Plant Analysis" ../plant-agent   # name and output dir given
 ```
 
-Answer the prompts (agent name, description, slug, class name, skill). When it
+Answer the prompts (agent name, description, slug, class name, skill, output
+directory; a name or directory given on the command line is not asked for). When it
 finishes, your new project lives in the output directory you chose:
 
 ```

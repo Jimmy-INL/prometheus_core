@@ -345,7 +345,7 @@ For participants who could not finish the homework. Work through these with a me
 | Access to `github.inl.gov/genesis` | open `github.inl.gov/genesis/prometheus_platform` in the browser | ask the organizer to add you to the org; deck 02 bonus |
 | Docker installed and running | `docker info`, `docker compose version` (≥ 2.20) | install Docker Desktop and start it |
 | Platform cloned | `ls ~/prometheus/prometheus_platform` shows `platform`, `sdk`, `agent-template` | deck 02 bonus (clone commands) |
-| PAT created, Docker logged in | `docker pull containers.github.inl.gov/genesis/prometheus_api:latest` | deck 03 bonus (registry login) |
+| Base image builds | `LOCAL_SDK=true` in `platform/.env`, then `make base-image` in `prometheus_platform/platform` | deck 03 bonus (step 1) |
 | Platform starts | `make up` in `prometheus_platform/platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
 | DeepLynx (if no `deeplynx.inl.gov` access) | `http://localhost:3000` shows the DeepLynx UI | deck 03 bonus (local DeepLynx) |
 | `uv` (for the agent session) | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
@@ -433,7 +433,7 @@ Any service that speaks A2A and publishes a card can join. It can live in the pl
 | **Workflow** | A YAML template that chains skills (sequential, parallel, or DAG) with parameter bindings between steps. |
 | **contextId** | The conversation ID. It scopes artifacts, state, and ownership across all agents in one chat. |
 | **Flavor / profile** | An LLM *flavor* (`small`, `medium`, `large`…) is chosen in code; a *profile* chosen by deployment maps flavors to real models. With the default `registry` profile, flavors are looked up in the platform's LiteLLM proxy (`litellm_config.yaml`). |
-| **Base image** | `containers.github.inl.gov/genesis/prometheus_api:<tag>`. Every Python agent is built `FROM` it. |
+| **Base image** | `prometheus_api`, built from `sdk/` (`LOCAL_SDK=true` → `prometheus_api:local`) or pulled from `containers.github.inl.gov/genesis/prometheus_api:<tag>`. Every Python agent is built `FROM` it. |
 
 ---
 
@@ -802,7 +802,7 @@ One clone of `genesis/prometheus_platform` (default branch `dev`) holds all thre
 | implement `process_analysis()` | implement `_execute(params, context, event_queue)` |
 | `request_user_approval(...)` | does not exist; use `requires_approval` or `send_input_required` |
 | login `prometheus` / `prometheus` | a setup wizard creates the first admin |
-| image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in `platform/Makefile` |
+| image from mooseharbor, pinned in compose | `containers.github.inl.gov`, pinned in `platform/Makefile`, or built locally from `sdk/` with `LOCAL_SDK=true` |
 | `PROMETHEUS_DEBUG` | `DEBUG_AGENTS=true` |
 | an up-front planner (`planner.py`), upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` (PR #104) |
 | pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | an old-repo hash (v0.8.0); new agents get the platform's pin in `.env` |

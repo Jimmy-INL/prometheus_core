@@ -84,10 +84,10 @@ if __name__ == "__main__":
 :::: grid 2 gap=30px
 ```bash {.sm}
 cd ~/prometheus/prometheus_platform/agent-template
-python3 setup_agent.py
-#  name:      Neutron Table Plot   (" Agent" is appended)
+python3 setup_agent.py "Neutron Table Plot" \
+  ../../hackathon/agents/neutron    # no ~
+#  name: " Agent" is appended
 #  skill id:  neutron_extract_table
-#  output:    ../../hackathon/agents/neutron   (no ~)
 #  copy secrets from ../platform/.env? yes
 ```
 
@@ -600,13 +600,13 @@ No CI for `agent-template/`. Generated agents get tests and ruff config, but no 
 {.sm}
 | Prompt | Default | Becomes |
 |---|---|---|
-| Agent name | (required) | card `name` "Hello World Agent" |
+| Agent name | 1st argument, else prompted | card `name` "Hello World Agent" |
 | Description | "A specialized agent for …" | card `description` |
 | Slug | kebab-case name | service / container `hello-world-agent` |
 | Class name | PascalCase | `HelloWorldAgent` |
 | Primary skill ID | `<snake>_analysis` | `hello_world_analysis` |
 | Skill name / description | "… Analysis" | skill fields |
-| Output directory | `../<slug>` | a new folder (`~` is not expanded); for the hackathon `../../hackathon/agents/<team_name>` |
+| Output directory | 2nd argument, else `../<slug>` | a new folder (`~` is not expanded); for the hackathon `../../hackathon/agents/<team_name>` |
 | Trim comments? | no | strips the teaching comments in `agent.py` |
 :::
 
@@ -616,7 +616,7 @@ No CI for `agent-template/`. Generated agents get tests and ruff config, but no 
 #### It copies the platform secrets for you
 
 {.small}
-If `../platform/.env` exists (the platform in the same clone), it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. It never copies the private key.
+If `../platform/.env` exists (the platform in the same clone), it offers to write the agent's `.env` with `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`, `USER_IDENTITY_PUBLIC_KEY/ISS/AUD`, `LLM_CONFIG_PROFILE`, and every `DEEPLYNX_*`. With `LOCAL_SDK=true` in the platform it also points your agent at `prometheus_api:local`, the base image the platform built. It never copies the private key.
 :::
 
 ::: callout bad
@@ -625,8 +625,8 @@ If `../platform/.env` exists (the platform in the same clone), it offers to writ
 
 ```text {.xs}
 # non-interactive (accept defaults, answer the rest)
-printf 'Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n' \
-  | python3 setup_agent.py
+printf '\n\n\n\n\n\nno\nyes\nyes\n' \
+  | python3 setup_agent.py "Hello World" ../hello-world
 # last "yes" = copy ../platform/.env
 ```
 ::::

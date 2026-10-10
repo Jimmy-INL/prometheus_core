@@ -93,6 +93,79 @@ def test_select_platform_env_values_includes_llm_config_profile(tmp_path):
     assert "MODEL_NAME" not in selected
 
 
+def test_select_platform_env_values_points_at_local_base_image_with_local_sdk(tmp_path):
+    """A LOCAL_SDK=true platform has no registry access, so the agent must
+    build FROM the base image the platform built locally, not the registry."""
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=shared-secret\nLOCAL_SDK=true\n", encoding="utf-8")
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert selected["PROMETHEUS_API_BASE_IMAGE_REPO"] == "prometheus_api"
+    assert selected["PROMETHEUS_API_BASE_IMAGE_HASH"] == "local"
+    assert "LOCAL_SDK" not in selected
+
+
+def test_select_platform_env_values_leaves_base_image_alone_without_local_sdk(tmp_path):
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=shared-secret\nLOCAL_SDK=false\n", encoding="utf-8")
+
+    selected = setup_agent.select_platform_env_values(platform_env)
+
+    assert "PROMETHEUS_API_BASE_IMAGE_REPO" not in selected
+    assert "PROMETHEUS_API_BASE_IMAGE_HASH" not in selected
+
+
+def _feed_input(monkeypatch, answers):
+    """Answer the scaffolder's prompts in order; fail on an unexpected prompt."""
+    prompts = []
+    remaining = iter(answers)
+
+    def fake_input(prompt=""):
+        prompts.append(prompt)
+        return next(remaining)
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    return prompts
+
+
+def test_collect_agent_info_uses_command_line_name_and_output_dir(monkeypatch):
+    """Both positional arguments are used as given and are not prompted for."""
+    # description, slug, class, skill id, skill name, skill description, trim, confirm
+    prompts = _feed_input(monkeypatch, ["", "", "", "", "", "", "", "yes"])
+
+    info = setup_agent.collect_agent_info("Plant Analysis", "./plant-agent")
+
+    assert info["TEMPLATE_NAME"] == "Plant Analysis"
+    assert info["TEMPLATE_SLUG"] == "plant-analysis"
+    assert info["OUTPUT_DIR"] == "./plant-agent"
+    assert not any("Agent name" in p or "Output directory" in p for p in prompts)
+
+
+def test_collect_agent_info_prompts_for_output_dir_when_only_name_given(monkeypatch):
+    prompts = _feed_input(monkeypatch, ["", "", "", "", "", "", "", "", "yes"])
+
+    info = setup_agent.collect_agent_info("Data Validator")
+
+    assert info["OUTPUT_DIR"] == "../data-validator"
+    assert any("Output directory" in p for p in prompts)
+    assert not any("Agent name" in p for p in prompts)
+
+
+def test_main_passes_positional_arguments_through(monkeypatch):
+    received = {}
+    monkeypatch.setattr(
+        setup_agent,
+        "collect_agent_info",
+        lambda agent_name, output_dir: received.update(name=agent_name, out=output_dir) or {},
+    )
+    monkeypatch.setattr(setup_agent, "create_agent", lambda replacements: None)
+
+    setup_agent.main(["Plant Analysis", "./plant-agent"])
+
+    assert received == {"name": "Plant Analysis", "out": "./plant-agent"}
+
+
 def test_platform_env_path_points_at_monorepo_platform_dir():
     """The template lives at agent-template/ in the monorepo; the platform it
     copies secrets from is the sibling platform/ directory."""

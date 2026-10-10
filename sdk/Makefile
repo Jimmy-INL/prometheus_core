@@ -97,6 +97,8 @@ bump-major: ##@ Bump major version (0.2.0 → 1.0.0)
 ##@ Container
 ##@
 
+.PHONY: build-image build-local build-push
+
 IMAGE_REPO ?= containers.github.inl.gov/genesis/prometheus_api
 IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
 PUSH_LATEST ?= false
@@ -110,6 +112,11 @@ build-image: ##@ Build container images for amd64 and arm64 (IMAGE_TAG=<tag>, de
 	docker build --platform linux/amd64 -t "prometheus-api:$(IMAGE_TAG)-amd64" .
 	docker build --platform linux/arm64 -t "prometheus-api:$(IMAGE_TAG)-arm64" .
 	@echo "Built prometheus-api:$(IMAGE_TAG)-amd64 and prometheus-api:$(IMAGE_TAG)-arm64"
+
+LOCAL_IMAGE ?= prometheus_api:local
+
+build-local: ##@ Build a host-arch image into the local Docker store for the platform (LOCAL_IMAGE=<name:tag>, default: prometheus_api:local)
+	docker build -t "$(LOCAL_IMAGE)" .
 
 build-push: ##@ Build and push multi-arch image (IMAGE_REPO=<repo> [IMAGE_TAG=<tag>])
 ifndef IMAGE_REPO

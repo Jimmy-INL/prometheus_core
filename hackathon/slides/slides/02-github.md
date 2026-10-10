@@ -470,7 +470,7 @@ For participants who could not finish the homework: GitHub access, tokens, and f
 
 ---
 
-## Getting in: org, git, and registry {eyebrow="Bonus · Access"}
+## Getting in: org, git, and the base image {eyebrow="Bonus · Access"}
 
 :::: grid 3
 ::: card tag="1 · org membership"
@@ -502,17 +502,18 @@ export GH_HOST=github.inl.gov
 ```
 :::
 
-::: card tag="3 · container registry"
-#### PAT with `read:packages`
+::: card tag="3 · base image"
+#### Built locally, no registry
 
 {.small}
-Needed to pull the `prometheus_api` base image. Create a classic token at `github.inl.gov/settings/tokens/new`:
+The `prometheus_api` base image is built from `sdk/` in your clone. One line in `platform/.env`:
 
 ```bash {.xs}
-echo $GITHUB_PAT | docker login \
-  containers.github.inl.gov \
-  --username <you> --password-stdin
+LOCAL_SDK=true
 ```
+
+{.small}
+On the INL network you can pull it instead: `docker login containers.github.inl.gov` with a PAT (`read:packages`).
 :::
 ::::
 

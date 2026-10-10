@@ -101,10 +101,9 @@ Platform not up yet? Use the **bonus slide** at the end of this deck, and the bo
 
 ```bash {.sm}
 cd ~/prometheus/prometheus_platform/agent-template   # same clone
-python3 setup_agent.py
-#  name: Hello <You>   → card "Hello <You> Agent"
+python3 setup_agent.py "Hello <You>" ../../hello-<you>   # no ~
+#  → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
-#  output dir: ../../hello-<you>   (no ~)
 #  copy secrets from ../platform/.env? yes
 cd ~/prometheus/hello-<you>
 
@@ -237,10 +236,8 @@ git remote add upstream \
 git fetch upstream
 cd platform            # the stack lives here
 
-echo $GITHUB_PAT | docker login containers.github.inl.gov \
-  --username <you> --password-stdin        # PAT: read:packages
-
 cp .env.example .env
+echo "LOCAL_SDK=true" >> .env   # base image from ../sdk
 # fill: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD,
 #       BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,
 #       LITELLM_DB_PASSWORD, ADMIN_DB_PASSWORD
@@ -270,7 +267,7 @@ curl -s localhost:8600/healthz
 | If… | then |
 |---|---|
 | `FROM …prometheus_api:` error | remove the empty `PROMETHEUS_API_BASE_IMAGE_HASH=` line in `.env` |
-| pull `unauthorized` | `docker login` again; PAT scope; VPN |
+| pull `unauthorized` | `LOCAL_SDK=true` missing in `.env` |
 | "No 'userToken' found" | activate a signing key |
 | port already in use | `make down`, or change `*_PORT` in `.env` |
 :::

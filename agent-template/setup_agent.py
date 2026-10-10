@@ -6,13 +6,19 @@ This script creates a new agent from the template by replacing all template
 placeholders with your custom values.
 
 Usage:
-    python setup_agent.py <agent_name> [output_directory]
+    python setup_agent.py [agent_name] [output_directory]
+
+Arguments given on the command line are not prompted for; everything else
+is (press Enter to accept a default). With no arguments, every value is
+prompted for.
 
 Example:
     python setup_agent.py "Plant Analysis" ./plant-agent
     python setup_agent.py "Data Validator"
+    python setup_agent.py
 """
 
+import argparse
 import re
 import shutil
 import sys
@@ -34,6 +40,9 @@ PLATFORM_SECRET_KEYS = (
     # silently defaulting to `registry` when the platform uses something else.
     "LLM_CONFIG_PROFILE",
 )
+# Must match the LOCAL_SDK=true image in platform/Makefile.
+LOCAL_SDK_IMAGE_REPO = "prometheus_api"
+LOCAL_SDK_IMAGE_HASH = "local"
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_GITIGNORE_ENTRIES = (".env",)
 
@@ -75,8 +84,12 @@ def confirm_action(prompt: str, default: str = "yes") -> bool:
     return get_user_input(prompt, default).lower() in {"yes", "y"}
 
 
-def collect_agent_info() -> dict[str, str]:
-    """Interactively collect agent information from the user."""
+def collect_agent_info(agent_name: str | None = None, output_dir: str | None = None) -> dict[str, str]:
+    """Interactively collect agent information from the user.
+
+    ``agent_name`` and ``output_dir`` come from the command line; when given,
+    they are used as-is instead of being prompted for.
+    """
     print("\n" + "=" * 70)
     print("  Agent Template Setup")
     print("=" * 70)
@@ -84,11 +97,12 @@ def collect_agent_info() -> dict[str, str]:
     print("Please provide the following information:\n")
 
     # Get agent name
-    while True:
+    if agent_name:
+        print(f"Agent name: {agent_name}")
+    while not agent_name:
         agent_name = get_user_input("Agent name (e.g., 'Plant Analysis', 'Data Validator')")
-        if agent_name:
-            break
-        print("Error: Agent name is required.\n")
+        if not agent_name:
+            print("Error: Agent name is required.\n")
 
     # Generate default values
     default_slug = to_kebab_case(agent_name)
@@ -120,8 +134,8 @@ def collect_agent_info() -> dict[str, str]:
     skill_description = get_user_input("\nPrimary skill description", f"Performs analysis using {agent_name.lower()}")
 
     # Get output directory
-    default_output = f"../{slug}"
-    output_dir = get_user_input("\nOutput directory", default_output)
+    if not output_dir:
+        output_dir = get_user_input("\nOutput directory", f"../{slug}")
 
     # Keep comments in the copied agent.py
     trim_comments = get_user_input(prompt="\nTrim agent.py comments", default="False")
@@ -221,6 +235,12 @@ def select_platform_env_values(env_path: Path) -> dict[str, str]:
         if key.startswith("DEEPLYNX_"):
             selected[key] = value
 
+    # A platform built with LOCAL_SDK=true has no registry access; point the
+    # agent at the base image the platform's `make up` built locally.
+    if assignments.get("LOCAL_SDK") == "true":
+        selected["PROMETHEUS_API_BASE_IMAGE_REPO"] = LOCAL_SDK_IMAGE_REPO
+        selected["PROMETHEUS_API_BASE_IMAGE_HASH"] = LOCAL_SDK_IMAGE_HASH
+
     return selected
 
 
@@ -262,13 +282,22 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
         print(f"\nFound '{PLATFORM_ENV_PATH}', but none of the requested platform values were present.")
         return
 
+    local_sdk = "PROMETHEUS_API_BASE_IMAGE_REPO" in selected_values
     create_env = confirm_action(
         f"\nFound '{PLATFORM_ENV_PATH}'. Create '{output_dir / '.env'}' with "
         "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, "
-        "LLM_CONFIG_PROFILE, and USER_IDENTITY_* values? (yes/no)",
+        "LLM_CONFIG_PROFILE, and USER_IDENTITY_* values"
+        f"{' (and the locally built base image, LOCAL_SDK=true)' if local_sdk else ''}? (yes/no)",
         "yes",
     )
     if not create_env:
+        if local_sdk:
+            print(
+                f"\nNote: the platform uses LOCAL_SDK=true. Set "
+                f"PROMETHEUS_API_BASE_IMAGE_REPO={LOCAL_SDK_IMAGE_REPO} and "
+                f"PROMETHEUS_API_BASE_IMAGE_HASH={LOCAL_SDK_IMAGE_HASH} in the agent's .env, "
+                "or its build pulls the base image from the registry."
+            )
         return
 
     env_path = output_dir / ".env"
@@ -386,15 +415,24 @@ def create_agent(replacements: dict[str, str]) -> None:
     print(message)
 
 
-def main():
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse the optional positional agent name and output directory."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage=argparse.SUPPRESS,
+    )
+    parser.add_argument("agent_name", nargs="?", help="agent name, e.g. 'Plant Analysis'")
+    parser.add_argument("output_directory", nargs="?", help="where to create the agent (default: ../<slug>)")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
     """Main entry point."""
-    # Check command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
-        print(__doc__)
-        sys.exit(0)
+    args = parse_args(sys.argv[1:] if argv is None else argv)
 
     # Collect agent information
-    replacements = collect_agent_info()
+    replacements = collect_agent_info(args.agent_name, args.output_directory)
 
     # Create the agent
     create_agent(replacements)

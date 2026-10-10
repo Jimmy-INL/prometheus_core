@@ -28,6 +28,16 @@ docker run -it --rm \
   containers.github.inl.gov/genesis/prometheus_api:latest /bin/bash
 ```
 
+### Building the image locally (no registry access)
+
+Without access to `containers.github.inl.gov`, build the image from this directory into your local Docker image store:
+
+```bash
+make build-local                     # → prometheus_api:local (host architecture)
+```
+
+The platform does this for you with `LOCAL_SDK=true` (see the [platform README](../platform/README.md#2-get-the-base-image)).
+
 ---
 
 ## Library

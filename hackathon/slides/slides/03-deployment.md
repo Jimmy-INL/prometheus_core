@@ -284,7 +284,7 @@ The agent template is already in your clone (`prometheus_platform/agent-template
 ---
 
 # Bonus: catch-up slides {.section .bonus num="+"}
-For participants whose platform does not start yet: prerequisites, registry login, `.env`, startup failures, and a local DeepLynx.
+For participants whose platform does not start yet: prerequisites, clone, `.env` (with the local base image), startup failures, and a local DeepLynx.
 
 ---
 
@@ -296,7 +296,7 @@ For participants whose platform does not start yet: prerequisites, registry logi
 | **Docker + Compose v2** | The Makefile calls `docker compose -p prometheus_platform`. The compose files use `include:` and `additional_contexts`, so Compose ≥ 2.20 with BuildKit is needed. Check: `docker info`, `docker compose version`. |
 | **GNU make, git, openssl** | `make up` generates keys with `openssl rand`. |
 | **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. |
-| **Access to `containers.github.inl.gov`** | A PAT with `read:packages`, then `docker login`. You need to be on the INL network or VPN. |
+| **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. (With INL network access you can pull it from `containers.github.inl.gov` instead: a PAT with `read:packages`, then `docker login`.) |
 | **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
 | **uv + Python 3.12** | Only for running things outside Docker: tests, a host-run agent, `setup_agent.py`. `uv --version` |
 | Node.js 22 (optional) | Only to run the frontend dev server on the host (`make react-dev`). |
@@ -307,7 +307,7 @@ Podman: the template README mentions it, but the platform Makefile only drives `
 
 ---
 
-## Clone and log in to the registry {eyebrow="Bonus · Step 1"}
+## Clone, and where the base image comes from {eyebrow="Bonus · Step 1"}
 
 :::: grid 2 gap=30px
 ```bash {.sm}
@@ -318,34 +318,30 @@ git remote add upstream \
   git@github.inl.gov:genesis/prometheus_platform.git
 git switch dev
 
-# registry login: PAT with read:packages
-export GITHUB_PAT=ghp_…
-echo $GITHUB_PAT | docker login containers.github.inl.gov \
-  --username <github-username> --password-stdin
-
-# smoke test: can you pull the base image?
-docker pull \
-  containers.github.inl.gov/genesis/prometheus_api:latest
+# smoke test: can you build the base image?
+make -C ../sdk build-local    # → prometheus_api:local
+# next step: LOCAL_SDK=true in .env, so make up
+# builds every service FROM it
 ```
 
 |||
 
 ::: card
-#### Why the registry?
+#### Why a base image?
 
 {.small}
-Every Python service (backend, client-agent, all agents) is built `FROM containers.github.inl.gov/genesis/prometheus_api:<tag>`. Without a login, the first `make up` fails at the very first `FROM` line.
+Every Python service (backend, client-agent, all agents) is built `FROM` the `prometheus_api` image. With `LOCAL_SDK=true`, `make up` first builds it from `../sdk` as `prometheus_api:local`: no registry, no login, no VPN.
 :::
 
 ::: card
-#### Where do tokens go?
+#### Or pull it from the registry
 
 {.small}
-Docker stores the login in your credential helper. The PAT never goes into `.env` or into a repo.
+On the INL network you can skip `LOCAL_SDK` and pull the pinned image: `docker login containers.github.inl.gov` with a PAT that has `read:packages`. Docker keeps the login in your credential helper; the PAT never goes into `.env`.
 :::
 
 ::: callout warn
-`unauthorized` or `denied` on pull? The PAT is missing the `read:packages` scope, your account lacks org access, or you are off the INL network.
+`LOCAL_SDK=true` builds whatever is in `sdk/`, not the pin in `platform/Makefile`. After `git pull`, the next `make up` rebuilds it.
 :::
 ::::
 
@@ -366,6 +362,7 @@ Docker stores the login in your credential helper. The PAT never goes into `.env
 | `LITELLM_DB_PASSWORD` | litellm-db Postgres |
 | `ADMIN_DB_PASSWORD` | admin-db Postgres |
 | `LITELLM_LOCAL_PORT=9977` | Already set. Compose has **no default** for it, so keep the line. |
+| `LOCAL_SDK=true` | Build the base image from `../sdk` instead of pulling it {.hl} |
 | `ADMIN_DB_ENCRYPTION_KEY=` | Leave empty: `make up` writes a Fernet key into `.env` |
 
 |||
@@ -393,7 +390,8 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 | Symptom | Cause → fix |
 |---|---|
 | `failed to resolve …prometheus_api:` (empty tag) or `invalid reference format` | Empty `PROMETHEUS_API_BASE_IMAGE_HASH`: an uncommented empty line in `.env`, or you ran `docker compose` without make. Remove the line, or set it to the value in `platform/Makefile`. |
-| `unauthorized` / `denied` pulling the base image | Run `docker login containers.github.inl.gov` with a PAT that has `read:packages`; be on the INL network or VPN. |
+| `unauthorized` / `denied` pulling the base image | You are pulling from the registry: set `LOCAL_SDK=true` in `.env`, or `docker login containers.github.inl.gov` with a PAT that has `read:packages` (INL network or VPN). |
+| `pull access denied for prometheus_api` | `LOCAL_SDK=true` is set, but `docker compose` ran without make, so `prometheus_api:local` was never built. Run `make base-image`, or always go through `make up`. |
 | `.env not found` from `check-prerequisites` | `cp .env.example .env` |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
 | Backend exits: "jwt_secret is not configured" | `BACKEND_JWT_SECRET` is empty or still `change-me…`. Generate a value (an old `CHAINLIT_AUTH_SECRET` is no longer read). |
@@ -606,6 +604,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
 | `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
+| `LOCAL_SDK` | `false` | `true`: build the base image from `../sdk` (`prometheus_api:local`) |
 | `PROMETHEUS_API_BASE_IMAGE_HASH` | commented | Override the pin in `platform/Makefile` |
 | `DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID` | commented | Storage for uploads and `deeplynx://` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | 104857600 | 100 MiB upload cap |
@@ -639,6 +638,8 @@ Documented but unused on `dev`: `FRONTEND_URL`, `LOCAL_CERT_FILE`/`CERT_FILE`. O
 ::: flow
 - [gray flex=1] **check-prerequisites** | `.env` exists, docker is running
 - ->  {w=30}
+- [violet dash flex=1] **base-image** | if `LOCAL_SDK`: build the SDK image
+- ->  {w=30}
 - [sky flex=1] **generate** | writes `docker-compose.agents.yml` (`include:` of `agents/*/docker-compose.yml`)
 - ->  {w=30}
 - [sky flex=1] **ensure-admin-encryption-key** | Fernet key into `.env` if empty
@@ -651,6 +652,7 @@ Documented but unused on `dev`: `FRONTEND_URL`, `LOCAL_CERT_FILE`/`CERT_FILE`. O
 :::: grid 2 gap=26px
 ```bash {.sm}
 make up                        # build + start, detached
+make LOCAL_SDK=true up         # base image from ../sdk
 make up-fg                     # same, logs in foreground
 make DEBUG_AGENTS=true up      # + mock agents
 make PROFILE=prod up           # nginx frontend on :8080
@@ -677,17 +679,18 @@ make ps ; make logs SERVICE=client-agent
 ::: grid 3 gap=22px
 #### ① platform/Makefile (the pin) {.acc}
 
-```bash {.sm hl=4}
-# Override this to pin a
-# specific base image.
-PROMETHEUS_API_BASE_IMAGE_HASH \
-  ?= <tag>
-export \
-  PROMETHEUS_API_BASE_IMAGE_HASH
+```bash {.sm hl=4-5}
+ifeq ($(LOCAL_SDK),true)
+…_REPO := prometheus_api
+…_HASH := local   # make base-image
+else
+…_REPO ?= containers.github.inl.gov/…
+…_HASH ?= <tag>
+endif
 ```
 
 {.tiny}
-`-include .env` comes first, so `.env` or the command line wins.
+`-include .env` comes first, so `.env` or the command line wins. `…` = `PROMETHEUS_API_BASE_IMAGE`.
 
 |||
 
@@ -696,10 +699,12 @@ export \
 ```yaml {.sm}
 # docker-compose.yml
 x-build-args:
+  PROMETHEUS_API_BASE_IMAGE_REPO: …
   PROMETHEUS_API_BASE_IMAGE_HASH:
     ${PROMETHEUS_API_BASE_IMAGE_HASH:-}
 # agents/<x>/docker-compose.yml
 args:
+  - PROMETHEUS_API_BASE_IMAGE_REPO=…
   - PROMETHEUS_API_BASE_IMAGE_HASH=
       ${PROMETHEUS_API_BASE_IMAGE_HASH}
 ```
@@ -709,9 +714,10 @@ args:
 #### ③ every Dockerfile {.acc}
 
 ```docker {.sm}
+ARG PROMETHEUS_API_BASE_IMAGE_REPO=\
+  containers.github.inl.gov/genesis/prometheus_api
 ARG PROMETHEUS_API_BASE_IMAGE_HASH
-FROM containers.github.inl.gov/
-  genesis/prometheus_api:
+FROM ${PROMETHEUS_API_BASE_IMAGE_REPO}:\
   ${PROMETHEUS_API_BASE_IMAGE_HASH}
 ENV UV_PROJECT_ENVIRONMENT=/usr/local
 RUN uv sync --no-dev \
@@ -719,7 +725,7 @@ RUN uv sync --no-dev \
 ```
 
 {.tiny}
-(The `FROM` is one line in the real file.)
+(Each `ARG`/`FROM` is one line in the real file.)
 :::
 
 :::: grid 3

@@ -91,10 +91,10 @@
 <div class="grid g2" style="gap:30px;">
 <div class="col">
 <pre class="sm">cd ~/prometheus/prometheus_platform/agent-template
-python3 setup_agent.py
-<span class="c">#  name:      Neutron Table Plot   (&quot; Agent&quot; is appended)</span>
+python3 setup_agent.py <span class="s">&quot;Neutron Table Plot&quot;</span> <span class="s">\</span>
+  ../../hackathon/agents/neutron    <span class="c"># no ~</span>
+<span class="c">#  name: &quot; Agent&quot; is appended</span>
 <span class="c">#  skill id:  neutron_extract_table</span>
-<span class="c">#  output:    ../../hackathon/agents/neutron   (no ~)</span>
 <span class="c">#  copy secrets from ../platform/.env? yes</span></pre>
 <div class="callout bad">
 Prefix the <strong>card name and every skill ID</strong> with your team name. All teams build the same skills; same names overwrite each other in the registry.</div>
@@ -725,7 +725,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 <tbody>
 <tr>
 <td>Agent name</td>
-<td>(required)</td>
+<td>1st argument, else prompted</td>
 <td>card <code>name</code> &quot;Hello World Agent&quot;</td>
 </tr>
 <tr>
@@ -755,7 +755,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 </tr>
 <tr>
 <td>Output directory</td>
-<td><code>../&lt;slug&gt;</code></td>
+<td>2nd argument, else <code>../&lt;slug&gt;</code></td>
 <td>a new folder (<code>~</code> is not expanded); for the hackathon <code>../../hackathon/agents/&lt;team_name&gt;</code></td>
 </tr>
 <tr>
@@ -770,15 +770,15 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 <div class="col">
 <div class="card acc">
 <h4>It copies the platform secrets for you</h4>
-<p class="small">If <code>../platform/.env</code> exists (the platform in the same clone), it offers to write the agent's <code>.env</code> with <code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code>, <code>USER_IDENTITY_PUBLIC_KEY/ISS/AUD</code>, <code>LLM_CONFIG_PROFILE</code>, and every <code>DEEPLYNX_*</code>. It never copies the private key.</p>
+<p class="small">If <code>../platform/.env</code> exists (the platform in the same clone), it offers to write the agent's <code>.env</code> with <code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code>, <code>USER_IDENTITY_PUBLIC_KEY/ISS/AUD</code>, <code>LLM_CONFIG_PROFILE</code>, and every <code>DEEPLYNX_*</code>. With <code>LOCAL_SDK=true</code> in the platform it also points your agent at <code>prometheus_api:local</code>, the base image the platform built. It never copies the private key.</p>
 </div>
 
 <div class="callout bad">
 <strong>Choose a unique name and skill ID.</strong> The registry keys agents by card name; re-registering <em>deletes</em> any agent with the same name. Your skill id becomes the orchestrator's tool name (<code>[a-zA-Z0-9_-]</code>, ≤ 64 chars). Prefix both with your team name: type &quot;Team Neutron Mesh QA&quot; (the scaffolder appends &quot; Agent&quot;), skill <code>neutron_mesh_quality_report</code>.</div>
 
 <pre class="xs"># non-interactive (accept defaults, answer the rest)
-printf &#x27;Hello World\n\n\n\n\n\n\n../hello-world\nno\nyes\nyes\n&#x27; \
-  | python3 setup_agent.py
+printf &#x27;\n\n\n\n\n\nno\nyes\nyes\n&#x27; \
+  | python3 setup_agent.py &quot;Hello World&quot; ../hello-world
 # last &quot;yes&quot; = copy ../platform/.env</pre>
 </div>
 </div>

@@ -18,8 +18,23 @@ COMPOSE := docker compose -p $(COMPOSE_PROJECT_NAME)
 COMPOSE_BASE   := docker-compose.yml
 COMPOSE_AGENTS := docker-compose.agents.yml
 
-# Override this to pin a specific prometheus_api base image.
+# Set LOCAL_SDK=true (in .env or on the command line) to build the
+# prometheus_api base image from ../sdk into the local Docker store and build
+# all services FROM it, instead of pulling from the registry. For anyone
+# without access to containers.github.inl.gov. Default: false.
+LOCAL_SDK ?= false
+
+ifeq ($(LOCAL_SDK),true)
+PROMETHEUS_API_BASE_IMAGE_REPO := prometheus_api
+PROMETHEUS_API_BASE_IMAGE_HASH := local
+BASE_IMAGE_DEP := base-image
+else
+# Override these to pin a specific prometheus_api base image.
+PROMETHEUS_API_BASE_IMAGE_REPO ?= containers.github.inl.gov/genesis/prometheus_api
 PROMETHEUS_API_BASE_IMAGE_HASH ?= 1914b55
+BASE_IMAGE_DEP :=
+endif
+export PROMETHEUS_API_BASE_IMAGE_REPO
 export PROMETHEUS_API_BASE_IMAGE_HASH
 
 # Set DEBUG_AGENTS=true (in .env or on the command line) to also include
@@ -166,6 +181,7 @@ PREREQUISITE_TARGETS := \
 	clear-litellm-db \
 	down \
 	down-v \
+	base-image \
 	build \
 	build-plain \
 	logs \
@@ -173,7 +189,7 @@ PREREQUISITE_TARGETS := \
 
 $(PREREQUISITE_TARGETS): check-prerequisites
 
-.PHONY: all up up-fg down down-v build build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg ensure-admin-encryption-key clear-litellm-db clear-admin-users help
+.PHONY: all up up-fg down down-v build base-image build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg ensure-admin-encryption-key clear-litellm-db clear-admin-users help
 
 FORCE:
 
@@ -231,12 +247,12 @@ test-system: ##@ Test the user experience on an already-running platform (start 
 
 up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
 up: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-up: generate ensure-admin-encryption-key clear-litellm-db
+up: $(BASE_IMAGE_DEP) generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d
 
 up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
 up-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
-up-fg: generate ensure-admin-encryption-key clear-litellm-db
+up-fg: $(BASE_IMAGE_DEP) generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build
 
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
@@ -250,11 +266,11 @@ restart-fg: generate ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
-ng-up: ensure-admin-encryption-key clear-litellm-db
+ng-up: $(BASE_IMAGE_DEP) ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d
 
 ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
-ng-up-fg: ensure-admin-encryption-key clear-litellm-db
+ng-up-fg: $(BASE_IMAGE_DEP) ensure-admin-encryption-key clear-litellm-db
 	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build
 
 ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
@@ -306,12 +322,15 @@ down: ##@ Stop all services
 down-v: ##@ Stop all services and remove volumes
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down -v
 
+base-image: ##@ Build the prometheus_api base image from ../sdk (automatic before builds when LOCAL_SDK=true)
+	$(MAKE) -C ../sdk build-local LOCAL_IMAGE=$(PROMETHEUS_API_BASE_IMAGE_REPO):$(PROMETHEUS_API_BASE_IMAGE_HASH)
+
 build: ##@ Build images without starting
-build: generate
+build: $(BASE_IMAGE_DEP) generate
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) build
 
 build-plain: ##@ Build images with plain (verbose) progress output
-build-plain: generate
+build-plain: $(BASE_IMAGE_DEP) generate
 	$(CONTAINER_RUNTIME) $(COMPOSE_FILES) $(PROFILE_FLAGS) build --progress=plain
 
 logs: ##@ Tail logs for all services (SERVICE=<name> to filter)
