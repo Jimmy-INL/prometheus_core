@@ -60,3 +60,18 @@ jobs:
           file: sdk/Dockerfile
           platforms: linux/${{ matrix.platform }}
           push: false
+          load: true
+          tags: sdk:${{ matrix.platform }}
+      - name: Test
+        # The image only has the installed package; mount the checkout for
+        # pyproject.toml, uv.lock, and the tests
+        run: |
+          docker run --rm --platform linux/${{ matrix.platform }} \
+            -v "$PWD:/src" -w /src \
+            sdk:${{ matrix.platform }} \
+            bash -ec '
+              uv export --frozen --only-dev > requirements.txt
+              uv pip install -r requirements.txt
+              rm requirements.txt
+              pytest --color=yes
+            '
