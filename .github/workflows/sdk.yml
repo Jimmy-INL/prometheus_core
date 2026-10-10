@@ -1,16 +1,10 @@
-name: SDK Tests
+name: sdk
 
 on:
   push:
     branches: [devel]
-    paths:
-      - "sdk/**"
-      - ".github/workflows/sdk-tests.yml"
   pull_request:
     branches: [main, devel]
-    paths:
-      - "sdk/**"
-      - ".github/workflows/sdk-tests.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
@@ -22,7 +16,7 @@ defaults:
 
 jobs:
   python:
-    name: "Python ${{ matrix.python }}"
+    name: "python ${{ matrix.python }}"
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +36,7 @@ jobs:
         run: uv run --frozen pytest --color=yes
 
   docker:
-    name: "Docker ${{ matrix.platform }}"
+    name: "docker ${{ matrix.platform }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
