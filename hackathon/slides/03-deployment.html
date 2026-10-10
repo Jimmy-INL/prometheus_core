@@ -95,7 +95,7 @@ Platform not starting yet? Work through the bonus slides at the end of this deck
   <div class="head"><div class="eyebrow">Day to day</div><h2>Four commands, one trap</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
-<pre class="sm">cd ~/prometheus/prometheus_platform/platform
+<pre class="sm">cd ~/prometheus/prometheus_core/platform
 make up                     <span class="c"># build and start</span>
 make restart                <span class="c"># restart, no rebuild</span>
 make logs SERVICE=client-agent
@@ -182,7 +182,7 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 </tr>
 </tbody>
 </table>
-<p class="small">Read them in <code>prometheus_platform/platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
+<p class="small">Read them in <code>prometheus_core/platform/agents/debug-agents/</code>. Each is a short, complete example of one platform feature.</p>
   </div>
 </section>
 
@@ -345,7 +345,7 @@ EOF</pre>
 
 <div class="card">
 <h3>Next: Building an agent (2:45 pm)</h3>
-<p class="body">The agent template is already in your clone (<code>prometheus_platform/agent-template/</code>). Have <code>uv --version</code> working.</p>
+<p class="body">The agent template is already in your clone (<code>prometheus_core/agent-template/</code>). Have <code>uv --version</code> working.</p>
 </div>
 
 </div>
@@ -381,7 +381,7 @@ EOF</pre>
 </tr>
 <tr>
 <td><strong><code>gh</code>, the GitHub CLI</strong></td>
-<td>Used for forks and PRs. <code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login --hostname github.inl.gov</code>.</td>
+<td>Used for forks and PRs. <code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login</code>.</td>
 </tr>
 <tr>
 <td><strong>The <code>prometheus_api</code> base image</strong></td>
@@ -413,12 +413,12 @@ EOF</pre>
   <div class="head"><div class="eyebrow">Bonus · Step 1</div><h2>Clone, and where the base image comes from</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
-<pre class="sm"><span class="c"># your fork (see previous session), default branch dev</span>
-git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/prometheus_platform.git
-cd prometheus_platform/platform     <span class="c"># the stack lives here</span>
+<pre class="sm"><span class="c"># your fork (see previous session), default branch devel</span>
+git clone git@github.com:<span class="p">&lt;you&gt;</span>/prometheus_core.git
+cd prometheus_core/platform     <span class="c"># the stack lives here</span>
 git remote add upstream <span class="s">\</span>
-  git@github.inl.gov:genesis/prometheus_platform.git
-git switch dev
+  git@github.com:idaholab/prometheus_core.git
+git switch devel
 
 <span class="c"># smoke test: can you build the base image?</span>
 make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
@@ -445,7 +445,7 @@ make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Step 2 · in prometheus_platform/platform</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Step 2 · in prometheus_core/platform</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
   <div class="content">
 <div class="grid g32" style="gap:28px;">
 <table class="t sm">
@@ -557,7 +557,7 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 </tr>
 <tr>
 <td>SSL / certificate errors during <code>npm ci</code> or <code>pip</code> on the INL network</td>
-<td>TLS inspection. <code>certs/INL.pem</code> is checked in (PR #100); pull the latest <code>dev</code>. Python images get the bundle from the base image.</td>
+<td>TLS inspection. <code>certs/INL.pem</code> is checked in (PR #100); pull the latest <code>devel</code>. Python images get the bundle from the base image.</td>
 </tr>
 <tr>
 <td><code>network … has active endpoints</code> on <code>make up</code></td>
@@ -681,7 +681,7 @@ docker compose up          <span class="c"># add -d to detach</span></pre>
 <p class="small"><strong>⑤</strong> API Keys → <strong>&quot;+ Generate New&quot;</strong>. Copy the <strong>key and secret</strong> now: the secret is shown only once.</p>
 </div>
 <div class="col">
-<p class="small"><strong>⑥</strong> In <code>prometheus_platform/platform/.env</code>:</p>
+<p class="small"><strong>⑥</strong> In <code>prometheus_core/platform/.env</code>:</p>
 <pre class="sm">DEEPLYNX_KEY=…
 DEEPLYNX_SECRET=…
 DEEPLYNX_BASE_URL=http://host.docker.internal:5000/api/v1/
@@ -939,7 +939,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 </table>
 </div>
 
-<p class="tiny">Documented but unused on <code>dev</code>: <code>FRONTEND_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
+<p class="tiny">Documented but unused on <code>devel</code>: <code>FRONTEND_URL</code>, <code>LOCAL_CERT_FILE</code>/<code>CERT_FILE</code>. OIDC is now configured in Admin › Identity Providers.</p>
   </div>
 </section>
 
@@ -1027,7 +1027,7 @@ args:
 <div class="card">
 <h4>Try another SDK version</h4>
 <pre class="xs">make PROMETHEUS_API_BASE_IMAGE_HASH=latest up</pre>
-<p class="small">Then read <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code>. The pin and <code>latest</code> can differ: <code>latest</code> moves with every SDK change merged to <code>dev</code>. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
+<p class="small">Then read <code>sdk/docs/agent/AGENT_MIGRATIONS.md</code>. The pin and <code>latest</code> can differ: <code>latest</code> moves with every SDK change merged to <code>devel</code>. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.</p>
 </div>
 
 <div class="card">
@@ -1210,13 +1210,13 @@ args:
 </tr>
 <tr>
 <td><code>build-plain</code></td>
-<td><strong>broken</strong> on dev (undefined variable)</td>
+<td><strong>broken</strong> on devel (undefined variable)</td>
 </tr>
 </tbody>
 </table>
 </div>
 
-<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_platform</code>.</p>
+<p class="small">Variables: <code>PROFILE</code> (dev | prod | empty), <code>DEBUG_AGENTS</code>, <code>PROMETHEUS_SYSTEM_TESTING</code>, <code>PROMETHEUS_API_BASE_IMAGE_HASH</code>, <code>SERVICE</code>, <code>SKIP_PREREQUISITES=1</code>. The compose project name is <code>prometheus_core</code>.</p>
   </div>
 </section>
 
@@ -1426,7 +1426,7 @@ These are the best working examples of every pattern in the template tutorial. R
 </ol>
 <p class="small">The platform default is <code>registry</code>: <code>proxy_url: os.environ/REGISTRY_URL</code>, so every call goes to <strong>LiteLLM</strong> at <code>http://litellm:4000/v1/chat/completions</code> with <code>model=&lt;flavor&gt;</code>.</p>
 <div class="callout warn">
-With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy. Its <code>litellm_config.yaml</code> on <code>dev</code> currently defines only <code>medium</code> (→ <code>anthropic/claude-sonnet-4-6</code>). Add the other aliases there (right), or switch to a profile such as <code>inl_litellm</code>, which defines all six. A flavor with no model behind it raises <code>LLMAliasError</code>.</div>
+With the default <code>registry</code> profile, flavors are looked up in the platform's LiteLLM proxy. Its <code>litellm_config.yaml</code> on <code>devel</code> currently defines only <code>medium</code> (→ <code>anthropic/claude-sonnet-4-6</code>). Add the other aliases there (right), or switch to a profile such as <code>inl_litellm</code>, which defines all six. A flavor with no model behind it raises <code>LLMAliasError</code>.</div>
 
 </div>
 
@@ -1437,7 +1437,7 @@ With the default <code>registry</code> profile, flavors are looked up in the pla
   <div class="head"><div class="eyebrow">LLM configuration for the deployment</div><h2>Adding flavors to the platform proxy</h2></div>
   <div class="content">
 <div class="col">
-<pre class="sm"><span class="c"># prometheus_platform/platform/litellm_config.yaml</span>
+<pre class="sm"><span class="c"># prometheus_core/platform/litellm_config.yaml</span>
 model_list:
   - model_name: medium
     litellm_params:

@@ -78,7 +78,7 @@ Behind them: the orchestrator (`client-agent`), three agents, a state store, and
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-cd ~/prometheus/prometheus_platform/platform
+cd ~/prometheus/prometheus_core/platform
 make up                     # build and start
 make restart                # restart, no rebuild
 make logs SERVICE=client-agent
@@ -156,7 +156,7 @@ make DEBUG_AGENTS=true up        # adds the reference agents
 | `thread-pattern-agent` | run long work in the background | "Run a background task" |
 
 {.small}
-Read them in `prometheus_platform/platform/agents/debug-agents/`. Each is a short, complete example of one platform feature.
+Read them in `prometheus_core/platform/agents/debug-agents/`. Each is a short, complete example of one platform feature.
 
 ---
 
@@ -277,7 +277,7 @@ Raise your hand now. Mentors fix environment problems during the break, so that 
 ### Next: Building an agent (2:45 pm)
 
 {.body}
-The agent template is already in your clone (`prometheus_platform/agent-template/`). Have `uv --version` working.
+The agent template is already in your clone (`prometheus_core/agent-template/`). Have `uv --version` working.
 :::
 ::::
 
@@ -295,7 +295,7 @@ For participants whose platform does not start yet: prerequisites, clone, `.env`
 |---|---|
 | **Docker + Compose v2** | The Makefile calls `docker compose -p prometheus_platform`. The compose files use `include:` and `additional_contexts`, so Compose ≥ 2.20 with BuildKit is needed. Check: `docker info`, `docker compose version`. |
 | **GNU make, git, openssl** | `make up` generates keys with `openssl rand`. |
-| **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. |
+| **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login`. |
 | **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. (With INL network access you can pull it from `containers.github.inl.gov` instead: a PAT with `read:packages`, then `docker login`.) |
 | **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
 | **uv + Python 3.12** | Only for running things outside Docker: tests, a host-run agent, `setup_agent.py`. `uv --version` |
@@ -311,12 +311,12 @@ Podman: the template README mentions it, but the platform Makefile only drives `
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-# your fork (see previous session), default branch dev
-git clone git@github.inl.gov:<you>/prometheus_platform.git
-cd prometheus_platform/platform     # the stack lives here
+# your fork (see previous session), default branch devel
+git clone git@github.com:<you>/prometheus_core.git
+cd prometheus_core/platform     # the stack lives here
 git remote add upstream \
-  git@github.inl.gov:genesis/prometheus_platform.git
-git switch dev
+  git@github.com:idaholab/prometheus_core.git
+git switch devel
 
 # smoke test: can you build the base image?
 make -C ../sdk build-local    # → prometheus_api:local
@@ -347,7 +347,7 @@ On the INL network you can skip `LOCAL_SDK` and pull the pinned image: `docker l
 
 ---
 
-## `cp .env.example .env`: the required values {eyebrow="Bonus · Step 2 · in prometheus_platform/platform"}
+## `cp .env.example .env`: the required values {eyebrow="Bonus · Step 2 · in prometheus_core/platform"}
 
 :::: grid 32 gap=28px
 {.sm}
@@ -396,7 +396,7 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
 | Backend exits: "jwt_secret is not configured" | `BACKEND_JWT_SECRET` is empty or still `change-me…`. Generate a value (an old `CHAINLIT_AUTH_SECRET` is no longer read). |
 | Backend exits during an alembic step | Migrations run in `backend/docker-entrypoint.sh` before uvicorn; `make logs SERVICE=backend`. |
-| SSL / certificate errors during `npm ci` or `pip` on the INL network | TLS inspection. `certs/INL.pem` is checked in (PR #100); pull the latest `dev`. Python images get the bundle from the base image. |
+| SSL / certificate errors during `npm ci` or `pip` on the INL network | TLS inspection. `certs/INL.pem` is checked in (PR #100); pull the latest `devel`. Python images get the bundle from the base image. |
 | `network … has active endpoints` on `make up` | An external agent is still attached to `prometheus_platform_agent-network`. Stop it first (`make down` in the agent dir). |
 | Build killed / exit 137 | Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy). |
 | Behind a corporate proxy: downloads time out | Set `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`. They are **build** args; add `backend,admin-db` and your agent names to `NO_PROXY`. |
@@ -490,7 +490,7 @@ Pulled new DeepLynx changes? `docker compose up --build`.
 |||
 
 {.small}
-**⑥** In `prometheus_platform/platform/.env`:
+**⑥** In `prometheus_core/platform/.env`:
 
 ```text {.sm}
 DEEPLYNX_KEY=…
@@ -629,7 +629,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 :::
 
 {.tiny}
-Documented but unused on `dev`: `FRONTEND_URL`, `LOCAL_CERT_FILE`/`CERT_FILE`. OIDC is now configured in Admin › Identity Providers.
+Documented but unused on `devel`: `FRONTEND_URL`, `LOCAL_CERT_FILE`/`CERT_FILE`. OIDC is now configured in Admin › Identity Providers.
 
 ---
 
@@ -737,7 +737,7 @@ make PROMETHEUS_API_BASE_IMAGE_HASH=latest up
 ```
 
 {.small}
-Then read `sdk/docs/agent/AGENT_MIGRATIONS.md`. The pin and `latest` can differ: `latest` moves with every SDK change merged to `dev`. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
+Then read `sdk/docs/agent/AGENT_MIGRATIONS.md`. The pin and `latest` can differ: `latest` moves with every SDK change merged to `devel`. The client-agent's loop needs LLM tool calling (≥ v0.13.0), so don't pin lower.
 :::
 
 ::: card
@@ -834,11 +834,11 @@ Your agent image adds only your own dependencies. That is why builds are small, 
 | `test-integration`, `test-infra` | against running containers |
 | `test-system` | full system (needs `PROMETHEUS_SYSTEM_TESTING=true`) |
 | `react-dev`, `react-build`, `react-check` | frontend on the host |
-| `build-plain` | **broken** on dev (undefined variable) |
+| `build-plain` | **broken** on devel (undefined variable) |
 :::
 
 {.small}
-Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `PROMETHEUS_API_BASE_IMAGE_HASH`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_platform`.
+Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `PROMETHEUS_API_BASE_IMAGE_HASH`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_core`.
 
 ---
 
@@ -1014,7 +1014,7 @@ Agent code asks for a **flavor** (`llm.medium(…)`). The deployment chooses a *
 The platform default is `registry`: `proxy_url: os.environ/REGISTRY_URL`, so every call goes to **LiteLLM** at `http://litellm:4000/v1/chat/completions` with `model=<flavor>`.
 
 ::: callout warn
-With the default `registry` profile, flavors are looked up in the platform's LiteLLM proxy. Its `litellm_config.yaml` on `dev` currently defines only `medium` (→ `anthropic/claude-sonnet-4-6`). Add the other aliases there (right), or switch to a profile such as `inl_litellm`, which defines all six. A flavor with no model behind it raises `LLMAliasError`.
+With the default `registry` profile, flavors are looked up in the platform's LiteLLM proxy. Its `litellm_config.yaml` on `devel` currently defines only `medium` (→ `anthropic/claude-sonnet-4-6`). Add the other aliases there (right), or switch to a profile such as `inl_litellm`, which defines all six. A flavor with no model behind it raises `LLMAliasError`.
 :::
 ::::
 
@@ -1024,7 +1024,7 @@ With the default `registry` profile, flavors are looked up in the platform's Lit
 
 ::: col
 ```yaml {.sm hl=7-15}
-# prometheus_platform/platform/litellm_config.yaml
+# prometheus_core/platform/litellm_config.yaml
 model_list:
   - model_name: medium
     litellm_params:

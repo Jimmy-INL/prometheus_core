@@ -9,7 +9,7 @@ index:
   blurb: Where your code goes (<code>genesis/hackathon</code>), the branching model, forking, the daily loop with <code>git pull --rebase</code>, conflicts and force-pushes, commits, PRs with JIRA, review, the practice PR.
 ---
 
-# GitHub overview &<br>PR workflow {.title kicker="Day 1 · 1:00 pm" pills="All participants | 45 min | github.inl.gov/genesis"}
+# GitHub overview &<br>PR workflow {.title kicker="Day 1 · 1:00 pm" pills="All participants | 45 min | github.com"}
 Where your code goes, how to branch and rebase, and how to get a PR reviewed and merged.
 
 ---
@@ -71,7 +71,7 @@ hackathon/                # github.inl.gov/genesis/hackathon
 
 - Team `open` has **write** access. Work in your own **fork** (or a branch) and open PRs to `genesis/hackathon`.
 - `main` is protected: changes reach it only through a PR with one approval, and force-pushes are blocked.
-- `genesis/prometheus_platform` (the platform, the SDK in `sdk/`, the template in `agent-template/`) is read-only for this hackathon. Contributing to the platform later? **Always fork it**: a ruleset allows no branches there except `dev`.
+- `idaholab/prometheus_core` (the platform, the SDK in `sdk/`, the template in `agent-template/`) is read-only for this hackathon. Contributing to the platform later? **Always fork it**: a ruleset allows no branches there except `devel`.
 :::
 
 ---
@@ -81,7 +81,7 @@ Git Flow: a production branch, an integration branch, short-lived feature branch
 
 ---
 
-##  {eyebrow="Our model · develop = dev in prometheus_platform" content="center" content-style="flex:1; min-height:0" nofit style="gap:10px"}
+##  {eyebrow="Our model · develop = devel in prometheus_core" content="center" content-style="flex:1; min-height:0" nofit style="gap:10px"}
 
 <img alt="Git Flow branching strategy diagram" class="fit" src="assets/git_branches.png" style="max-height:740px"/>
 
@@ -93,14 +93,14 @@ Git Flow: a production branch, an integration branch, short-lived feature branch
 | Branch | Who touches it |
 |---|---|
 | `feature/<desc>` | **you**: one per piece of work, in your fork {.hl} |
-| `main` (hackathon, api, template)<br>`dev` (platform) | the integration branch: PRs only |
+| `main` (hackathon, api, template)<br>`devel` (platform) | the integration branch: PRs only |
 | `release/*`, `hotfix/*`, platform `main` | maintainers, for releases |
 
 |||
 
 - Name branches `feature/<team>-<what>`: `feature/neutron-plot-skill`.
 - Branch from the latest integration branch, keep it short-lived, delete it after the merge.
-- Never commit to `main` or `dev` directly.
+- Never commit to `main` or `devel` directly.
 :::
 
 ---
@@ -109,7 +109,6 @@ Git Flow: a production branch, an integration branch, short-lived feature branch
 
 :::: cols 1.35fr 1fr gap=28px
 ```bash {.sm}
-export GH_HOST=github.inl.gov
 gh repo fork genesis/hackathon --clone=false
 
 cd ~/prometheus
@@ -168,13 +167,13 @@ gh pr create --repo genesis/hackathon --base main \
 5. **Open a PR** to genesis
 
 {.small}
-For the platform repo the integration branch is `dev`: `git pull --rebase upstream dev`, `--base dev`.
+For the platform repo the integration branch is `devel`: `git pull --rebase upstream devel`, `--base devel`.
 :::
 
 ---
 
 ## `git pull --rebase upstream main`, visually {eyebrow="What rebase does"}
-> In the hackathon repo. For the platform the same picture applies to `upstream/dev`.
+> In the hackathon repo. For the platform the same picture applies to `upstream/devel`.
 
 <svg aria-label="Rebase diagram" height="380" role="img" viewbox="0 0 1400 380" width="1400">
 <style>
@@ -371,7 +370,6 @@ The Day 2 gate needs one PR **approved by someone outside your team**. Pair up w
 :::: grid 2 gap=30px
 ```bash {.xs}
 cd ~/prometheus
-export GH_HOST=github.inl.gov
 gh repo fork genesis/hackathon --clone=false
 git clone git@github.inl.gov:<you>/hackathon.git
 cd hackathon
@@ -414,8 +412,7 @@ Note: Assumes genesis/hackathon main has a ruleset (1 approval, no force-push) b
 ::: grid 3 gap=18px
 ```bash {.xs}
 # setup (once)
-export GH_HOST=github.inl.gov
-gh auth login --hostname github.inl.gov
+gh auth login
 gh repo fork genesis/<repo> --clone=false
 git clone git@github.inl.gov:<you>/<repo>.git
 git remote add upstream \
@@ -431,7 +428,7 @@ git config rerere.enabled true
 # every feature
 git fetch upstream
 git switch -c feature/<desc> upstream/main
-#   (upstream/dev for the platform)
+#   (upstream/devel for the platform)
 git commit -m "Imperative subject"
 git pull --rebase upstream main
 git push -u origin HEAD
@@ -466,39 +463,38 @@ Next: **Your local platform** (1:45 pm). Keep your platform running; we look at 
 ---
 
 # Bonus: catch-up slides {.section .bonus num="+"}
-For participants who could not finish the homework: GitHub access, tokens, and fresh clones.
+For participants who could not finish the homework: GitHub access, SSH keys, and fresh clones.
 
 ---
 
-## Getting in: org, git, and the base image {eyebrow="Bonus · Access"}
+## Getting in: account, git, and the base image {eyebrow="Bonus · Access"}
 
 :::: grid 3
-::: card tag="1 · org membership"
-#### Access through the `open` team
+::: card tag="1 · github.com account"
+#### Access to `prometheus_core`
 
 {.small}
-The org default permission is **none**. Team `open` (88 members) gives access to 20 shared repos: the core three, agent-sandbox-mcp, gmsh, bim, requirements, component agents, and `hackathon` (with **write**). Some agent repos need extra access; repo admins grant it.
+You need a **github.com** account with read access to `idaholab/prometheus_core`. Give the organizer your username before Day 1.
 
 {.small}
-You **fork** and open PRs from your fork. For the platform this is required (only `dev` may exist as a branch there).
+You **fork** it and open PRs from your fork; you cannot push branches to `idaholab/prometheus_core`.
 :::
 
 ::: card tag="2 · git transport"
 #### SSH key or gh credential helper
 
 {.small}
-Add a key at `github.inl.gov/settings/keys`, then:
+Add a key at `github.com/settings/keys`, then:
 
 ```text {.xs}
-ssh -T git@github.inl.gov
+ssh -T git@github.com
 ```
 
 {.small}
 Or use HTTPS and let `gh` handle credentials:
 
 ```bash {.xs}
-gh auth login --hostname github.inl.gov
-export GH_HOST=github.inl.gov
+gh auth login
 ```
 :::
 
@@ -518,7 +514,7 @@ On the INL network you can pull it instead: `docker login containers.github.inl.
 ::::
 
 ::: callout info
-**`gh`, the GitHub CLI**, is used in these slides. Install it with `brew install gh` (needs admin rights), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin` (no admin). Then `gh auth login --hostname github.inl.gov`. Without `gh`: the **Fork** button and **Compare & pull request** on the web do the same.
+**`gh`, the GitHub CLI**, is used in these slides. Install it with `brew install gh` (needs admin rights), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin` (no admin). Then `gh auth login`. Without `gh`: the **Fork** button and **Compare & pull request** on the web do the same.
 :::
 
 ::: callout warn
@@ -527,25 +523,24 @@ No access yet? Tell a mentor now. Repo admins can add you; waiting until 3:30 pm
 
 ---
 
-## Fresh start: fork, then clone `origin` is yours, `upstream` is genesis {eyebrow="Bonus · Fork & clone conventions"}
+## Fresh start: fork, then clone. `origin` is yours, `upstream` is idaholab {eyebrow="Bonus · Fork & clone conventions"}
 
 :::: grid 2 gap=30px
 ```bash {.sm}
 # 1. fork in the web UI, or:
-export GH_HOST=github.inl.gov
-gh repo fork genesis/prometheus_platform --clone=false
+gh repo fork idaholab/prometheus_core --clone=false
 
 # 2. clone YOUR fork
-git clone git@github.inl.gov:<you>/prometheus_platform.git
-cd prometheus_platform
+git clone git@github.com:<you>/prometheus_core.git
+cd prometheus_core
 
 # 3. add the org repo as "upstream"
 git remote add upstream \
-  git@github.inl.gov:genesis/prometheus_platform.git
+  git@github.com:idaholab/prometheus_core.git
 git fetch upstream
 git remote -v
-#   origin    …:<you>/prometheus_platform  (push here)
-#   upstream  …:genesis/prometheus_platform (PR target)
+#   origin    …:<you>/prometheus_core  (push here)
+#   upstream  …:idaholab/prometheus_core (PR target)
 
 # 4. make rebase the default for pull
 git config pull.rebase true
@@ -558,7 +553,7 @@ git config rebase.autoStash true
 #### Why fork?
 
 {.small}
-**Always fork the platform**: a ruleset blocks creating any branch on `genesis/prometheus_platform` except `dev`, so the PR has to go from `<you>:feature/x` to `genesis:dev`. Forking works the same way for every other genesis repo.
+**Always fork the platform**: you can't push branches to `idaholab/prometheus_core`, so the PR goes from `<you>:feature/x` to `idaholab:devel`. Your team's repo works the same way.
 :::
 
 ::: card
@@ -569,7 +564,7 @@ The template and the SDK live inside the platform repo, so there is nothing else
 
 ```text {.xs}
 ~/prometheus/
-├── prometheus_platform/
+├── prometheus_core/
 │   ├── platform/        # make up here
 │   ├── sdk/
 │   └── agent-template/  # setup_agent.py
@@ -584,15 +579,15 @@ The template and the SDK live inside the platform repo, so there is nothing else
 
 ```bash
 cd ~/prometheus
-git clone git@github.inl.gov:genesis/prometheus_platform.git
+git clone git@github.com:idaholab/prometheus_core.git
 # no SSH key? use HTTPS and let gh handle credentials:
-gh auth login --hostname github.inl.gov
-git clone https://github.inl.gov/genesis/prometheus_platform.git
-ls prometheus_platform    # agent-template  platform  sdk  README.md  CODEOWNERS
+gh auth login
+git clone https://github.com/idaholab/prometheus_core.git
+ls prometheus_core    # agent-template  platform  sdk  README.md  CODEOWNERS
 ```
 
 ::: callout
-The agent template is `prometheus_platform/agent-template/`; there is no separate repo to clone any more. Already cloned `prometheus_agent_template` for an earlier homework? That repo is archived now; use `agent-template/` in the monorepo.
+The agent template is `prometheus_core/agent-template/`; there is no separate repo to clone any more. Already cloned `prometheus_agent_template` for an earlier homework? That repo is archived now; use `agent-template/` in the monorepo.
 :::
 
 ---
@@ -620,7 +615,7 @@ Reference material behind the talk. Skipped in the session; use it when you need
 {.sm}
 - Fork, clone, add `upstream`
 - Branch `feature/<desc>` from the integration branch
-- Stay current with `git pull --rebase upstream dev`
+- Stay current with `git pull --rebase upstream devel`
 - Push with `--force-with-lease` to *your fork*
 :::
 
@@ -635,60 +630,57 @@ Reference material behind the talk. Skipped in the session; use it when you need
 ::::
 
 ::: callout info
-Hands-on is at 3:30 pm: you will open a practice PR to `genesis/hackathon`, the repo where every team's agent lands on Day 2. Nothing today touches the platform's `dev` or `main`.
+Hands-on is at 3:30 pm: you will open a practice PR to `genesis/hackathon`, the repo where every team's agent lands on Day 2. Nothing today touches the platform's `devel` or `main`.
 :::
 
 ---
 
-## `github.inl.gov/genesis` {eyebrow="The organization"}
-> INL's GitHub Enterprise Server. The org profile (`genesis/.github` → `profile/README.md`) lists what matters most.
+## `github.com/idaholab/prometheus_core` {eyebrow="The repository"}
+> The public home of Prometheus: one monorepo on github.com, default branch `devel`.
 
 :::: grid 2 gap=30px
-### ⚙️ Platform: one monorepo {.acc}
-
 ::: card
-#### 🚀 prometheus_platform
+#### 🚀 prometheus_core
 
 {.small}
-Default branch `dev`. Since Oct 9 it holds three directories, each with its own `Makefile` and tests:
+Three directories, each with its own `Makefile` and tests:
 
 {.xs}
 - `platform/`: orchestration, agent registry, frontend, core agents
-- `sdk/`: `prometheus_api`, the agent base class, LLMClient and storage helpers (formerly `genesis/prometheus_api`)
-- `agent-template/`: start your own agent here (formerly `genesis/prometheus_agent_template`)
+- `sdk/`: `prometheus_api`, the agent base class, LLMClient and storage helpers
+- `agent-template/`: start your own agent here
+- `hackathon/`: these slides, the challenge files, and Claude Code skills for participants
 :::
 
 ::: callout info
-The old repos take no new work (`prometheus_agent_template` is archived), and their commit hashes were rewritten in the monorepo.
+It replaces the internal repos `prometheus_platform`, `prometheus_api` and `prometheus_agent_template`. Their history was carried over, with rewritten commit hashes.
 :::
 
 |||
 
-### 🔗 Links on the profile {.acc}
+### What else you may hear about {.acc}
 
-| Link | Used for |
+| Where | What |
 |---|---|
-| 📚 Prometheus Wiki (Confluence) | Software design and planning documents |
-| 📖 Confluence | Project management |
-| 🗂️ JIRA project `PPLT` | Issues and work items |
-| 📦 Proposal Box | Proposal documents |
+| JIRA project `PPLT` | Issues and work items; **reference the task in project PRs** (e.g. `PPLT-123`) |
+| Confluence, space "Prometheus" | Design and planning documents |
+| `github.inl.gov/genesis` | Other agent repos (gmsh, bim, …); INL network only |
 
 ::: callout
-27 repos in the org. All are private except `.github` (the org profile). Container images are published at `containers.github.inl.gov/genesis/<repo>`. Work is tracked in JIRA project `PPLT`: **reference the JIRA task in every PR** (e.g. `PPLT-123`).
+For the hackathon you need only `prometheus_core` and a github.com account. Your team's agent lives in a repo of your own (next slides).
 :::
 ::::
 
 ---
 
-## What is in the org {eyebrow="Repository map"}
+## Agent repos on the INL network {eyebrow="Repository map · github.inl.gov/genesis"}
 
 ::: grid 3 gap=16px
 #### Core platform {.acc}
 
 <table class="t xs">
-<tr><td><b>prometheus_platform</b></td><td>default <code>dev</code>: <code>platform/</code>, <code>sdk/</code> (v0.13.0), <code>agent-template/</code></td></tr>
-<tr><td>prometheus_api, prometheus_agent_template</td><td>superseded by the monorepo</td></tr>
-<tr><td>.github</td><td>org profile + wiki bot</td></tr>
+<tr><td><b>prometheus_core</b></td><td>github.com/idaholab, default <code>devel</code>: <code>platform/</code>, <code>sdk/</code> (v0.13.0), <code>agent-template/</code>, <code>hackathon/</code></td></tr>
+<tr><td>prometheus_platform, prometheus_api, prometheus_agent_template</td><td>superseded by the monorepo</td></tr>
 </table>
 
 <h4 class="acc" style="margin-top:6px">Tooling</h4>
@@ -731,7 +723,7 @@ The old repos take no new work (`prometheus_agent_template` is archived), and th
 <tr><td>multiphysics-uq-agent</td><td>empty</td></tr>
 </table>
 
-<div class="callout" style="font-size:16px">Only <b>prometheus_platform</b> has a <code>dev</code> branch. Every other repo takes PRs directly into <code>main</code>. Some repos listed here are not readable through the <code>open</code> team; ask if you need one.</div>
+<div class="callout" style="font-size:16px">Everything except <b>prometheus_core</b> is in <code>github.inl.gov/genesis</code> and needs INL network access. Those repos take PRs directly into <code>main</code>.</div>
 :::
 
 ---
@@ -774,7 +766,7 @@ For IDE and tests outside Docker, install the SDK from your clone:
 
 ```bash {.xs}
 uv pip install -e \
-  ~/prometheus/prometheus_platform/sdk
+  ~/prometheus/prometheus_core/sdk
 ```
 :::
 ::::
@@ -801,7 +793,7 @@ uv pip install -e \
 #### Tag schemes in the registry {.acc}
 
 {.sm}
-- **CI** (push to `dev` touching `sdk/**`): `:<YYYYMMDD>-<sha7>` and `:latest`, multi-arch (amd64 + arm64). The image keeps the name `prometheus_api`.
+- **CI** (push to `devel` touching `sdk/**`): `:<YYYYMMDD>-<sha7>` and `:latest`, multi-arch (amd64 + arm64). The image keeps the name `prometheus_api`.
 - **Manual** `make build-push`: `:<git short sha>`, which is the format the pins use.
 - It is a **tag**, not a sha256 digest. The variable is called `…_HASH` because the tag is a commit hash.
 
@@ -820,7 +812,7 @@ Running `docker compose up` in the platform **without** `make` gives an empty ta
 
 ::: grid 3 gap=18px
 ```text {.xs}
-platform/  (prometheus_platform, dev)
+platform/  (prometheus_core, dev)
 ├── Makefile             # up, restart, logs…
 ├── docker-compose.yml   # core services
 ├── .env.example
@@ -895,7 +887,7 @@ Each subtree has its own toolchain: `uv` + `ruff` + `mypy` + `pytest` for Python
 | Branch | Cut from → merges into | Rules |
 |---|---|---|
 | **`main`** | merges only | Production. Never commit directly. Every merge gets a version tag (`v1.0`, `v1.1`…). If it is in `main`, it is deployable. |
-| **`develop`**<br><span class="small">= <code>dev</code> in prometheus_platform</span> | integration branch | All day-to-day work flows through here. It is "what the next release will look like": not always stable, but **always buildable**. {.hl} |
+| **`develop`**<br><span class="small">= <code>devel</code> in prometheus_core</span> | integration branch | All day-to-day work flows through here. It is "what the next release will look like": not always stable, but **always buildable**. {.hl} |
 | **`feature/<desc>`** | `develop` → `develop` | Short-lived, one piece of work, deleted after merge. Never touches `main`. Name it `feature/login`, `feature/mesh-qa-agent`… |
 | **`release/<x.y>`** | `develop` → `main` **and** `develop` | Freezes scope. Only bug fixes, docs, and version bumps. The double merge is critical and easy to forget. |
 | **`hotfix/<desc>`** | `main` → `main` **and** `develop` | The emergency lane, the only branch cut from `main`. Skipping the merge back to `develop` makes the bug resurface in the next release. |
@@ -911,44 +903,43 @@ Only `release/*` and `hotfix/*` ever merge into `main`, and both always merge ba
 ::: grid 2 gap=30px
 | Repo | Integration branch | Your PR base |
 |---|---|---|
-| **prometheus_platform** (`platform/`, `sdk/`, `agent-template/`) | `dev` (default branch) | `--base dev` {.hl} |
-| agent repos (gmsh_agent…) | `main` | `--base main` |
-| **genesis/hackathon** (practice + team agents) | `main` | `--base main` {.hl} |
+| **prometheus_core** (`platform/`, `sdk/`, `agent-template/`) | `devel` (default branch) | `--base devel` {.hl} |
+| your team's agent repo | `main` | `--base main` {.hl} |
+| agent repos on github.inl.gov (gmsh_agent…) | `main` | `--base main` |
 
 {.small}
-In the commands on the next slides, substitute `main` for `dev` when you work on a repo without a `dev` branch.
+In the commands on the next slides, substitute `main` for `devel` when you work on a repo without a `devel` branch.
 
 |||
 
 #### Where we are today {.acc}
 
 {.sm}
-- Platform `dev` carries all recent work. `main` has not been updated since April 2026: the first formal release is still ahead of us.
+- `devel` carries all recent work; `main` lags behind. The first formal release is still ahead of us.
 - There are no version tags or `release/*` / `hotfix/*` branches yet. SDK versions live in `sdk/pyproject.toml` (0.13.0) plus `sdk/docs/agent/AGENT_MIGRATIONS.md`.
-- Existing branch names are mixed (`admin_setup_ui`, `fix/certs`, `task/…`, and `feat/…` in api). **New branches: `feature/<short-desc>`**.
+- Existing branch names are mixed (`admin_setup_ui`, `fix/certs`, `task/…`, `feat/…`). **New branches: `feature/<short-desc>`**.
 :::
 
 ---
 
-## You cloned `genesis` directly. Now add your fork. {eyebrow="Fork & clone conventions"}
+## You cloned `idaholab` directly. Now add your fork. {eyebrow="Fork & clone conventions"}
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-# in your existing clone of genesis/prometheus_platform
-cd ~/prometheus/prometheus_platform
-export GH_HOST=github.inl.gov
+# in your existing clone of idaholab/prometheus_core
+cd ~/prometheus/prometheus_core
 
 # 1. the org repo becomes "upstream"
 git remote rename origin upstream
 
 # 2. create your fork and make it "origin"
-gh repo fork genesis/prometheus_platform --clone=false
+gh repo fork idaholab/prometheus_core --clone=false
 git remote add origin \
-  git@github.inl.gov:<you>/prometheus_platform.git
+  git@github.com:<you>/prometheus_core.git
 git fetch --all
 git remote -v
-#   origin    …:<you>/prometheus_platform  (push here)
-#   upstream  …:genesis/prometheus_platform (PR target)
+#   origin    …:<you>/prometheus_core  (push here)
+#   upstream  …:idaholab/prometheus_core (PR target)
 
 # 3. make rebase the default for pull
 git config pull.rebase true
@@ -961,7 +952,7 @@ git config rebase.autoStash true
 #### Why fork?
 
 {.small}
-**Always fork the platform**: a ruleset blocks creating any branch on `genesis/prometheus_platform` except `dev`, so the PR has to go from `<you>:feature/x` to `genesis:dev`. Forking works the same way for every other genesis repo.
+**Always fork the platform**: you can't push branches to `idaholab/prometheus_core`, so the PR goes from `<you>:feature/x` to `idaholab:devel`. Your team's repo works the same way.
 :::
 
 ::: card
@@ -972,7 +963,7 @@ The template and the SDK live inside the platform repo, so there is nothing else
 
 ```text {.xs}
 ~/prometheus/
-├── prometheus_platform/
+├── prometheus_core/
 │   ├── platform/        # make up here
 │   ├── sdk/
 │   └── agent-template/  # setup_agent.py
@@ -988,22 +979,22 @@ The template and the SDK live inside the platform repo, so there is nothing else
 ```bash {.sm hl=10}
 # start from the latest integration branch
 git fetch upstream
-git switch -c feature/mesh-qa-agent upstream/dev
+git switch -c feature/mesh-qa-agent upstream/devel
 
 # work, commit in small logical steps
 git add -p
 git commit -m "Add mesh quality report skill"
 
 # stay current: replay your commits on top
-git pull --rebase upstream dev
+git pull --rebase upstream devel
 
 # run the local checks (next slides), then publish
 git push -u origin HEAD                # first push
 git push --force-with-lease            # after a rebase
 
-# open the PR against genesis
-gh pr create --repo genesis/prometheus_platform \
-  --base dev --head <you>:feature/mesh-qa-agent \
+# open the PR against idaholab
+gh pr create --repo idaholab/prometheus_core \
+  --base devel --head <you>:feature/mesh-qa-agent \
   --title "Add mesh quality report skill" \
   --body-file pr.md
 ```
@@ -1017,7 +1008,7 @@ gh pr create --repo genesis/prometheus_platform \
 #### Why rebase, not merge?
 
 {.small}
-Your branch stays a straight line of *your* commits on top of the current `dev`. Reviewers see only your change, the history has no "Merge branch 'dev' into …" noise, and conflicts are resolved once, commit by commit.
+Your branch stays a straight line of *your* commits on top of the current `devel`. Reviewers see only your change, the history has no "Merge branch 'devel' into …" noise, and conflicts are resolved once, commit by commit.
 :::
 
 ::: card
@@ -1028,7 +1019,7 @@ A rebase rewrites your branch, so the push must be forced. `--force-with-lease` 
 :::
 
 ::: callout warn
-Force-pushing is only for **your own feature branch**. The protected branches (platform `dev`, hackathon `main`) reject force-pushes, and nobody force-pushes shared branches anyway.
+Force-pushing is only for **your own feature branch**. Never force-push `devel` or a team repo's `main`.
 :::
 ::::
 
@@ -1046,7 +1037,7 @@ The repos use **rulesets** that interact with force-pushes:
 - **All review threads resolved** before merge.
 
 ::: callout good
-**Recommended rhythm**<br>① Rebase onto `upstream/dev` and tidy *before* requesting review.<br>② During review, push **new commits** that address comments, so reviewers see the delta.<br>③ Rebase once more only if `dev` moved and there are conflicts, then ask for a final approval.
+**Recommended rhythm**<br>① Rebase onto `upstream/devel` and tidy *before* requesting review.<br>② During review, push **new commits** that address comments, so reviewers see the delta.<br>③ Rebase once more only if `devel` moved and there are conflicts, then ask for a final approval.
 :::
 
 |||
@@ -1056,9 +1047,8 @@ The repos use **rulesets** that interact with force-pushes:
 {.sm}
 | Repo | Allowed merge methods |
 |---|---|
-| prometheus_platform | merge commit, squash, rebase |
-| prometheus_api | merge commit, squash (rebase-merge **off**); head branch auto-deleted |
-| template, gmsh, agent-sandbox-mcp, hackathon | all three |
+| prometheus_core | merge commit, squash, rebase |
+| your team repo | your choice; merge commits keep the history |
 
 {.small}
 In practice most PRs land as **merge commits** ("Merge pull request #N from …"). A rebased feature branch makes that merge commit clean: the history shows your commits intact, followed by one merge.
@@ -1076,11 +1066,11 @@ In practice most PRs land as **merge commits** ("Merge pull request #N from …"
 - Lockfile changed? Commit `uv.lock` with the `pyproject.toml` change.
 
 {.small}
-Based on `prometheus_platform/AGENTS.md` (subject under 72 chars, body explains why, no "update file"/"fix bug") plus the style of recent commits. The platform AGENTS.md also asks you to prefix any PR review reply written by a coding agent with 🤖.
+Based on `platform/AGENTS.md` (subject under 72 chars, body explains why, no "update file"/"fix bug") plus the style of recent commits. The platform AGENTS.md also asks you to prefix any PR review reply written by a coding agent with 🤖.
 
 |||
 
-#### Real subjects from the org repos {.acc}
+#### Real subjects from prometheus_core {.acc}
 
 ```text {.sm}
 Add per-user chat history: list, rename,
@@ -1111,10 +1101,9 @@ Avoid: `wip`, `fix`, `changes`, `address comments` as the only description of a 
 | `platform/agents/<name>` | `cd agents/<name> && uv run pytest` | client-agent: <code class="wrap">PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -p pytest_asyncio.plugin tests</code> |
 | **`sdk/`** | `make check && make test`<br>`make hooks` (once) | `check` = ruff lint + ruff format --check + mypy. The hooks run ruff on commit and mypy + unit tests on push. |
 | `agent-template/` | `make check && make test` | Tests `setup_agent.py` itself. |
-| agent-sandbox-mcp | `make check && make test` | `test-image` and `test-system` need Docker. |
 
 ::: callout warn
-Outside `sdk/`, **these local checks are the only CI**: nothing automated runs for `platform/`, `agent-template/` or the agent repos.
+Your team repo has **no CI**: these local checks are all there is. prometheus_core runs them in CI as well.
 :::
 
 ---
@@ -1122,14 +1111,37 @@ Outside `sdk/`, **these local checks are the only CI**: nothing automated runs f
 ## What runs where {eyebrow="Continuous integration"}
 
 :::: grid 2 gap=30px
-#### `sdk/` · `.github/workflows/sdk-tests.yml` {.acc}
+#### prometheus_core · `.github/workflows/` {.acc}
 
 {.small}
-On a push to `dev` or a PR to `dev`/`main` that touches `sdk/**`, on self-hosted runners (group `genesis`):
+On GitHub-hosted runners, for PRs to `devel` and `main`:
 
 {.sm}
-| Job (required check) | Does |
+| Workflow | Does |
 |---|---|
+| `test.yml` | gitleaks (no secrets in the new commits), ruff, SDK pytest on Python 3.12–3.14, SDK and platform Docker builds, backend and frontend checks |
+| `docs.yml` | builds the docs site |
+
+{.small}
+Run the local checks on the previous slide before you push; CI repeats them.
+
+|||
+
+#### Your team repo {.acc}
+
+{.sm}
+| What | CI |
+|---|---|
+| The scaffolded agent | **none** by default. `uv run pytest` and `uv run ruff check .` on your laptop are the checks the judges repeat. |
+
+::: callout warn
+**Fork PRs** to prometheus_core may need a maintainer to approve the workflow run before the checks report.
+:::
+::::
+
+Note: test.yml is on the actions branch of prometheus_core and lands on devel with the CI change.
+
+---|---|
 | Python 3.12 / 3.13 / 3.14 | `uv sync --frozen` + `pytest` in pinned uv images |
 | Docker prepare | computes the tag `<YYYYMMDD>-<sha7>` and the cache URI |
 | Docker amd64 / arm64 | builds the image and runs pytest *inside* it against the installed package |
@@ -1155,37 +1167,38 @@ There is no ruff or mypy job yet, so run `make check` yourself.
 
 ---
 
-## Rulesets on the protected branches {eyebrow="Branch protection"}
+## Who can merge where {eyebrow="Branch protection"}
 
-| Branch | Approvals | Other review rules | Required checks | Push rules |
-|---|---|---|---|---|
-| **prometheus_platform `dev`** (all three directories) | 1 | dismiss stale · last-push approval · threads resolved | — | no force-push, no delete {.hl} |
-| prometheus_platform, any other branch | — | ruleset "no new branches": only `dev` may be created | — | fork instead |
-| **hackathon `main`** | 1 | — | — | no force-push |
-| gmsh_agent, agent-sandbox-mcp `main` | — | unprotected | — | — |
+| Branch | Who merges | How you contribute |
+|---|---|---|
+| **prometheus_core `devel`** | the maintainers, after review | fork, then a PR to `idaholab:devel` {.hl} |
+| prometheus_core `main` | maintainers, for releases | — |
+| **your team repo `main`** | the repo owner, after reviewing the PR | teammates fork it and open PRs {.hl} |
 
 :::: grid 3
 ::: card
 #### PR required
 
 {.small}
-No one pushes to platform `dev` or hackathon `main` directly, not even admins (no bypass actors).
+Nobody pushes to `devel` or a team repo's `main` directly. Every change arrives as a PR from a fork.
 :::
 
 ::: card
 #### Someone else approves
 
 {.small}
-You cannot approve your own PR, and the last pusher cannot approve either. Pair up with another team for reviews.
+You cannot approve your own PR. In a team repo the owner reviews everyone's PRs, and a teammate reviews the owner's.
 :::
 
 ::: card
 #### No PR templates
 
 {.small}
-There is no template in any repo, so use the structure on the next slide.
+There is no template, so use the structure on the next slide.
 :::
 ::::
+
+Note: Branch protection on prometheus_core devel is not configured yet; describe it as the working agreement.
 
 ---
 
@@ -1237,7 +1250,7 @@ unchecked; bad elements fail late.
 
 ```bash {.xs}
 gh pr view --web          # open in browser
-gh pr checks              # CI status (api only)
+gh pr checks              # CI status
 gh pr ready               # draft → ready
 ```
 :::
@@ -1262,7 +1275,7 @@ gh pr ready               # draft → ready
 
 {.sm}
 - Be concrete: file:line, the scenario that breaks, ideally a failing test.
-- Check the tests enforce what they claim. In the api repo, reviewers check that tests citing a `REQ-…` ID actually test it.
+- Check the tests enforce what they claim. In `sdk/`, reviewers check that tests citing a `REQ-…` ID actually test it.
 - Check the lockfile, the version bump, and the migration note.
 - Separate "must fix" from "nit".
 :::

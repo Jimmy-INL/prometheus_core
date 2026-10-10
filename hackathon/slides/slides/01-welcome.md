@@ -91,7 +91,7 @@ We assume your platform already starts with `make up` and DeepLynx is set up. No
 :::
 ::::
 
-Note: The platform repo admins on github.inl.gov are the people who can grant write access and merge.
+Note: The prometheus_core maintainers are the people who can merge platform PRs.
 
 ---
 
@@ -264,7 +264,7 @@ How to use each one: the agent session at 2:45 pm.
 
 :::: cols 1.15fr 1fr gap=28px
 ```text {.sm}
-prometheus_platform/      # genesis/prometheus_platform, dev
+prometheus_core/          # idaholab/prometheus_core, devel
 ├── platform/             # the stack: make up here
 ├── sdk/                  # prometheus_api (in your image)
 └── agent-template/       # setup_agent.py
@@ -277,7 +277,7 @@ hackathon/                # genesis/hackathon, main
 |||
 
 ::: card tag="one clone"
-### prometheus_platform
+### prometheus_core
 
 {.small}
 A monorepo since Oct 9: the platform, the SDK (`sdk/`, formerly `prometheus_api`), and the agent template (`agent-template/`, formerly `prometheus_agent_template`). Run commands from inside the directory you work on.
@@ -303,9 +303,9 @@ The code moves fast and some docs lag behind. When a doc disagrees with these sl
 | What | Where |
 |---|---|
 | The mentors | in the room, all day |
-| Agent developer guide | `sdk/docs/agent/GUIDE.md` in `prometheus_platform` |
+| Agent developer guide | `sdk/docs/agent/GUIDE.md` in `prometheus_core` |
 | These slides | `index.html`; every deck has an appendix (key `A`) |
-| Org and repos | `github.inl.gov/genesis` |
+| Platform repo | `github.com/idaholab/prometheus_core` |
 | Issues and tasks | JIRA project `PPLT` |
 | Chat | Teams |
 
@@ -342,14 +342,14 @@ For participants who could not finish the homework. Work through these with a me
 {widths="330px|430px|"}
 | Homework item | Quick check | If it fails |
 |---|---|---|
-| Access to `github.inl.gov/genesis` | open `github.inl.gov/genesis/prometheus_platform` in the browser | ask the organizer to add you to the org; deck 02 bonus |
+| Access to `idaholab/prometheus_core` | open `github.com/idaholab/prometheus_core` in the browser | ask the organizer to add your github.com account; deck 02 bonus |
 | Docker installed and running | `docker info`, `docker compose version` (≥ 2.20) | install Docker Desktop and start it |
-| Platform cloned | `ls ~/prometheus/prometheus_platform` shows `platform`, `sdk`, `agent-template` | deck 02 bonus (clone commands) |
-| Base image builds | `LOCAL_SDK=true` in `platform/.env`, then `make base-image` in `prometheus_platform/platform` | deck 03 bonus (step 1) |
-| Platform starts | `make up` in `prometheus_platform/platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
+| Platform cloned | `ls ~/prometheus/prometheus_core` shows `platform`, `sdk`, `agent-template` | deck 02 bonus (clone commands) |
+| Base image builds | `LOCAL_SDK=true` in `platform/.env`, then `make base-image` in `prometheus_core/platform` | deck 03 bonus (step 1) |
+| Platform starts | `make up` in `prometheus_core/platform`, then `http://localhost:5150` | deck 03 bonus (`.env`, "the stack won't start") |
 | DeepLynx (if no `deeplynx.inl.gov` access) | `http://localhost:3000` shows the DeepLynx UI | deck 03 bonus (local DeepLynx) |
 | `uv` (for the agent session) | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| `gh` (decks 02 and 05) | `gh auth status --hostname github.inl.gov` | `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login --hostname github.inl.gov`. No `gh`? Use the Fork and "Compare & pull request" buttons on the web. |
+| `gh` (decks 02 and 05) | `gh auth status` | `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login`. No `gh`? Use the Fork and "Compare & pull request" buttons on the web. |
 
 ---
 
@@ -437,7 +437,7 @@ Any service that speaks A2A and publishes a card can join. It can live in the pl
 
 ---
 
-## What actually runs: `docker compose` on branch `dev` {eyebrow="Concrete architecture"}
+## What actually runs: `docker compose` on branch `devel` {eyebrow="Concrete architecture"}
 
 <div class="dg" style="gap:0">
 <div class="row" style="justify-content:center">
@@ -488,7 +488,7 @@ All containers share one bridge network, `prometheus_platform_agent-network`. Th
 | **agents/\*** | per agent | `agents/<name>/docker-compose.yml` | — (8008 artifact-debug) | Included automatically by `make generate` |
 
 {.tiny}
-Source: `platform/docker-compose.yml` on `dev`. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in `frontend/` plus the FastAPI `backend/` replace it.
+Source: `platform/docker-compose.yml` on `devel`. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in `frontend/` plus the FastAPI `backend/` replace it.
 
 ---
 
@@ -632,7 +632,7 @@ Older docs show v0.3 syntax (`message/send`, `role: "user"`, `params.context.ski
 | **DeepLynx key + secret** | Agents/backend → DeepLynx | `DEEPLYNX_KEY/SECRET/ORG_ID/PROJECT_ID`. They are global by default (`CREDENTIAL_BROKER=env`), or per user via Vault. |
 
 {.tiny}
-Reference: `platform/docs/docs/dev-docs/encryption-and-keys.md` and `multi-user-setup.md`, both current on `dev`.
+Reference: `platform/docs/docs/dev-docs/encryption-and-keys.md` and `multi-user-setup.md`, both current on `devel`.
 
 ---
 
@@ -697,7 +697,7 @@ The route key is the card `name` lowercased with spaces turned into hyphens. The
 
 ---
 
-## Agents living in their own repos (github.inl.gov/genesis) {eyebrow="The wider ecosystem"}
+## Agents living in their own repos (INL network only) {eyebrow="The wider ecosystem"}
 
 :::: grid 3 gap=14px
 ::: card
@@ -764,6 +764,8 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 :::
 ::::
 
+Note: These repos are in github.inl.gov/genesis and need INL network access and org membership. They are not part of the public prometheus_core repo.
+
 ---
 
 ## How the code is organized {eyebrow="One monorepo, three directories"}
@@ -772,7 +774,7 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 <div class="row" style="justify-content:center">
 <div class="box navy" style="width:560px"><b>sdk/</b> <span class="small">(formerly <code>prometheus_api</code>)</span><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
 </div>
-<div class="arrow-v"><span>CI on dev builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
+<div class="arrow-v"><span>CI on devel builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
 <div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>. Its <code>docker-compose.yml</code> builds on <code>latest</code> unless <code>PROMETHEUS_API_BASE_IMAGE_HASH</code> is set.</span></div>
@@ -787,7 +789,7 @@ Cubit meshing, safety analysis, TH network solver, and more. Look around the org
 </div>
 
 ::: callout
-One clone of `genesis/prometheus_platform` (default branch `dev`) holds all three directories; no submodules, and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
+One clone of `idaholab/prometheus_core` (default branch `devel`) holds all three directories; no submodules, and no pip dependency between platform and agents. The **base Docker image** delivers the SDK; the **registry** connects services at runtime. More on this at 1:00 pm.
 :::
 
 ---
@@ -795,7 +797,7 @@ One clone of `genesis/prometheus_platform` (default branch `dev`) holds all thre
 ## The code moves fast: stale claims you may read {eyebrow="A warning about documentation"}
 
 ::: col
-| You may read… | Reality on dev / main |
+| You may read… | Reality on devel |
 |---|---|
 | Chainlit UI on :8500 | React SPA :5150 + FastAPI backend :8600 |
 | `message/send`, `params.context.skillId` (old template README/TUTORIAL curl) | `SendMessage`, `metadata.skillId`, `contextId`, header `A2A-Version: 1.0` |
@@ -806,7 +808,7 @@ One clone of `genesis/prometheus_platform` (default branch `dev`) holds all thre
 | `PROMETHEUS_DEBUG` | `DEBUG_AGENTS=true` |
 | an up-front planner (`planner.py`), upload auto-binding (`file-uploads.md`) | the tool-calling loop, `orchestrator/agent_loop.py` (PR #104) |
 | pin `prometheus_api@2b3dbcf` (old template README/TUTORIAL) | an old-repo hash (v0.8.0); new agents get the platform's pin in `.env` |
-| repos `genesis/prometheus_api`, `genesis/prometheus_agent_template` | `sdk/` and `agent-template/` in `genesis/prometheus_platform`; old hashes were rewritten |
+| repos `prometheus_api`, `prometheus_agent_template`, `prometheus_platform` | `sdk/`, `agent-template/` and `platform/` in `idaholab/prometheus_core`; old hashes were rewritten |
 :::
 
 ---
@@ -826,7 +828,7 @@ One clone of `genesis/prometheus_platform` (default branch `dev`) holds all thre
 - `agent-template/TUTORIAL.md`, with the caveats in this deck
 
 ::: callout warn
-The published docs site (`gh-pages`) was last deployed in February 2026, and only pushes to `main` rebuild it. Read the docs in the repo on `dev`.
+The published docs site (`gh-pages`) was last deployed in February 2026, and only pushes to `main` rebuild it. Read the docs in the repo on `devel`.
 :::
 ::::
 
@@ -837,8 +839,8 @@ The published docs site (`gh-pages`) was last deployed in February 2026, and onl
 :::: grid 2 gap=28px
 | What | Where |
 |---|---|
-| Org and repos | `https://github.inl.gov/genesis` |
-| Container images | `https://github.inl.gov/orgs/genesis/packages` |
+| Platform repo | `https://github.com/idaholab/prometheus_core` (branch `devel`) |
+| Other agent repos | `github.inl.gov/genesis` (INL network only) |
 | Wiki (design and planning) | Confluence, space "Prometheus" |
 | Issues and tasks | JIRA project `PPLT` |
 | Proposal documents | Box folder (linked from the org profile) |

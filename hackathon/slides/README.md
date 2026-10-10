@@ -110,7 +110,7 @@ make pdf          # one PDF per deck in pdf/, one slide per page
 
 ## Keeping content accurate
 
-The slides describe the `genesis/prometheus_platform` monorepo (branch `dev`), with
+The slides describe the `idaholab/prometheus_core` monorepo (branch `devel`), with
 `platform/`, `sdk/` (formerly `prometheus_api`) and `agent-template/` (formerly
 `prometheus_agent_template`). When it changes, re-check the affected slides against
 the code, not the repo's docs, which sometimes lag behind.

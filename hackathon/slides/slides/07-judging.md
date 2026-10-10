@@ -87,7 +87,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 
 {.sm}
 - Code must be written during the hackathon. Libraries and existing org code are welcome, with attribution in the README.
-- The test runs on **your** local platform (`genesis/prometheus_platform` `dev` at the commit announced on Day 2, \[SHA\]; agents on the `latest` base image), in a fresh conversation, with the judges at the keyboard.
+- The test runs on **your** local platform (`idaholab/prometheus_core` `devel` at the commit announced on Day 2, \[SHA\]; agents on the `latest` base image), in a fresh conversation, with the judges at the keyboard.
 - Any LLM profile is allowed. Say which one you use.
 - No changes to the platform itself are needed or scored.
 - Teams can win at most **two** awards.
@@ -105,7 +105,7 @@ Note: Set the submission deadline, a place to collect submissions, and the platf
 ## Seven must-haves {eyebrow="Stage 1 · the gate"}
 
 :::: grid 2 gap=30px
-1. Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass
+1. Built from the agent template (`prometheus_core/agent-template`); a `PrometheusAgent` subclass
 2. At least **two skills** (extract, plot) with team-prefixed IDs
 3. Registers with the platform; listed under `/agents`
 4. Natural-language requests are **routed by the orchestrator**

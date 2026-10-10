@@ -74,7 +74,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 {.sm widths="40px|500px|"}
 | # | Must-have | How the judges verify it |
 |---|---|---|
-| 1 | Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass | Read `agent.py` at the submitted SHA |
+| 1 | Built from the agent template (`prometheus_core/agent-template`); a `PrometheusAgent` subclass | Read `agent.py` at the submitted SHA |
 | 2 | At least **two skills**, extract and plot, with team-prefixed IDs | Read `agent_card.json`; fetch the live card through `client-agent` (command below) |
 | 3 | Registers with the platform; appears under `/agents` | `curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/agents`, then `/agents` in the chat |
 | 4 | Natural-language requests are **routed by the orchestrator** | The practice prompt on the practice file calls both skills; the status stream or client-agent log shows the calls |
@@ -86,7 +86,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 # 2 · no host port: read the card from inside client-agent
 docker exec client-agent python -c "import json,urllib.request as u; c=json.load(u.urlopen('http://<slug>-agent:8000/api/agent-card')); print(c['name'], [s['id'] for s in c['skills']])"
 # 6 · install the SDK
-uv pip install "git+https://github.inl.gov/genesis/prometheus_platform.git@dev#subdirectory=sdk"
+uv pip install "git+https://github.com/idaholab/prometheus_core.git@devel#subdirectory=sdk"
 ```
 
 ::: callout warn

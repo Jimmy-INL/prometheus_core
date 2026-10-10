@@ -29,7 +29,7 @@ The new files follow the same conventions as the practice file: GitHub-flavoured
 
 ## Requirements (the gate)
 
-1. Built from the agent template (`prometheus_platform/agent-template`); a `PrometheusAgent` subclass.
+1. Built from the agent template (`prometheus_core/agent-template`); a `PrometheusAgent` subclass.
 2. At least **two skills** in `agent_card.json`, with unique, team-prefixed skill IDs and card name.
 3. Registers with your local platform; visible under `/agents`.
 4. Natural-language requests in the chat are **routed by the orchestrator** to the right skill.

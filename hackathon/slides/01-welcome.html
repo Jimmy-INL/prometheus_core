@@ -94,7 +94,7 @@ We assume your platform already starts with <code>make up</code> and DeepLynx is
 </div>
 
   </div>
-  <aside class="notes">The platform repo admins on github.inl.gov are the people who can grant write access and merge.</aside>
+  <aside class="notes">The prometheus_core maintainers are the people who can merge platform PRs.</aside>
 </section>
 
 <section class="slide">
@@ -315,7 +315,7 @@ What you will use from today: <strong>uploads and artifacts</strong> (01, 03), <
   <div class="head"><div class="eyebrow">The code</div><h2>Two repositories you will touch</h2></div>
   <div class="content">
 <div class="grid" style="grid-template-columns: 1.15fr 1fr; gap:28px;">
-<pre class="sm">prometheus_platform/      # genesis/prometheus_platform, dev
+<pre class="sm">prometheus_core/          # idaholab/prometheus_core, devel
 ├── platform/             # the stack: make up here
 ├── sdk/                  # prometheus_api (in your image)
 └── agent-template/       # setup_agent.py
@@ -325,7 +325,7 @@ hackathon/                # genesis/hackathon, main
 └── agents/<span class="p">&lt;team_name&gt;</span>/   # tomorrow: your team&#x27;s agent</pre>
 <div class="col">
 <div class="card"><span class="tag">one clone</span>
-<h3>prometheus_platform</h3>
+<h3>prometheus_core</h3>
 <p class="small">A monorepo since Oct 9: the platform, the SDK (<code>sdk/</code>, formerly <code>prometheus_api</code>), and the agent template (<code>agent-template/</code>, formerly <code>prometheus_agent_template</code>). Run commands from inside the directory you work on.</p>
 </div>
 
@@ -361,15 +361,15 @@ The code moves fast and some docs lag behind. When a doc disagrees with these sl
 </tr>
 <tr>
 <td>Agent developer guide</td>
-<td><code>sdk/docs/agent/GUIDE.md</code> in <code>prometheus_platform</code></td>
+<td><code>sdk/docs/agent/GUIDE.md</code> in <code>prometheus_core</code></td>
 </tr>
 <tr>
 <td>These slides</td>
 <td><code>index.html</code>; every deck has an appendix (key <code>A</code>)</td>
 </tr>
 <tr>
-<td>Org and repos</td>
-<td><code>github.inl.gov/genesis</code></td>
+<td>Platform repo</td>
+<td><code>github.com/idaholab/prometheus_core</code></td>
 </tr>
 <tr>
 <td>Issues and tasks</td>
@@ -422,9 +422,9 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </thead>
 <tbody>
 <tr>
-<td>Access to <code>github.inl.gov/genesis</code></td>
-<td>open <code>github.inl.gov/genesis/prometheus_platform</code> in the browser</td>
-<td>ask the organizer to add you to the org; deck 02 bonus</td>
+<td>Access to <code>idaholab/prometheus_core</code></td>
+<td>open <code>github.com/idaholab/prometheus_core</code> in the browser</td>
+<td>ask the organizer to add your github.com account; deck 02 bonus</td>
 </tr>
 <tr>
 <td>Docker installed and running</td>
@@ -433,17 +433,17 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 <tr>
 <td>Platform cloned</td>
-<td><code>ls ~/prometheus/prometheus_platform</code> shows <code>platform</code>, <code>sdk</code>, <code>agent-template</code></td>
+<td><code>ls ~/prometheus/prometheus_core</code> shows <code>platform</code>, <code>sdk</code>, <code>agent-template</code></td>
 <td>deck 02 bonus (clone commands)</td>
 </tr>
 <tr>
 <td>Base image builds</td>
-<td><code>LOCAL_SDK=true</code> in <code>platform/.env</code>, then <code>make base-image</code> in <code>prometheus_platform/platform</code></td>
+<td><code>LOCAL_SDK=true</code> in <code>platform/.env</code>, then <code>make base-image</code> in <code>prometheus_core/platform</code></td>
 <td>deck 03 bonus (step 1)</td>
 </tr>
 <tr>
 <td>Platform starts</td>
-<td><code>make up</code> in <code>prometheus_platform/platform</code>, then <code>http://localhost:5150</code></td>
+<td><code>make up</code> in <code>prometheus_core/platform</code>, then <code>http://localhost:5150</code></td>
 <td>deck 03 bonus (<code>.env</code>, &quot;the stack won't start&quot;)</td>
 </tr>
 <tr>
@@ -458,8 +458,8 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 <tr>
 <td><code>gh</code> (decks 02 and 05)</td>
-<td><code>gh auth status --hostname github.inl.gov</code></td>
-<td><code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login --hostname github.inl.gov</code>. No <code>gh</code>? Use the Fork and &quot;Compare &amp; pull request&quot; buttons on the web.</td>
+<td><code>gh auth status</code></td>
+<td><code>brew install gh</code> (needs admin), or copy the release binary from <code>github.com/cli/cli/releases</code> into <code>~/.local/bin</code>; then <code>gh auth login</code>. No <code>gh</code>? Use the Fork and &quot;Compare &amp; pull request&quot; buttons on the web.</td>
 </tr>
 </tbody>
 </table>
@@ -600,7 +600,7 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">Concrete architecture</div><h2>What actually runs: <code>docker compose</code> on branch <code>dev</code></h2></div>
+  <div class="head"><div class="eyebrow">Concrete architecture</div><h2>What actually runs: <code>docker compose</code> on branch <code>devel</code></h2></div>
   <div class="content">
 <div class="dg" style="gap:0">
 <div class="row" style="justify-content:center">
@@ -712,7 +712,7 @@ Next: GitHub &amp; PR workflow (1:00 pm). Keep your platform running.</div>
 </tr>
 </tbody>
 </table>
-<p class="tiny">Source: <code>platform/docker-compose.yml</code> on <code>dev</code>. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in <code>frontend/</code> plus the FastAPI <code>backend/</code> replace it.</p>
+<p class="tiny">Source: <code>platform/docker-compose.yml</code> on <code>devel</code>. There is no Chainlit service any more: it was removed in PR #91 (Aug 2026), and the React app in <code>frontend/</code> plus the FastAPI <code>backend/</code> replace it.</p>
   </div>
 </section>
 
@@ -884,7 +884,7 @@ Older docs show v0.3 syntax (<code>message/send</code>, <code>role: &quot;user&q
 </tr>
 </tbody>
 </table>
-<p class="tiny">Reference: <code>platform/docs/docs/dev-docs/encryption-and-keys.md</code> and <code>multi-user-setup.md</code>, both current on <code>dev</code>.</p>
+<p class="tiny">Reference: <code>platform/docs/docs/dev-docs/encryption-and-keys.md</code> and <code>multi-user-setup.md</code>, both current on <code>devel</code>.</p>
   </div>
 </section>
 
@@ -999,7 +999,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">The wider ecosystem</div><h2>Agents living in their own repos (github.inl.gov/genesis)</h2></div>
+  <div class="head"><div class="eyebrow">The wider ecosystem</div><h2>Agents living in their own repos (INL network only)</h2></div>
   <div class="content">
 <div class="grid g3" style="gap:14px;">
 <div class="card">
@@ -1050,6 +1050,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 </div>
 
   </div>
+  <aside class="notes">These repos are in github.inl.gov/genesis and need INL network access and org membership. They are not part of the public prometheus_core repo.</aside>
 </section>
 
 <section class="slide appendix">
@@ -1059,7 +1060,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 <div class="row" style="justify-content:center">
 <div class="box navy" style="width:560px"><b>sdk/</b> <span class="small">(formerly <code>prometheus_api</code>)</span><span>Python package <code>prometheus-api</code> (v0.13.0): PrometheusAgent, LLMClient, StorageClient, identity, artifacts</span></div>
 </div>
-<div class="arrow-v"><span>CI on dev builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
+<div class="arrow-v"><span>CI on devel builds the image  …/genesis/prometheus_api:&lt;tag&gt;</span></div>
 <div class="row" style="gap:40px; justify-content:center">
 <div class="box sky" style="width:520px"><b>platform/</b><span>frontend, backend, client-agent, LiteLLM, in-tree agents. Every Python image is <code>FROM</code> the base image, pinned in <code>platform/Makefile</code> (only in-tree agents read it).</span></div>
 <div class="box orange" style="width:520px"><b>agent-template/</b> <span class="small">(formerly <code>prometheus_agent_template</code>)</span><span><code>setup_agent.py</code> scaffolds a new agent and copies the platform's secrets into its <code>.env</code>. Its <code>docker-compose.yml</code> builds on <code>latest</code> unless <code>PROMETHEUS_API_BASE_IMAGE_HASH</code> is set.</span></div>
@@ -1073,7 +1074,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 </div>
 </div>
 <div class="callout">
-One clone of <code>genesis/prometheus_platform</code> (default branch <code>dev</code>) holds all three directories; no submodules, and no pip dependency between platform and agents. The <strong>base Docker image</strong> delivers the SDK; the <strong>registry</strong> connects services at runtime. More on this at 1:00 pm.</div>
+One clone of <code>idaholab/prometheus_core</code> (default branch <code>devel</code>) holds all three directories; no submodules, and no pip dependency between platform and agents. The <strong>base Docker image</strong> delivers the SDK; the <strong>registry</strong> connects services at runtime. More on this at 1:00 pm.</div>
 
   </div>
 </section>
@@ -1086,7 +1087,7 @@ One clone of <code>genesis/prometheus_platform</code> (default branch <code>dev<
 <thead>
 <tr>
 <th>You may read…</th>
-<th>Reality on dev / main</th>
+<th>Reality on devel</th>
 </tr>
 </thead>
 <tbody>
@@ -1127,8 +1128,8 @@ One clone of <code>genesis/prometheus_platform</code> (default branch <code>dev<
 <td>an old-repo hash (v0.8.0); new agents get the platform's pin in <code>.env</code></td>
 </tr>
 <tr>
-<td>repos <code>genesis/prometheus_api</code>, <code>genesis/prometheus_agent_template</code></td>
-<td><code>sdk/</code> and <code>agent-template/</code> in <code>genesis/prometheus_platform</code>; old hashes were rewritten</td>
+<td>repos <code>prometheus_api</code>, <code>prometheus_agent_template</code>, <code>prometheus_platform</code></td>
+<td><code>sdk/</code>, <code>agent-template/</code> and <code>platform/</code> in <code>idaholab/prometheus_core</code>; old hashes were rewritten</td>
 </tr>
 </tbody>
 </table>
@@ -1154,7 +1155,7 @@ One clone of <code>genesis/prometheus_platform</code> (default branch <code>dev<
 <li><code>agent-template/TUTORIAL.md</code>, with the caveats in this deck</li>
 </ul>
 <div class="callout warn">
-The published docs site (<code>gh-pages</code>) was last deployed in February 2026, and only pushes to <code>main</code> rebuild it. Read the docs in the repo on <code>dev</code>.</div>
+The published docs site (<code>gh-pages</code>) was last deployed in February 2026, and only pushes to <code>main</code> rebuild it. Read the docs in the repo on <code>devel</code>.</div>
 
 </div>
 
@@ -1174,12 +1175,12 @@ The published docs site (<code>gh-pages</code>) was last deployed in February 20
 </thead>
 <tbody>
 <tr>
-<td>Org and repos</td>
-<td><code>https://github.inl.gov/genesis</code></td>
+<td>Platform repo</td>
+<td><code>https://github.com/idaholab/prometheus_core</code> (branch <code>devel</code>)</td>
 </tr>
 <tr>
-<td>Container images</td>
-<td><code>https://github.inl.gov/orgs/genesis/packages</code></td>
+<td>Other agent repos</td>
+<td><code>github.inl.gov/genesis</code> (INL network only)</td>
 </tr>
 <tr>
 <td>Wiki (design and planning)</td>

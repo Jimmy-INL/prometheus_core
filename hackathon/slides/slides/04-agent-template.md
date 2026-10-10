@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 :::: grid 2 gap=30px
 ```bash {.sm}
-cd ~/prometheus/prometheus_platform/agent-template
+cd ~/prometheus/prometheus_core/agent-template
 python3 setup_agent.py "Neutron Table Plot" \
   ../../hackathon/agents/neutron    # no ~
 #  name: " Agent" is appended
@@ -483,7 +483,7 @@ async def test_finds_census(context, event_queue, monkeypatch):
 
 ```bash {.sm}
 uv sync
-uv pip install -e ~/prometheus/prometheus_platform/sdk
+uv pip install -e ~/prometheus/prometheus_core/sdk
 uv run pytest
 uv run ruff check .
 ```
@@ -559,7 +559,7 @@ if __name__ == "__main__":
 
 ---
 
-## `agent-template/` at a glance {eyebrow="The template, inside prometheus_platform"}
+## `agent-template/` at a glance {eyebrow="The template, inside prometheus_core"}
 
 :::: grid 2 gap=30px
 {.sm}
@@ -982,7 +982,7 @@ Restart the agent (re-registers), then refresh discovery or restart the client-a
 | **Docker, internal network**<br><span class="small">(recommended)</span> | `make up` in the agent dir. It joins `prometheus_platform_agent-network` via `docker-compose.net_internal.yml`. | `http://<service>:8000`. `REGISTRY_URL`, `REDIS_URL`, and `JWKS_URL` resolve by service name. Start the platform first. {.hl} |
 | **Docker, external port** | `EXTERNAL_AGENT_HOST=host.docker.internal EXTERNAL_AGENT_PORT=8042 make up` | `EXTERNAL_AGENT_URL=http://host.docker.internal:8042`. Point `REGISTRY_URL`/`REDIS_URL`/`JWKS_URL` at `host.docker.internal:9977/6379/8600`. Linux adds `docker-compose.linux.yml`. |
 | **Host Python**<br><span class="small">(fastest edit loop)</span> | `python agent.py` in a venv with `prometheus_api` installed | Set `REGISTRY_URL=http://localhost:9977`, `REDIS_URL=redis://localhost:6379`, `JWKS_URL=http://localhost:8600/.well-known/jwks.json`, `EXTERNAL_AGENT_URL=http://host.docker.internal:8000` |
-| **In-tree** | Copy into `prometheus_platform/platform/agents/<name>/`, then `make generate && make up` in `platform/` | Auto-included (one directory level). Uses the platform's base-image pin. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
+| **In-tree** | Copy into `prometheus_core/platform/agents/<name>/`, then `make generate && make up` in `platform/` | Auto-included (one directory level). Uses the platform's base-image pin. Copy `agents/synthesis-agent/docker-compose.yml` as the model. |
 
 :::: grid 2
 ::: callout warn
@@ -1003,7 +1003,7 @@ Standalone curl testing without any platform: `EXTERNAL_AGENT_HOST=localhost EXT
 cd hello-world
 uv sync && source .venv/bin/activate
 uv pip install -e \
-  ~/prometheus/prometheus_platform/sdk     # the SDK from your clone
+  ~/prometheus/prometheus_core/sdk     # the SDK from your clone
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false \
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory \

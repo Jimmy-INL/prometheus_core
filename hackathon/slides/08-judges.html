@@ -87,7 +87,7 @@
 <tbody>
 <tr>
 <td>1</td>
-<td>Built from the agent template (<code>prometheus_platform/agent-template</code>); a <code>PrometheusAgent</code> subclass</td>
+<td>Built from the agent template (<code>prometheus_core/agent-template</code>); a <code>PrometheusAgent</code> subclass</td>
 <td>Read <code>agent.py</code> at the submitted SHA</td>
 </tr>
 <tr>
@@ -125,7 +125,7 @@
 <pre class="xs"><span class="c"># 2 · no host port: read the card from inside client-agent</span>
 docker exec client-agent python -c <span class="s">&quot;import json,urllib.request as u; c=json.load(u.urlopen(&#x27;http://<span class="p">&lt;slug&gt;</span>-agent:8000/api/agent-card&#x27;)); print(c[&#x27;name&#x27;], [s[&#x27;id&#x27;] for s in c[&#x27;skills&#x27;]])&quot;</span>
 <span class="c"># 6 · install the SDK</span>
-uv pip install <span class="s">&quot;git+https://github.inl.gov/genesis/prometheus_platform.git@dev#subdirectory=sdk&quot;</span></pre>
+uv pip install <span class="s">&quot;git+https://github.com/idaholab/prometheus_core.git@devel#subdirectory=sdk&quot;</span></pre>
 <div class="callout warn">
 A team that misses the gate still takes the hidden test, gets written feedback, and can win category awards. It is not ranked for the Prometheus Prize or the runner-up.</div>
 

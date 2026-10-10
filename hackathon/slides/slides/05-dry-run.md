@@ -60,7 +60,7 @@ Use **your own** card name and skill ID. The registry replaces agents with the s
 :::
 
 ::: callout info
-Folder layout: `~/prometheus/prometheus_platform/{platform, sdk, agent-template}` plus your `~/prometheus/hello-<you>`. `setup_agent.py` finds `../platform/.env` by itself.
+Folder layout: `~/prometheus/prometheus_core/{platform, sdk, agent-template}` plus your `~/prometheus/hello-<you>`. `setup_agent.py` finds `../platform/.env` by itself.
 :::
 ::::
 
@@ -70,8 +70,8 @@ Folder layout: `~/prometheus/prometheus_platform/{platform, sdk, agent-template}
 
 :::: grid 2 gap=26px
 ```bash {.xs}
-cd ~/prometheus/prometheus_platform
-git pull --rebase upstream dev   # latest dev
+cd ~/prometheus/prometheus_core
+git pull --rebase upstream devel   # latest devel
 cd platform
 make up
 make ps
@@ -100,7 +100,7 @@ Platform not up yet? Use the **bonus slide** at the end of this deck, and the bo
 ## Agent: scaffold and edit {eyebrow="Refresh · 2"}
 
 ```bash {.sm}
-cd ~/prometheus/prometheus_platform/agent-template   # same clone
+cd ~/prometheus/prometheus_core/agent-template   # same clone
 python3 setup_agent.py "Hello <You>" ../../hello-<you>   # no ~
 #  → card "Hello <You> Agent"
 #  skill id: hello_<you>_greeting   (unique!)
@@ -118,7 +118,7 @@ cd ~/prometheus/hello-<you>
 #           "greeting": f"Hello, {name}, from <you>!"}
 
 uv sync
-uv pip install -e ~/prometheus/prometheus_platform/sdk
+uv pip install -e ~/prometheus/prometheus_core/sdk
 uv run pytest    # update the tests; keep one send_status_update
 uv run ruff check .
 make up          # joins the platform network
@@ -154,7 +154,7 @@ docker restart client-agent
 | never routed | sharpen the description; `docker restart client-agent` |
 | LLM 401 (if you added LLM calls) | the key for your `LLM_CONFIG_PROFILE` in `.env` |
 | `ModuleNotFoundError` in the container | add a `COPY` line to the Dockerfile |
-| `No module named 'prometheus_api'` in `uv run pytest` | `uv pip install -e ~/prometheus/prometheus_platform/sdk` |
+| `No module named 'prometheus_api'` in `uv run pytest` | `uv pip install -e ~/prometheus/prometheus_core/sdk` |
 | test fails: no status update sent | keep a `send_status_update` in `_execute`, or drop that assertion |
 :::
 
@@ -165,7 +165,6 @@ docker restart client-agent
 :::: grid 2 gap=24px
 ```bash {.xs hl=18}
 cd ~/prometheus
-export GH_HOST=github.inl.gov
 gh repo fork genesis/hackathon --clone=false
 git clone git@github.inl.gov:<you>/hackathon.git
 cd hackathon
@@ -209,7 +208,6 @@ Repo **`genesis/hackathon`**, base `main`. `--force-with-lease` only on your own
 | cannot fork or see `genesis/hackathon` | org access (team `open`); ask a mentor |
 | rebase conflict | edit → `git add` → `git rebase --continue` (or `--abort`) |
 | push rejected (non-fast-forward) | after a rebase: `git push --force-with-lease` |
-| `gh` talks to github.com | `export GH_HOST=github.inl.gov` |
 | no `gh` | `brew install gh`, or the release binary in `~/.local/bin`; or use the Fork / Compare & pull request buttons |
 ::::
 
@@ -227,12 +225,11 @@ For participants whose platform from the homework does not run yet.
 ::: grid 2 gap=24px
 ```bash {.xs}
 # once
-export GH_HOST=github.inl.gov
-gh repo fork genesis/prometheus_platform --clone=false
-git clone git@github.inl.gov:<you>/prometheus_platform.git
-cd prometheus_platform
+gh repo fork idaholab/prometheus_core --clone=false
+git clone git@github.com:<you>/prometheus_core.git
+cd prometheus_core
 git remote add upstream \
-  git@github.inl.gov:genesis/prometheus_platform.git
+  git@github.com:idaholab/prometheus_core.git
 git fetch upstream
 cd platform            # the stack lives here
 
@@ -283,13 +280,13 @@ The original refresher slide, kept for reference.
 
 :::: grid 2 gap=26px
 ```bash {.sm}
-cd ~/prometheus/prometheus_platform
+cd ~/prometheus/prometheus_core
 # 1. your fork as origin (deck 02), then update
 git remote rename origin upstream
-gh repo fork genesis/prometheus_platform --clone=false
+gh repo fork idaholab/prometheus_core --clone=false
 git remote add origin \
-  git@github.inl.gov:<you>/prometheus_platform.git
-git pull --rebase upstream dev
+  git@github.com:<you>/prometheus_core.git
+git pull --rebase upstream devel
 
 # 2. the stack from the homework
 cd platform

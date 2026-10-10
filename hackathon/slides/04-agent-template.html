@@ -90,7 +90,7 @@
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <div class="col">
-<pre class="sm">cd ~/prometheus/prometheus_platform/agent-template
+<pre class="sm">cd ~/prometheus/prometheus_core/agent-template
 python3 setup_agent.py <span class="s">&quot;Neutron Table Plot&quot;</span> <span class="s">\</span>
   ../../hackathon/agents/neutron    <span class="c"># no ~</span>
 <span class="c">#  name: &quot; Agent&quot; is appended</span>
@@ -574,7 +574,7 @@ Start a <strong>fresh conversation</strong> for each test. Old uploads and resul
 <li>Keep your own test files in <code>tests/fixtures/</code>.</li>
 </ul>
 <pre class="sm">uv sync
-uv pip install -e ~/prometheus/prometheus_platform/sdk
+uv pip install -e ~/prometheus/prometheus_core/sdk
 uv run pytest
 uv run ruff check .</pre>
 <p class="small">Both must pass for the gate. <code>fake_path</code> is your own small helper.</p>
@@ -649,7 +649,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 </section>
 
 <section class="slide appendix">
-  <div class="head"><div class="eyebrow">The template, inside prometheus_platform</div><h2><code>agent-template/</code> at a glance</h2></div>
+  <div class="head"><div class="eyebrow">The template, inside prometheus_core</div><h2><code>agent-template/</code> at a glance</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <table class="t sm">
@@ -1249,7 +1249,7 @@ docker logs hello-world-agent <span class="n">2</span>&gt;&amp;<span class="n">1
 </tr>
 <tr>
 <td><strong>In-tree</strong></td>
-<td>Copy into <code>prometheus_platform/platform/agents/&lt;name&gt;/</code>, then <code>make generate &amp;&amp; make up</code> in <code>platform/</code></td>
+<td>Copy into <code>prometheus_core/platform/agents/&lt;name&gt;/</code>, then <code>make generate &amp;&amp; make up</code> in <code>platform/</code></td>
 <td>Auto-included (one directory level). Uses the platform's base-image pin. Copy <code>agents/synthesis-agent/docker-compose.yml</code> as the model.</td>
 </tr>
 </tbody>
@@ -1273,7 +1273,7 @@ Standalone curl testing without any platform: <code>EXTERNAL_AGENT_HOST=localhos
 <pre class="sm">cd hello-world
 uv sync &amp;&amp; source .venv/bin/activate
 uv pip install -e <span class="s">\</span>
-  ~/prometheus/prometheus_platform/sdk     <span class="c"># the SDK from your clone</span>
+  ~/prometheus/prometheus_core/sdk     <span class="c"># the SDK from your clone</span>
 
 AGENT_SECRET=dev AGENT_SECRET_REQUIRED=false <span class="s">\</span>
 USER_IDENTITY_REQUIRED=false PROMETHEUS_TASK_STORE=memory <span class="s">\</span>
