@@ -4,31 +4,31 @@
 model_list:
   - model_name: default
     litellm_params:
-      model: openai/claude-sonnet-5-awsgov
+      model: openai/claude-sonnet-5-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: small
     litellm_params:
-      model: openai/claude-sonnet-4-5-awsgov
+      model: openai/claude-sonnet-5-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: medium
     litellm_params:
-      model: openai/claude-sonnet-5-awsgov
+      model: openai/claude-sonnet-5-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: large
     litellm_params:
-      model: openai/claude-opus-4-8-awsgov
+      model: openai/claude-opus-5-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
   - model_name: vision
     litellm_params:
-      model: openai/claude-opus-4-8-awsgov
+      model: openai/claude-opus-5-5-awsgov
       api_key: os.environ/INL_LITELLM_API_KEY
       api_base: https://litellm.inl.gov/v1
 
