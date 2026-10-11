@@ -72,7 +72,7 @@ user, generate and activate one under **Admin > Signing Keys** (see
 LLM_CONFIG_PROFILE=registry
 ```
 
-Choose one of the following values and fill in the matching API key in `.env`:
+If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. You can also set them by hand:
 
 | Value | What it uses | Additional variable to fill in |
 |---|---|---|
@@ -82,6 +82,7 @@ Choose one of the following values and fill in the matching API key in `.env`:
 | `inl_hpc` | INL HPC's OpenAI-compatible model service. | `INL_HPC_API_KEY` |
 | `inl_litellm` | INL's hosted LiteLLM service. | `INL_LITELLM_API_KEY` |
 | `amsc` | The American Science Cloud I2 model service. | `AMSC_I2_API_KEY` |
+| `anl_asksage` | ANL's AskSage model service (OpenAI-compatible API). | `ASKSAGE_API_KEY` (the AskSage static API key); also `EMBEDDING_API_KEY` if an agent uses embeddings |
 
 For example, to use OpenAI:
 

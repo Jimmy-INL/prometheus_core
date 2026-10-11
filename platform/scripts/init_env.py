@@ -5,7 +5,9 @@
 2. For every variable in .env.example whose comment block carries a
    ``python3 -c "..."`` one-liner, fill a blank value in .env by running it.
    Values that are already set are never touched.
-3. Exit non-zero if the API key for the selected LLM_CONFIG_PROFILE is blank.
+3. If the API key for the selected LLM_CONFIG_PROFILE is blank and the script
+   runs in a terminal, offer a profile menu (arrow keys, Enter) and prompt for
+   that profile's key. Otherwise exit non-zero.
 
 Standard library only, so it runs before anything else is installed. Run from
 anywhere; paths resolve relative to this file.
@@ -13,6 +15,8 @@ anywhere; paths resolve relative to this file.
 
 from __future__ import annotations
 
+import getpass
+import os
 import re
 import shutil
 import subprocess
@@ -26,16 +30,42 @@ ENV = ROOT / ".env"
 ASSIGNMENT = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 ONE_LINER = re.compile(r'^#\s*python3 -c "(.+)"\s*$')
 
-# LLM_CONFIG_PROFILE -> the provider key that profile cannot start without.
-PROFILE_KEYS = {
-    "registry": "ANTHROPIC_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "inl_hpc": "INL_HPC_API_KEY",
-    "inl_litellm": "INL_LITELLM_API_KEY",
-    "amsc": "AMSC_I2_API_KEY",
-    "anl_asksage": "ASKSAGE_API_KEY",
-}
+# One profile per YAML here; the default profile routes through this stack's
+# LiteLLM proxy, so its provider key comes from LITELLM_CONFIG instead.
+LLM_CONFIGS = ROOT.parent / "sdk" / "prometheus_api" / "llm_configs"
+LITELLM_CONFIG = ROOT / "litellm_config.yaml"
+DEFAULT_PROFILE = "registry"
+
+API_KEY_REF = re.compile(r"os\.environ/([A-Z][A-Z0-9_]*_API_KEY)")
+# Shared by several profiles for embeddings only; never the key a profile needs.
+EMBEDDING_KEY = "EMBEDDING_API_KEY"
+
+
+def provider_key(yaml: Path) -> str | None:
+    """The API key a config references most often, ignoring the embedding key."""
+    refs = [k for k in API_KEY_REF.findall(yaml.read_text()) if k != EMBEDDING_KEY]
+    return max(set(refs), key=refs.count) if refs else None
+
+
+def description(yaml: Path) -> str:
+    """The first sentence of the config's header comment, minus 'inference scaffold'."""
+    first = next((line for line in yaml.read_text().splitlines() if line.startswith("#")), "#")
+    sentence = first.lstrip("# ").split(". ")[0].rstrip(".")
+    return re.sub(r"\s*inference scaffold$", "", sentence)
+
+
+def profiles() -> dict[str, tuple[str | None, str]]:
+    """LLM_CONFIG_PROFILE -> (provider key it cannot start without, description).
+
+    The default profile comes first, the rest alphabetically.
+    """
+    if not LLM_CONFIGS.is_dir():
+        raise SystemExit(f"[ERROR] LLM config profiles not found at {LLM_CONFIGS}.")
+    found = {}
+    for yaml in sorted(LLM_CONFIGS.glob("*.yaml"), key=lambda y: (y.stem != DEFAULT_PROFILE, y.stem)):
+        source = LITELLM_CONFIG if yaml.stem == DEFAULT_PROFILE else yaml
+        found[yaml.stem] = (provider_key(source), description(yaml))
+    return found
 
 
 def generators(example: str) -> dict[str, str]:
@@ -58,6 +88,13 @@ def values(text: str) -> dict[str, str]:
     return {m.group(1): m.group(2).strip() for line in text.splitlines() if (m := ASSIGNMENT.match(line))}
 
 
+def set_var(text: str, var: str, value: str) -> str:
+    """Replace the first ``var=`` line, or append one if there is none."""
+    if re.search(rf"^{var}=", text, flags=re.M):
+        return re.sub(rf"^{var}=.*$", lambda _: f"{var}={value}", text, count=1, flags=re.M)
+    return text.rstrip("\n") + f"\n{var}={value}\n"
+
+
 def fill_secrets(text: str, gens: dict[str, str]) -> tuple[str, list[str]]:
     current = values(text)
     filled = []
@@ -65,10 +102,7 @@ def fill_secrets(text: str, gens: dict[str, str]) -> tuple[str, list[str]]:
         if current.get(var, ""):
             continue
         secret = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip()
-        if var in current:
-            text = re.sub(rf"^{var}=.*$", lambda _: f"{var}={secret}", text, count=1, flags=re.M)
-        else:
-            text = text.rstrip("\n") + f"\n{var}={secret}\n"
+        text = set_var(text, var, secret)
         filled.append(var)
     return text, filled
 
@@ -77,8 +111,74 @@ def missing_llm_key(env: dict[str, str]) -> str | None:
     """The blank provider key required by the selected profile, if any."""
     if env.get("LLM_CONFIG_FILE"):
         return None  # a custom YAML decides which keys it needs
-    key = PROFILE_KEYS.get(env.get("LLM_CONFIG_PROFILE") or "registry")
+    key, _ = profiles().get(env.get("LLM_CONFIG_PROFILE") or DEFAULT_PROFILE, (None, ""))
     return key if key and not env.get(key) else None
+
+
+def interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def choose(options: list[str], labels: list[str], default: int) -> str:
+    """Arrow-key menu on the terminal; numbered prompt where termios is missing."""
+    width = max(map(len, options))
+    lines = [f"{o:<{width}}  {label}" for o, label in zip(options, labels, strict=True)]
+    try:
+        import termios
+        import tty
+    except ImportError:
+        for i, line in enumerate(lines, 1):
+            print(f"  {i}. {line}")
+        answer = input(f"Choice [{default + 1}]: ").strip()
+        return options[int(answer) - 1] if answer.isdigit() and 1 <= int(answer) <= len(options) else options[default]
+
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    index = default
+
+    def draw(first: bool) -> None:
+        if not first:
+            sys.stdout.write(f"\x1b[{len(lines)}A")
+        for i, line in enumerate(lines):
+            marker = "\x1b[7m> " if i == index else "  "
+            sys.stdout.write(f"\r\x1b[2K{marker}{line}\x1b[0m\n")
+        sys.stdout.flush()
+
+    sys.stdout.write("\x1b[?25l")  # hide cursor
+    try:
+        tty.setcbreak(fd)
+        draw(first=True)
+        while True:
+            key = os.read(fd, 3)
+            if key in (b"\r", b"\n"):
+                return options[index]
+            if key in (b"\x1b[A", b"k"):
+                index = (index - 1) % len(options)
+            elif key in (b"\x1b[B", b"j"):
+                index = (index + 1) % len(options)
+            draw(first=False)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
+
+
+def prompt_llm(text: str) -> str:
+    """Ask for the LLM profile and its API key; return the updated .env text."""
+    env = values(text)
+    known = profiles()
+    options = list(known)
+    labels = [f"{desc}  [{key or 'no key'}]" for key, desc in known.values()]
+    current = env.get("LLM_CONFIG_PROFILE") or DEFAULT_PROFILE
+    print("\nChoose an LLM profile (up/down, Enter):")
+    profile = choose(options, labels, options.index(current) if current in options else 0)
+    text = set_var(text, "LLM_CONFIG_PROFILE", profile)
+    key, _ = known[profile]
+    if key and not env.get(key):
+        secret = getpass.getpass(f"{key} (input hidden): ").strip()
+        if secret:
+            text = set_var(text, key, secret)
+    return text
 
 
 def main() -> int:
@@ -92,8 +192,13 @@ def main() -> int:
         print(f"Generated in {ENV.name}: {', '.join(filled)}")
 
     env = values(text)
+    if missing_llm_key(env) and interactive():
+        text = prompt_llm(text)
+        ENV.write_text(text)
+        env = values(text)
+        print(f"Saved LLM_CONFIG_PROFILE={env['LLM_CONFIG_PROFILE']} in {ENV.name}.")
     if key := missing_llm_key(env):
-        profile = env.get("LLM_CONFIG_PROFILE") or "registry"
+        profile = env.get("LLM_CONFIG_PROFILE") or DEFAULT_PROFILE
         print(
             f"\n[ERROR] {key} is empty in {ENV}.\n"
             f"        LLM_CONFIG_PROFILE={profile} needs it; set it (or pick another profile)\n"

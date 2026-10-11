@@ -82,6 +82,7 @@ def test_init_env_fills_secrets_and_checks_llm_key(tmp_path, env_example_path, m
     env = tmp_path / ".env"
     monkeypatch.setattr(init_env, "EXAMPLE", example)
     monkeypatch.setattr(init_env, "ENV", env)
+    monkeypatch.setattr(init_env, "interactive", lambda: False)
 
     assert init_env.main() == 1  # ANTHROPIC_API_KEY still blank
     first = init_env.values(env.read_text())
@@ -95,8 +96,41 @@ def test_init_env_fills_secrets_and_checks_llm_key(tmp_path, env_example_path, m
     }, "existing values must never be overwritten"
 
 
+def test_init_env_prompts_for_profile_and_key(tmp_path, env_example_path, monkeypatch):
+    init_env = _load_init_env()
+    example = tmp_path / ".env.example"
+    example.write_text(env_example_path.read_text())
+    env = tmp_path / ".env"
+    monkeypatch.setattr(init_env, "EXAMPLE", example)
+    monkeypatch.setattr(init_env, "ENV", env)
+    monkeypatch.setattr(init_env, "interactive", lambda: True)
+    monkeypatch.setattr(init_env, "choose", lambda options, labels, default: "openai")
+    monkeypatch.setattr(init_env.getpass, "getpass", lambda prompt: "sk-openai-x")
+
+    assert init_env.main() == 0
+    written = init_env.values(env.read_text())
+    assert written["LLM_CONFIG_PROFILE"] == "openai"
+    assert written["OPENAI_API_KEY"] == "sk-openai-x"
+    assert written["ANTHROPIC_API_KEY"] == ""
+
+
+def test_profiles_match_sdk_llm_configs():
+    """Every installed profile is offered, with the key its YAML references."""
+    init_env = _load_init_env()
+    known = init_env.profiles()
+    assert next(iter(known)) == "registry"
+    assert sorted(known) == sorted(p.stem for p in init_env.LLM_CONFIGS.glob("*.yaml"))
+    assert known["registry"][0] == "ANTHROPIC_API_KEY"  # via litellm_config.yaml
+    assert known["anl_asksage"][0] == "ASKSAGE_API_KEY"  # not EMBEDDING_API_KEY
+
+
 def test_port_vars_have_values(env_example_vars):
     """Port variables should have values defined in .env.example."""
-    port_vars = ["LITELLM_LOCAL_PORT", "REDIS_LOCAL_PORT", "CLIENT_AGENT_PORT", "BACKEND_PORT"]
+    port_vars = [
+        "LITELLM_LOCAL_PORT",
+        "REDIS_LOCAL_PORT",
+        "CLIENT_AGENT_PORT",
+        "BACKEND_PORT",
+    ]
     missing = [v for v in port_vars if v not in env_example_vars]
     assert not missing, f"Port variables missing from .env.example: {missing}"
