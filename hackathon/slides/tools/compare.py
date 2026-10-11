@@ -1,3 +1,15 @@
+# This file is part of Prometheus
+# https://inl.gov/super-intelligence/prometheus/
+#
+# Copyright 2026 Battelle Energy Alliance, LLC
+# All rights reserved, see NOTICE.txt for full restrictions
+# https://github.com/idaholab/prometheus_core/blob/main/NOTICE.txt
+#
+# Licensed under the MIT License, please see LICENSE for details
+# https://github.com/idaholab/prometheus_core/blob/main/LICENSE
+#
+# SPDX-License-Identifier: MIT
+
 """Compare decks before/after the Markdown migration.
 
     uv run --with pillow --with beautifulsoup4 python tools/compare.py OLD_DIR NEW_DIR SHOTS_OLD SHOTS_NEW deck.html ...

@@ -1,3 +1,15 @@
+# This file is part of Prometheus
+# https://inl.gov/super-intelligence/prometheus/
+#
+# Copyright 2026 Battelle Energy Alliance, LLC
+# All rights reserved, see NOTICE.txt for full restrictions
+# https://github.com/idaholab/prometheus_core/blob/main/NOTICE.txt
+#
+# Licensed under the MIT License, please see LICENSE for details
+# https://github.com/idaholab/prometheus_core/blob/main/LICENSE
+#
+# SPDX-License-Identifier: MIT
+
 """Unit tests for app.oidc -- discovery, token exchange, ID-token verification,
 and the users-table upsert. No real network access: httpx.AsyncClient.get/post
 are monkeypatched to return canned httpx.Response objects; jwt.PyJWKClient is
