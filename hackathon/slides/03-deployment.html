@@ -92,21 +92,67 @@ Platform not starting yet? Work through the bonus slides at the end of this deck
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Day to day</div><h2>Four commands, one trap</h2></div>
+  <div class="head"><div class="eyebrow">Day to day</div><h2>Once, then four commands</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:30px;">
 <pre class="sm">cd ~/prometheus/prometheus_core/platform
-make up                     <span class="c"># build and start</span>
-make restart                <span class="c"># restart, no rebuild</span>
+
+<span class="h">make init-env                  <span class="c"># once: creates .env (next slide)</span></span>
+<span class="h">echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env  <span class="c"># once: base image from ../sdk</span></span>
+
+make up                        <span class="c"># build and start</span>
+make restart                   <span class="c"># restart, no rebuild</span>
 make logs SERVICE=client-agent
-make down                   <span class="c"># stop</span></pre>
+make down                      <span class="c"># stop</span></pre>
 <div class="col">
+<div class="callout info">
+<strong><code>LOCAL_SDK=true</code></strong>: every Python service is built <code>FROM</code> the <code>prometheus_api</code> base image. With this line, <code>make up</code> first builds that image from <code>../sdk</code> on your laptop (<code>prometheus_api:local</code>): no registry, no token. Without it, <code>make up</code> tries to pull from <code>containers.github.inl.gov</code> and fails with <code>unauthorized</code>. Put it in <code>.env</code> after <code>make init-env</code>, so every later <code>make up</code> sees it.</div>
+
 <div class="callout bad">
 <strong>Every <code>make up</code> or <code>make restart</code> empties the agent registry.</strong> The platform's own agents re-register by themselves. <strong>Your agent doesn't</strong>: restart it afterwards with <code>docker restart &lt;your-agent&gt;</code>.</div>
 
 </div>
 </div>
 
+  </div>
+</section>
+
+<section class="slide">
+  <div class="head"><div class="eyebrow">First run</div><h2>No <code>.env</code> yet? <code>make</code> asks for your LLM</h2></div>
+  <div class="content">
+<pre class="xs">$ make init-env
+Created .env from .env.example.
+Generated in .env: AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, …
+
+<span class="h">Choose an LLM profile (up/down, Enter):</span>
+<span class="h">  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry  [ANTHROPIC_API_KEY]</span>
+<span class="h">  amsc         American Science Cloud OpenAI-compatible  [AMSC_I2_API_KEY]</span>
+<span class="h">  anl_asksage  ANL AskSage  [ASKSAGE_API_KEY]</span>
+<span class="h">&gt; anthropic    Anthropic  [ANTHROPIC_API_KEY]</span>
+<span class="h">  inl_hpc      INL HPC OpenAI-compatible  [INL_HPC_API_KEY]</span>
+<span class="h">  inl_litellm  INL LiteLLM proxy  [INL_LITELLM_API_KEY]</span>
+<span class="h">  openai       OpenAI  [OPENAI_API_KEY]</span>
+<span class="h">ANTHROPIC_API_KEY (input hidden):</span>
+Saved LLM_CONFIG_PROFILE=anthropic in .env.</pre>
+<div class="grid g3">
+<div class="card acc">
+<h3>Pick a profile</h3>
+<p class="small">Up/down arrows, then Enter. The brackets show the key each profile needs. The cursor starts on <code>registry</code>, the default.</p>
+</div>
+
+<div class="card acc">
+<h3>Paste the key</h3>
+<p class="small">Nothing is echoed while you type. Profile and key go into <code>.env</code>, next to the generated secrets.</p>
+</div>
+
+<div class="card">
+<h3>Change it later</h3>
+<p class="small">Edit <code>LLM_CONFIG_PROFILE</code> and the key in <code>.env</code>, or blank the key and run <code>make init-env</code> again for the menu.</p>
+</div>
+
+</div>
+
+<p class="small"><code>make up</code> runs the same step, so you get this menu there too if you skipped <code>make init-env</code>. It only appears in a terminal and only while the profile's key is empty; otherwise <code>make</code> stops with <code>[ERROR] … is empty in .env</code>.</p>
   </div>
 </section>
 
@@ -420,9 +466,8 @@ git remote add upstream <span class="s">\</span>
   git@github.com:idaholab/prometheus_core.git
 git switch devel
 
-make init-env                 <span class="c"># creates .env, fills the secrets</span>
-echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span class="c"># base image from ../sdk</span>
-<span class="c"># then set your LLM key in .env (next slide)</span></pre>
+make init-env                 <span class="c"># creates .env, asks for LLM + key</span>
+echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span class="c"># base image from ../sdk</span></pre>
 <div class="col">
 <div class="card">
 <h4>Why a base image?</h4>
@@ -486,7 +531,7 @@ echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span cla
 <ol class="b small">
 <li>copies <code>.env.example</code> to <code>.env</code> if there is none</li>
 <li>fills every <strong>blank</strong> secret; values already set are never touched</li>
-<li>stops with an error if your profile's LLM key is empty</li>
+<li>if your profile's LLM key is empty: shows the profile menu and asks for the key (no terminal: stops with an error)</li>
 </ol>
 <p class="small"><code>setup_agent.py</code> later copies these secrets into your agent's <code>.env</code>.</p>
 <div class="callout bad">
