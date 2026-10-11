@@ -372,7 +372,7 @@ Tune for the conventions, not for the practice file. Hard-coding &quot;Brie Basi
 <p class="small">One teammate runs <code>setup_agent.py &quot;&lt;Team&gt; Table Plot&quot; ../../&lt;team&gt;-agent</code> (no <code>~</code>), adds the second skill to the card and a dispatch on <code>params[&quot;skill_id&quot;]</code>, then <code>git init</code>, <code>gh repo create &lt;team&gt;-agent --source=. --push</code>. Practice files go in <code>tests/fixtures/</code>.</p>
 </div></div>
 <div class="step"><div><h4>Everyone else forks</h4>
-<p class="small"><code>gh repo fork &lt;owner&gt;/&lt;team&gt;-agent --clone</code>. Your agent <code>.env</code> comes from <strong>your</strong> platform: scaffold a throwaway agent (<code>setup_agent.py x ../../tmp-agent</code>) and copy its <code>.env</code> into your clone.</p>
+<p class="small"><code>gh repo fork &lt;owner&gt;/&lt;team&gt;-agent --clone</code>. Your agent <code>.env</code> comes from <strong>your</strong> platform: <code>python3 setup_agent.py --env-only ../../&lt;team&gt;-agent</code> in <code>agent-template/</code>.</p>
 </div></div>
 <div class="step"><div><h4>Check routing first</h4>
 <p class="small">Upload the practice report, try the example prompt, and see both stubs called in order. The extract stub must already emit a real artifact, or the orchestrator has no id to pass to plot.</p>

@@ -237,7 +237,7 @@ One teammate runs `setup_agent.py "<Team> Table Plot" ../../<team>-agent` (no `~
 #### Everyone else forks
 
 {.small}
-`gh repo fork <owner>/<team>-agent --clone`. Your agent `.env` comes from **your** platform: scaffold a throwaway agent (`setup_agent.py x ../../tmp-agent`) and copy its `.env` into your clone.
+`gh repo fork <owner>/<team>-agent --clone`. Your agent `.env` comes from **your** platform: `python3 setup_agent.py --env-only ../../<team>-agent` in `agent-template/`.
 
 #### Check routing first
 

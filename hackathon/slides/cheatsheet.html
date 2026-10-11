@@ -45,7 +45,8 @@ gh repo create &lt;team&gt;-agent --private --source=. --push
 # teammates
 gh repo fork &lt;owner&gt;/&lt;team&gt;-agent --clone
 cd &lt;team&gt;-agent; git config pull.rebase true
-# .env from YOUR platform: scaffold a throwaway agent, copy its .env</pre>
+cd ~/prometheus/prometheus_core/agent-template
+python3 setup_agent.py --env-only ../../&lt;team&gt;-agent   # YOUR .env</pre>
       <p>No <code>gh</code>? <code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>, then <code>gh auth login</code>. Or use the web UI.</p>
     </section>
 
