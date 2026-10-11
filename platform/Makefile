@@ -223,6 +223,10 @@ test-integration: ##@ Run integration tests (containers must be running)
 test-infra: ##@ Run all infrastructure tests
 	cd tests && uv run python -m pytest -v
 
+.PHONY: check-markings
+check-markings: ##@ Fail if a tracked .py/.ts/.tsx/.jsx file lacks the copyright marking
+	python3 scripts/add_markings.py --check
+
 test-system: export AGENT_SECRET := $(AGENT_SECRET)
 test-system: export LITELLM_MASTER_KEY := $(LITELLM_MASTER_KEY)
 test-system: export LLM_CONFIG_PROFILE := $(LLM_CONFIG_PROFILE)
