@@ -1,6 +1,6 @@
 ﻿This project contains code from Idaho National Laboratory.
-Github URL: MIT
-Licensed under https://github.com/idaholab/prometheus_core
+Github URL: https://github.com/idaholab/prometheus_core
+Licensed under MIT
 
 
 © 2026 Battelle Energy Alliance, LLC

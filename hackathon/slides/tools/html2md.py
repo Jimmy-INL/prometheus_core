@@ -1,3 +1,15 @@
+# This file is part of Prometheus
+# https://inl.gov/super-intelligence/prometheus/
+#
+# Copyright 2026 Battelle Energy Alliance, LLC
+# All rights reserved, see NOTICE.txt for full restrictions
+# https://github.com/idaholab/prometheus_core/blob/main/NOTICE.txt
+#
+# Licensed under the MIT License, please see LICENSE for details
+# https://github.com/idaholab/prometheus_core/blob/main/LICENSE
+#
+# SPDX-License-Identifier: MIT
+
 """One-time converter: an existing deck NN-name.html -> slides/NN-name.md.
 
     uv run --with beautifulsoup4 --with pyyaml python tools/html2md.py 05-dry-run.html [...]

@@ -1,3 +1,15 @@
+// This file is part of Prometheus
+// https://inl.gov/super-intelligence/prometheus/
+//
+// Copyright 2026 Battelle Energy Alliance, LLC
+// All rights reserved, see NOTICE.txt for full restrictions
+// https://github.com/idaholab/prometheus_core/blob/main/NOTICE.txt
+//
+// Licensed under the MIT License, please see LICENSE for details
+// https://github.com/idaholab/prometheus_core/blob/main/LICENSE
+//
+// SPDX-License-Identifier: MIT
+
 // A new chat shows in Chat History, marked pending, from the start of its first turn:
 // withPendingRow() adds exactly one pending row at the top for the open conversation only
 // while it awaits a reply and is missing from the server list, and returns the server list
