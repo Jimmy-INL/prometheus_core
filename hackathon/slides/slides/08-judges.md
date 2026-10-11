@@ -80,7 +80,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 | 4 | Natural-language requests are **routed by the orchestrator** | The practice prompt on the practice file calls both skills; the status stream or client-agent log shows the calls |
 | 5 | Extract emits a table artifact; plot emits an **image** that renders | `/artifacts` lists both; the PNG shows in the chat |
 | 6 | Tests pass and lint is clean | Fresh clone of the SHA: `uv sync`, the SDK (below), `uv run pytest && uv run ruff check .` |
-| 7 | A PR reviewed by someone outside the team | An approval from a non-team member, with at least one resolved thread |
+| 7 | Every merged PR reviewed (owner reviews teammates; a teammate reviews the owner) | `gh pr list --repo <owner>/<team>-agent --state merged --json number,author,reviews`: each merged PR has an approval from someone other than its author |
 
 ```bash {.xs}
 # 2 · no host port: read the card from inside client-agent
@@ -223,7 +223,7 @@ Note: The item-level breakdown of the hidden-test points is in the organizer not
 ## Schedule for demos and awards {eyebrow="Day 2 end" content-style="gap:0"}
 
 ::: agenda
-- \[time\] | Code freeze and submissions | PR links and commit SHA in `genesis/hackathon`, card name and skill IDs, README
+- \[time\] | Code freeze and submissions | repo link and commit SHA, card name and skill IDs, README
 - \[time\] | Gate checks | Judges and mentors verify the must-haves on each demo machine with the practice file
 - \[time\] | Per team: 5 min demo + hidden test (≈ 10 min) | The team demos with the practice file, then the judges run the hidden prompts and two off-nominal requests
 - \[time\] | Reveal · People's Choice vote · deliberation | The hidden files and prompts are shown to everybody; about 20 minutes

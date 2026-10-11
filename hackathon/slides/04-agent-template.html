@@ -92,7 +92,7 @@
 <div class="col">
 <pre class="sm">cd ~/prometheus/prometheus_core/agent-template
 python3 setup_agent.py <span class="s">&quot;Neutron Table Plot&quot;</span> <span class="s">\</span>
-  ../../hackathon/agents/neutron    <span class="c"># no ~</span>
+  ../../neutron-agent               <span class="c"># no ~</span>
 <span class="c">#  name: &quot; Agent&quot; is appended</span>
 <span class="c">#  skill id:  neutron_extract_table</span>
 <span class="c">#  copy secrets from ../platform/.env? yes</span></pre>
@@ -479,7 +479,7 @@ idx = call.arguments[<span class="s">&quot;index&quot;</span>]</pre>
   <div class="head"><div class="eyebrow">Running it</div><h2>Next to your platform, in Docker</h2></div>
   <div class="content">
 <div class="grid" style="grid-template-columns: 1.35fr 1fr; gap:28px;">
-<pre class="sm">cd ~/prometheus/hackathon/agents/neutron
+<pre class="sm">cd ~/prometheus/neutron-agent
 make up                  <span class="c"># build + join the platform network</span>
 make logs                <span class="c"># &quot;Registered &#x27;neutron-table-plot-agent&#x27;&quot;</span>
 
@@ -756,7 +756,7 @@ Next: the end-to-end dry run (3:30 pm). The appendix of this deck has every deta
 <tr>
 <td>Output directory</td>
 <td>2nd argument, else <code>../&lt;slug&gt;</code></td>
-<td>a new folder (<code>~</code> is not expanded); for the hackathon <code>../../hackathon/agents/&lt;team_name&gt;</code></td>
+<td>a new folder (<code>~</code> is not expanded); for the hackathon <code>../../&lt;team&gt;-agent</code>, the team repo</td>
 </tr>
 <tr>
 <td>Trim comments?</td>

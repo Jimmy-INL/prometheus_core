@@ -33,19 +33,20 @@
 
   <div class="sheet">
     <section>
-      <h2>Your team's folder</h2>
-<pre>gh repo fork genesis/hackathon --clone=false
-git clone git@github.inl.gov:&lt;you&gt;/hackathon.git
-cd hackathon
-git remote add upstream git@github.inl.gov:genesis/hackathon.git
-git config pull.rebase true
-
+      <h2>Your team's repo</h2>
+<pre># owner (once)
 cd ~/prometheus/prometheus_core/agent-template
-python3 setup_agent.py
-#  name:   &lt;Team&gt; Table Plot     (" Agent" is appended)
-#  output: ../../hackathon/agents/&lt;team_name&gt;  (no ~)
-cd ~/prometheus/hackathon/agents/&lt;team_name&gt;</pre>
-      <p>No <code>gh</code>? <code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>, then <code>gh auth login</code>. Or use the Fork and "Compare &amp; pull request" buttons on the web.</p>
+python3 setup_agent.py "&lt;Team&gt; Table Plot" ../../&lt;team&gt;-agent
+cd ../../&lt;team&gt;-agent         # no ~ in the path above
+git init -b main &amp;&amp; git add . &amp;&amp; git status   # no .env!
+git commit -m "Scaffold the agent"
+gh repo create &lt;team&gt;-agent --private --source=. --push
+
+# teammates
+gh repo fork &lt;owner&gt;/&lt;team&gt;-agent --clone
+cd &lt;team&gt;-agent; git config pull.rebase true
+# .env from YOUR platform: scaffold a throwaway agent, copy its .env</pre>
+      <p>No <code>gh</code>? <code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>, then <code>gh auth login</code>. Or use the web UI.</p>
     </section>
 
     <section>
@@ -56,13 +57,13 @@ git commit -m "Imperative subject under 72 chars"
 git pull --rebase upstream main
 git push -u origin HEAD          # after a rebase:
 git push --force-with-lease      #   your branch only
-gh pr create --repo genesis/hackathon --base main</pre>
-      <p>Never commit <code>.env</code>. One PR needs an approval from someone outside your team (gate #7).</p>
+gh pr create --repo &lt;owner&gt;/&lt;team&gt;-agent --base main</pre>
+      <p>Never commit <code>.env</code>. Every merged PR needs an approval: the owner reviews teammates, a teammate reviews the owner (gate #7).</p>
     </section>
 
     <section>
       <h2>Run and check</h2>
-<pre>cd ~/prometheus/hackathon/agents/&lt;team_name&gt;
+<pre>cd ~/prometheus/&lt;team&gt;-agent
 make up              # build, start, register
 make logs            # your tracebacks are here
 docker restart &lt;slug&gt;-agent   # after a PLATFORM restart

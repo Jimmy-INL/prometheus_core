@@ -6,7 +6,7 @@ index:
   time: '3:30'
   heading: End-to-end dry run
   color: var(--green)
-  blurb: 'A command refresher for the hands-on session: platform check, scaffold and edit, run and route, practice PR to <code>genesis/hackathon</code>.'
+  blurb: 'A command refresher for the hands-on session: platform check, scaffold and edit, run and route, your own repo and a practice PR to a neighbour.'
 ---
 
 ## End-to-end dry run {eyebrow="3:30 pm · hands-on · 60 min"}
@@ -46,13 +46,13 @@ Change the skill so it greets by name. `make up`, check it registered, and get t
 ### Practice PR
 
 {.small}
-Fork `genesis/hackathon`, commit your agent under `practice/<you>/`, open a PR to `main`, get a review.
+Push your hello agent to a repo of your own. Fork a neighbour's, open a PR to it, and review the one you receive.
 :::
 ::::
 
 :::: grid 3 wrap-code
 ::: callout good
-**Done** = `/agents` lists your agent, a chat message returns your greeting, and your PR has an approval.
+**Done** = `/agents` lists your agent, a chat message returns your greeting, and you approved and merged a neighbour's PR.
 :::
 
 ::: callout warn
@@ -160,58 +160,52 @@ docker restart client-agent
 
 ---
 
-## Practice PR to `genesis/hackathon`, with a rebase {eyebrow="Refresh · 4"}
+## Your repo, and a practice PR to a neighbour {eyebrow="Refresh · 4"}
 
 :::: grid 2 gap=24px
-```bash {.xs hl=18}
-cd ~/prometheus
-gh repo fork genesis/hackathon --clone=false
-git clone git@github.inl.gov:<you>/hackathon.git
-cd hackathon
-git remote add upstream git@github.inl.gov:genesis/hackathon.git
-git fetch upstream
-git switch -c feature/hello-<you> upstream/main
-
-mkdir -p practice/<you>
-cp -r ../hello-<you>/{agent.py,agent_card.json,README.md,tests} \
-   practice/<you>/
+```bash {.xs hl=5}
+# 1 · your hello agent becomes your repo (you = owner)
+cd ~/prometheus/hello-<you>
+git init -b main
 git status                     # NO .env in the list!
-git add practice/<you>
-git commit -m "Add hello-world agent for <you>"
+git add . && git commit -m "Scaffold hello-world agent"
+gh repo create hello-<you> --public --source=. --push
 
-# someone else merged first? replay on top
-git pull --rebase upstream main
-
+# 2 · fork a neighbour's repo (you = teammate)
+cd ~/prometheus
+gh repo fork <neighbour>/hello-<neighbour> --clone
+cd hello-<neighbour>       # origin = yours, upstream = theirs
+git switch -c feature/better-greeting
+# edit agent_card.json: sharpen the skill description
+git commit -am "Describe when to call the greeting skill"
+git pull --rebase upstream main   # they merged first? replay
 git push -u origin HEAD        # later: git push --force-with-lease
-gh pr create --repo genesis/hackathon \
-  --base main --head <you>:feature/hello-<you> \
-  --title "Practice: hello from <you>" \
-  --body "Dry-run PR. Tested: uv run pytest, routed in UI."
+gh pr create --repo <neighbour>/hello-<neighbour> \
+  --base main --title "Describe the greeting skill" \
+  --body "Dry-run PR. Tested: uv run pytest."
 ```
 
 |||
 
 {.sm}
-1. Ask your neighbour to review: `gh pr view <n> --web`
-2. Reviewer: leave one inline comment
-3. Author: push a fix commit and reply "Fixed in &lt;sha&gt;"
-4. Reviewer: resolve the thread and **approve**
-5. A mentor merges
+1. Owner: `gh pr view <n> --web`, leave one inline comment
+2. Author: push a fix commit and reply "Fixed in &lt;sha&gt;"
+3. Owner: resolve the thread, **approve**, and merge
+4. Swap roles with the PR you opened
 
 ::: callout warn
-Repo **`genesis/hackathon`**, base `main`. `--force-with-lease` only on your own feature branch.
+Day 2 works the same way: one owner, teammates fork and open PRs, the owner reviews and merges. `--force-with-lease` only on your own feature branch.
 :::
 
 {.xs .wrap-code}
 | If… | then |
 |---|---|
-| cannot fork or see `genesis/hackathon` | org access (team `open`); ask a mentor |
+| `gh: not logged in` / no github.com account | `gh auth login`; ask a mentor if you have no account |
+| `.env` shows up in `git status` | `echo .env >> .gitignore` before `git add` |
 | rebase conflict | edit → `git add` → `git rebase --continue` (or `--abort`) |
 | push rejected (non-fast-forward) | after a rebase: `git push --force-with-lease` |
-| no `gh` | `brew install gh`, or the release binary in `~/.local/bin`; or use the Fork / Compare & pull request buttons |
+| no `gh` | `brew install gh`, or the release binary in `~/.local/bin`; or use the web UI (New repository, Fork, Compare & pull request) |
 ::::
-
-Note: Practice PRs go to genesis/hackathon main under practice/&lt;user&gt;/; team agents on Day 2 go under agents/&lt;team_name&gt;/.
 
 ---
 
@@ -233,12 +227,9 @@ git remote add upstream \
 git fetch upstream
 cd platform            # the stack lives here
 
-cp .env.example .env
+make init-env                   # .env with generated secrets
 echo "LOCAL_SDK=true" >> .env   # base image from ../sdk
-# fill: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD,
-#       BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,
-#       LITELLM_DB_PASSWORD, ADMIN_DB_PASSWORD
-python3 -c "import secrets; print(secrets.token_hex(32))"
+# set ANTHROPIC_API_KEY (or your profile's key) in .env
 
 make up                   # long first build; make logs to watch
 make ps

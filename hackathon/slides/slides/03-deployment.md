@@ -294,7 +294,7 @@ For participants whose platform does not start yet: prerequisites, clone, `.env`
 | Need | Why / check |
 |---|---|
 | **Docker + Compose v2** | The Makefile calls `docker compose -p prometheus_platform`. The compose files use `include:` and `additional_contexts`, so Compose ≥ 2.20 with BuildKit is needed. Check: `docker info`, `docker compose version`. |
-| **GNU make, git, openssl** | `make up` generates keys with `openssl rand`. |
+| **GNU make, git, python3** | `make up` runs `scripts/init_env.py` (standard library only) to create `.env`. |
 | **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login`. |
 | **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. |
 | **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
@@ -318,10 +318,9 @@ git remote add upstream \
   git@github.com:idaholab/prometheus_core.git
 git switch devel
 
-# smoke test: can you build the base image?
-make -C ../sdk build-local    # → prometheus_api:local
-# next step: LOCAL_SDK=true in .env, so make up
-# builds every service FROM it
+make init-env                 # creates .env, fills the secrets
+echo "LOCAL_SDK=true" >> .env   # base image from ../sdk
+# then set your LLM key in .env (next slide)
 ```
 
 |||
@@ -340,38 +339,37 @@ Every Python service (backend, client-agent, all agents) is built `FROM` the `pr
 
 ---
 
-## `cp .env.example .env`: the required values {eyebrow="Bonus · Step 2 · in prometheus_core/platform"}
+## `.env`: `make up` writes it, you add one key {eyebrow="Bonus · Step 2 · in prometheus_core/platform"}
 
 :::: grid 32 gap=28px
 {.sm}
-| Variable | Meaning |
+| In `.env` | Who sets it |
 |---|---|
-| `ANTHROPIC_API_KEY` | Used by the Anthropic models in `litellm_config.yaml` (and the `anthropic` profile) |
-| `AGENT_SECRET` | A2A bearer token: backend → client-agent, LiteLLM → agents |
-| `REDIS_PASSWORD` | Valkey `--requirepass` |
-| `REDIS_URL` | `redis://:${REDIS_PASSWORD}@redis:6379` (keep it as is) |
-| `BACKEND_JWT_SECRET` | **Session-cookie signing key.** The backend won't start while it is empty or still `change-me…`. (The old `CHAINLIT_AUTH_SECRET` is no longer read.) |
-| `LITELLM_MASTER_KEY` | Registry and gateway admin key (agents register with it) |
-| `LITELLM_DB_PASSWORD` | litellm-db Postgres |
-| `ADMIN_DB_PASSWORD` | admin-db Postgres |
-| `LITELLM_LOCAL_PORT=9977` | Already set. Compose has **no default** for it, so keep the line. |
-| `LOCAL_SDK=true` | Build the base image from `../sdk` instead of pulling it {.hl} |
-| `ADMIN_DB_ENCRYPTION_KEY=` | Leave empty: `make up` writes a Fernet key into `.env` |
+| `ANTHROPIC_API_KEY` (or the key of your `LLM_CONFIG_PROFILE`) | **you**: the only value `make up` cannot generate {.hl} |
+| `LOCAL_SDK=true` | **you**: build the base image from `../sdk` {.hl} |
+| `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY` | generated |
+| `LITELLM_DB_PASSWORD`, `ADMIN_DB_PASSWORD` | generated |
+| `BACKEND_JWT_SECRET` | generated (session-cookie signing key) |
+| `ADMIN_DB_ENCRYPTION_KEY` | generated (Fernet key for admin-db) |
+| `REDIS_URL`, `LITELLM_LOCAL_PORT=9977`, ports | defaults from `.env.example`; keep them |
 
 |||
 
-#### Generate every "change-me" {.acc}
-
-```bash {.sm}
-python3 -c "import secrets; \
-print(secrets.token_hex(32))"
-```
+#### What `make init-env` does {.acc}
 
 {.small}
-Use a different value for each secret. Anything works locally; the values only have to be consistent across the platform and your agent (`setup_agent.py` copies them for you).
+`scripts/init_env.py`, run by every `make up`/`restart`:
+
+{.small}
+1. copies `.env.example` to `.env` if there is none
+2. fills every **blank** secret; values already set are never touched
+3. stops with an error if your profile's LLM key is empty
+
+{.small}
+`setup_agent.py` later copies these secrets into your agent's `.env`.
 
 ::: callout bad
-Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `git status` should never show it.
+Never commit `.env`. Never paste it into chat or a PR. Back it up: losing `ADMIN_DB_ENCRYPTION_KEY` makes the admin-db's encrypted rows unreadable.
 :::
 ::::
 
@@ -384,9 +382,9 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 |---|---|
 | `unauthorized`, `denied` or `invalid reference format` for the base image | `LOCAL_SDK=true` is missing from `.env`, so the build looks for an image registry. Add the line and run `make up` again. |
 | `pull access denied for prometheus_api` | `LOCAL_SDK=true` is set, but `docker compose` ran without make, so `prometheus_api:local` was never built. Run `make base-image`, or always go through `make up`. |
-| `.env not found` from `check-prerequisites` | `cp .env.example .env` |
+| `make up` stops: "`ANTHROPIC_API_KEY` is empty" | Set the key for your `LLM_CONFIG_PROFILE` in `.env` (or pick another profile), then `make up` again. |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
-| Backend exits: "jwt_secret is not configured" | `BACKEND_JWT_SECRET` is empty or still `change-me…`. Generate a value (an old `CHAINLIT_AUTH_SECRET` is no longer read). |
+| Backend exits: "jwt_secret is not configured" | `BACKEND_JWT_SECRET` is empty: you ran `docker compose` without make. Run `make init-env` (an old `CHAINLIT_AUTH_SECRET` is no longer read). |
 | Backend exits during an alembic step | Migrations run in `backend/docker-entrypoint.sh` before uvicorn; `make logs SERVICE=backend`. |
 | SSL / certificate errors during `npm ci` or `pip` on the INL network | TLS inspection. `certs/INL.pem` is checked in (PR #100); pull the latest `devel`. Python images get the bundle from the base image. |
 | `network … has active endpoints` on `make up` | An external agent is still attached to `prometheus_platform_agent-network`. Stop it first (`make down` in the agent dir). |
@@ -634,7 +632,7 @@ Documented but unused on `devel`: `FRONTEND_URL`, `LOCAL_CERT_FILE`/`CERT_FILE`.
 - ->  {w=30}
 - [sky flex=1] **generate** | writes `docker-compose.agents.yml` (`include:` of `agents/*/docker-compose.yml`)
 - ->  {w=30}
-- [sky flex=1] **ensure-admin-encryption-key** | Fernet key into `.env` if empty
+- [sky flex=1] **init-env** | `.env` from the example, blank secrets filled, LLM key checked
 - ->  {w=30}
 - [crimson flex=1] **clear-litellm-db** | `compose down` + delete the `litellm-db-data` volume
 - ->  {w=30}
@@ -820,8 +818,8 @@ Your agent image adds only your own dependencies. That is why builds are small, 
 |---|---|
 | `clear-litellm-db` | down + delete the LiteLLM volume |
 | `clear-admin-users` | truncate users → the setup wizard runs again |
-| `ensure-admin-encryption-key` | Fernet key into `.env` |
-| `check-prerequisites` | .env + docker checks |
+| `init-env` | create `.env`, fill blank secrets, check the LLM key |
+| `check-prerequisites` | Docker checks |
 | `test-static` | infra tests, no Docker |
 | `test-integration`, `test-infra` | against running containers |
 | `test-system` | full system (needs `PROMETHEUS_SYSTEM_TESTING=true`) |

@@ -368,17 +368,17 @@ Tune for the conventions, not for the practice file. Hard-coding &quot;Brie Basi
 <div class="grid g2" style="gap:30px;">
 <div class="col">
 <div class="steps">
-<div class="step"><div><h4>Claim your folder</h4>
-<p class="small">Your agent lives in <code>genesis/hackathon</code> under <code>agents/&lt;team_name&gt;/</code>. Everyone forks the repo; one teammate opens the first PR with the scaffold. Practice files go in <code>agents/&lt;team_name&gt;/tests/fixtures/</code>.</p>
+<div class="step"><div><h4>Pick an owner, create the repo</h4>
+<p class="small">One teammate runs <code>setup_agent.py &quot;&lt;Team&gt; Table Plot&quot; ../../&lt;team&gt;-agent</code> (no <code>~</code>), adds the second skill to the card and a dispatch on <code>params[&quot;skill_id&quot;]</code>, then <code>git init</code>, <code>gh repo create &lt;team&gt;-agent --source=. --push</code>. Practice files go in <code>tests/fixtures/</code>.</p>
 </div></div>
-<div class="step"><div><h4>Scaffold with two stub skills</h4>
-<p class="small"><code>setup_agent.py</code>; at the <em>Output directory</em> prompt type <code>../../hackathon/agents/&lt;team_name&gt;</code> (<code>~</code> is not expanded). Then add the second skill to the card and a dispatch on <code>params[&quot;skill_id&quot;]</code>. Push.</p>
+<div class="step"><div><h4>Everyone else forks</h4>
+<p class="small"><code>gh repo fork &lt;owner&gt;/&lt;team&gt;-agent --clone</code>. Your agent <code>.env</code> comes from <strong>your</strong> platform: scaffold a throwaway agent (<code>setup_agent.py x ../../tmp-agent</code>) and copy its <code>.env</code> into your clone.</p>
 </div></div>
 <div class="step"><div><h4>Check routing first</h4>
 <p class="small">Upload the practice report, try the example prompt, and see both stubs called in order. The extract stub must already emit a real artifact, or the orchestrator has no id to pass to plot.</p>
 </div></div>
 <div class="step"><div><h4>Split by role</h4>
-<p class="small">Everyone works on a <code>feature/…</code> branch, runs <code>git pull --rebase upstream main</code> often, and opens small PRs to <code>genesis/hackathon</code>.</p>
+<p class="small">Everyone works on a <code>feature/…</code> branch in their fork, runs <code>git pull --rebase upstream main</code> often, and opens small PRs to the owner's repo. The owner reviews and merges; a teammate reviews the owner's PRs.</p>
 </div></div>
 </div>
 
@@ -804,7 +804,7 @@ Robustness beats features. A two-skill agent that handles every hidden prompt sc
 <li>Natural-language requests are <strong>routed</strong> to the right skill</li>
 <li>Extract emits a table artifact; plot emits an <strong>image</strong> that renders</li>
 <li><code>uv run pytest</code> and <code>uv run ruff check .</code> pass</li>
-<li>A PR reviewed by someone outside the team</li>
+<li>Every merged PR reviewed: by the owner, or by a teammate for the owner's own</li>
 </ol>
 </div>
 

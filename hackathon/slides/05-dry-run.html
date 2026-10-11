@@ -38,14 +38,14 @@
 <div class="card acc">
 <div class="kpi"><span class="v">4</span><span class="l">~15 min</span></div>
 <h3>Practice PR</h3>
-<p class="small">Fork <code>genesis/hackathon</code>, commit your agent under <code>practice/&lt;you&gt;/</code>, open a PR to <code>main</code>, get a review.</p>
+<p class="small">Push your hello agent to a repo of your own. Fork a neighbour's, open a PR to it, and review the one you receive.</p>
 </div>
 
 </div>
 
 <div class="grid g3 wrap-code">
 <div class="callout good">
-<strong>Done</strong> = <code>/agents</code> lists your agent, a chat message returns your greeting, and your PR has an approval.</div>
+<strong>Done</strong> = <code>/agents</code> lists your agent, a chat message returns your greeting, and you approved and merged a neighbour's PR.</div>
 
 <div class="callout warn">
 Use <strong>your own</strong> card name and skill ID. The registry replaces agents with the same name, so two identical &quot;Hello World Agent&quot;s evict each other.</div>
@@ -179,42 +179,37 @@ docker restart client-agent</pre>
 </section>
 
 <section class="slide">
-  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Practice PR to <code>genesis/hackathon</code>, with a rebase</h2></div>
+  <div class="head"><div class="eyebrow">Refresh · 4</div><h2>Your repo, and a practice PR to a neighbour</h2></div>
   <div class="content">
 <div class="grid g2" style="gap:24px;">
-<pre class="xs">cd ~/prometheus
-gh repo fork genesis/hackathon --clone=false
-git clone git@github.inl.gov:<span class="p">&lt;you&gt;</span>/hackathon.git
-cd hackathon
-git remote add upstream git@github.inl.gov:genesis/hackathon.git
-git fetch upstream
-git switch -c feature/hello-<span class="p">&lt;you&gt;</span> upstream/main
-
-mkdir -p practice/<span class="p">&lt;you&gt;</span>
-cp -r ../hello-<span class="p">&lt;you&gt;</span>/{agent.py,agent_card.json,README.md,tests} <span class="s">\</span>
-   practice/<span class="p">&lt;you&gt;</span>/
+<pre class="xs"><span class="c"># 1 · your hello agent becomes your repo (you = owner)</span>
+cd ~/prometheus/hello-<span class="p">&lt;you&gt;</span>
+git init -b main
 git status                     <span class="c"># NO .env in the list!</span>
-git add practice/<span class="p">&lt;you&gt;</span>
-git commit -m <span class="s">&quot;Add hello-world agent for <span class="p">&lt;you&gt;</span>&quot;</span>
+<span class="h">git add . &amp;&amp; git commit -m <span class="s">&quot;Scaffold hello-world agent&quot;</span></span>
+gh repo create hello-<span class="p">&lt;you&gt;</span> --public --source=. --push
 
-<span class="c"># someone else merged first? replay on top</span>
-git pull --rebase upstream main
-<span class="h"></span>
+<span class="c"># 2 · fork a neighbour&#x27;s repo (you = teammate)</span>
+cd ~/prometheus
+gh repo fork <span class="p">&lt;neighbour&gt;</span>/hello-<span class="p">&lt;neighbour&gt;</span> --clone
+cd hello-<span class="p">&lt;neighbour&gt;</span>       <span class="c"># origin = yours, upstream = theirs</span>
+git switch -c feature/better-greeting
+<span class="c"># edit agent_card.json: sharpen the skill description</span>
+git commit -am <span class="s">&quot;Describe when to call the greeting skill&quot;</span>
+git pull --rebase upstream main   <span class="c"># they merged first? replay</span>
 git push -u origin HEAD        <span class="c"># later: git push --force-with-lease</span>
-gh pr create --repo genesis/hackathon <span class="s">\</span>
-  --base main --head <span class="p">&lt;you&gt;</span>:feature/hello-<span class="p">&lt;you&gt;</span> <span class="s">\</span>
-  --title <span class="s">&quot;Practice: hello from <span class="p">&lt;you&gt;</span>&quot;</span> <span class="s">\</span>
-  --body <span class="s">&quot;Dry-run PR. Tested: uv run pytest, routed in UI.&quot;</span></pre>
+gh pr create --repo <span class="p">&lt;neighbour&gt;</span>/hello-<span class="p">&lt;neighbour&gt;</span> <span class="s">\</span>
+  --base main --title <span class="s">&quot;Describe the greeting skill&quot;</span> <span class="s">\</span>
+  --body <span class="s">&quot;Dry-run PR. Tested: uv run pytest.&quot;</span></pre>
 <div class="col">
 <ol class="b sm">
-<li>Ask your neighbour to review: <code>gh pr view &lt;n&gt; --web</code></li>
-<li>Reviewer: leave one inline comment</li>
+<li>Owner: <code>gh pr view &lt;n&gt; --web</code>, leave one inline comment</li>
 <li>Author: push a fix commit and reply &quot;Fixed in &lt;sha&gt;&quot;</li>
-<li>Reviewer: resolve the thread and <strong>approve</strong></li>
-<li>A mentor merges</li>
+<li>Owner: resolve the thread, <strong>approve</strong>, and merge</li>
+<li>Swap roles with the PR you opened</li>
 </ol>
 <div class="callout warn">
-Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <code>--force-with-lease</code> only on your own feature branch.</div>
+Day 2 works the same way: one owner, teammates fork and open PRs, the owner reviews and merges. <code>--force-with-lease</code> only on your own feature branch.</div>
 
 <table class="t xs wrap-code">
 <thead>
@@ -225,8 +220,12 @@ Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <c
 </thead>
 <tbody>
 <tr>
-<td>cannot fork or see <code>genesis/hackathon</code></td>
-<td>org access (team <code>open</code>); ask a mentor</td>
+<td><code>gh: not logged in</code> / no github.com account</td>
+<td><code>gh auth login</code>; ask a mentor if you have no account</td>
+</tr>
+<tr>
+<td><code>.env</code> shows up in <code>git status</code></td>
+<td><code>echo .env &gt;&gt; .gitignore</code> before <code>git add</code></td>
 </tr>
 <tr>
 <td>rebase conflict</td>
@@ -238,7 +237,7 @@ Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <c
 </tr>
 <tr>
 <td>no <code>gh</code></td>
-<td><code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>; or use the Fork / Compare &amp; pull request buttons</td>
+<td><code>brew install gh</code>, or the release binary in <code>~/.local/bin</code>; or use the web UI (New repository, Fork, Compare &amp; pull request)</td>
 </tr>
 </tbody>
 </table>
@@ -246,7 +245,6 @@ Repo <strong><code>genesis/hackathon</code></strong>, base <code>main</code>. <c
 </div>
 
   </div>
-  <aside class="notes">Practice PRs go to genesis/hackathon main under practice/&lt;user&gt;/; team agents on Day 2 go under agents/&lt;team_name&gt;/.</aside>
 </section>
 
 <section class="slide section bonus">
@@ -268,12 +266,9 @@ git remote add upstream <span class="s">\</span>
 git fetch upstream
 cd platform            <span class="c"># the stack lives here</span>
 
-cp .env.example .env
+make init-env                   <span class="c"># .env with generated secrets</span>
 echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span class="c"># base image from ../sdk</span>
-<span class="c"># fill: ANTHROPIC_API_KEY, AGENT_SECRET, REDIS_PASSWORD,</span>
-<span class="c">#       BACKEND_JWT_SECRET, LITELLM_MASTER_KEY,</span>
-<span class="c">#       LITELLM_DB_PASSWORD, ADMIN_DB_PASSWORD</span>
-python3 -c <span class="s">&quot;import secrets; print(secrets.token_hex(32))&quot;</span>
+<span class="c"># set ANTHROPIC_API_KEY (or your profile&#x27;s key) in .env</span>
 
 make up                   <span class="c"># long first build; make logs to watch</span>
 make ps</pre>

@@ -6,7 +6,7 @@ index:
   time: '1:00'
   heading: GitHub &amp; PR workflow
   color: var(--violet)
-  blurb: Where your code goes (<code>genesis/hackathon</code>), the branching model, forking, the daily loop with <code>git pull --rebase</code>, conflicts and force-pushes, commits, PRs with JIRA, review, the practice PR.
+  blurb: Where your code goes (a team repo on github.com), the branching model, forking, the daily loop with <code>git pull --rebase</code>, conflicts and force-pushes, commits, PRs with JIRA, review, the practice PR.
 ---
 
 # GitHub overview &<br>PR workflow {.title kicker="Day 1 · 1:00 pm" pills="All participants | 45 min | github.com"}
@@ -23,7 +23,7 @@ Where your code goes, how to branch and rebase, and how to get a PR reviewed and
 ### Find your repo
 
 {.small}
-Know where your code goes (`genesis/hackathon`) and why you fork it.
+Know where your code goes (your team's repo) and why you fork it.
 :::
 
 ::: card acc
@@ -51,27 +51,27 @@ You'll do all three for real at 3:30 pm, with a practice PR. On Day 2 every team
 
 ---
 
-## `genesis/hackathon`: one repo, one folder per team {eyebrow="Where your code goes"}
+## One repo per team, owned by one teammate {eyebrow="Where your code goes"}
 
 ::: grid 2 gap=30px
 ```text {.sm}
-hackathon/                # github.inl.gov/genesis/hackathon
-├── practice/
-│   └── <you>/            # today: your hello-world agent
-├── agents/
-│   ├── <team_name>/      # Day 2: your team's agent
-│   │   ├── agent.py
-│   │   ├── agent_card.json
-│   │   └── tests/
-│   └── …
-└── hollowmere_almanac.md
+github.com/<owner>/<team>-agent   # the team repo
+├── agent.py                      # scaffolded by
+├── agent_card.json               #   setup_agent.py
+├── pyproject.toml · Dockerfile · Makefile
+├── tests/
+│   └── fixtures/                 # practice files
+└── README.md
+     ▲ PRs to main
+github.com/<teammate>/<team>-agent  # each teammate's fork
 ```
 
 |||
 
-- Team `open` has **write** access. Work in your own **fork** (or a branch) and open PRs to `genesis/hackathon`.
-- `main` is protected: changes reach it only through a PR with one approval, and force-pushes are blocked.
-- `idaholab/prometheus_core` (the platform, the SDK in `sdk/`, the template in `agent-template/`) is read-only for this hackathon. Contributing to the platform later? **Always fork it**: a ruleset allows no branches there except `devel`.
+- **One teammate owns the repo**: scaffolds the agent, pushes it to github.com, and **reviews and merges** every teammate's PR.
+- Teammates **fork** the owner's repo and open PRs from their forks. The owner's own PRs are reviewed by a teammate.
+- Private repo? The owner invites the teammates and the judges (read access is enough to fork and review).
+- `idaholab/prometheus_core` (platform, SDK, template, these slides) is read-only for this hackathon. Contributing later? Fork it too and open PRs to `devel`.
 :::
 
 ---
@@ -93,7 +93,7 @@ Git Flow: a production branch, an integration branch, short-lived feature branch
 | Branch | Who touches it |
 |---|---|
 | `feature/<desc>` | **you**: one per piece of work, in your fork {.hl} |
-| `main` (hackathon, api, template)<br>`devel` (platform) | the integration branch: PRs only |
+| `main` (your team repo)<br>`devel` (prometheus_core) | the integration branch: PRs only |
 | `release/*`, `hotfix/*`, platform `main` | maintainers, for releases |
 
 |||
@@ -105,17 +105,17 @@ Git Flow: a production branch, an integration branch, short-lived feature branch
 
 ---
 
-## Fork and clone: `origin` is yours, `upstream` is genesis {eyebrow="Once"}
+## Fork and clone: `origin` is yours, `upstream` is the owner's {eyebrow="Once"}
 
 :::: cols 1.35fr 1fr gap=28px
 ```bash {.sm}
-gh repo fork genesis/hackathon --clone=false
+gh repo fork <owner>/<team>-agent --clone=false
 
 cd ~/prometheus
-git clone git@github.inl.gov:<you>/hackathon.git
-cd hackathon
+git clone git@github.com:<you>/<team>-agent.git
+cd <team>-agent
 git remote add upstream \
-  git@github.inl.gov:genesis/hackathon.git
+  git@github.com:<owner>/<team>-agent.git
 
 git config pull.rebase true
 git config rebase.autoStash true
@@ -125,11 +125,11 @@ git config rebase.autoStash true
 
 {.sm}
 - `origin` = your fork: you push here.
-- `upstream` = genesis: PRs go here, and you pull updates from here.
+- `upstream` = the owner's repo: PRs go here, and you pull updates from here.
 - Check with `git remote -v`.
 
 ::: callout
-Each teammate forks separately. Everyone's PRs meet in `genesis/hackathon`.
+Each teammate forks separately. Everyone's PRs meet in the owner's repo. The owner works in a clone of the team repo and opens PRs from feature branches.
 :::
 
 ::: callout info
@@ -153,8 +153,8 @@ git commit -m "Add the plot skill with a column form"
 git pull --rebase upstream main   # stay current
 git push -u origin HEAD
 
-gh pr create --repo genesis/hackathon --base main \
-  --head <you>:feature/neutron-plot-skill
+gh pr create --repo <owner>/<team>-agent \
+  --base main --head <you>:feature/neutron-plot-skill
 ```
 
 |||
@@ -164,7 +164,7 @@ gh pr create --repo genesis/hackathon --base main \
 2. **Commit** small, logical steps
 3. **Rebase** onto upstream before pushing
 4. **Push** to your fork
-5. **Open a PR** to genesis
+5. **Open a PR** to the owner's repo
 
 {.small}
 For the platform repo the integration branch is `devel`: `git pull --rebase upstream devel`, `--base devel`.
@@ -173,7 +173,7 @@ For the platform repo the integration branch is `devel`: `git pull --rebase upst
 ---
 
 ## `git pull --rebase upstream main`, visually {eyebrow="What rebase does"}
-> In the hackathon repo. For the platform the same picture applies to `upstream/devel`.
+> In your team repo. For the platform the same picture applies to `upstream/devel`.
 
 <svg aria-label="Rebase diagram" height="380" role="img" viewbox="0 0 1400 380" width="1400">
 <style>
@@ -360,50 +360,49 @@ Plot skill asks for columns when none are given.
 ::::
 
 ::: callout good
-The Day 2 gate needs one PR **approved by someone outside your team**. Pair up with another team early.
+The Day 2 gate needs every merged PR **reviewed**: the owner approves teammates' PRs, a teammate approves the owner's.
 :::
 
 ---
 
-## Your practice PR to `genesis/hackathon` {eyebrow="Practice at 3:30"}
+## Your practice PR, in your neighbour's repo {eyebrow="Practice at 3:30"}
 
 :::: grid 2 gap=30px
 ```bash {.xs}
-cd ~/prometheus
-gh repo fork genesis/hackathon --clone=false
-git clone git@github.inl.gov:<you>/hackathon.git
-cd hackathon
-git remote add upstream git@github.inl.gov:genesis/hackathon.git
-git fetch upstream
-git switch -c feature/hello-<you> upstream/main
-
-mkdir -p practice/<you>
-cp -r ../hello-<you>/{agent.py,agent_card.json,README.md,tests} \
-   practice/<you>/
+# 1 · your hello agent becomes your repo
+cd ~/prometheus/hello-<you>
+git init -b main
 git status                     # NO .env in the list!
-git add practice/<you>
-git commit -m "Add hello-world agent for <you>"
+git add . && git commit -m "Scaffold hello-world agent"
+gh repo create hello-<you> --public --source=. --push
 
+# 2 · fork your neighbour's repo, change it
+cd ~/prometheus
+gh repo fork <neighbour>/hello-<neighbour> --clone
+cd hello-<neighbour>           # origin = you, upstream = them
+git switch -c feature/better-greeting
+# edit agent_card.json: a sharper skill description
+git commit -am "Describe when to call the greeting skill"
 git push -u origin HEAD
-gh pr create --repo genesis/hackathon --base main \
-  --head <you>:feature/hello-<you> \
-  --title "Practice: hello from <you>" --body "Dry run PR."
+gh pr create --repo <neighbour>/hello-<neighbour> \
+  --base main --title "Describe the greeting skill" \
+  --body "Dry-run PR. Tested: uv run pytest."
 ```
 
 |||
 
 {.sm}
-1. Open the PR to **`genesis/hackathon`**, base `main`. Practice agents go in `practice/<you>/`; on Day 2 your team's agent goes in `agents/<team_name>/`.
-2. Ask a neighbour to review. Leave one comment, answer it, and resolve it.
-3. The reviewer approves; a mentor merges.
-4. Rebase exercise: after someone else's PR merges, run `git pull --rebase upstream main` on your next branch.
+1. Your neighbour reviews the PR you opened: one inline comment, you answer it and resolve it.
+2. You review the PR you received the same way, **approve**, and merge it.
+3. Rebase exercise: back in your own repo, `git pull --rebase` after the merge.
+
+{.small}
+This is the Day 2 setup in small: one owner, teammates who fork, the owner reviews and merges.
 
 ::: callout warn
-Double-check `git status` before committing: your agent directory contains a `.env` with the platform secrets. Copy only the files listed; never commit a `.env`.
+`gh repo create --source=.` pushes everything `git add` staged. Check `git status`: `.env` holds your platform's secrets and must not be listed (the scaffold's `.gitignore` excludes it).
 :::
 ::::
-
-Note: Assumes genesis/hackathon main has a ruleset (1 approval, no force-push) before the event; team open has write access. The repo .gitignore already excludes .env.
 
 ---
 
@@ -413,10 +412,10 @@ Note: Assumes genesis/hackathon main has a ruleset (1 approval, no force-push) b
 ```bash {.xs}
 # setup (once)
 gh auth login
-gh repo fork genesis/<repo> --clone=false
-git clone git@github.inl.gov:<you>/<repo>.git
+gh repo fork <owner>/<repo> --clone=false
+git clone git@github.com:<you>/<repo>.git
 git remote add upstream \
-  git@github.inl.gov:genesis/<repo>.git
+  git@github.com:<owner>/<repo>.git
 git config pull.rebase true
 git config rebase.autoStash true
 git config rerere.enabled true
@@ -433,7 +432,7 @@ git commit -m "Imperative subject"
 git pull --rebase upstream main
 git push -u origin HEAD
 git push --force-with-lease
-gh pr create --repo genesis/<repo> \
+gh pr create --repo <owner>/<repo> \
   --base main --head <you>:feature/<desc>
 ```
 
@@ -565,7 +564,7 @@ The template and the SDK live inside the platform repo, so there is nothing else
 │   ├── platform/        # make up here
 │   ├── sdk/
 │   └── agent-template/  # setup_agent.py
-└── hackathon/           # your agents go here
+└── <team>-agent/       # your team repo (clone)
 ```
 :::
 ::::
@@ -627,7 +626,7 @@ Reference material behind the talk. Skipped in the session; use it when you need
 ::::
 
 ::: callout info
-Hands-on is at 3:30 pm: you will open a practice PR to `genesis/hackathon`, the repo where every team's agent lands on Day 2. Nothing today touches the platform's `devel` or `main`.
+Hands-on is at 3:30 pm: you will put your hello agent in your own repo and open a practice PR to a neighbour's, the same setup your team uses on Day 2. Nothing today touches the platform's `devel` or `main`.
 :::
 
 ---
@@ -933,7 +932,7 @@ The template and the SDK live inside the platform repo, so there is nothing else
 │   ├── platform/        # make up here
 │   ├── sdk/
 │   └── agent-template/  # setup_agent.py
-└── hackathon/           # your agents go here
+└── <team>-agent/       # your team repo (clone)
 ```
 :::
 ::::

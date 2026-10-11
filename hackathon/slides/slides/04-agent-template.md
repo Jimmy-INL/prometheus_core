@@ -85,7 +85,7 @@ if __name__ == "__main__":
 ```bash {.sm}
 cd ~/prometheus/prometheus_core/agent-template
 python3 setup_agent.py "Neutron Table Plot" \
-  ../../hackathon/agents/neutron    # no ~
+  ../../neutron-agent               # no ~
 #  name: " Agent" is appended
 #  skill id:  neutron_extract_table
 #  copy secrets from ../platform/.env? yes
@@ -410,7 +410,7 @@ Get your agent onto the platform, find out why it isn't called, and test it with
 
 :::: cols 1.35fr 1fr gap=28px
 ```bash {.sm}
-cd ~/prometheus/hackathon/agents/neutron
+cd ~/prometheus/neutron-agent
 make up                  # build + join the platform network
 make logs                # "Registered 'neutron-table-plot-agent'"
 
@@ -606,7 +606,7 @@ No CI for `agent-template/`. Generated agents get tests and ruff config, but no 
 | Class name | PascalCase | `HelloWorldAgent` |
 | Primary skill ID | `<snake>_analysis` | `hello_world_analysis` |
 | Skill name / description | "… Analysis" | skill fields |
-| Output directory | 2nd argument, else `../<slug>` | a new folder (`~` is not expanded); for the hackathon `../../hackathon/agents/<team_name>` |
+| Output directory | 2nd argument, else `../<slug>` | a new folder (`~` is not expanded); for the hackathon `../../<team>-agent`, the team repo |
 | Trim comments? | no | strips the teaching comments in `agent.py` |
 :::
 

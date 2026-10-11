@@ -29,7 +29,7 @@
 <div class="grid g4" style="margin-top:10px">
 <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Understanding</h3><p class="small">How the platform, the repos, and an agent fit together, and why.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A working agent</h3><p class="small">A "hello world" agent from the template, registered and called from the chat.</p></div>
-<div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request to <code>genesis/hackathon</code>, where the team agents go on Day 2.</p></div>
+<div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request to a neighbour's repo: the way your team works on Day 2.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A team</h3><p class="small">4–5 people, a name, and a room for Day 2.</p></div>
 </div>
 <div class="callout info">
@@ -46,7 +46,7 @@ We assume your platform already starts with <code>make up</code> and DeepLynx is
 <div class="agenda-row"><span class="tm">1:45</span><div><div class="ti">Your local platform</div><div class="de">What runs where · logs and health checks · LLM flavors · DeepLynx for files · when things break</div></div></div>
 <div class="agenda-row"><span class="tm">2:30</span><div><div class="ti">Break</div></div></div>
 <div class="agenda-row"><span class="tm">2:45</span><div><div class="ti">Building an agent</div><div class="de">The code you write · the card that gets you called · files in, artifacts out · asking the user · LLMs · running and testing</div></div></div>
-<div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the &quot;hello world&quot; agent, submit a practice PR to <code>genesis/hackathon</code>. Mentors circulate.</div></div></div>
+<div class="agenda-row"><span class="tm">3:30</span><div><div class="ti">End-to-end dry run (hands-on)</div><div class="de">Clone, deploy, edit the &quot;hello world&quot; agent, put it in your own repo, review a neighbour's practice PR. Mentors circulate.</div></div></div>
 <div class="agenda-row"><span class="tm">4:30</span><div><div class="ti">The challenge &amp; team formation</div><div class="de">The Day 2 challenge (a table-and-plot agent) · practice files · teams of 4–5 · team name and Day 2 room</div></div></div>
 
   </div>
@@ -320,9 +320,9 @@ What you will use from today: <strong>uploads and artifacts</strong> (01, 03), <
 ├── sdk/                  # prometheus_api (in your image)
 └── agent-template/       # setup_agent.py
 
-hackathon/                # genesis/hackathon, main
-├── practice/<span class="p">&lt;you&gt;</span>/       # today
-└── agents/<span class="p">&lt;team_name&gt;</span>/   # tomorrow: your team&#x27;s agent</pre>
+<span class="p">&lt;team&gt;</span>-agent/             # github.com/<span class="p">&lt;owner&gt;</span>, main
+├── agent.py · agent_card.json
+└── tests/                # one repo per team</pre>
 <div class="col">
 <div class="card"><span class="tag">one clone</span>
 <h3>prometheus_core</h3>
@@ -330,8 +330,8 @@ hackathon/                # genesis/hackathon, main
 </div>
 
 <div class="card acc"><span class="tag">your code</span>
-<h3>hackathon</h3>
-<p class="small">Practice PRs today, your team's agent in <code>agents/&lt;team_name&gt;/</code> tomorrow.</p>
+<h3>Your team repo</h3>
+<p class="small">Today a hello agent in a repo of your own. Tomorrow one teammate owns the team's agent repo; the others fork it and send PRs.</p>
 </div>
 
 </div>
@@ -870,7 +870,7 @@ Older docs show v0.3 syntax (<code>message/send</code>, <code>role: &quot;user&q
 <tr>
 <td><strong><code>ADMIN_DB_ENCRYPTION_KEY</code></strong></td>
 <td>Backend at rest</td>
-<td>A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. <code>make up</code> generates it.</td>
+<td>A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. <code>make up</code> (<code>init-env</code>) generates it.</td>
 </tr>
 <tr>
 <td><strong>Provider keys</strong></td>
@@ -1070,7 +1070,7 @@ Without DeepLynx configured, user uploads are <strong>not stored</strong> and ag
 <div class="arrow-v" style="width:520px"><span>scaffolds</span></div>
 </div>
 <div class="row" style="justify-content:center">
-<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in <code>genesis/hackathon</code>, under <code>agents/&lt;team_name&gt;/</code>)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or put them in <code>platform/agents/&lt;name&gt;/</code>.</span></div>
+<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in your team repo on github.com)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or put them in <code>platform/agents/&lt;name&gt;/</code>.</span></div>
 </div>
 </div>
 <div class="callout">

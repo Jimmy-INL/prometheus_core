@@ -86,8 +86,8 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>PR links</strong></td>
-<td>The team's PRs to <code>genesis/hackathon</code> (<code>agents/&lt;team_name&gt;/</code>), at least one reviewed</td>
+<td><strong>Repo link</strong></td>
+<td><code>github.com/&lt;owner&gt;/&lt;team&gt;-agent</code>, with its merged PRs. Private? Give the judges read access.</td>
 </tr>
 <tr>
 <td><strong>Commit SHA</strong></td>
@@ -126,7 +126,7 @@
 </div>
 
   </div>
-  <aside class="notes">Set the submission deadline, a place to collect submissions, and the platform SHA. Gate #7 relies on the genesis/hackathon ruleset on main; check it exists.</aside>
+  <aside class="notes">Set the submission deadline, a place to collect submissions, and the platform SHA. Gate #7 is checked on the team repo's PR list; no ruleset enforces it.</aside>
 </section>
 
 <section class="slide">
@@ -141,7 +141,7 @@
 <li>Natural-language requests are <strong>routed by the orchestrator</strong></li>
 <li>Extract emits a table artifact; plot emits an <strong>image that renders</strong></li>
 <li><code>uv run pytest</code> and <code>uv run ruff check .</code> pass</li>
-<li>A PR <strong>approved by someone outside the team</strong></li>
+<li>Every merged PR <strong>reviewed</strong>: by the owner, or by a teammate for the owner's own</li>
 </ol>
 </div>
 <div class="col">
@@ -394,7 +394,7 @@ Main prizes follow the score. The categories on the next two slides are chosen i
 <section class="slide">
   <div class="head"><div class="eyebrow">Day 2 end</div><h2>Schedule for demos and awards</h2></div>
   <div class="content" style="gap:0">
-<div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Code freeze and submissions</div><div class="de">PR links and commit SHA in <code>genesis/hackathon</code>, card name and skill IDs, README</div></div></div>
+<div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Code freeze and submissions</div><div class="de">repo link and commit SHA, card name and skill IDs, README</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Gate checks</div><div class="de">Judges and mentors verify the must-haves on each demo machine with the practice file</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Per team: 5 min demo + hidden test (≈ 10 min)</div><div class="de">The team demos with the practice file, then the judges run the hidden prompts and two off-nominal requests</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Reveal · People's Choice vote · deliberation</div><div class="de">The hidden files and prompts are shown to everybody; about 20 minutes</div></div></div>

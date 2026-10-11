@@ -35,7 +35,7 @@ The new files follow the same conventions as the practice file: GitHub-flavoured
 4. Natural-language requests in the chat are **routed by the orchestrator** to the right skill.
 5. The extract skill emits a table artifact; the plot skill emits an **image** artifact that renders in the chat.
 6. `uv run pytest` and `uv run ruff check .` pass.
-7. The code is in `genesis/hackathon` under `agents/<team_name>/`, with a PR approved by someone outside the team.
+7. The code is in a team repo on github.com owned by one teammate; teammates fork it and open PRs, and every merged PR is reviewed (the owner reviews teammates' PRs, a teammate reviews the owner's).
 
 ## Platform prerequisites
 

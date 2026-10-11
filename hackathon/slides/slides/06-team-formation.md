@@ -229,15 +229,15 @@ Note: Placeholder table: fill in live or replace with the room list.
 
 :::: grid 2 gap=30px
 ::: steps
-#### Claim your folder
+#### Pick an owner, create the repo
 
 {.small}
-Your agent lives in `genesis/hackathon` under `agents/<team_name>/`. Everyone forks the repo; one teammate opens the first PR with the scaffold. Practice files go in `agents/<team_name>/tests/fixtures/`.
+One teammate runs `setup_agent.py "<Team> Table Plot" ../../<team>-agent` (no `~`), adds the second skill to the card and a dispatch on `params["skill_id"]`, then `git init`, `gh repo create <team>-agent --source=. --push`. Practice files go in `tests/fixtures/`.
 
-#### Scaffold with two stub skills
+#### Everyone else forks
 
 {.small}
-`setup_agent.py`; at the *Output directory* prompt type `../../hackathon/agents/<team_name>` (`~` is not expanded). Then add the second skill to the card and a dispatch on `params["skill_id"]`. Push.
+`gh repo fork <owner>/<team>-agent --clone`. Your agent `.env` comes from **your** platform: scaffold a throwaway agent (`setup_agent.py x ../../tmp-agent`) and copy its `.env` into your clone.
 
 #### Check routing first
 
@@ -247,7 +247,7 @@ Upload the practice report, try the example prompt, and see both stubs called in
 #### Split by role
 
 {.small}
-Everyone works on a `feature/…` branch, runs `git pull --rebase upstream main` often, and opens small PRs to `genesis/hackathon`.
+Everyone works on a `feature/…` branch in their fork, runs `git pull --rebase upstream main` often, and opens small PRs to the owner's repo. The owner reviews and merges; a teammate reviews the owner's PRs.
 :::
 
 |||
@@ -599,7 +599,7 @@ Robustness beats features. A two-skill agent that handles every hidden prompt sc
 4. Natural-language requests are **routed** to the right skill
 5. Extract emits a table artifact; plot emits an **image** that renders
 6. `uv run pytest` and `uv run ruff check .` pass
-7. A PR reviewed by someone outside the team
+7. Every merged PR reviewed: by the owner, or by a teammate for the owner's own
 :::
 
 ::: card

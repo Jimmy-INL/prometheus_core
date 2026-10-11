@@ -117,8 +117,8 @@
 </tr>
 <tr>
 <td>7</td>
-<td>A PR reviewed by someone outside the team</td>
-<td>An approval from a non-team member, with at least one resolved thread</td>
+<td>Every merged PR reviewed (owner reviews teammates; a teammate reviews the owner)</td>
+<td><code>gh pr list --repo &lt;owner&gt;/&lt;team&gt;-agent --state merged --json number,author,reviews</code>: each merged PR has an approval from someone other than its author</td>
 </tr>
 </tbody>
 </table>
@@ -455,7 +455,7 @@ Bonus points reward breadth; the hidden test rewards robustness. Get the 40 firs
 <section class="slide">
   <div class="head"><div class="eyebrow">Day 2 end</div><h2>Schedule for demos and awards</h2></div>
   <div class="content" style="gap:0">
-<div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Code freeze and submissions</div><div class="de">PR links and commit SHA in <code>genesis/hackathon</code>, card name and skill IDs, README</div></div></div>
+<div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Code freeze and submissions</div><div class="de">repo link and commit SHA, card name and skill IDs, README</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Gate checks</div><div class="de">Judges and mentors verify the must-haves on each demo machine with the practice file</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Per team: 5 min demo + hidden test (≈ 10 min)</div><div class="de">The team demos with the practice file, then the judges run the hidden prompts and two off-nominal requests</div></div></div>
 <div class="agenda-row"><span class="tm">[time]</span><div><div class="ti">Reveal · People's Choice vote · deliberation</div><div class="de">The hidden files and prompts are shown to everybody; about 20 minutes</div></div></div>

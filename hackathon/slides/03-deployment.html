@@ -376,8 +376,8 @@ EOF</pre>
 <td>The Makefile calls <code>docker compose -p prometheus_platform</code>. The compose files use <code>include:</code> and <code>additional_contexts</code>, so Compose ≥ 2.20 with BuildKit is needed. Check: <code>docker info</code>, <code>docker compose version</code>.</td>
 </tr>
 <tr>
-<td><strong>GNU make, git, openssl</strong></td>
-<td><code>make up</code> generates keys with <code>openssl rand</code>.</td>
+<td><strong>GNU make, git, python3</strong></td>
+<td><code>make up</code> runs <code>scripts/init_env.py</code> (standard library only) to create <code>.env</code>.</td>
 </tr>
 <tr>
 <td><strong><code>gh</code>, the GitHub CLI</strong></td>
@@ -420,10 +420,9 @@ git remote add upstream <span class="s">\</span>
   git@github.com:idaholab/prometheus_core.git
 git switch devel
 
-<span class="c"># smoke test: can you build the base image?</span>
-make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
-<span class="c"># next step: LOCAL_SDK=true in .env, so make up</span>
-<span class="c"># builds every service FROM it</span></pre>
+make init-env                 <span class="c"># creates .env, fills the secrets</span>
+echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span class="c"># base image from ../sdk</span>
+<span class="c"># then set your LLM key in .env (next slide)</span></pre>
 <div class="col">
 <div class="card">
 <h4>Why a base image?</h4>
@@ -440,70 +439,58 @@ make -C ../sdk build-local    <span class="c"># → prometheus_api:local</span>
 </section>
 
 <section class="slide bonus">
-  <div class="head"><div class="eyebrow">Bonus · Step 2 · in prometheus_core/platform</div><h2><code>cp .env.example .env</code>: the required values</h2></div>
+  <div class="head"><div class="eyebrow">Bonus · Step 2 · in prometheus_core/platform</div><h2><code>.env</code>: <code>make up</code> writes it, you add one key</h2></div>
   <div class="content">
 <div class="grid g32" style="gap:28px;">
 <table class="t sm">
 <thead>
 <tr>
-<th>Variable</th>
-<th>Meaning</th>
+<th>In <code>.env</code></th>
+<th>Who sets it</th>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>ANTHROPIC_API_KEY</code></td>
-<td>Used by the Anthropic models in <code>litellm_config.yaml</code> (and the <code>anthropic</code> profile)</td>
-</tr>
-<tr>
-<td><code>AGENT_SECRET</code></td>
-<td>A2A bearer token: backend → client-agent, LiteLLM → agents</td>
-</tr>
-<tr>
-<td><code>REDIS_PASSWORD</code></td>
-<td>Valkey <code>--requirepass</code></td>
-</tr>
-<tr>
-<td><code>REDIS_URL</code></td>
-<td><code>redis://:${REDIS_PASSWORD}@redis:6379</code> (keep it as is)</td>
-</tr>
-<tr>
-<td><code>BACKEND_JWT_SECRET</code></td>
-<td><strong>Session-cookie signing key.</strong> The backend won't start while it is empty or still <code>change-me…</code>. (The old <code>CHAINLIT_AUTH_SECRET</code> is no longer read.)</td>
-</tr>
-<tr>
-<td><code>LITELLM_MASTER_KEY</code></td>
-<td>Registry and gateway admin key (agents register with it)</td>
-</tr>
-<tr>
-<td><code>LITELLM_DB_PASSWORD</code></td>
-<td>litellm-db Postgres</td>
-</tr>
-<tr>
-<td><code>ADMIN_DB_PASSWORD</code></td>
-<td>admin-db Postgres</td>
-</tr>
-<tr>
-<td><code>LITELLM_LOCAL_PORT=9977</code></td>
-<td>Already set. Compose has <strong>no default</strong> for it, so keep the line.</td>
+<tr class="hl">
+<td><code>ANTHROPIC_API_KEY</code> (or the key of your <code>LLM_CONFIG_PROFILE</code>)</td>
+<td><strong>you</strong>: the only value <code>make up</code> cannot generate</td>
 </tr>
 <tr class="hl">
 <td><code>LOCAL_SDK=true</code></td>
-<td>Build the base image from <code>../sdk</code> instead of pulling it</td>
+<td><strong>you</strong>: build the base image from <code>../sdk</code></td>
 </tr>
 <tr>
-<td><code>ADMIN_DB_ENCRYPTION_KEY=</code></td>
-<td>Leave empty: <code>make up</code> writes a Fernet key into <code>.env</code></td>
+<td><code>AGENT_SECRET</code>, <code>REDIS_PASSWORD</code>, <code>LITELLM_MASTER_KEY</code></td>
+<td>generated</td>
+</tr>
+<tr>
+<td><code>LITELLM_DB_PASSWORD</code>, <code>ADMIN_DB_PASSWORD</code></td>
+<td>generated</td>
+</tr>
+<tr>
+<td><code>BACKEND_JWT_SECRET</code></td>
+<td>generated (session-cookie signing key)</td>
+</tr>
+<tr>
+<td><code>ADMIN_DB_ENCRYPTION_KEY</code></td>
+<td>generated (Fernet key for admin-db)</td>
+</tr>
+<tr>
+<td><code>REDIS_URL</code>, <code>LITELLM_LOCAL_PORT=9977</code>, ports</td>
+<td>defaults from <code>.env.example</code>; keep them</td>
 </tr>
 </tbody>
 </table>
 <div class="col">
-<h4 class="acc">Generate every &quot;change-me&quot;</h4>
-<pre class="sm">python3 -c <span class="s">&quot;import secrets; \</span>
-<span class="s">print(secrets.token_hex(32))&quot;</span></pre>
-<p class="small">Use a different value for each secret. Anything works locally; the values only have to be consistent across the platform and your agent (<code>setup_agent.py</code> copies them for you).</p>
+<h4 class="acc">What <code>make init-env</code> does</h4>
+<p class="small"><code>scripts/init_env.py</code>, run by every <code>make up</code>/<code>restart</code>:</p>
+<ol class="b small">
+<li>copies <code>.env.example</code> to <code>.env</code> if there is none</li>
+<li>fills every <strong>blank</strong> secret; values already set are never touched</li>
+<li>stops with an error if your profile's LLM key is empty</li>
+</ol>
+<p class="small"><code>setup_agent.py</code> later copies these secrets into your agent's <code>.env</code>.</p>
 <div class="callout bad">
-Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code>.gitignore</code>; <code>git status</code> should never show it.</div>
+Never commit <code>.env</code>. Never paste it into chat or a PR. Back it up: losing <code>ADMIN_DB_ENCRYPTION_KEY</code> makes the admin-db's encrypted rows unreadable.</div>
 
 </div>
 </div>
@@ -531,8 +518,8 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 <td><code>LOCAL_SDK=true</code> is set, but <code>docker compose</code> ran without make, so <code>prometheus_api:local</code> was never built. Run <code>make base-image</code>, or always go through <code>make up</code>.</td>
 </tr>
 <tr>
-<td><code>.env not found</code> from <code>check-prerequisites</code></td>
-<td><code>cp .env.example .env</code></td>
+<td><code>make up</code> stops: &quot;<code>ANTHROPIC_API_KEY</code> is empty&quot;</td>
+<td>Set the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code> (or pick another profile), then <code>make up</code> again.</td>
 </tr>
 <tr>
 <td>Port is already allocated (5150, 8600, 9977, 6379)</td>
@@ -540,7 +527,7 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. It is in <code
 </tr>
 <tr>
 <td>Backend exits: &quot;jwt_secret is not configured&quot;</td>
-<td><code>BACKEND_JWT_SECRET</code> is empty or still <code>change-me…</code>. Generate a value (an old <code>CHAINLIT_AUTH_SECRET</code> is no longer read).</td>
+<td><code>BACKEND_JWT_SECRET</code> is empty: you ran <code>docker compose</code> without make. Run <code>make init-env</code> (an old <code>CHAINLIT_AUTH_SECRET</code> is no longer read).</td>
 </tr>
 <tr>
 <td>Backend exits during an alembic step</td>
@@ -944,7 +931,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <div class="arrow-h" style="width:30px"></div>
 <div class="box sky" style="flex:1"><strong>generate</strong><span class="small">writes <code>docker-compose.agents.yml</code> (<code>include:</code> of <code>agents/*/docker-compose.yml</code>)</span></div>
 <div class="arrow-h" style="width:30px"></div>
-<div class="box sky" style="flex:1"><strong>ensure-admin-encryption-key</strong><span class="small">Fernet key into <code>.env</code> if empty</span></div>
+<div class="box sky" style="flex:1"><strong>init-env</strong><span class="small"><code>.env</code> from the example, blank secrets filled, LLM key checked</span></div>
 <div class="arrow-h" style="width:30px"></div>
 <div class="box crimson" style="flex:1"><strong>clear-litellm-db</strong><span class="small"><code>compose down</code> + delete the <code>litellm-db-data</code> volume</span></div>
 <div class="arrow-h" style="width:30px"></div>
@@ -1177,12 +1164,12 @@ args:
 <td>truncate users → the setup wizard runs again</td>
 </tr>
 <tr>
-<td><code>ensure-admin-encryption-key</code></td>
-<td>Fernet key into <code>.env</code></td>
+<td><code>init-env</code></td>
+<td>create <code>.env</code>, fill blank secrets, check the LLM key</td>
 </tr>
 <tr>
 <td><code>check-prerequisites</code></td>
-<td>.env + docker checks</td>
+<td>Docker checks</td>
 </tr>
 <tr>
 <td><code>test-static</code></td>

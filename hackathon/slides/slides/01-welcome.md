@@ -20,7 +20,7 @@ Note: ANL welcoming address goes first. Then walk the agenda, the architecture o
 <div class="grid g4" style="margin-top:10px">
 <div class="card acc"><div class="kpi"><span class="v">1</span></div><h3>Understanding</h3><p class="small">How the platform, the repos, and an agent fit together, and why.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">2</span></div><h3>A working agent</h3><p class="small">A "hello world" agent from the template, registered and called from the chat.</p></div>
-<div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request to <code>genesis/hackathon</code>, where the team agents go on Day 2.</p></div>
+<div class="card acc"><div class="kpi"><span class="v">3</span></div><h3>A reviewed PR</h3><p class="small">One practice pull request to a neighbour's repo: the way your team works on Day 2.</p></div>
 <div class="card acc"><div class="kpi"><span class="v">4</span></div><h3>A team</h3><p class="small">4–5 people, a name, and a room for Day 2.</p></div>
 </div>
 
@@ -38,7 +38,7 @@ We assume your platform already starts with `make up` and DeepLynx is set up. No
 - 1:45 | Your local platform | What runs where · logs and health checks · LLM flavors · DeepLynx for files · when things break
 - 2:30 | Break
 - 2:45 | Building an agent | The code you write · the card that gets you called · files in, artifacts out · asking the user · LLMs · running and testing
-- 3:30 | End-to-end dry run (hands-on) | Clone, deploy, edit the "hello world" agent, submit a practice PR to `genesis/hackathon`. Mentors circulate.
+- 3:30 | End-to-end dry run (hands-on) | Clone, deploy, edit the "hello world" agent, put it in your own repo, review a neighbour's practice PR. Mentors circulate.
 - 4:30 | The challenge & team formation | The Day 2 challenge (a table-and-plot agent) · practice files · teams of 4–5 · team name and Day 2 room
 :::
 
@@ -269,9 +269,9 @@ prometheus_core/          # idaholab/prometheus_core, devel
 ├── sdk/                  # prometheus_api (in your image)
 └── agent-template/       # setup_agent.py
 
-hackathon/                # genesis/hackathon, main
-├── practice/<you>/       # today
-└── agents/<team_name>/   # tomorrow: your team's agent
+<team>-agent/             # github.com/<owner>, main
+├── agent.py · agent_card.json
+└── tests/                # one repo per team
 ```
 
 |||
@@ -284,10 +284,10 @@ A monorepo since Oct 9: the platform, the SDK (`sdk/`, formerly `prometheus_api`
 :::
 
 ::: card acc tag="your code"
-### hackathon
+### Your team repo
 
 {.small}
-Practice PRs today, your team's agent in `agents/<team_name>/` tomorrow.
+Today a hello agent in a repo of your own. Tomorrow one teammate owns the team's agent repo; the others fork it and send PRs.
 :::
 ::::
 
@@ -627,7 +627,7 @@ Older docs show v0.3 syntax (`message/send`, `role: "user"`, `params.context.ski
 | **`AGENT_SECRET`** | Backend → client-agent; LiteLLM → every agent | A shared bearer token. Agents reject any other token with 401. It is registered as LiteLLM `static_headers`. |
 | **`LITELLM_MASTER_KEY`** | Agents/orchestrator → LiteLLM | Lets agents register and the orchestrator discover and call agents. The LLM proxy also requires it. |
 | **`userToken`** (RS256 JWT) | Backend → orchestrator → agents | The identity of the human user, minted per turn. Agents verify it against `JWKS_URL` (the backend's `/.well-known/jwks.json`). Required by default. |
-| **`ADMIN_DB_ENCRYPTION_KEY`** | Backend at rest | A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. `make up` generates it. |
+| **`ADMIN_DB_ENCRYPTION_KEY`** | Backend at rest | A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. `make up` (`init-env`) generates it. |
 | **Provider keys** | LiteLLM / agents → LLM API | `ANTHROPIC_API_KEY`, `INL_LITELLM_API_KEY`, `OPENAI_API_KEY`… The LLM profile decides which one is used. |
 | **DeepLynx key + secret** | Agents/backend → DeepLynx | `DEEPLYNX_KEY/SECRET/ORG_ID/PROJECT_ID`. They are global by default (`CREDENTIAL_BROKER=env`), or per user via Vault. |
 
@@ -784,7 +784,7 @@ Note: These repos are in github.inl.gov/genesis and need INL network access and 
 <div class="arrow-v" style="width:520px"><span>scaffolds</span></div>
 </div>
 <div class="row" style="justify-content:center">
-<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in <code>genesis/hackathon</code>, under <code>agents/&lt;team_name&gt;/</code>)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or put them in <code>platform/agents/&lt;name&gt;/</code>.</span></div>
+<div class="box green" style="width:1080px"><b>Agent repos</b><span>gmsh_agent, bim_agent, requirements_agent, … and <b>your hackathon agent</b> (in your team repo on github.com)</span><span>Separate repos. Run them next to the platform (joining its Docker network), or put them in <code>platform/agents/&lt;name&gt;/</code>.</span></div>
 </div>
 </div>
 

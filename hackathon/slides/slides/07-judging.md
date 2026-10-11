@@ -74,7 +74,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 :::: grid 2 gap=30px
 | Item | Details |
 |---|---|
-| **PR links** | The team's PRs to `genesis/hackathon` (`agents/<team_name>/`), at least one reviewed |
+| **Repo link** | `github.com/<owner>/<team>-agent`, with its merged PRs. Private? Give the judges read access. |
 | **Commit SHA** | The exact commit being judged; later commits are not scored |
 | **Card name + skill IDs** | As registered, e.g. `neutron-table-plot-agent` / `neutron_extract_table`, `neutron_plot_table` |
 | **Demo machine** | The laptop with your platform running, DeepLynx configured, and your agent registered |
@@ -98,7 +98,7 @@ Note: Fill in judge names. Weights can be adjusted; hidden test + rubric must st
 :::
 ::::
 
-Note: Set the submission deadline, a place to collect submissions, and the platform SHA. Gate #7 relies on the genesis/hackathon ruleset on main; check it exists.
+Note: Set the submission deadline, a place to collect submissions, and the platform SHA. Gate #7 is checked on the team repo's PR list; no ruleset enforces it.
 
 ---
 
@@ -111,7 +111,7 @@ Note: Set the submission deadline, a place to collect submissions, and the platf
 4. Natural-language requests are **routed by the orchestrator**
 5. Extract emits a table artifact; plot emits an **image that renders**
 6. `uv run pytest` and `uv run ruff check .` pass
-7. A PR **approved by someone outside the team**
+7. Every merged PR **reviewed**: by the owner, or by a teammate for the owner's own
 
 |||
 
@@ -281,7 +281,7 @@ Main prizes follow the score. The categories on the next two slides are chosen i
 ## Schedule for demos and awards {eyebrow="Day 2 end" content-style="gap:0"}
 
 ::: agenda
-- \[time\] | Code freeze and submissions | PR links and commit SHA in `genesis/hackathon`, card name and skill IDs, README
+- \[time\] | Code freeze and submissions | repo link and commit SHA, card name and skill IDs, README
 - \[time\] | Gate checks | Judges and mentors verify the must-haves on each demo machine with the practice file
 - \[time\] | Per team: 5 min demo + hidden test (≈ 10 min) | The team demos with the practice file, then the judges run the hidden prompts and two off-nominal requests
 - \[time\] | Reveal · People's Choice vote · deliberation | The hidden files and prompts are shown to everybody; about 20 minutes
