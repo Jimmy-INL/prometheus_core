@@ -57,7 +57,6 @@ def example_explicit_alias(llm: LLMClient) -> None:
                 "content": "List two possible causes for a rising bearing temperature trend.",
             },
         ],
-        temperature=0,
     )
     print(f"Alias: {response.model_alias}")
     print(f"Usage: {response.usage}")

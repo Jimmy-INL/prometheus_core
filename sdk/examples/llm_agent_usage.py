@@ -57,7 +57,6 @@ class LLMAnalysisAgent(PrometheusAgent):
                     },
                     {"role": "user", "content": query},
                 ],
-                temperature=0,
             )
 
         return {

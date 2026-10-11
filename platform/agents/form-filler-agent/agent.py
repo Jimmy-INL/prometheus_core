@@ -156,7 +156,7 @@ For enum fields, use the exact allowed value if mentioned.
             if llm_config.proxy_url:
                 llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
             async with self.llm_client(a2a_context, config=llm_config) as llm:
-                response = await llm.medium(prompt, max_tokens=1024, temperature=0)
+                response = await llm.medium(prompt, max_tokens=1024)
 
             response_text = response.text
             extracted = self.extract_json_from_text(response_text)
@@ -288,7 +288,7 @@ Only include fields where you found a clear value. Use null for fields where no 
             if llm_config.proxy_url:
                 llm_config = llm_config.with_api_key(os.getenv("LITELLM_MASTER_KEY"))
             async with self.llm_client(a2a_context, config=llm_config) as llm:
-                response = await llm.medium(prompt, max_tokens=1024, temperature=0)
+                response = await llm.medium(prompt, max_tokens=1024)
 
             response_text = response.text
             extracted = self.extract_json_from_text(response_text)

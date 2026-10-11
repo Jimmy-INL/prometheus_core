@@ -357,7 +357,6 @@ class MaterialDataAgent(PrometheusAgent):
                 response = await llm.medium(
                     prompt,
                     max_tokens=1024,
-                    temperature=0.3,
                 )
 
             response_text = response.text

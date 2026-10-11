@@ -1277,7 +1277,6 @@ async def _advance(
             messages,
             tools=[spec.definition() for spec in catalog.values()],
             tool_choice="auto",
-            temperature=0,
             max_tokens=4096,
         )
         # The absence of tool calls is the only terminator (never finish_reason).
