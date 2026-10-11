@@ -110,7 +110,7 @@ The platform signs every chat turn with it, so agents know which user is asking.
 #### Type `/agents` in the chat
 
 {.small}
-You should see form-filler, OSTI research, and synthesis.
+You should see form-filler and synthesis (OSTI research only with `OPTIONAL_AGENTS=true`).
 :::
 
 ::: callout warn
@@ -132,7 +132,7 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
 
 :::: grid 2
 ::: callout
-Then ask the chat something real: "Find recent OSTI papers on SiC cladding". Watch it with `make logs SERVICE=client-agent`.
+Then ask the chat something real, e.g. "Extract the material, temperature and pressure from: SS316 pipe at 320 °C and 15 MPa" (form-filler). Watch it with `make logs SERVICE=client-agent`.
 :::
 
 ::: callout warn
@@ -390,7 +390,7 @@ Never commit `.env`. Never paste it into chat or a PR. It is in `.gitignore`; `g
 | Backend exits during an alembic step | Migrations run in `backend/docker-entrypoint.sh` before uvicorn; `make logs SERVICE=backend`. |
 | SSL / certificate errors during `npm ci` or `pip` on the INL network | TLS inspection. `certs/INL.pem` is checked in (PR #100); pull the latest `devel`. Python images get the bundle from the base image. |
 | `network … has active endpoints` on `make up` | An external agent is still attached to `prometheus_platform_agent-network`. Stop it first (`make down` in the agent dir). |
-| Build killed / exit 137 | Out of memory. Raise the Docker Desktop memory limit (the OSTI agent is heavy). |
+| Build killed / exit 137 | Out of memory. Raise the Docker Desktop memory limit. The heaviest image, the OSTI agent, is only built with `OPTIONAL_AGENTS=true`. |
 | Behind a corporate proxy: downloads time out | Set `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`. They are **build** args; add `backend,admin-db` and your agent names to `NO_PROXY`. |
 
 ---
@@ -593,6 +593,7 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | Variable | Default | Purpose |
 |---|---|---|
 | `DEBUG_AGENTS` | `false` | Include `agents/debug-agents/*` |
+| `OPTIONAL_AGENTS` | `false` | Include `agents/optional/*` (OSTI research, slow build) |
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
 | `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
@@ -646,6 +647,7 @@ make up                        # build + start, detached
 make LOCAL_SDK=true up         # base image from ../sdk
 make up-fg                     # same, logs in foreground
 make DEBUG_AGENTS=true up      # + mock agents
+make OPTIONAL_AGENTS=true up   # + OSTI research (slow build)
 make PROFILE=prod up           # nginx frontend on :8080
 make PROFILE= up               # no frontend container…
 make react-dev                 # …run Vite on the host
@@ -828,7 +830,7 @@ Your agent image adds only your own dependencies. That is why builds are small, 
 :::
 
 {.small}
-Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `LOCAL_SDK`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_platform`.
+Variables: `PROFILE` (dev | prod | empty), `DEBUG_AGENTS`, `OPTIONAL_AGENTS`, `PROMETHEUS_SYSTEM_TESTING`, `LOCAL_SDK`, `SERVICE`, `SKIP_PREREQUISITES=1`. The compose project name is `prometheus_platform`.
 
 ---
 
@@ -928,11 +930,11 @@ The agents and the client-agent have no Docker healthcheck (the backend does). "
 | Type in the chat | Expect |
 |---|---|
 | `/help` | the slash commands |
-| `/agents` | form-filler, OSTI research, synthesis (plus debug agents) |
+| `/agents` | form-filler, synthesis (plus debug / optional agents if enabled) |
 | `/workflows` | registered workflow templates |
 | `/artifacts` | this conversation's artifacts |
 | `/tasks [id]` | background tasks |
-| "Find recent OSTI papers on SiC cladding" | routes to `search_literature`; watch the status stream |
+| "Find recent OSTI papers on SiC cladding" | with `OPTIONAL_AGENTS=true`: routes to `search_literature`; watch the status stream |
 :::
 
 |||
@@ -941,7 +943,7 @@ The agents and the client-agent have no Docker healthcheck (the backend does). "
 
 ```bash {.sm}
 make logs SERVICE=client-agent
-make logs SERVICE=osti-research-agent
+make logs SERVICE=form-filler-agent
 make logs SERVICE=litellm
 ```
 

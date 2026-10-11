@@ -42,6 +42,11 @@ export PROMETHEUS_API_BASE_IMAGE_HASH
 # Default: false.
 DEBUG_AGENTS ?= false
 
+# Set OPTIONAL_AGENTS=true to also include agents/optional/*/docker-compose.yml:
+# heavy agents most setups don't need (OSTI research pulls in PDF/ML
+# dependencies and dominates the build time). Default: false.
+OPTIONAL_AGENTS ?= false
+
 # Publish the client-agent port for host-driven full-system tests without
 # changing the runtime API surface. The system-test suite itself never starts
 # or reconfigures Docker.
@@ -60,6 +65,9 @@ PROFILE_FLAGS := $(if $(PROFILE),--profile $(PROFILE),)
 AGENT_COMPOSE_FILES := $(shell find agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
 ifeq ($(DEBUG_AGENTS),true)
 AGENT_COMPOSE_FILES += $(shell find agents/debug-agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
+endif
+ifeq ($(OPTIONAL_AGENTS),true)
+AGENT_COMPOSE_FILES += $(shell find agents/optional -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
 endif
 
 # Build the -f flags for docker compose.
