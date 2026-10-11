@@ -11,8 +11,6 @@ model_list:
       api_key: os.environ/ASKSAGE_API_KEY
       api_base: https://api.asksage.anl.gov/server/openai/v1
       drop_params: true
-      additional_drop_params:
-        - temperature
 
   - model_name: small
     litellm_params:
@@ -20,8 +18,6 @@ model_list:
       api_key: os.environ/ASKSAGE_API_KEY
       api_base: https://api.asksage.anl.gov/server/openai/v1
       drop_params: true
-      additional_drop_params:
-        - temperature
 
   - model_name: medium
     litellm_params:
@@ -29,8 +25,6 @@ model_list:
       api_key: os.environ/ASKSAGE_API_KEY
       api_base: https://api.asksage.anl.gov/server/openai/v1
       drop_params: true
-      additional_drop_params:
-        - temperature
 
   - model_name: large
     litellm_params:
@@ -38,8 +32,6 @@ model_list:
       api_key: os.environ/ASKSAGE_API_KEY
       api_base: https://api.asksage.anl.gov/server/openai/v1
       drop_params: true
-      additional_drop_params:
-        - temperature
 
   - model_name: vision
     litellm_params:
@@ -47,8 +39,6 @@ model_list:
       api_key: os.environ/ASKSAGE_API_KEY
       api_base: https://api.asksage.anl.gov/server/openai/v1
       drop_params: true
-      additional_drop_params:
-        - temperature
 
   - model_name: embedding
     litellm_params:

@@ -49,7 +49,6 @@ async def _maybe_generate_title(state: AgentState, conv_id: str) -> None:
                 "punctuation) summarizing the topic of this user message, for "
                 f"a chat history list:\n\n{query}",
                 max_tokens=32,
-                temperature=0,
             )
         title = " ".join(response.text.strip().strip("\"'").splitlines()).strip()
         if title:

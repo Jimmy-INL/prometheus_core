@@ -332,7 +332,7 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = await llm.medium(selection_prompt, max_tokens=1024, temperature=0)
+            response = await llm.medium(selection_prompt, max_tokens=1024)
 
             selected_ids = self.extract_json_from_text(response.text) or []
             return [f for f in factoids if f["factoid_id"] in selected_ids]
@@ -360,7 +360,7 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
+            response = await llm.medium(prompt, max_tokens=2048)
 
             raw_text = response.text
             parsed = self.extract_json_from_text(raw_text)
@@ -463,7 +463,7 @@ class OSTIResearchAgent(PrometheusAgent):
         prompt = SEARCH_QUERY_PROMPT_TEMPLATE.format(question=question)
 
         try:
-            response = await llm.medium(prompt, max_tokens=256, temperature=0)
+            response = await llm.medium(prompt, max_tokens=256)
 
             return response.text.strip().strip('"\'')
         except Exception as e:
@@ -552,7 +552,7 @@ class OSTIResearchAgent(PrometheusAgent):
         )
 
         try:
-            response = await llm.medium(prompt, max_tokens=256, temperature=0)
+            response = await llm.medium(prompt, max_tokens=256)
 
             result = self.extract_json_from_text(response.text)
             return result or {"relevant": False, "confidence": 0.0, "reason": "Parse failed"}
@@ -842,7 +842,7 @@ except Exception as e:
         )
 
         try:
-            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
+            response = await llm.medium(prompt, max_tokens=2048)
 
             result = self.extract_json_from_text(response.text)
             return result or {"answered": False, "confidence": 0.0}
@@ -872,7 +872,7 @@ except Exception as e:
         )
 
         try:
-            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
+            response = await llm.medium(prompt, max_tokens=2048)
 
             return response.text
         except Exception as e:
@@ -903,7 +903,7 @@ except Exception as e:
         seen = set()
 
         try:
-            response = await llm.medium(prompt, max_tokens=512, temperature=0)
+            response = await llm.medium(prompt, max_tokens=512)
             parsed = self.extract_json_from_text(response.text)
             if isinstance(parsed, list):
                 for item in parsed:
@@ -999,7 +999,7 @@ except Exception as e:
         )
 
         try:
-            response = await llm.medium(prompt, max_tokens=2048, temperature=0)
+            response = await llm.medium(prompt, max_tokens=2048)
 
             facts = self.extract_json_from_text(response.text)
 

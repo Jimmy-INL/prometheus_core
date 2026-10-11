@@ -238,7 +238,6 @@ async def _judge_similarity(
         response = await client.chat(
             messages,
             model=model or os.getenv("PROMETHEUS_SYSTEM_TEST_JUDGE_MODEL") or "medium",
-            temperature=0,
             max_tokens=200,
         )
     try:

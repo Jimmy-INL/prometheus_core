@@ -65,7 +65,6 @@ class SynthesisAgent(PrometheusAgent):
                 response = await llm.medium(
                     prompt,
                     max_tokens=1800,
-                    temperature=0.2,
                 )
             text = response.text
             if "```json" in text:

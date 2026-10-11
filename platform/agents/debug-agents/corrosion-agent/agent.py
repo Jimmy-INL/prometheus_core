@@ -211,7 +211,6 @@ class CorrosionAnalysisAgent(PrometheusAgent):
                 response = await llm.medium(
                     prompt,
                     max_tokens=2048,
-                    temperature=0.3,
                 )
 
             # Extract JSON from response
