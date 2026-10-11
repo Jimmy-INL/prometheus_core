@@ -22,3 +22,11 @@ Each directory has its own `Makefile`, dependencies, and tests; run commands fro
 inside the directory you are working on. The `sdk/` and `agent-template/` histories
 were carried over from the former `prometheus_api` and `prometheus_agent_template`
 repositories.
+
+## Platform quick start
+
+```
+cd platform && make up LOCAL_SKD=true
+```
+
+Needed prerequisites are Docker, python, make.
