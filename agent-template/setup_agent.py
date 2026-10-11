@@ -7,6 +7,7 @@ placeholders with your custom values.
 
 Usage:
     python setup_agent.py [agent_name] [output_directory]
+    python setup_agent.py --env-only <agent_directory>
 
 Arguments given on the command line are not prompted for; everything else
 is (press Enter to accept a default). With no arguments, every value is
@@ -16,6 +17,10 @@ Example:
     python setup_agent.py "Plant Analysis" ./plant-agent
     python setup_agent.py "Data Validator"
     python setup_agent.py
+    python setup_agent.py --env-only ../../my-team-agent
+
+--env-only writes only the .env of an agent you already have (for example a
+clone of a teammate's agent repo), from this clone's ../platform/.env.
 """
 
 import argparse
@@ -306,6 +311,11 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
         if not overwrite:
             return
 
+    write_agent_env(output_dir, selected_values)
+
+
+def write_agent_env(output_dir: Path, selected_values: dict[str, str]) -> None:
+    """Write the agent .env from the selected platform values and gitignore it."""
     lines = [
         "# Created by setup_agent.py from ../platform/.env.",
         "# Contains shared platform secrets needed by this agent.",
@@ -323,11 +333,28 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
         ]
     )
 
-    with open(env_path, "w", encoding="utf-8") as f:
+    with open(output_dir / ".env", "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
     ensure_secret_gitignore_entries(output_dir)
     print("  ✓ .env")
+
+
+def write_env_only(agent_dir: Path) -> None:
+    """Write only the .env of an existing agent directory from ../platform/.env."""
+    if not (agent_dir / "agent_card.json").is_file():
+        print(f"\nError: '{agent_dir}' has no agent_card.json; is it an agent directory?")
+        sys.exit(1)
+    if not PLATFORM_ENV_PATH.exists():
+        print(f"\nError: '{PLATFORM_ENV_PATH}' not found. Run `make init-env` in platform/ first.")
+        sys.exit(1)
+    selected_values = select_platform_env_values(PLATFORM_ENV_PATH)
+    if not selected_values:
+        print(f"\nError: '{PLATFORM_ENV_PATH}' has none of the values an agent needs.")
+        sys.exit(1)
+    if (agent_dir / ".env").exists():
+        print(f"\nReplacing '{agent_dir / '.env'}'.")
+    write_agent_env(agent_dir, selected_values)
 
 
 def process_file(file_path: Path, replacements: dict[str, str], output_dir: Path) -> None:
@@ -424,12 +451,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("agent_name", nargs="?", help="agent name, e.g. 'Plant Analysis'")
     parser.add_argument("output_directory", nargs="?", help="where to create the agent (default: ../<slug>)")
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--env-only",
+        metavar="AGENT_DIR",
+        help="only write AGENT_DIR/.env from ../platform/.env (for an agent you already have)",
+    )
+    args = parser.parse_args(argv)
+    if args.env_only and (args.agent_name or args.output_directory):
+        parser.error("--env-only takes no other arguments")
+    return args
 
 
 def main(argv: list[str] | None = None):
     """Main entry point."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.env_only:
+        write_env_only(Path(args.env_only).expanduser())
+        return
 
     # Collect agent information
     replacements = collect_agent_info(args.agent_name, args.output_directory)

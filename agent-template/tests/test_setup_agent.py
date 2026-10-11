@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -171,3 +173,44 @@ def test_platform_env_path_points_at_monorepo_platform_dir():
     copies secrets from is the sibling platform/ directory."""
     assert setup_agent.PLATFORM_ENV_PATH.name == ".env"
     assert (setup_agent.PLATFORM_ENV_PATH.parent / "docker-compose.yml").is_file()
+
+
+def _agent_dir(tmp_path):
+    agent_dir = tmp_path / "team-agent"
+    agent_dir.mkdir()
+    (agent_dir / "agent_card.json").write_text("{}", encoding="utf-8")
+    return agent_dir
+
+
+def test_env_only_writes_env_and_gitignore_for_existing_agent(tmp_path, monkeypatch):
+    """A teammate's clone of the team repo gets a .env from their own platform."""
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=mine\nLOCAL_SDK=true\nANTHROPIC_API_KEY=sk-x\n", encoding="utf-8")
+    monkeypatch.setattr(setup_agent, "PLATFORM_ENV_PATH", platform_env)
+    agent_dir = _agent_dir(tmp_path)
+    (agent_dir / ".env").write_text("AGENT_SECRET=owners\n", encoding="utf-8")
+
+    setup_agent.main(["--env-only", str(agent_dir)])
+
+    env = (agent_dir / ".env").read_text(encoding="utf-8")
+    assert "AGENT_SECRET=mine" in env
+    assert "owners" not in env
+    assert "PROMETHEUS_API_BASE_IMAGE_HASH=local" in env
+    assert "ANTHROPIC_API_KEY" not in env
+    assert ".env" in (agent_dir / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+
+def test_env_only_rejects_a_directory_without_agent_card(tmp_path, monkeypatch):
+    platform_env = tmp_path / "platform.env"
+    platform_env.write_text("AGENT_SECRET=mine\n", encoding="utf-8")
+    monkeypatch.setattr(setup_agent, "PLATFORM_ENV_PATH", platform_env)
+
+    with pytest.raises(SystemExit):
+        setup_agent.main(["--env-only", str(tmp_path)])
+
+    assert not (tmp_path / ".env").exists()
+
+
+def test_env_only_takes_no_positional_arguments():
+    with pytest.raises(SystemExit):
+        setup_agent.parse_args(["--env-only", "x", "Plant Analysis"])
