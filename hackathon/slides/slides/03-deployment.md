@@ -74,23 +74,78 @@ Behind them: the orchestrator (`client-agent`), three agents, a state store, and
 
 ---
 
-## Four commands, one trap {eyebrow="Day to day"}
+## Once, then four commands {eyebrow="Day to day"}
 
 :::: grid 2 gap=30px
-```bash {.sm}
+```bash {.sm hl=3-4}
 cd ~/prometheus/prometheus_core/platform
-make up                     # build and start
-make restart                # restart, no rebuild
+
+make init-env                  # once: creates .env (next slide)
+echo "LOCAL_SDK=true" >> .env  # once: base image from ../sdk
+
+make up                        # build and start
+make restart                   # restart, no rebuild
 make logs SERVICE=client-agent
-make down                   # stop
+make down                      # stop
 ```
 
 |||
+
+::: callout info
+**`LOCAL_SDK=true`**: every Python service is built `FROM` the `prometheus_api` base image. With this line, `make up` first builds that image from `../sdk` on your laptop (`prometheus_api:local`): no registry, no token. Without it, `make up` tries to pull from `containers.github.inl.gov` and fails with `unauthorized`. Put it in `.env` after `make init-env`, so every later `make up` sees it.
+:::
 
 ::: callout bad
 **Every `make up` or `make restart` empties the agent registry.** The platform's own agents re-register by themselves. **Your agent doesn't**: restart it afterwards with `docker restart <your-agent>`.
 :::
 ::::
+
+---
+
+## No `.env` yet? `make` asks for your LLM {eyebrow="First run"}
+
+```text {.xs hl=5-13}
+$ make init-env
+Created .env from .env.example.
+Generated in .env: AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, …
+
+Choose an LLM profile (up/down, Enter):
+  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry  [ANTHROPIC_API_KEY]
+  amsc         American Science Cloud OpenAI-compatible  [AMSC_I2_API_KEY]
+  anl_asksage  ANL AskSage  [ASKSAGE_API_KEY]
+> anthropic    Anthropic  [ANTHROPIC_API_KEY]
+  inl_hpc      INL HPC OpenAI-compatible  [INL_HPC_API_KEY]
+  inl_litellm  INL LiteLLM proxy  [INL_LITELLM_API_KEY]
+  openai       OpenAI  [OPENAI_API_KEY]
+ANTHROPIC_API_KEY (input hidden):
+Saved LLM_CONFIG_PROFILE=anthropic in .env.
+```
+
+:::: grid 3
+::: card acc
+### Pick a profile
+
+{.small}
+Up/down arrows, then Enter. The brackets show the key each profile needs. The cursor starts on `registry`, the default.
+:::
+
+::: card acc
+### Paste the key
+
+{.small}
+Nothing is echoed while you type. Profile and key go into `.env`, next to the generated secrets.
+:::
+
+::: card
+### Change it later
+
+{.small}
+Edit `LLM_CONFIG_PROFILE` and the key in `.env`, or blank the key and run `make init-env` again for the menu.
+:::
+::::
+
+{.small}
+`make up` runs the same step, so you get this menu there too if you skipped `make init-env`. It only appears in a terminal and only while the profile's key is empty; otherwise `make` stops with `[ERROR] … is empty in .env`.
 
 ---
 
@@ -318,9 +373,8 @@ git remote add upstream \
   git@github.com:idaholab/prometheus_core.git
 git switch devel
 
-make init-env                 # creates .env, fills the secrets
+make init-env                 # creates .env, asks for LLM + key
 echo "LOCAL_SDK=true" >> .env   # base image from ../sdk
-# then set your LLM key in .env (next slide)
 ```
 
 |||
@@ -363,7 +417,7 @@ Every Python service (backend, client-agent, all agents) is built `FROM` the `pr
 {.small}
 1. copies `.env.example` to `.env` if there is none
 2. fills every **blank** secret; values already set are never touched
-3. stops with an error if your profile's LLM key is empty
+3. if your profile's LLM key is empty: shows the profile menu and asks for the key (no terminal: stops with an error)
 
 {.small}
 `setup_agent.py` later copies these secrets into your agent's `.env`.
