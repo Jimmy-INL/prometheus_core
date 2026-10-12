@@ -97,23 +97,21 @@ jobs:
   sdk-docker:
     name: "sdk: docker ${{ matrix.platform }}"
     needs: gitleaks
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - amd64
-          - arm64
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
     defaults:
       run:
         working-directory: sdk
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: ${{ matrix.platform }}
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build image
@@ -170,20 +168,18 @@ jobs:
   platform-frontend-docker:
     name: "platform: frontend docker ${{ matrix.platform }}"
     needs: gitleaks
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - amd64
-          - arm64
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: ${{ matrix.platform }}
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build image
@@ -200,20 +196,18 @@ jobs:
   platform-backend-docker:
     name: "platform: backend docker ${{ matrix.platform }}"
     needs: gitleaks
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - amd64
-          - arm64
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: ${{ matrix.platform }}
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
