@@ -25,8 +25,9 @@ Other files here (like this README) are ignored.
 
 - `sdk/Dockerfile` (the `prometheus_api` base image used by the Python services)
 - `platform/frontend/Dockerfile`
+- `platform/backend/Dockerfile`
 
-Both mount this directory from a named build context called `certs`. That
+All mount this directory from a named build context called `certs`. That
 context is passed by `sdk/Makefile`, `platform/docker-compose.yml`, and
 `.github/workflows/test.yml`. To build an image by hand, pass it yourself:
 
