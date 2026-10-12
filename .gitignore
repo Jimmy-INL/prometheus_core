@@ -1,2 +1,6 @@
 .claude
 .codegraph
+
+.env
+.env.*
+!.env.example
