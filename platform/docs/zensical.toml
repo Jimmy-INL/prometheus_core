@@ -2,7 +2,7 @@
 site_name = "Prometheus Docs"
 site_description = "Prometheus documentation."
 site_author = ""
-site_url = ""
+site_url = "https://idaholab.github.io/prometheus_core/"
 copyright = ""
 
 # Read more: https://zensical.org/docs/setup/navigation/

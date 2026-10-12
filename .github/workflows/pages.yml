@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  hackathon-build:
-    name: "hackathon: build"
+  build:
+    name: "build"
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout
@@ -24,7 +24,10 @@ jobs:
         with:
           version: "0.11.25"
           python-version: "3.12"
-      - name: Build slides
+      - name: Build docs
+        working-directory: platform/docs
+        run: uv run --frozen zensical build --clean
+      - name: Build hackathon slides
         working-directory: hackathon/slides
         run: make build
       - name: Check generated slides are up to date
@@ -40,9 +43,10 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Assemble site
-        # The site serves the slides from /hackathon/
+        # The docs are the site root and the slides are served from /hackathon/
         run: |
-          mkdir -p _site/hackathon
+          cp -R platform/docs/site _site
+          mkdir _site/hackathon
           cd hackathon/slides
           cp -R *.html assets ../../_site/hackathon/
       - name: Upload site
@@ -50,16 +54,16 @@ jobs:
         with:
           path: _site
 
-  hackathon-deploy:
-    name: "hackathon: deploy"
-    needs: hackathon-build
+  deploy:
+    name: "deploy"
+    needs: build
     runs-on: ubuntu-26.04
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}hackathon/
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Deploy
         id: deploy
