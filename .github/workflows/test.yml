@@ -289,3 +289,45 @@ jobs:
         # Integration tests need the running platform. python -m puts the
         # current directory on sys.path, which the tests need to import system/
         run: uv run --frozen --no-sync python -m pytest --color=yes -m "not integration"
+
+  platform-agent:
+    name: "platform: agent ${{ matrix.agent }}"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: client-agent
+            path: platform/agents/client-agent
+          - agent: osti-research-agent
+            path: platform/agents/optional/osti-research-agent
+            # marker-pdf pulls in PyTorch with CUDA and the tests don't use it
+            overrides: "marker-pdf; sys_platform == 'never'"
+          - agent: code-render-debug-agent
+            path: platform/agents/debug-agents/code-render-debug-agent
+          - agent: corrosion-agent
+            path: platform/agents/debug-agents/corrosion-agent
+          - agent: thermal-agent
+            path: platform/agents/debug-agents/thermal-agent
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Install dependencies
+        env:
+          OVERRIDES: ${{ matrix.overrides }}
+        run: |
+          printf '%s\n' "$OVERRIDES" > "$RUNNER_TEMP/overrides.txt"
+          uv venv
+          uv pip install -r pyproject.toml --overrides "$RUNNER_TEMP/overrides.txt" \
+            pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+      - name: Test
+        run: .venv/bin/python -m pytest --color=yes
