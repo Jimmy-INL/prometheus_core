@@ -70,6 +70,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --frozen --no-sync ruff format --check --diff .
 
+  markings:
+    name: "markings"
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check
+        run: python3 platform/scripts/add_markings.py --check
+
   hackathon-slides:
     name: "hackathon: slides"
     needs: gitleaks
