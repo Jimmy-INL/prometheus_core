@@ -162,6 +162,8 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
+      - name: Unit tests
+        run: node --test --experimental-strip-types $(find src -name '*.test.ts')
       - name: Build
         run: npm run build
 
