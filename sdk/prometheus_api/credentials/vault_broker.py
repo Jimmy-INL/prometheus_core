@@ -95,9 +95,7 @@ class VaultCredentialBroker:
     # Vault token exchange (JWT auth → Vault token)
     # ------------------------------------------------------------------
 
-    async def _get_vault_token(
-        self, user_id: str, user_token: str, vault_addr: str
-    ) -> str:
+    async def _get_vault_token(self, user_id: str, user_token: str, vault_addr: str) -> str:
         """Return a cached or freshly-minted Vault token for *user_id*."""
         async with self._cache_lock:
             cached = self._token_cache.get(user_id)
@@ -105,9 +103,7 @@ class VaultCredentialBroker:
                 vault_token, expires_at = cached
                 if datetime.now(timezone.utc) < expires_at:
                     return vault_token
-            vault_token, ttl = await self._exchange_jwt_for_vault_token(
-                user_token, vault_addr
-            )
+            vault_token, ttl = await self._exchange_jwt_for_vault_token(user_token, vault_addr)
             cache_ttl = min(ttl // 2, MAX_TOKEN_CACHE_TTL_SECONDS)
             self._token_cache[user_id] = (
                 vault_token,
@@ -151,8 +147,7 @@ class VaultCredentialBroker:
                 data = resp.json()
         except httpx.HTTPStatusError as exc:
             raise CredentialError(
-                f"Vault JWT auth failed ({exc.response.status_code}): "
-                f"{exc.response.text[:200]}"
+                f"Vault JWT auth failed ({exc.response.status_code}): {exc.response.text[:200]}"
             ) from exc
         except Exception as exc:
             raise CredentialError(f"Vault JWT auth request failed: {exc}") from exc
@@ -199,8 +194,7 @@ class VaultCredentialBroker:
                 data = resp.json()
         except httpx.HTTPStatusError as exc:
             raise CredentialError(
-                f"Vault secret read failed ({exc.response.status_code}): "
-                f"{exc.response.text[:200]}"
+                f"Vault secret read failed ({exc.response.status_code}): {exc.response.text[:200]}"
             ) from exc
         except Exception as exc:
             raise CredentialError(f"Vault secret read request failed: {exc}") from exc
@@ -237,6 +231,7 @@ class VaultCredentialBroker:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _mtls_cert():
     """Return (cert_path, key_path) tuple for mTLS, or None."""

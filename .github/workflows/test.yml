@@ -1,0 +1,387 @@
+name: test
+
+on:
+  push:
+    branches: [devel]
+  pull_request:
+    branches: [main, devel]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gitleaks:
+    name: "gitleaks"
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Trust workspace
+        # The checkout isn't owned by the container user, and without this git
+        # refuses to read it and gitleaks passes without scanning anything
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Scan
+        # Only the commits being added: the PR's commits, or the pushed ones
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # gitleaks passes without scanning if the range is empty or the base
+          # commit is missing, so check the range with git first
+          count=$(git rev-list --count "$BASE_SHA..$HEAD_SHA")
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No commits to scan in $BASE_SHA..$HEAD_SHA"
+            exit 1
+          fi
+          gitleaks git --redact --no-banner --log-opts="$BASE_SHA..$HEAD_SHA" .
+
+  ruff:
+    name: "ruff ${{ matrix.project }}"
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - sdk
+          - platform/backend
+          - agent-template
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Sync environment
+        # Only the dev group, for each project's locked ruff version
+        run: uv sync --frozen --only-dev --no-install-package prometheus-api
+      - name: Check
+        run: uv run --frozen --no-sync ruff check --output-format=github .
+      - name: Format
+        if: ${{ !cancelled() }}
+        run: uv run --frozen --no-sync ruff format --check --diff .
+
+  markings:
+    name: "markings"
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check
+        run: python3 platform/scripts/add_markings.py --check
+
+  hackathon-slides:
+    name: "hackathon: slides"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: hackathon/slides
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Build
+        run: make build
+      - name: Check generated decks are up to date
+        run: |
+          if [ -n "$(git status --porcelain .)" ]; then
+            git status --short .
+            git --no-pager diff --stat .
+            echo "::error::The generated slides are out of date. Run 'make build' in hackathon/slides and commit the result."
+            exit 1
+          fi
+
+  platform-docs:
+    name: "platform: docs"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: platform/docs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Build
+        run: uv run --frozen zensical build --clean
+      - name: Check for hackathon collision
+        # The pages workflow serves the hackathon slides from /hackathon/
+        run: |
+          if [ -e site/hackathon ]; then
+            echo "::error::The docs build produced site/hackathon, which collides with the hackathon slides on the Pages site. Rename that docs page or folder."
+            exit 1
+          fi
+
+  sdk-python:
+    name: "sdk: python ${{ matrix.python }}"
+    needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Test
+        run: uv run --frozen pytest --color=yes
+
+  sdk-docker:
+    name: "sdk: docker ${{ matrix.platform }}"
+    needs: gitleaks
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: sdk
+          file: sdk/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          push: false
+          load: true
+          tags: sdk:${{ matrix.platform }}
+      - name: Test
+        # The image only has the installed package; mount the checkout for
+        # pyproject.toml, uv.lock, and the tests
+        run: |
+          docker run --rm --platform linux/${{ matrix.platform }} \
+            -v "$PWD:/src" -w /src \
+            sdk:${{ matrix.platform }} \
+            bash -ec '
+              uv export --frozen --only-dev > requirements.txt
+              uv pip install -r requirements.txt
+              rm requirements.txt
+              pytest --color=yes
+            '
+
+  platform-frontend-npm:
+    name: "platform: frontend npm"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: platform/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Matches the node image in frontend/Dockerfile
+          node-version: "22.19.0"
+          cache: npm
+          cache-dependency-path: platform/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: node --test --experimental-strip-types $(find src -name '*.test.ts')
+      - name: Build
+        run: npm run build
+
+  platform-frontend-docker:
+    name: "platform: frontend docker ${{ matrix.platform }}"
+    needs: gitleaks
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          # Same context, target, and certs context as docker-compose.yml
+          context: platform
+          file: platform/frontend/Dockerfile
+          target: prod
+          build-contexts: certs=platform/certs
+          platforms: linux/${{ matrix.platform }}
+          push: false
+
+  platform-backend-docker:
+    name: "platform: backend docker ${{ matrix.platform }}"
+    needs: gitleaks
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: amd64
+            runner: ubuntu-26.04
+          - platform: arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # The docker driver builds into the local image store, so the backend
+          # build can use the sdk image without a registry
+          driver: docker
+      - name: Build sdk image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: sdk
+          file: sdk/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          push: false
+          load: true
+          tags: prometheus-api:${{ matrix.platform }}
+      - name: Build backend image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: platform/backend
+          file: platform/backend/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          push: false
+          build-args: |
+            PROMETHEUS_API_BASE_IMAGE_REPO=prometheus-api
+            PROMETHEUS_API_BASE_IMAGE_HASH=${{ matrix.platform }}
+
+  platform-backend-python:
+    name: "platform: backend python ${{ matrix.python }}"
+    needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: platform/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        run: |
+          uv sync --frozen --no-install-package prometheus-api
+          uv pip install --no-deps ../../sdk
+      - name: Test
+        run: uv run --frozen --no-sync pytest --color=yes
+
+  platform-infrastructure:
+    name: "platform: infrastructure"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: platform/tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Sync environment
+        run: |
+          uv sync --frozen --no-install-package prometheus-api
+          uv pip install --no-deps ../../sdk
+      - name: Test
+        # Integration tests need the running platform. python -m puts the
+        # current directory on sys.path, which the tests need to import system/
+        run: uv run --frozen --no-sync python -m pytest --color=yes -m "not integration"
+
+  platform-agent:
+    name: "platform: agent ${{ matrix.agent }}"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: client-agent
+            path: platform/agents/client-agent
+          - agent: osti-research-agent
+            path: platform/agents/optional/osti-research-agent
+            # marker-pdf pulls in PyTorch with CUDA and the tests don't use it
+            overrides: "marker-pdf; sys_platform == 'never'"
+          - agent: code-render-debug-agent
+            path: platform/agents/debug-agents/code-render-debug-agent
+          - agent: corrosion-agent
+            path: platform/agents/debug-agents/corrosion-agent
+          - agent: thermal-agent
+            path: platform/agents/debug-agents/thermal-agent
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Install dependencies
+        env:
+          OVERRIDES: ${{ matrix.overrides }}
+        run: |
+          printf '%s\n' "$OVERRIDES" > "$RUNNER_TEMP/overrides.txt"
+          uv venv
+          uv pip install -r pyproject.toml --overrides "$RUNNER_TEMP/overrides.txt" \
+            pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+      - name: Test
+        run: .venv/bin/python -m pytest --color=yes

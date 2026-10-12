@@ -251,9 +251,7 @@ def run_conversion(request: ConvertRequest) -> dict:
         write_vtp(polydata, output_dir / filename, request.compress)
 
         time_value = metadata.time_values[ts_idx] if ts_idx < len(metadata.time_values) else 0.0
-        files.append(
-            {"index": i, "timestep_index": ts_idx, "time_value": time_value, "filename": filename}
-        )
+        files.append({"index": i, "timestep_index": ts_idx, "time_value": time_value, "filename": filename})
 
         for name in vars_to_enable:
             range_val = get_array_range(polydata, name)

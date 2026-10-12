@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 
 import pytest
 
@@ -30,6 +29,7 @@ from prometheus_api.agent.worker_pool import (
 # ---------------------------------------------------------------------------
 # WorkerTask / WorkerResult types
 # ---------------------------------------------------------------------------
+
 
 def test_worker_task_repr_excludes_token():
     task = WorkerTask(
@@ -60,6 +60,7 @@ def test_worker_result_captures_result():
 # WorkerHandle state
 # ---------------------------------------------------------------------------
 
+
 def test_worker_handle_not_alive_without_process():
     handle = WorkerHandle(user_id="dave")
     assert not handle.is_alive()
@@ -73,6 +74,7 @@ def test_worker_handle_terminate_is_noop_without_process():
 # ---------------------------------------------------------------------------
 # UserWorkerPool — capacity enforcement
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pool_raises_at_capacity(monkeypatch):
@@ -114,14 +116,21 @@ async def test_pool_reaps_dead_worker_and_spawns_new(monkeypatch):
     class FakeProcess:
         def __init__(self, *, target, args, daemon, name, **kw):
             spawned.append(name)
-        def start(self): pass
-        def is_alive(self): return True
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return True
+
         pid = 12345
 
     class FakeCtx:
-        def Process(self, **kwargs): return FakeProcess(**kwargs)
+        def Process(self, **kwargs):
+            return FakeProcess(**kwargs)
 
     import prometheus_api.agent.worker_pool as wp_module
+
     monkeypatch.setattr(wp_module.multiprocessing, "get_context", lambda m: FakeCtx())
 
     handle = await pool._get_or_spawn("alice")
@@ -133,8 +142,10 @@ async def test_pool_reaps_dead_worker_and_spawns_new(monkeypatch):
 # PrometheusAgent.requires_user_isolation flag
 # ---------------------------------------------------------------------------
 
+
 def test_requires_user_isolation_defaults_false():
     from prometheus_api.agent import PrometheusAgent
+
     assert PrometheusAgent.requires_user_isolation is False
 
 
@@ -154,6 +165,7 @@ def test_requires_user_isolation_can_be_set():
 # ---------------------------------------------------------------------------
 # UserWorkerPool.start / stop
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pool_start_creates_reaper_task():

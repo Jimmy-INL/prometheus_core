@@ -14,10 +14,8 @@
 
 from __future__ import annotations
 
-import os
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from prometheus_api.credentials.broker import (
     Credential,
@@ -39,6 +37,7 @@ USER_TOKEN = "fake.user.token"
 def clear_broker_singleton():
     """Reset the module-level broker singleton between tests."""
     import prometheus_api.credentials.factory as fac
+
     original = fac._broker
     fac._broker = None
     yield
@@ -48,6 +47,7 @@ def clear_broker_singleton():
 # ---------------------------------------------------------------------------
 # EnvCredentialBroker — DeepLynx
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_env_broker_deeplynx_jwt(monkeypatch):
@@ -96,6 +96,7 @@ async def test_env_broker_deeplynx_missing_creds_raises(monkeypatch):
 # EnvCredentialBroker — SLURM
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_env_broker_slurm(monkeypatch):
     monkeypatch.setenv("SLURM_JWT_TOKEN", "slurm-tok-xyz")
@@ -126,6 +127,7 @@ async def test_env_broker_slurm_missing_token_raises(monkeypatch):
 # EnvCredentialBroker — user_token not validated (env mode)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_env_broker_ignores_user_token(monkeypatch):
     """EnvCredentialBroker does not verify the user_token (dev mode)."""
@@ -143,6 +145,7 @@ async def test_env_broker_ignores_user_token(monkeypatch):
 # EnvCredentialBroker — unknown resource falls back gracefully
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_env_broker_unknown_resource_returns_empty():
     broker = EnvCredentialBroker()
@@ -157,6 +160,7 @@ async def test_env_broker_unknown_resource_returns_empty():
 # ---------------------------------------------------------------------------
 # Credential.expires_at is in the future for env broker
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_env_broker_credential_expires_in_future(monkeypatch):
@@ -173,10 +177,12 @@ async def test_env_broker_credential_expires_in_future(monkeypatch):
 # factory.get_broker
 # ---------------------------------------------------------------------------
 
+
 def test_get_broker_returns_env_broker_by_default(monkeypatch):
     monkeypatch.delenv("CREDENTIAL_BROKER", raising=False)
     broker = get_broker()
     from prometheus_api.credentials.env_broker import EnvCredentialBroker
+
     assert isinstance(broker, EnvCredentialBroker)
 
 
@@ -184,6 +190,7 @@ def test_get_broker_returns_env_broker_explicitly(monkeypatch):
     monkeypatch.setenv("CREDENTIAL_BROKER", "env")
     broker = _create_broker()
     from prometheus_api.credentials.env_broker import EnvCredentialBroker
+
     assert isinstance(broker, EnvCredentialBroker)
 
 
@@ -191,6 +198,7 @@ def test_get_broker_returns_vault_broker(monkeypatch):
     monkeypatch.setenv("CREDENTIAL_BROKER", "vault")
     broker = _create_broker()
     from prometheus_api.credentials.vault_broker import VaultCredentialBroker
+
     assert isinstance(broker, VaultCredentialBroker)
 
 
@@ -210,6 +218,7 @@ def test_get_broker_is_singleton():
 # CredentialRequest is frozen
 # ---------------------------------------------------------------------------
 
+
 def test_credential_request_frozen():
     req = CredentialRequest(user_id="ivan", resource="deeplynx")
     with pytest.raises((AttributeError, TypeError)):
@@ -219,6 +228,7 @@ def test_credential_request_frozen():
 # ---------------------------------------------------------------------------
 # ConnectionConfig.from_credential
 # ---------------------------------------------------------------------------
+
 
 def test_connection_config_from_credential(monkeypatch):
     monkeypatch.setenv("DEEPLYNX_ORG_ID", "42")
@@ -230,6 +240,7 @@ def test_connection_config_from_credential(monkeypatch):
         expires_at=datetime.now(timezone.utc),
     )
     from prometheus_api.storage_client.connection import ConnectionConfig
+
     config = ConnectionConfig.from_credential(cred)
     assert config.jwt_token == "tok-abc"
     assert config.organization_id == 42
@@ -246,6 +257,7 @@ def test_connection_config_from_credential_overrides_env(monkeypatch):
         expires_at=datetime.now(timezone.utc),
     )
     from prometheus_api.storage_client.connection import ConnectionConfig
+
     config = ConnectionConfig.from_credential(cred)
     # Credential value takes precedence over env for org/project
     assert config.organization_id == 100
@@ -262,6 +274,7 @@ def test_connection_config_from_credential_explicit_override(monkeypatch):
         expires_at=datetime.now(timezone.utc),
     )
     from prometheus_api.storage_client.connection import ConnectionConfig
+
     config = ConnectionConfig.from_credential(cred, organization_id=999)
     # Explicit argument takes precedence over credential value
     assert config.organization_id == 999

@@ -204,10 +204,7 @@ async def _map_backgrounded(
         turn_id=turn_id,
         status=ChatStatus.BACKGROUNDED,
         message=response.message
-        or (
-            "This is taking a while — it's now running in the background. "
-            "I'll post the result here when it's ready."
-        ),
+        or ("This is taking a while — it's now running in the background. I'll post the result here when it's ready."),
         task_id=str(task_id) if task_id else None,
     )
 

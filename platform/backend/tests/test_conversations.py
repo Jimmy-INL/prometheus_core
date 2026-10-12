@@ -750,7 +750,9 @@ def test_detail_messages_name_the_artifacts_each_turn_produced(monkeypatch):
         ],
     }
     fake = _detail_client(monkeypatch, conversations={"c1": conv}, owners={"c1": "alice"})
-    monkeypatch.setattr(fake, "get_artifacts", lambda conv_id: [{"artifact_id": "gen", "name": "plot.png"}], raising=False)
+    monkeypatch.setattr(
+        fake, "get_artifacts", lambda conv_id: [{"artifact_id": "gen", "name": "plot.png"}], raising=False
+    )
 
     async def _no_enrich(artifacts):
         return None

@@ -150,7 +150,7 @@ def test_alembic_takes_an_advisory_lock_before_running_migrations():
     body = (Path(__file__).resolve().parent.parent / "alembic" / "env.py").read_text()
     # Scoped to do_run_migrations: the offline path also calls run_migrations, and it
     # has no connection to take a lock on.
-    online = body[body.index("def do_run_migrations("):]
+    online = body[body.index("def do_run_migrations(") :]
     lock = online.index("pg_advisory_xact_lock")
     run = online.index("context.run_migrations()")
     assert lock < run

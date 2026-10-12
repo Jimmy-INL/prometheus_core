@@ -189,7 +189,11 @@ _ARTIFACT_MATRIX = [
     ),
     ("code-log-ext", {"artifact_id": "y10", "name": "run.log"}, "code"),
     # Agent text parts default to "artifact.txt" + text/plain: must stay a report.
-    ("report-plaintext-default-name", {"artifact_id": "r3", "mime_type": "text/plain", "name": "artifact.txt"}, "report"),
+    (
+        "report-plaintext-default-name",
+        {"artifact_id": "r3", "mime_type": "text/plain", "name": "artifact.txt"},
+        "report",
+    ),
     ("file-zip", {"artifact_id": "f1", "mime_type": "application/octet-stream", "name": "logs.zip"}, "file"),
     ("file-inp", {"artifact_id": "f2", "name": "model.inp"}, "file"),
     ("ifc-mime", {"artifact_id": "i1", "mime_type": "application/ifc"}, "ifc"),

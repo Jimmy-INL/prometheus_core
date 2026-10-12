@@ -37,6 +37,7 @@ from prometheus_api.agent.identity_keygen import generate_keypair
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def keypair() -> tuple[str, str]:
     """One RSA keypair shared across tests in this module (keygen is slow-ish)."""
@@ -57,6 +58,7 @@ def identity_env(monkeypatch, keypair):
 # ---------------------------------------------------------------------------
 # Mint / verify round-trip
 # ---------------------------------------------------------------------------
+
 
 def test_mint_and_verify_returns_correct_user_id():
     token = mint_user_token("alice")
@@ -113,6 +115,7 @@ def test_mint_includes_kid_header():
 # Expiry
 # ---------------------------------------------------------------------------
 
+
 def test_expired_token_raises_identity_error():
     expired = mint_user_token("frank", ttl_seconds=-1)
     with pytest.raises(IdentityError, match="expired"):
@@ -128,6 +131,7 @@ def test_fresh_token_does_not_expire_immediately():
 # ---------------------------------------------------------------------------
 # Wrong key
 # ---------------------------------------------------------------------------
+
 
 def test_wrong_public_key_raises_identity_error(monkeypatch):
     token = mint_user_token("harry")
@@ -164,6 +168,7 @@ def test_verify_falls_back_to_private_key_when_no_public_key(monkeypatch):
 # Wrong audience / issuer
 # ---------------------------------------------------------------------------
 
+
 def test_wrong_audience_raises_identity_error(monkeypatch):
     token = mint_user_token("karen")
     monkeypatch.setenv("USER_IDENTITY_AUD", "different-audience")
@@ -181,6 +186,7 @@ def test_wrong_issuer_raises_identity_error(monkeypatch):
 # ---------------------------------------------------------------------------
 # Malformed / empty inputs
 # ---------------------------------------------------------------------------
+
 
 def test_empty_string_raises_identity_error():
     with pytest.raises(IdentityError):
@@ -200,6 +206,7 @@ def test_garbage_string_raises_identity_error():
 # ---------------------------------------------------------------------------
 # ContextVar / identity_scope
 # ---------------------------------------------------------------------------
+
 
 def test_get_current_identity_returns_none_outside_scope():
     assert get_current_identity() is None
@@ -258,6 +265,7 @@ def test_identity_scope_cleans_up_on_exception():
 # Async / concurrent isolation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_concurrent_tasks_have_isolated_identity():
     """Two concurrent async tasks must not share identity state."""
@@ -270,7 +278,7 @@ async def test_concurrent_tasks_have_isolated_identity():
 
     async def task_a():
         with identity_scope(id_a):
-            await asyncio.sleep(0)   # yield to allow task_b to start
+            await asyncio.sleep(0)  # yield to allow task_b to start
             results["a"] = current_user_id()
 
     async def task_b():
@@ -309,6 +317,7 @@ async def test_identity_absent_in_new_task_by_default():
 # UserIdentity is frozen / immutable
 # ---------------------------------------------------------------------------
 
+
 def test_user_identity_is_frozen():
     token = mint_user_token("uma")
     identity = verify_user_token(token)
@@ -320,6 +329,7 @@ def test_user_identity_is_frozen():
 # get_jwks_document
 # ---------------------------------------------------------------------------
 
+
 def test_jwks_returns_public_key():
     doc = get_jwks_document()
     assert len(doc["keys"]) == 1
@@ -327,8 +337,8 @@ def test_jwks_returns_public_key():
     assert key["kty"] == "RSA"
     assert key["use"] == "sig"
     assert key["alg"] == "RS256"
-    assert "n" in key   # modulus
-    assert "e" in key   # exponent
+    assert "n" in key  # modulus
+    assert "e" in key  # exponent
     assert "kid" in key
 
 
@@ -365,6 +375,7 @@ def test_jwks_kid_changes_with_different_key(monkeypatch):
 # ---------------------------------------------------------------------------
 # JWKS route served by PrometheusAgent.build_app()
 # ---------------------------------------------------------------------------
+
 
 def test_jwks_route_served_unauthenticated(monkeypatch):
     """/.well-known/jwks.json must not require the agent secret."""

@@ -56,13 +56,14 @@ import multiprocessing
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration (from env)
 # ---------------------------------------------------------------------------
+
 
 def _idle_ttl() -> float:
     raw = os.getenv("USER_WORKER_IDLE_TTL", "300").strip()
@@ -83,6 +84,7 @@ def _max_workers() -> int:
 # ---------------------------------------------------------------------------
 # Intra-process communication types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class WorkerTask:
@@ -117,6 +119,7 @@ class WorkerResult:
 # Worker subprocess entry point
 # ---------------------------------------------------------------------------
 
+
 def _worker_loop(
     user_id: str,
     request_queue: multiprocessing.Queue,
@@ -149,7 +152,6 @@ def _worker_loop(
 
     def run(task: WorkerTask) -> WorkerResult:
         from prometheus_api.agent.identity import (
-            UserIdentity,
             identity_scope,
             verify_user_token,
         )
@@ -175,9 +177,7 @@ def _worker_loop(
                 events=events,
             )
         except Exception as exc:
-            return WorkerResult(
-                task_id=task.task_id, user_id=user_id, error=str(exc)
-            )
+            return WorkerResult(task_id=task.task_id, user_id=user_id, error=str(exc))
 
     last_active = time.monotonic()
     while True:
@@ -197,6 +197,7 @@ def _worker_loop(
 # ---------------------------------------------------------------------------
 # WorkerHandle — one per active user
 # ---------------------------------------------------------------------------
+
 
 class WorkerHandle:
     """Represents a live per-user subprocess."""
@@ -221,6 +222,7 @@ class WorkerHandle:
 # ---------------------------------------------------------------------------
 # UserWorkerPool — supervisor
 # ---------------------------------------------------------------------------
+
 
 class UserWorkerPool:
     """Supervisor that manages one subprocess per active user.
@@ -318,9 +320,7 @@ class UserWorkerPool:
                 if not handle.is_alive():
                     async with self._lock:
                         self._workers.pop(user_id, None)
-                    raise RuntimeError(
-                        f"Worker process for user {user_id!r} died unexpectedly"
-                    )
+                    raise RuntimeError(f"Worker process for user {user_id!r} died unexpectedly")
                 continue
 
             handle.last_used = time.monotonic()
@@ -365,9 +365,7 @@ class UserWorkerPool:
             proc.start()
             handle.process = proc
             self._workers[user_id] = handle
-            logger.info(
-                "Spawned worker PID %d for user %r", proc.pid or -1, user_id
-            )
+            logger.info("Spawned worker PID %d for user %r", proc.pid or -1, user_id)
             return handle
 
     async def _reaper_loop(self) -> None:
@@ -379,8 +377,7 @@ class UserWorkerPool:
                 to_remove = [
                     uid
                     for uid, h in self._workers.items()
-                    if not h.is_alive()
-                    or (now - h.last_used) > self._idle_ttl
+                    if not h.is_alive() or (now - h.last_used) > self._idle_ttl
                 ]
                 for uid in to_remove:
                     h = self._workers.pop(uid)

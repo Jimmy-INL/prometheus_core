@@ -69,6 +69,7 @@ from jwt import PyJWKClient
 # Configuration helpers
 # ---------------------------------------------------------------------------
 
+
 def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default).strip()
 
@@ -98,6 +99,7 @@ _DEFAULT_TTL = 7200  # generous default; background turns can be long
 # Public types
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class UserIdentity:
     """Verified identity extracted from a platform-minted JWT.
@@ -122,6 +124,7 @@ class IdentityError(Exception):
 # ---------------------------------------------------------------------------
 # Mint
 # ---------------------------------------------------------------------------
+
 
 def mint_user_token(
     user_id: str,
@@ -174,6 +177,7 @@ def mint_user_token(
 # ---------------------------------------------------------------------------
 # Verify
 # ---------------------------------------------------------------------------
+
 
 def verify_user_token(token: str) -> UserIdentity:
     """Verify a platform JWT (RS256) and return the extracted identity.
@@ -272,9 +276,7 @@ def _get_jwks_signing_key(jwks_url: str, token: str) -> Any:
     except jwt.PyJWKClientConnectionError as exc:
         raise IdentityError(f"Could not fetch JWKS from {jwks_url!r}: {exc}") from exc
     except jwt.exceptions.PyJWKSetError as exc:
-        raise IdentityError(
-            f"No matching key found in JWKS at {jwks_url!r}: {exc}"
-        ) from exc
+        raise IdentityError(f"No matching key found in JWKS at {jwks_url!r}: {exc}") from exc
     except jwt.PyJWTError as exc:
         raise IdentityError(f"JWKS key lookup failed: {exc}") from exc
 
@@ -283,9 +285,7 @@ def _get_jwks_signing_key(jwks_url: str, token: str) -> Any:
 # Request-scoped identity (ContextVar — safe across concurrent async requests)
 # ---------------------------------------------------------------------------
 
-_current_identity: ContextVar[Optional[UserIdentity]] = ContextVar(
-    "current_identity", default=None
-)
+_current_identity: ContextVar[Optional[UserIdentity]] = ContextVar("current_identity", default=None)
 
 
 @contextmanager
@@ -328,6 +328,7 @@ def current_user_id() -> Optional[str]:
 # Internal key helpers
 # ---------------------------------------------------------------------------
 
+
 def get_jwks_document() -> dict:
     """Return the platform's public key(s) as a JSON Web Key Set (RFC 7517).
 
@@ -355,10 +356,13 @@ def get_jwks_document() -> dict:
                 PublicFormat,
                 load_pem_private_key,
             )
+
             private_key = load_pem_private_key(priv_pem.encode(), password=None)
-            pub_pem = private_key.public_key().public_bytes(
-                Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-            ).decode()
+            pub_pem = (
+                private_key.public_key()
+                .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+                .decode()
+            )
         except Exception:
             return {"keys": []}
 
@@ -417,10 +421,13 @@ def _get_verification_key() -> Any:
             PublicFormat,
             load_pem_private_key,
         )
+
         private_key = load_pem_private_key(priv.encode(), password=None)
-        return private_key.public_key().public_bytes(
-            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-        ).decode()
+        return (
+            private_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode()
+        )
     raise IdentityError(
         "USER_IDENTITY_PUBLIC_KEY (or USER_IDENTITY_PRIVATE_KEY, or JWKS_URL) is "
         "required to verify identity tokens. Generate a keypair with "

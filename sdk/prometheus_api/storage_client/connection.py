@@ -256,6 +256,7 @@ class ConnectionConfig(BaseModel):
             A fully-populated :class:`ConnectionConfig`.
         """
         import os as _os
+
         value = dict(getattr(credential, "value", {}) or {})
 
         # Resolve org/project: explicit arg > credential value > env var.

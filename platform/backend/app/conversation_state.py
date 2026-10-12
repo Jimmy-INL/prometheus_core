@@ -134,22 +134,19 @@ class ConversationStateClient:
             text = str(content)
             ids = [str(i) for i in entry.get("artifact_ids") or [] if i]
             turn = str(entry.get("turn_id") or "legacy")
-            if (
-                messages
-                and turns[-1] == turn
-                and messages[-1]["role"] == role
-                and messages[-1]["content"] == text
-            ):
+            if messages and turns[-1] == turn and messages[-1]["role"] == role and messages[-1]["content"] == text:
                 kept = messages[-1]["artifact_ids"]
                 kept.extend(i for i in ids if i not in kept)
                 continue
             turns.append(turn)
-            messages.append({
-                "role": role,
-                "content": text,
-                "timestamp": entry.get("timestamp", ""),
-                "artifact_ids": ids,
-            })
+            messages.append(
+                {
+                    "role": role,
+                    "content": text,
+                    "timestamp": entry.get("timestamp", ""),
+                    "artifact_ids": ids,
+                }
+            )
         return messages
 
     def get_artifacts(self, conv_id: str) -> List[Dict[str, Any]]:
@@ -297,14 +294,16 @@ class ConversationStateClient:
                 latest_entry = history[-1] if history else {}
                 query = conv.get("user_query", "")
                 title = meta.get("title_override") or conv.get("title") or query
-                conversations.append({
-                    "conversation_id": conv_id,
-                    "title": title,
-                    "query": query,
-                    "status": self._infer_status(conv),
-                    "timestamp": latest_entry.get("timestamp", ""),
-                    "pending": self.is_pending(conv_id),
-                })
+                conversations.append(
+                    {
+                        "conversation_id": conv_id,
+                        "title": title,
+                        "query": query,
+                        "status": self._infer_status(conv),
+                        "timestamp": latest_entry.get("timestamp", ""),
+                        "pending": self.is_pending(conv_id),
+                    }
+                )
             conversations.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
             return conversations[:limit]
         except Exception:
