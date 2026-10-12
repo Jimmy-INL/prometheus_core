@@ -105,6 +105,31 @@ jobs:
             exit 1
           fi
 
+  platform-docs:
+    name: "platform: docs"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: platform/docs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Build
+        run: uv run --frozen zensical build --clean
+      - name: Check for hackathon collision
+        # The pages workflow serves the hackathon slides from /hackathon/
+        run: |
+          if [ -e site/hackathon ]; then
+            echo "::error::The docs build produced site/hackathon, which collides with the hackathon slides on the Pages site. Rename that docs page or folder."
+            exit 1
+          fi
+
   sdk-python:
     name: "sdk: python ${{ matrix.python }}"
     needs: gitleaks
