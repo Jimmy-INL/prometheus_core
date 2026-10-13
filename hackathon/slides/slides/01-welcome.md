@@ -1,6 +1,6 @@
 ---
 title: Welcome & Kickoff
-footer: Day 1 · Welcome & kickoff
+footer: Day 1 · Welcome & kickoff · https://idaholab.github.io/prometheus_core/hackathon
 accent: welcome
 index:
   time: '12:15'
@@ -27,6 +27,18 @@ Note: ANL welcoming address goes first. Then walk the agenda, the architecture o
 ::: callout info
 We assume your platform already starts with `make up` and DeepLynx is set up. Not quite there? Each deck ends with **bonus catch-up slides**, and mentors will help.
 :::
+
+---
+
+## Follow along online {eyebrow="Links"}
+> Everything you see today is online. Open it on your laptop and keep it there.
+
+<div class="grid g2" style="margin-top:10px">
+<div class="card acc"><h3>These slides</h3><p><a href="https://idaholab.github.io/prometheus_core/hackathon">idaholab.github.io/prometheus_core/hackathon</a></p><p class="small">Every Day 1 deck, the Day 2 challenge and the cheat sheet.</p></div>
+<div class="card acc"><h3>Platform documentation</h3><p><a href="https://idaholab.github.io/prometheus_core">idaholab.github.io/prometheus_core</a></p><p class="small">Architecture, deployment, the SDK, and the agent template.</p></div>
+</div>
+
+Note: Point out that the slide URL is also in the footer of every slide in this deck.
 
 ---
 

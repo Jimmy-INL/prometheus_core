@@ -357,7 +357,7 @@ EOF</pre>
 </tr>
 <tr>
 <td>Backend fails: <code>password authentication failed for user &quot;admin&quot;</code></td>
-<td>a second platform checkout reuses the same Docker volumes: restore the old <code>ADMIN_DB_PASSWORD</code> and <code>ADMIN_DB_ENCRYPTION_KEY</code> in <code>.env</code>, or <code>make down-v</code> (deletes users and keys)</td>
+<td>a second platform checkout reuses the same Docker volumes: restore the old <code>ADMIN_DB_PASSWORD</code> and <code>ADMIN_DB_ENCRYPTION_KEY</code> in <code>.env</code>, or <code>make clobber</code> (deletes users, keys, and history)</td>
 </tr>
 <tr>
 <td>Something else</td>
@@ -1209,6 +1209,10 @@ args:
 <td>truncate users → the setup wizard runs again</td>
 </tr>
 <tr>
+<td><code>clobber</code></td>
+<td>asks, then down + delete both DBs and Valkey (keeps caches)</td>
+</tr>
+<tr>
 <td><code>init-env</code></td>
 <td>create <code>.env</code>, fill blank secrets, check the LLM key</td>
 </tr>
@@ -1775,7 +1779,7 @@ print(u.urlopen(r).read())<span class="s">&quot;</span></pre>
 </div>
 
 <div class="callout">
-Reset ladder, from least to most destructive: <code>docker restart &lt;svc&gt;</code> → <code>make restart</code> → <code>make up</code> → <code>make clear-admin-users</code> → <code>make down-v</code> (deletes all volumes, history, and users).</div>
+Reset ladder, from least to most destructive: <code>docker restart &lt;svc&gt;</code> → <code>make restart</code> → <code>make up</code> → <code>make clear-admin-users</code> → <code>make clobber</code> (deletes users, keys, and history) → <code>make down-v</code> (also the caches).</div>
 
   </div>
 </section>
