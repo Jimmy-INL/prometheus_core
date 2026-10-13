@@ -9,10 +9,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Set up CA certificate bundle: start with system certs, append custom if provided
 RUN --mount=type=bind,source=certs,target=/tmp/certs \
-    cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/null || true; \
-    if ls /tmp/certs/*.pem 1>/dev/null 2>&1; then \
-        cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem; \
-    fi
+    mkdir -p /usr/local/share/ca-certificates; \
+    find /tmp/certs -maxdepth 1 -type f \( -name '*.pem' -o -name '*.crt' \) -exec sh -c '\
+        for cert do \
+            name="$(basename "$cert")"; \
+            case "$name" in \
+                *.pem) name="${name%.pem}.crt" ;; \
+            esac; \
+            cp "$cert" "/usr/local/share/ca-certificates/$name"; \
+        done \
+    ' sh {} +; \
+    update-ca-certificates; \
+    cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem
 
 # Install git
 RUN apt-get update && \
