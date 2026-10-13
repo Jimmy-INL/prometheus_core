@@ -14,6 +14,13 @@ RUN --mount=type=bind,source=certs,target=/tmp/certs \
     find /tmp/certs -maxdepth 1 -type f \( -name '*.pem' -o -name '*.crt' \) -exec sh -c '\
         set -e; \
         for cert do \
+            parsed="$(openssl crl2pkcs7 -nocrl -certfile "$cert" 2>/dev/null \
+                | openssl pkcs7 -print_certs 2>/dev/null | grep -c "^subject=" || true)"; \
+            expected="$(grep -c "BEGIN CERTIFICATE" "$cert" || true)"; \
+            if [ "$parsed" -eq 0 ] || [ "$parsed" -ne "$expected" ]; then \
+                echo "ERROR: $cert: parsed $parsed of $expected PEM certificates" >&2; \
+                exit 1; \
+            fi; \
             name="$(basename "$cert")"; \
             case "$name" in \
                 *.pem) name="${name%.pem}.crt" ;; \
