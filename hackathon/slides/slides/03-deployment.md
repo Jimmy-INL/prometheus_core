@@ -302,7 +302,7 @@ Then upload a file in the chat. It should appear in the DeepLynx UI under your p
 | LLM call gets HTTP 401 | the key for your `LLM_CONFIG_PROFILE` is missing or wrong in the agent's `.env` |
 | "Unknown LLM config profile" | a typo in `LLM_CONFIG_PROFILE`, or an SDK image without that profile |
 | "DeepLynx storage is not configured" | set the `DEEPLYNX_*` lines, `make restart` |
-| Backend fails: `password authentication failed for user "admin"` | a second platform checkout reuses the same Docker volumes: restore the old `ADMIN_DB_PASSWORD` and `ADMIN_DB_ENCRYPTION_KEY` in `.env`, or `make clobber` (deletes users and keys) |
+| Backend fails: `password authentication failed for user "admin"` | a second platform checkout reuses the same Docker volumes: restore the old `ADMIN_DB_PASSWORD` and `ADMIN_DB_ENCRYPTION_KEY` in `.env`, or `make clobber` (deletes users, keys, and history) |
 | Something else | `make logs SERVICE=<name>`; the appendix has the full troubleshooting tables |
 
 ---

@@ -35,7 +35,7 @@ We assume your platform already starts with `make up` and DeepLynx is set up. No
 
 <div class="grid g2" style="margin-top:10px">
 <div class="card acc"><h3>These slides</h3><p><a href="https://idaholab.github.io/prometheus_core/hackathon">idaholab.github.io/prometheus_core/hackathon</a></p><p class="small">Every Day 1 deck, the Day 2 challenge and the cheat sheet.</p></div>
-<div class="card acc"><h3>Platform documentation</h3><p><a href="https://idaholab.github.io/prometheus_core">idaholab.github.io/prometheus_core</a></p><p class="small">Architecture, deployment, and the agent developer guide.</p></div>
+<div class="card acc"><h3>Platform documentation</h3><p><a href="https://idaholab.github.io/prometheus_core">idaholab.github.io/prometheus_core</a></p><p class="small">Architecture, deployment, the SDK, and the agent template.</p></div>
 </div>
 
 Note: Point out that the slide URL is also in the footer of every slide in this deck.
