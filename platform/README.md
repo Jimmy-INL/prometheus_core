@@ -167,7 +167,10 @@ Services and host ports:
 ```bash
 make down              # stop everything (down-v also drops volumes)
 make clear-litellm-db  # stop services + remove only LiteLLM's Postgres volume
+make clobber           # stop services + delete both DBs and Valkey (asks first)
 ```
+
+Reinstalling, or lost your `.env`? The old volumes still hold the old database passwords and encryption key, so the backend can't connect and the setup wizard doesn't run. `make clobber` deletes those volumes (all users, keys and history) so the next `make up` starts fresh.
 
 ### Log in
 

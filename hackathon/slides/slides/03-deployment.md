@@ -302,7 +302,7 @@ Then upload a file in the chat. It should appear in the DeepLynx UI under your p
 | LLM call gets HTTP 401 | the key for your `LLM_CONFIG_PROFILE` is missing or wrong in the agent's `.env` |
 | "Unknown LLM config profile" | a typo in `LLM_CONFIG_PROFILE`, or an SDK image without that profile |
 | "DeepLynx storage is not configured" | set the `DEEPLYNX_*` lines, `make restart` |
-| Backend fails: `password authentication failed for user "admin"` | a second platform checkout reuses the same Docker volumes: restore the old `ADMIN_DB_PASSWORD` and `ADMIN_DB_ENCRYPTION_KEY` in `.env`, or `make down-v` (deletes users and keys) |
+| Backend fails: `password authentication failed for user "admin"` | a second platform checkout reuses the same Docker volumes: restore the old `ADMIN_DB_PASSWORD` and `ADMIN_DB_ENCRYPTION_KEY` in `.env`, or `make clobber` (deletes users and keys) |
 | Something else | `make logs SERVICE=<name>`; the appendix has the full troubleshooting tables |
 
 ---
@@ -872,6 +872,7 @@ Your agent image adds only your own dependencies. That is why builds are small, 
 |---|---|
 | `clear-litellm-db` | down + delete the LiteLLM volume |
 | `clear-admin-users` | truncate users → the setup wizard runs again |
+| `clobber` | asks, then down + delete both DBs and Valkey (keeps caches) |
 | `init-env` | create `.env`, fill blank secrets, check the LLM key |
 | `check-prerequisites` | Docker checks |
 | `test-static` | infra tests, no Docker |
@@ -1269,5 +1270,5 @@ Force a discovery refresh. The images have Python but no `curl`.
 ::::
 
 ::: callout
-Reset ladder, from least to most destructive: `docker restart <svc>` → `make restart` → `make up` → `make clear-admin-users` → `make down-v` (deletes all volumes, history, and users).
+Reset ladder, from least to most destructive: `docker restart <svc>` → `make restart` → `make up` → `make clear-admin-users` → `make clobber` (deletes users, keys, and history) → `make down-v` (also the caches).
 :::

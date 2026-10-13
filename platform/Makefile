@@ -190,7 +190,7 @@ PREREQUISITE_TARGETS := \
 
 $(PREREQUISITE_TARGETS): check-prerequisites
 
-.PHONY: all up up-fg down down-v build base-image build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg init-env clear-litellm-db clear-admin-users help
+.PHONY: all up up-fg down down-v build base-image build-plain logs ps generate clean-generated regenerate restart restart-fg ng-up ng-up-fg ng-restart ng-restart-fg init-env clear-litellm-db clear-admin-users clobber help
 
 FORCE:
 
@@ -308,6 +308,31 @@ clear-admin-users: ##@ Delete all rows from admin-db's users table (re-triggers 
 	fi
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) exec -T admin-db psql -U admin -d admin -c "TRUNCATE TABLE users;"
 	@printf "Deleted all rows from admin-db's users table -- the platform will show the first-run setup wizard again.\n"
+
+# Volumes whose contents are tied to secrets generated into .env: the two
+# Postgres data dirs (passwords are fixed at first init, admin rows are
+# encrypted with ADMIN_DB_ENCRYPTION_KEY) and Valkey (sessions and history of
+# users that live in admin-db). Caches (mesh-cache, model caches) are kept.
+CLOBBER_VOLUMES := admin-db-data litellm-db-data valkey-data
+
+clobber: ##@ Stop services and delete the DB and Valkey volumes (users, keys, history). For reinstalling after .env was lost.
+	@printf "This deletes ALL users, signing keys, OIDC config, and chat history of\n"
+	@printf "compose project '%s' (volumes: %s).\n" "$(COMPOSE_PROJECT_NAME)" "$(CLOBBER_VOLUMES)"
+	@printf "The setup wizard runs again on the next 'make up'. Type 'clobber' to confirm: "; \
+	read answer; \
+	if [ "$$answer" != "clobber" ]; then printf "Aborted.\n"; exit 1; fi
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) down --remove-orphans
+	@set -e; \
+	for v in $(CLOBBER_VOLUMES); do \
+		volume=$$(docker volume ls -q \
+			--filter "label=com.docker.compose.project=$(COMPOSE_PROJECT_NAME)" \
+			--filter "label=com.docker.compose.volume=$$v"); \
+		if [ -n "$$volume" ]; then \
+			docker volume rm -f $$volume; \
+		else \
+			printf "Volume %s does not exist; nothing to remove.\n" "$$v"; \
+		fi; \
+	done
 
 down: ##@ Stop all services
 	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) down
