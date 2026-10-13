@@ -9,8 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Set up CA certificate bundle: start with system certs, append custom if provided
 RUN --mount=type=bind,source=certs,target=/tmp/certs \
+    set -e; \
     mkdir -p /usr/local/share/ca-certificates; \
     find /tmp/certs -maxdepth 1 -type f \( -name '*.pem' -o -name '*.crt' \) -exec sh -c '\
+        set -e; \
         for cert do \
             name="$(basename "$cert")"; \
             case "$name" in \
