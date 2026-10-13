@@ -179,6 +179,7 @@ jobs:
         with:
           context: sdk
           file: sdk/Dockerfile
+          build-contexts: certs=common/certs
           platforms: linux/${{ matrix.platform }}
           push: false
           load: true
@@ -249,7 +250,7 @@ jobs:
           context: platform
           file: platform/frontend/Dockerfile
           target: prod
-          build-contexts: certs=platform/certs
+          build-contexts: certs=common/certs
           platforms: linux/${{ matrix.platform }}
           push: false
 
@@ -279,6 +280,7 @@ jobs:
         with:
           context: sdk
           file: sdk/Dockerfile
+          build-contexts: certs=common/certs
           platforms: linux/${{ matrix.platform }}
           push: false
           load: true

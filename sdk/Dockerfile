@@ -7,9 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem \
     UV_SYSTEM_PYTHON=1
 
-# Install any custom CA certificates from certs/ into the system trust store
-# (see certs/setup.sh for details)
-RUN --mount=type=bind,source=certs,target=/tmp/certs \
+# Install any custom CA certificates into the system trust store. "certs" is a
+# named build context pointing at common/certs (passed by the Makefile, compose,
+# and CI); see common/certs/setup.sh for details
+RUN --mount=type=bind,from=certs,target=/tmp/certs \
     sh /tmp/certs/setup.sh
 
 # Install git

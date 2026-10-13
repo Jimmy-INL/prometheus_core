@@ -2,13 +2,20 @@
 #
 # Install custom CA certificates into the image's system trust store.
 #
-# Run by sdk/Dockerfile during the image build, with this directory
-# bind-mounted (read-only) into the build container:
+# Shared by sdk/Dockerfile and platform/frontend/Dockerfile. Both run it during
+# the image build with this directory bind-mounted (read-only) into the build
+# container from a named build context called "certs":
 #
-#   RUN --mount=type=bind,source=certs,target=/tmp/certs sh /tmp/certs/setup.sh
+#   RUN --mount=type=bind,from=certs,target=/tmp/certs sh /tmp/certs/setup.sh
+#
+# This directory is outside both build contexts, so every build must pass it
+# in, e.g. `docker build --build-context certs=../common/certs .` from sdk/.
+# sdk/Makefile, platform/docker-compose.yml and .github/workflows/test.yml
+# already do; a bare `docker build` fails with "certs: failed to resolve
+# source metadata".
 #
 # Drop any extra CA certificates (e.g. a corporate TLS-inspection root) into
-# sdk/certs/ next to this script. Each file must be PEM-encoded and named
+# common/certs/ next to this script. Each file must be PEM-encoded and named
 # *.pem or *.crt; one file may hold several certificates (a bundle). Other
 # files in this directory, including this script, are ignored.
 #
