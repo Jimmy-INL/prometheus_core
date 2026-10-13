@@ -139,7 +139,6 @@ and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
 | [Testing Guide](docs/TESTING.md) | Running and writing tests |
 | [Installation Guide](INSTALL.md) | Detailed installation options |
 | [Development Guide](DEVELOPMENT.md) | Architecture, commands, and conventions |
-| [HPC Notes](docs/hpc.md) | INL HPC: podman + CA bundle, SSL workarounds |
 
 ## Features
 

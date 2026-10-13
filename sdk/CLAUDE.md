@@ -114,5 +114,5 @@ Streaming is not supported: a truthy `stream` raises `LLMClientError` before any
 - **Python ≥ 3.12** is hard-required (`requires-python` and `target-version` in ruff/mypy).
 - Line length is **100** (ruff). `examples/` is excluded from ruff and mypy.
 - Use the Makefile targets rather than running `pytest`/`ruff`/`mypy` directly, so dev tooling stays in sync with `uv.lock`.
-- Container images target both `linux/amd64` and `linux/arm64`; the Dockerfile installs the base package and concatenates any `certs/*.pem` into the system CA bundle.
+- Container images target both `linux/amd64` and `linux/arm64`; the Dockerfile installs the base package and installs CA certificates from `../common/certs` via its `setup.sh` (see [common/certs/README.md](../common/certs/README.md)). That directory is a named `certs` build context, so build through the Makefile targets; a bare `docker build .` fails.
 - When you make a change, ensure that this file gets updated to reflect those changes. We do not want this file getting out of date so it is important that when you make changes, they are accurately documented in this file.
