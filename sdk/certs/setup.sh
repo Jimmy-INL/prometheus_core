@@ -68,17 +68,20 @@ for cert in "$cert_dir"/*.pem "$cert_dir"/*.crt; do
     # -CApath`) would then never find the certificates in a bundle.
     #
     # The source file is left untouched; the split copies are written under
-    # $install_dir as <name>-001.crt, <name>-002.crt, ... The .crt extension
-    # matters too: update-ca-certificates ignores anything else, so a .pem
-    # source is installed under .crt names. Single-certificate files go
-    # through the same path and become <name>-001.crt.
+    # $install_dir as <file>-001.crt, <file>-002.crt, ... where <file> is the
+    # full source file name, extension included (INL.pem -> INL.pem-001.crt).
+    # Keeping the extension guarantees two sources can never install to the
+    # same names: foo.pem and foo.crt would otherwise both produce
+    # foo-001.crt, and the second would silently overwrite the first. The
+    # trailing .crt matters too: update-ca-certificates ignores anything
+    # else. Single-certificate files go through the same path and become
+    # <file>-001.crt.
     #
     # Only the BEGIN/END CERTIFICATE blocks are kept, so any comment text
     # between certificates is dropped. Trailing carriage returns are stripped
     # so CRLF (Windows) line endings don't reach the trust store. Validation
     # above already guaranteed every block is well formed.
     base="$(basename "$cert")"
-    base="${base%.*}"
     awk -v prefix="$install_dir/$base" '
         { sub(/\r$/, "") }
         /-----BEGIN CERTIFICATE-----/ {
