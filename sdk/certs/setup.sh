@@ -59,13 +59,39 @@ for cert in "$cert_dir"/*.pem "$cert_dir"/*.crt; do
         exit 1
     fi
 
-    # update-ca-certificates ignores anything not named *.crt, so .pem files
-    # are installed under a .crt name. The contents are the same PEM data.
-    name="$(basename "$cert")"
-    case "$name" in
-        *.pem) name="${name%.pem}.crt" ;;
-    esac
-    cp "$cert" "$install_dir/$name"
+    # Install each certificate as its own file rather than copying the file
+    # as-is. update-ca-certificates appends every installed file to the
+    # combined bundle either way, but its rehash step only creates the
+    # per-certificate hash links in /etc/ssl/certs (<hash>.0) for files that
+    # hold exactly one certificate; it skips bundles with a warning. Tools
+    # that look CAs up by directory (OpenSSL CApath, `openssl verify
+    # -CApath`) would then never find the certificates in a bundle.
+    #
+    # The source file is left untouched; the split copies are written under
+    # $install_dir as <name>-001.crt, <name>-002.crt, ... The .crt extension
+    # matters too: update-ca-certificates ignores anything else, so a .pem
+    # source is installed under .crt names. Single-certificate files go
+    # through the same path and become <name>-001.crt.
+    #
+    # Only the BEGIN/END CERTIFICATE blocks are kept, so any comment text
+    # between certificates is dropped. Trailing carriage returns are stripped
+    # so CRLF (Windows) line endings don't reach the trust store. Validation
+    # above already guaranteed every block is well formed.
+    base="$(basename "$cert")"
+    base="${base%.*}"
+    awk -v prefix="$install_dir/$base" '
+        { sub(/\r$/, "") }
+        /-----BEGIN CERTIFICATE-----/ {
+            n++
+            out = sprintf("%s-%03d.crt", prefix, n)
+            inside = 1
+        }
+        inside { print > out }
+        /-----END CERTIFICATE-----/ && inside {
+            close(out)
+            inside = 0
+        }
+    ' "$cert"
 done
 
 # Rebuild /etc/ssl/certs/ca-certificates.crt from the Debian CAs plus the
