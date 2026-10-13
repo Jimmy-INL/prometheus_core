@@ -11,7 +11,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api/client";
+import { api, ApiError } from "@/lib/api/client";
 import type { AuthProvider } from "@/lib/api/types";
 import { setCurrentUser } from "@/lib/store/session";
 import { AuthError, AuthField, AuthLayout } from "./AuthLayout";
@@ -44,8 +44,29 @@ export function Login({ onSuccess }: Props) {
       const user = await api.login(username, password);
       setCurrentUser(user);
       onSuccess();
-    } catch {
-      setError("Invalid credentials");
+    } catch (err) {
+      // Only a real 401 means the credentials were wrong. Any other failure
+      // (5xx, or a network/proxy blip right after startup) can happen *after*
+      // the backend already set the session cookie, so the login actually
+      // succeeded and only the response was lost -- which is why a manual
+      // reload used to "fix" it. Re-check the session before giving up: if the
+      // cookie is live, go straight to chat instead of showing a false error.
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Invalid credentials");
+      } else {
+        try {
+          const user = await api.me();
+          setCurrentUser(user);
+          onSuccess();
+          return;
+        } catch (meErr) {
+          if (meErr instanceof ApiError && (meErr.status === 401 || meErr.status === 403)) {
+            setError("Invalid credentials");
+          } else {
+            setError("Could not reach the server, please try again");
+          }
+        }
+      }
     } finally {
       setLoading(false);
     }
