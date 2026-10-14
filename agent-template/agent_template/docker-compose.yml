@@ -50,14 +50,14 @@ services:
 
       # LLM configuration. The profile maps the semantic flavors the agent asks
       # for in code onto concrete provider models; `registry` (the default)
-      # routes inference through the platform's LiteLLM proxy. Provider keys are
-      # only read by the profile that references them. There is deliberately no
+      # routes inference through the platform's LiteLLM proxy. Every profile
+      # reads its provider key from LLM_API_KEY. There is deliberately no
       # MODEL_NAME here -- picking the model is the agent's job, not the
       # deployment's.
       LLM_CONFIG_PROFILE: ${LLM_CONFIG_PROFILE:-registry}
       LLM_CONFIG_FILE: ${LLM_CONFIG_FILE:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       AMSC_I2_API_KEY: ${AMSC_I2_API_KEY:-}
 
       # Optional runtime tuning. Forwarded as empty when unset; prometheus_api

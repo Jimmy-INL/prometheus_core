@@ -180,14 +180,14 @@ def prompt_llm(text: str) -> str:
     env = values(text)
     known = profiles()
     options = list(known)
-    labels = [f"{desc}  [{key or 'no key'}]" for key, desc in known.values()]
+    labels = [desc if key else f"{desc}  [no key]" for key, desc in known.values()]
     current = env.get("LLM_CONFIG_PROFILE") or DEFAULT_PROFILE
     print("\nChoose an LLM profile (up/down, Enter):")
     profile = choose(options, labels, options.index(current) if current in options else 0)
     text = set_var(text, "LLM_CONFIG_PROFILE", profile)
     key, _ = known[profile]
     if key and not env.get(key):
-        secret = getpass.getpass(f"{key} (input hidden): ").strip()
+        secret = getpass.getpass(f"{key} for {profile} (input hidden): ").strip()
         if secret:
             text = set_var(text, key, secret)
     return text

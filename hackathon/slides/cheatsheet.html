@@ -147,7 +147,7 @@ async with self.llm_client(context, config=cfg) as llm:
     call = await acall_tool(llm, prompt, tool=PICK,
                             model="small")
     idx = call.arguments["index"]</pre>
-      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Provider in your agent's <code>.env</code>: <code>LLM_CONFIG_PROFILE=inl_litellm</code> + <code>INL_LITELLM_API_KEY</code>, or <code>amsc</code> + <code>AMSC_I2_API_KEY</code>, or <code>anl_asksage</code> + <code>ASKSAGE_API_KEY</code>. Add the key yourself: <code>setup_agent.py</code> copies only the profile name.</p>
+      <p>Flavors: <code>small</code>, <code>medium</code>, <code>large</code>, <code>vision</code>, <code>embedding</code>. Provider in your agent's <code>.env</code>: <code>LLM_CONFIG_PROFILE=inl_litellm</code>, <code>amsc</code> or <code>anl_asksage</code>, plus that provider's key in <code>LLM_API_KEY</code> (the same variable for every profile). <code>setup_agent.py</code> copies both from <code>platform/.env</code>.</p>
     </section>
 
     <section>

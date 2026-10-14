@@ -109,7 +109,7 @@ services:
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: True
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_API_KEY: ${LLM_API_KEY}
       DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
     command: ["--config", "/app/config.yaml", "--port", "4000", "--telemetry", "false"]
     networks:
@@ -156,13 +156,8 @@ services:
       LLM_CONFIG_PROFILE: ${LLM_CONFIG_PROFILE:-registry}
       LLM_CONFIG_FILE: ${LLM_CONFIG_FILE:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      INL_HPC_API_KEY: ${INL_HPC_API_KEY:-}
-      INL_LITELLM_API_KEY: ${INL_LITELLM_API_KEY:-}
-      AMSC_I2_API_KEY: ${AMSC_I2_API_KEY:-}
-      ASKSAGE_API_KEY: ${ASKSAGE_API_KEY:-}
     depends_on:
       litellm:
         condition: service_healthy

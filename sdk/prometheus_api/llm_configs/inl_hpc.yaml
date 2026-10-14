@@ -5,35 +5,35 @@ model_list:
   - model_name: default
     litellm_params:
       model: hosted_vllm/gemma-4-26B-A4B-it
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
 
   - model_name: small
     litellm_params:
       model: hosted_vllm/gemma-4-26B-A4B-it
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
 
   - model_name: medium
     litellm_params:
       model: hosted_vllm/gemma-4-26B-A4B-it
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
 
   - model_name: large
     litellm_params:
       model: hosted_vllm/gemma-4-31B-reasoning
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
 
   - model_name: vision
     litellm_params:
       model: hosted_vllm/gemma-4-26B-A4B-it
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1
 
   - model_name: embedding
     litellm_params:
       model: hosted_vllm/llama-nemotron-embed-vl-1b-v2
-      api_key: os.environ/INL_HPC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.hpc.inl.gov/llm/v1

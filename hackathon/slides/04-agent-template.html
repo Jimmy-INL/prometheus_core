@@ -432,7 +432,7 @@ Which provider answers is set by <code>LLM_CONFIG_PROFILE</code> in your agent's
 </div>
 
   </div>
-  <aside class="notes">Assumes the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY (today only the ANTHROPIC, OPENAI and AMSC keys are forwarded), and that the template agent.py LLM example has the proxy_url/with_api_key pattern.
+  <aside class="notes">The template compose forwards LLM_API_KEY, which every profile reads. Assumes the template agent.py LLM example has the proxy_url/with_api_key pattern.
 ::::</aside>
 </section>
 
@@ -1849,13 +1849,13 @@ model_list:
     litellm_params:
       model: openai/claude-sonnet-5-awsgov
       api_base: https://litellm.inl.gov/v1
-      api_key: os.environ/INL_LITELLM_API_KEY
+      api_key: os.environ/LLM_API_KEY
   - model_name: vision
     litellm_params:
       model: openai/claude-opus-4-8-awsgov
       api_base: https://litellm.inl.gov/v1
-      api_key: os.environ/INL_LITELLM_API_KEY</pre>
-<p class="small">Start from <code>sdk/llm_config.example.yaml</code>. Mount it into the container and set <code>LLM_CONFIG_FILE=/app/llm_config.yaml</code>. The keys must be in the <strong>process</strong> env: add them to compose <code>environment:</code>.</p>
+      api_key: os.environ/LLM_API_KEY</pre>
+<p class="small">Start from <code>sdk/llm_config.example.yaml</code>. Mount it into the container and set <code>LLM_CONFIG_FILE=/app/llm_config.yaml</code>. <code>LLM_API_KEY</code> is already forwarded; any other key must be added to compose <code>environment:</code>.</p>
 </div>
 
   </div>
@@ -1879,7 +1879,7 @@ model_list:
 
 <div class="card"><span class="tag">C · platform proxy alias</span>
 <p class="small">Add <code>small</code>/<code>large</code>/<code>vision</code>/<code>embedding</code>/<code>default</code> entries to <code>platform/litellm_config.yaml</code>, then <code>make restart</code>. Every agent on the <code>registry</code> profile gets them, with no agent change.</p>
-<p class="small">The template compose forwards every profile key (<code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>ASKSAGE_API_KEY</code>, <code>EMBEDDING_API_KEY</code>) from your <code>.env</code>. A key of your own needs an <code>environment:</code> line.</p>
+<p class="small">The template compose forwards <code>LLM_API_KEY</code> (every profile's key), <code>EMBEDDING_API_KEY</code> and <code>AMSC_I2_API_KEY</code> from your <code>.env</code>. A key of your own needs an <code>environment:</code> line.</p>
 <p class="small">Model strings follow LiteLLM: <code>openai/…</code> + <code>api_base</code> for OpenAI-compatible gateways, <code>hosted_vllm/…</code>, <code>anthropic/…</code>.</p>
 </div>
 

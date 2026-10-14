@@ -640,7 +640,7 @@ Older docs show v0.3 syntax (`message/send`, `role: "user"`, `params.context.ski
 | **`LITELLM_MASTER_KEY`** | Agents/orchestrator → LiteLLM | Lets agents register and the orchestrator discover and call agents. The LLM proxy also requires it. |
 | **`userToken`** (RS256 JWT) | Backend → orchestrator → agents | The identity of the human user, minted per turn. Agents verify it against `JWKS_URL` (the backend's `/.well-known/jwks.json`). Required by default. |
 | **`ADMIN_DB_ENCRYPTION_KEY`** | Backend at rest | A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. `make up` (`init-env`) generates it. |
-| **Provider keys** | LiteLLM / agents → LLM API | `ANTHROPIC_API_KEY`, `INL_LITELLM_API_KEY`, `OPENAI_API_KEY`… The LLM profile decides which one is used. |
+| **Provider key** | LiteLLM / agents → LLM API | `LLM_API_KEY`, the same variable for every profile. The LLM profile decides which provider it is for. |
 | **DeepLynx key + secret** | Agents/backend → DeepLynx | `DEEPLYNX_KEY/SECRET/ORG_ID/PROJECT_ID`. They are global by default (`CREDENTIAL_BROKER=env`), or per user via Vault. |
 
 {.tiny}

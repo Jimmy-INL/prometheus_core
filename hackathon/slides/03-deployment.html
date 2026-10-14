@@ -125,14 +125,14 @@ Created .env from .env.example.
 Generated in .env: AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, …
 
 <span class="h">Choose an LLM profile (up/down, Enter):</span>
-<span class="h">  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry  [ANTHROPIC_API_KEY]</span>
-<span class="h">  amsc         American Science Cloud OpenAI-compatible  [AMSC_I2_API_KEY]</span>
-<span class="h">  anl_asksage  ANL AskSage  [ASKSAGE_API_KEY]</span>
-<span class="h">&gt; anthropic    Anthropic  [ANTHROPIC_API_KEY]</span>
-<span class="h">  inl_hpc      INL HPC OpenAI-compatible  [INL_HPC_API_KEY]</span>
-<span class="h">  inl_litellm  INL LiteLLM proxy  [INL_LITELLM_API_KEY]</span>
-<span class="h">  openai       OpenAI  [OPENAI_API_KEY]</span>
-<span class="h">ANTHROPIC_API_KEY (input hidden):</span>
+<span class="h">  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry</span>
+<span class="h">  amsc         American Science Cloud OpenAI-compatible</span>
+<span class="h">  anl_asksage  ANL AskSage</span>
+<span class="h">&gt; anthropic    Anthropic</span>
+<span class="h">  inl_hpc      INL HPC OpenAI-compatible</span>
+<span class="h">  inl_litellm  INL LiteLLM proxy</span>
+<span class="h">  openai       OpenAI</span>
+<span class="h">LLM_API_KEY for anthropic (input hidden):</span>
 Saved LLM_CONFIG_PROFILE=anthropic in .env.</pre>
 <div class="grid g3">
 <div class="card acc">
@@ -243,24 +243,24 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 <tr>
 <th>Profile</th>
 <th>Provider</th>
-<th>Key in <code>.env</code></th>
+<th><code>LLM_API_KEY</code> holds</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>inl_litellm</code></td>
 <td>INL LiteLLM</td>
-<td><code>INL_LITELLM_API_KEY</code></td>
+<td>your INL LiteLLM key</td>
 </tr>
 <tr>
 <td><code>amsc</code></td>
 <td>American Science Cloud</td>
-<td><code>AMSC_I2_API_KEY</code></td>
+<td>your AMSC I2 key</td>
 </tr>
 <tr>
 <td><code>anl_asksage</code></td>
 <td>ANL AskSage</td>
-<td><code>ASKSAGE_API_KEY</code></td>
+<td>your AskSage static key</td>
 </tr>
 </tbody>
 </table>
@@ -269,19 +269,17 @@ A 401 from LiteLLM means a missing or wrong <code>LITELLM_MASTER_KEY</code> head
 <div class="col">
 <pre class="sm"># your agent&#x27;s .env: pick one
 LLM_CONFIG_PROFILE=inl_litellm
-INL_LITELLM_API_KEY=…
+LLM_API_KEY=…
 
 # LLM_CONFIG_PROFILE=amsc
-# AMSC_I2_API_KEY=…
-
 # LLM_CONFIG_PROFILE=anl_asksage
-# ASKSAGE_API_KEY=…</pre>
+# (every profile reads LLM_API_KEY)</pre>
 <p class="small">Then <code>make up</code> in your agent's folder. Keys stay in <code>.env</code>, never in code or the repo.</p>
 </div>
 </div>
 
   </div>
-  <aside class="notes">Assumes the template compose forwards INL_LITELLM_API_KEY, ASKSAGE_API_KEY, EMBEDDING_API_KEY and INL_HPC_API_KEY, and that LiteLLM trusts the INL certificate (registry profile). Check both before presenting.</aside>
+  <aside class="notes">The template compose forwards LLM_API_KEY and EMBEDDING_API_KEY. Assumes LiteLLM trusts the INL certificate (registry profile); check before presenting.</aside>
 </section>
 
 <section class="slide">
@@ -435,7 +433,7 @@ EOF</pre>
 </tr>
 <tr>
 <td><strong>An LLM credential</strong></td>
-<td><code>ANTHROPIC_API_KEY</code> for the bundled LiteLLM proxy, or a key for another profile (<code>INL_LITELLM_API_KEY</code>…).</td>
+<td><code>LLM_API_KEY</code>: an Anthropic key for the bundled LiteLLM proxy, or the key for another profile (INL LiteLLM…).</td>
 </tr>
 <tr>
 <td><strong>uv + Python 3.12</strong></td>
@@ -496,7 +494,7 @@ echo <span class="s">&quot;LOCAL_SDK=true&quot;</span> &gt;&gt; .env   <span cla
 </thead>
 <tbody>
 <tr class="hl">
-<td><code>ANTHROPIC_API_KEY</code> (or the key of your <code>LLM_CONFIG_PROFILE</code>)</td>
+<td><code>LLM_API_KEY</code> (the key for your <code>LLM_CONFIG_PROFILE</code>)</td>
 <td><strong>you</strong>: the only value <code>make up</code> cannot generate</td>
 </tr>
 <tr class="hl">
@@ -563,8 +561,8 @@ Never commit <code>.env</code>. Never paste it into chat or a PR. Back it up: lo
 <td><code>LOCAL_SDK=true</code> is set, but <code>docker compose</code> ran without make, so <code>prometheus_api:local</code> was never built. Run <code>make base-image</code>, or always go through <code>make up</code>.</td>
 </tr>
 <tr>
-<td><code>make up</code> stops: &quot;<code>ANTHROPIC_API_KEY</code> is empty&quot;</td>
-<td>Set the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code> (or pick another profile), then <code>make up</code> again.</td>
+<td><code>make up</code> stops: &quot;<code>LLM_API_KEY</code> is empty&quot;</td>
+<td>Set <code>LLM_API_KEY</code> to the key for your <code>LLM_CONFIG_PROFILE</code> in <code>.env</code> (or pick another profile), then <code>make up</code> again.</td>
 </tr>
 <tr>
 <td>Port is already allocated (5150, 8600, 9977, 6379)</td>
@@ -868,9 +866,14 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 <td>Custom YAML inside the container; overrides the profile</td>
 </tr>
 <tr>
-<td><code>OPENAI_API_KEY</code>, <code>INL_HPC_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>AMSC_I2_API_KEY</code>, <code>EMBEDDING_API_KEY</code></td>
+<td><code>LLM_API_KEY</code></td>
 <td>empty</td>
-<td>Only what the chosen profile needs</td>
+<td>The key for the chosen profile (every profile reads it)</td>
+</tr>
+<tr>
+<td><code>EMBEDDING_API_KEY</code></td>
+<td>empty</td>
+<td>Embeddings key for <code>anthropic</code>, <code>anl_asksage</code>, <code>registry</code></td>
 </tr>
 <tr class="hl">
 <td><code>LOCAL_SDK</code></td>
@@ -1470,15 +1473,15 @@ model_list:
   - model_name: medium
     litellm_params:
       model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
 <span class="h">  - model_name: small</span>
 <span class="h">    litellm_params:</span>
 <span class="h">      model: anthropic/claude-haiku-4-5</span>
-<span class="h">      api_key: os.environ/ANTHROPIC_API_KEY</span>
+<span class="h">      api_key: os.environ/LLM_API_KEY</span>
 <span class="h">  - model_name: default</span>
 <span class="h">    litellm_params:</span>
 <span class="h">      model: anthropic/claude-sonnet-4-6</span>
-<span class="h">      api_key: os.environ/ANTHROPIC_API_KEY</span>
+<span class="h">      api_key: os.environ/LLM_API_KEY</span>
 <span class="h">  <span class="c"># …likewise large, vision, embedding</span></span>
 general_settings:   <span class="c"># unchanged</span>
   master_key: <span class="s">&quot;os.environ/LITELLM_MASTER_KEY&quot;</span>
@@ -1497,7 +1500,7 @@ general_settings:   <span class="c"># unchanged</span>
 <tr>
 <th>Profile</th>
 <th>Route</th>
-<th>Key</th>
+<th><code>LLM_API_KEY</code></th>
 <th>default · small · medium · large · vision · embedding</th>
 </tr>
 </thead>
@@ -1511,37 +1514,37 @@ general_settings:   <span class="c"># unchanged</span>
 <tr>
 <td><code>inl_litellm</code></td>
 <td><code>https://litellm.inl.gov/v1</code></td>
-<td><code>INL_LITELLM_API_KEY</code></td>
+<td>INL LiteLLM</td>
 <td>claude-sonnet-5-awsgov · sonnet-4-5 · sonnet-5 · opus-4-8 · opus-4-8 · text-embedding-3-large-gov-va</td>
 </tr>
 <tr>
 <td><code>inl_hpc</code></td>
 <td><code>https://api.hpc.inl.gov/llm/v1</code> (vLLM)</td>
-<td><code>INL_HPC_API_KEY</code></td>
+<td>INL HPC</td>
 <td>gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed</td>
 </tr>
 <tr>
 <td><code>anthropic</code></td>
 <td>direct</td>
-<td><code>ANTHROPIC_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
+<td>Anthropic (+ <code>EMBEDDING_API_KEY</code>)</td>
 <td>opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large</td>
 </tr>
 <tr>
 <td><code>amsc</code></td>
 <td>American Science Cloud</td>
-<td><code>AMSC_I2_API_KEY</code></td>
+<td>AMSC I2</td>
 <td>sonnet · haiku · sonnet · opus · opus · ada-002</td>
 </tr>
 <tr>
 <td><code>anl_asksage</code></td>
 <td>ANL AskSage</td>
-<td><code>ASKSAGE_API_KEY</code> (+ <code>EMBEDDING_API_KEY</code>)</td>
+<td>AskSage static key (+ <code>EMBEDDING_API_KEY</code>)</td>
 <td>gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large</td>
 </tr>
 <tr>
 <td><code>openai</code></td>
 <td>direct</td>
-<td><code>OPENAI_API_KEY</code></td>
+<td>OpenAI</td>
 <td>gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large</td>
 </tr>
 </tbody>
@@ -1549,11 +1552,11 @@ general_settings:   <span class="c"># unchanged</span>
 <div class="grid g2">
 <pre class="sm"><span class="c"># .env: all platform agents talk to INL LiteLLM directly</span>
 LLM_CONFIG_PROFILE=inl_litellm
-INL_LITELLM_API_KEY=sk-…
+LLM_API_KEY=sk-…
 make restart</pre>
 <div class="col">
 <div class="callout">
-Setting <code>ANTHROPIC_API_KEY</code> alone does <strong>not</strong> change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.</div>
+Setting <code>LLM_API_KEY</code> alone does <strong>not</strong> change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.</div>
 
 </div>
 </div>

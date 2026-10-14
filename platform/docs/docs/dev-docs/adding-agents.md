@@ -123,13 +123,13 @@ REGISTRY_URL=http://localhost:4000
 LITELLM_MASTER_KEY=your-litellm-master-key
 LLM_CONFIG_PROFILE=openai
 LLM_CONFIG_FILE=
-OPENAI_API_KEY=your-openai-key
-ASKSAGE_API_KEY=your-asksage-key
+LLM_API_KEY=your-openai-key
 REDIS_URL=redis://localhost:6379
 ```
 
-Use `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, or `openai`
-for `LLM_CONFIG_PROFILE`. If `LLM_CONFIG_FILE` is set, its path must exist
+Use `registry`, `inl_hpc`, `inl_litellm`, `amsc`, `anthropic`, `openai`, or
+`anl_asksage` for `LLM_CONFIG_PROFILE`; every profile reads its provider key
+from `LLM_API_KEY`. If `LLM_CONFIG_FILE` is set, its path must exist
 inside the agent container and it overrides the installed profile. Export the
 provider keys referenced by the selected configuration.
 
@@ -178,13 +178,8 @@ my-analysis-agent:
     - REDIS_URL=${REDIS_URL}
     - LLM_CONFIG_PROFILE=${LLM_CONFIG_PROFILE:-registry}
     - LLM_CONFIG_FILE=${LLM_CONFIG_FILE:-}
-    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    - LLM_API_KEY=${LLM_API_KEY:-}
     - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
-    - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-    - INL_HPC_API_KEY=${INL_HPC_API_KEY:-}
-    - INL_LITELLM_API_KEY=${INL_LITELLM_API_KEY:-}
-    - AMSC_I2_API_KEY=${AMSC_I2_API_KEY:-}
-    - ASKSAGE_API_KEY=${ASKSAGE_API_KEY:-}
     - AGENT_SECRET=${AGENT_SECRET}
     - AGENT_SECRET_REQUIRED=true
   depends_on:

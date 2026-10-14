@@ -4,35 +4,35 @@ model_list:
   - model_name: default
     litellm_params:
       model: gpt-5.6-terra
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1
 
   - model_name: small
     litellm_params:
       model: gpt-6-luna
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1
 
   - model_name: medium
     litellm_params:
       model: gpt-5.6-terra
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1
 
   - model_name: large
     litellm_params:
       model: gpt-6.1-sol
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1
 
   - model_name: vision
     litellm_params:
       model: gpt-6-luna
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1
 
   - model_name: embedding
     litellm_params:
       model: text-embedding-3-large
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       api_base: https://api.openai.com/v1

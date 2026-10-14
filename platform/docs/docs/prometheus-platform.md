@@ -48,7 +48,7 @@ for the schema, ownership model, and authoring rules.
 ```bash
 cd platform
 python3 scripts/init_env.py   # creates .env, generates all secrets
-# Set the provider key for LLM_CONFIG_PROFILE (default: ANTHROPIC_API_KEY)
+# Set LLM_API_KEY to the provider key for LLM_CONFIG_PROFILE (default: Anthropic)
 make up
 ```
 

@@ -731,7 +731,7 @@ columns = list(df.columns)
 </tr>
 <tr>
 <td>Your LLM profile and its key are in <code>.env</code>; pick the flavor per call</td>
-<td><code>LLM_CONFIG_PROFILE=inl_litellm</code> (or <code>amsc</code>, <code>anl_asksage</code>) plus its key, copied into the agent's <code>.env</code> yourself (<code>setup_agent.py</code> copies only the profile name). Attach <code>LITELLM_MASTER_KEY</code> only when <code>cfg.proxy_url</code> is set (the platform proxy).</td>
+<td><code>LLM_CONFIG_PROFILE=inl_litellm</code> (or <code>amsc</code>, <code>anl_asksage</code>) plus its key in <code>LLM_API_KEY</code>; <code>setup_agent.py</code> copies both from <code>platform/.env</code>. Attach <code>LITELLM_MASTER_KEY</code> only when <code>cfg.proxy_url</code> is set (the platform proxy).</td>
 </tr>
 <tr>
 <td>Results stay small</td>
@@ -744,7 +744,7 @@ columns = list(df.columns)
 </tbody>
 </table>
   </div>
-  <aside class="notes">inl_litellm and anl_asksage assume the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY; check before presenting.</aside>
+  <aside class="notes">Every profile reads LLM_API_KEY, which the template compose forwards.</aside>
 </section>
 
 <section class="slide appendix">

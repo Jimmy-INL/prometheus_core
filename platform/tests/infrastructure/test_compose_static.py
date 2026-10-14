@@ -79,25 +79,17 @@ def test_client_agent_receives_selectable_llm_configuration(compose_data):
     common_env = compose_data["x-common-env"]
     assert common_env["REGISTRY_URL"] == "${REGISTRY_URL:-http://litellm:4000}"
     assert "LLM_DEFAULT_MODEL" not in common_env
-    assert "ANTHROPIC_API_KEY" not in common_env
+    assert "LLM_API_KEY" not in common_env
     assert "MODEL_NAME" not in common_env
 
     client_env = compose_data["services"]["client-agent"]["environment"]
     assert client_env["LLM_CONFIG_PROFILE"] == "${LLM_CONFIG_PROFILE:-registry}"
     assert client_env["LLM_CONFIG_FILE"] == "${LLM_CONFIG_FILE:-}"
-    for key in (
-        "ANTHROPIC_API_KEY",
-        "EMBEDDING_API_KEY",
-        "OPENAI_API_KEY",
-        "INL_HPC_API_KEY",
-        "INL_LITELLM_API_KEY",
-        "AMSC_I2_API_KEY",
-        "ASKSAGE_API_KEY",
-    ):
+    for key in ("LLM_API_KEY", "EMBEDDING_API_KEY"):
         assert client_env[key] == f"${{{key}:-}}"
 
     proxy_env = compose_data["services"]["litellm"]["environment"]
-    assert proxy_env["ANTHROPIC_API_KEY"] == "${ANTHROPIC_API_KEY}"
+    assert proxy_env["LLM_API_KEY"] == "${LLM_API_KEY}"
 
 
 def test_client_agent_port_is_published_only_by_system_test_override(
