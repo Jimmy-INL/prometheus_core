@@ -51,34 +51,3 @@ except ImportError:
             "into your test environment:\n"
             "  uv pip install -e ../../../sdk   (from agents/client-agent/)"
         ) from exc
-
-
-def _stub_langchain_if_missing() -> None:
-    """Install a minimal StructuredTool stub when langchain-core is absent."""
-    import types
-
-    try:
-        import langchain_core.tools  # noqa: F401
-    except ImportError:
-        langchain_core = sys.modules.setdefault("langchain_core", types.ModuleType("langchain_core"))
-        tools_module = types.ModuleType("langchain_core.tools")
-
-        class _StructuredTool:
-            """Functional stub: preserves name/func so planner tools stay testable."""
-
-            def __init__(self, **kwargs):
-                for key, value in kwargs.items():
-                    setattr(self, key, value)
-
-            @classmethod
-            def from_function(cls, func=None, coroutine=None, name="", description="", **kwargs):
-                return cls(
-                    func=func, coroutine=coroutine, name=name, description=description, **kwargs
-                )
-
-        tools_module.StructuredTool = _StructuredTool
-        sys.modules["langchain_core.tools"] = tools_module
-        langchain_core.tools = tools_module
-
-
-_stub_langchain_if_missing()

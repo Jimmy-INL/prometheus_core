@@ -19,20 +19,10 @@ import sys
 from pathlib import Path
 import types
 
+import pydantic
 import pytest
 
 # sys.path setup (client-agent dir + prometheus_api contract) lives in conftest.py
-
-if "langchain_core.tools" not in sys.modules:
-    tools_module = types.ModuleType("langchain_core.tools")
-
-    class _StructuredTool:
-        @staticmethod
-        def from_function(*args, **kwargs):
-            return None
-
-    tools_module.StructuredTool = _StructuredTool
-    sys.modules["langchain_core.tools"] = tools_module
 
 if "prometheus_api.agent" not in sys.modules:
     prometheus_api_module = sys.modules.get(
@@ -1092,3 +1082,44 @@ def test_a_failing_artifact_callback_does_not_fail_the_dispatch(monkeypatch) -> 
 
     assert result["status"] == "completed"
     assert [a["artifact_id"] for a in result["artifacts"]] == ["a-1"]
+
+
+def test_skill_tool_validates_input_and_forwards_original_keys(monkeypatch) -> None:
+    calls = []
+
+    async def fake_call_a2a_agent(agent_url, skill_id, _prefer_streaming=False, **params):
+        calls.append((agent_url, skill_id, _prefer_streaming, params))
+        return {"ok": True}
+
+    monkeypatch.setattr(tool_discovery, "call_a2a_agent", fake_call_a2a_agent)
+    skill = {
+        "id": "run_model",
+        "description": "Run a model.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "steps": {"type": "integer"},
+                "model_config": {"type": "object"},
+                "mode": {"type": "string", "enum": ["fast", "slow"]},
+            },
+            "required": ["steps"],
+        },
+    }
+    tool = asyncio.run(
+        tool_discovery.create_tool_from_skill("http://agent", skill, supports_streaming=True)
+    )
+
+    assert tool.name == "run_model"
+    assert tool.description == "Run a model."
+    assert "steps" in tool.args_schema.model_json_schema()["required"]
+
+    result = asyncio.run(tool.ainvoke({"steps": "3", "model_config": {"a": 1}}))
+
+    assert json.loads(result) == {"ok": True}
+    # Coerced to int, reserved name restored, unset optional fields not injected.
+    assert calls == [
+        ("http://agent", "run_model", True, {"steps": 3, "model_config": {"a": 1}})
+    ]
+
+    with pytest.raises(pydantic.ValidationError):
+        asyncio.run(tool.ainvoke({"steps": 1, "mode": "medium"}))

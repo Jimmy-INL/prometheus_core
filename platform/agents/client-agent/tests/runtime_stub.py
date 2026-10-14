@@ -15,8 +15,7 @@
 Importing this module installs a minimal stand-in for ``prometheus_api.agent``
 (a2a-sdk / starlette are not needed by the orchestrator logic under test) only
 when the real module cannot be imported, so an environment with the agent
-runtime (the container) tests against the real one. ``conftest.py`` owns the
-``langchain_core.tools`` stub.
+runtime (the container) tests against the real one.
 """
 from __future__ import annotations
 
