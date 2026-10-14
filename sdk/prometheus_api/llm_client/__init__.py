@@ -30,7 +30,7 @@ from .tools import (
     tool_result_message,
     tool_schemas,
 )
-from .tracing import AMSC_API_KEY_ENV, enable_amsc_x_api_key
+from .tracing import MLFLOW_API_KEY_ENV, enable_mlflow_x_api_key
 
 __all__ = [
     "AsyncLLMClient",
@@ -44,11 +44,11 @@ __all__ = [
     "LLMToolCallError",
     "ToolCall",
     "ToolDefinition",
-    "AMSC_API_KEY_ENV",
+    "MLFLOW_API_KEY_ENV",
     "acall_tool",
     "assistant_message",
     "call_tool",
-    "enable_amsc_x_api_key",
+    "enable_mlflow_x_api_key",
     "extract_llm_api_key_from_a2a_context",
     "normalize_embedding_input",
     "normalize_messages",

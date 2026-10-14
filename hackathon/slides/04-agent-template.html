@@ -1879,7 +1879,7 @@ model_list:
 
 <div class="card"><span class="tag">C · platform proxy alias</span>
 <p class="small">Add <code>small</code>/<code>large</code>/<code>vision</code>/<code>embedding</code>/<code>default</code> entries to <code>platform/litellm_config.yaml</code>, then <code>make restart</code>. Every agent on the <code>registry</code> profile gets them, with no agent change.</p>
-<p class="small">The template compose forwards <code>LLM_API_KEY</code> (every profile's key), <code>EMBEDDING_API_KEY</code> and <code>AMSC_I2_API_KEY</code> from your <code>.env</code>. A key of your own needs an <code>environment:</code> line.</p>
+<p class="small">The template compose forwards <code>LLM_API_KEY</code> (every profile's key) and <code>EMBEDDING_API_KEY</code> from your <code>.env</code>. A key of your own needs an <code>environment:</code> line.</p>
 <p class="small">Model strings follow LiteLLM: <code>openai/…</code> + <code>api_base</code> for OpenAI-compatible gateways, <code>hosted_vllm/…</code>, <code>anthropic/…</code>.</p>
 </div>
 

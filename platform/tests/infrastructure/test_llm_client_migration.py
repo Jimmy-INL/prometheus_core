@@ -26,7 +26,7 @@ FORBIDDEN_RUNTIME_PATTERNS = (
     "ChatAnthropic",
     "AsyncAnthropic",
     "AsyncOpenAI",
-    "ANTHROPIC_API_KEY =",
+    "LLM_API_KEY =",
     "MODEL_NAME =",
 )
 

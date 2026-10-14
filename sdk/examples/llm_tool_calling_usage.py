@@ -21,7 +21,7 @@ Run with the default LiteLLM registry profile:
 
 Or an installed direct-provider profile:
 
-    LLM_CONFIG_PROFILE=openai OPENAI_API_KEY=... uv run python examples/llm_tool_calling_usage.py
+    LLM_CONFIG_PROFILE=openai LLM_API_KEY=... uv run python examples/llm_tool_calling_usage.py
 """
 
 from __future__ import annotations
@@ -244,7 +244,7 @@ def print_setup_help() -> None:
     print("  2. Or select an installed provider profile:")
     print("     export LLM_CONFIG_PROFILE=openai")
     print("  3. Export provider keys referenced by the selected YAML:")
-    print("     export OPENAI_API_KEY=...")
+    print("     export LLM_API_KEY=...")
     print("\nTool calling needs no additional environment variables.")
 
 

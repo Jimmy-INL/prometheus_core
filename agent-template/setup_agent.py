@@ -58,8 +58,9 @@ PLATFORM_SECRET_KEYS = (
     # silently defaulting to `registry` when the platform uses something else.
     "LLM_CONFIG_PROFILE",
     # Every profile reads its provider key from LLM_API_KEY, so the agent can
-    # call the same provider the platform does.
+    # call the same provider the platform does; embeddings may need their own.
     "LLM_API_KEY",
+    "EMBEDDING_API_KEY",
 )
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_GITIGNORE_ENTRIES = (".env",)
@@ -312,7 +313,7 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
     create_env = confirm_action(
         f"\nFound '{PLATFORM_ENV_PATH}'. Create '{output_dir / '.env'}' with "
         "DEEPLYNX_*, AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, "
-        "LLM_CONFIG_PROFILE, LLM_API_KEY, and USER_IDENTITY_* values"
+        "LLM_CONFIG_PROFILE, LLM_API_KEY, EMBEDDING_API_KEY, and USER_IDENTITY_* values"
         f"{' (and the locally built base image, LOCAL_SDK=true)' if local_sdk else ''}? (yes/no)",
         "yes",
     )

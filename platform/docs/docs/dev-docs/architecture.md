@@ -180,7 +180,7 @@ model_list:
   - model_name: "medium"
     litellm_params:
       model: "anthropic/claude-sonnet-4-6"
-      api_key: "os.environ/ANTHROPIC_API_KEY"
+      api_key: "os.environ/LLM_API_KEY"
 ```
 
 Agents call the provider-independent `prometheus_api.llm_client` interface and

@@ -220,7 +220,9 @@ def test_env_only_writes_env_and_gitignore_for_existing_agent(tmp_path, monkeypa
     """A teammate's clone of the team repo gets a .env from their own platform."""
     platform_env = tmp_path / "platform.env"
     platform_env.write_text(
-        "AGENT_SECRET=mine\nLOCAL_SDK=true\nLLM_API_KEY=sk-x\nOPENAI_API_KEY=sk-other\n", encoding="utf-8"
+        "AGENT_SECRET=mine\nLOCAL_SDK=true\nLLM_API_KEY=sk-x\nEMBEDDING_API_KEY=sk-emb\n"
+        "BACKEND_JWT_SECRET=platform-only\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(setup_agent, "PLATFORM_ENV_PATH", platform_env)
     agent_dir = _agent_dir(tmp_path)
@@ -233,7 +235,8 @@ def test_env_only_writes_env_and_gitignore_for_existing_agent(tmp_path, monkeypa
     assert "owners" not in env
     assert "LOCAL_SDK=true" in env
     assert "LLM_API_KEY=sk-x" in env
-    assert "OPENAI_API_KEY" not in env
+    assert "EMBEDDING_API_KEY=sk-emb" in env
+    assert "BACKEND_JWT_SECRET" not in env
     assert ".env" in (agent_dir / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 

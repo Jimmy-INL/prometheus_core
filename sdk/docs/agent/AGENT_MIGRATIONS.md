@@ -130,7 +130,7 @@ Migration steps:
 
 ```bash
 LLM_CONFIG_PROFILE=openai
-OPENAI_API_KEY=...
+LLM_API_KEY=...
 ```
 
 ```python

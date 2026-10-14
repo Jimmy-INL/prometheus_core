@@ -824,7 +824,7 @@ volumes:
 
 **`.env` file:**
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+LLM_API_KEY=sk-ant-...
 AGENT_SECRET=my-secure-secret-12345
 REDIS_PASSWORD=redis-password-123
 REDIS_URL=redis://:redis-password-123@agent-redis:6379
@@ -888,7 +888,7 @@ litellm:
   image: ghcr.io/berriai/litellm:main
   ports: ["8002:8000"]  # Expose on 8002 (or 4000)
   environment:
-    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    - LLM_API_KEY=${LLM_API_KEY}
   volumes:
     - ./litellm-config.yaml:/app/config.yaml
 ```
@@ -899,17 +899,17 @@ model_list:
   - model_name: "claude-sonnet"
     litellm_params:
       model: "anthropic/claude-sonnet-4-6"
-      api_key: "${ANTHROPIC_API_KEY}"
+      api_key: "${LLM_API_KEY}"
   - model_name: "claude-opus"
     litellm_params:
       model: "anthropic/claude-opus-4-20250514"
-      api_key: "${ANTHROPIC_API_KEY}"
+      api_key: "${LLM_API_KEY}"
 
   # Fallback provider
   - model_name: "claude-sonnet-fallback"
     litellm_params:
       model: "openai/gpt-4"
-      api_key: "${OPENAI_API_KEY}"
+      api_key: "${LLM_API_KEY}"
 ```
 
 **Agent usage** (OpenAI-compatible API):

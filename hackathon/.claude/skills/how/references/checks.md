@@ -22,15 +22,13 @@ Print only `PROMETHEUS_API_BASE_IMAGE_HASH`, `LLM_CONFIG_PROFILE`, `LLM_CONFIG_F
 
 ## LLM profile → key
 
-| profile | key (`prometheus_api/prometheus_api/llm_configs/*.yaml`; deck 03, A15) |
+| profile | key (`sdk/prometheus_api/llm_configs/*.yaml`; deck 03, A15) |
 |---|---|
-| `registry` (default) | none in the agent: it attaches `LITELLM_MASTER_KEY` (`llm-master-key-pattern`). The proxy uses the platform `ANTHROPIC_API_KEY` (`prometheus_platform/litellm_config.yaml:10`) |
-| `inl_litellm` / `inl_hpc` / `amsc` | `INL_LITELLM_API_KEY` / `INL_HPC_API_KEY` / `AMSC_I2_API_KEY` |
-| `anthropic` / `openai` | `ANTHROPIC_API_KEY` (+ `EMBEDDING_API_KEY` for embeddings) / `OPENAI_API_KEY` |
-| `anl_asksage` | `ASKSAGE_API_KEY`; not in the 95c32b5 image (`llm_configs/__init__.py:8-15`) |
+| `registry` (default) | none in the agent: it attaches `LITELLM_MASTER_KEY` (`llm-master-key-pattern`). The proxy uses the platform `LLM_API_KEY` (`platform/litellm_config.yaml:10`) |
+| every other profile | `LLM_API_KEY` (+ `EMBEDDING_API_KEY` for embeddings under `anthropic` / `anl_asksage`) |
 
-The template compose forwards only `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `AMSC_I2_API_KEY`
-(`prometheus_agent_template/agent_template/docker-compose.yml:58-60`; template issue #17).
+The template compose forwards `LLM_API_KEY` and `EMBEDDING_API_KEY`
+(`agent-template/agent_template/docker-compose.yml`).
 
 ## Laptop
 
@@ -88,7 +86,7 @@ python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(c["name"].low
 ### llm-models
 Tags: preflight, diagnose. Fix: yes. Run: `set -a; source <platform>/.env; set +a; curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" localhost:9977/v1/models | python3 -c 'import json,sys; print(sorted(m["id"] for m in json.load(sys.stdin)["data"]))'` Expect `['medium']` at least: the proxy defines only `medium` (`litellm_config.yaml:6-10`). A missing flavor: `llm-flavors`. Never edit `litellm_config.yaml`.
 ### llm-call
-Tags: preflight, diagnose. Fix: you. Profile `registry` only (else ask one chat question). Run: `set -a; source <platform>/.env; set +a; curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $LITELLM_MASTER_KEY" -H 'Content-Type: application/json' localhost:9977/v1/chat/completions -d '{"model":"medium","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'` Expect `200`. `401` with `registry-auth` at `200`: `ANTHROPIC_API_KEY` is wrong. Fix: a working key in the `.env` (your editor), then a platform `make restart`; no key: the LLM mentor (`mentors.md`).
+Tags: preflight, diagnose. Fix: you. Profile `registry` only (else ask one chat question). Run: `set -a; source <platform>/.env; set +a; curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $LITELLM_MASTER_KEY" -H 'Content-Type: application/json' localhost:9977/v1/chat/completions -d '{"model":"medium","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'` Expect `200`. `401` with `registry-auth` at `200`: the platform `LLM_API_KEY` is wrong. Fix: a working key in the `.env` (your editor), then a platform `make restart`; no key: the LLM mentor (`mentors.md`).
 
 ## Backend
 
@@ -149,7 +147,7 @@ Tags: preflight, diagnose. Fix: yes (code). LLM 401, cause 1. Run: `grep '^LLM_C
 ### llm-key-in-agent-env
 Tags: preflight, diagnose. Fix: yes. LLM 401, cause 2. Run the key test on `<agent>/.env` for the profile's key. Expect `1`. Fix: copy it with the `agent-env-sync` fix, or add it in your editor; then `make up`.
 ### llm-key-in-container
-Tags: preflight, diagnose. Fix: yes. LLM 401, cause 3. Run: `grep -cE '^[[:space:]]+<KEY>:' <agent>/docker-compose.yml; docker exec <container> sh -c 'case "${<KEY>:-}" in ""|"sk-ant-..."|change-me*|sk-change-me*) echo missing ;; *) echo set ;; esac'` Expect `1`, `set`. `0`: `environment:` does not forward it (template issue #17). `missing`: the `.env` lacks it, or the container is older. Fix: add `      <KEY>: ${<KEY>:-}` under `environment:`, then `make up`.
+Tags: preflight, diagnose. Fix: yes. LLM 401, cause 3. Run: `grep -cE '^[[:space:]]+<KEY>:' <agent>/docker-compose.yml; docker exec <container> sh -c 'case "${<KEY>:-}" in ""|"sk-ant-..."|change-me*|sk-change-me*) echo missing ;; *) echo set ;; esac'` Expect `1`, `set`. `0`: `environment:` does not forward it (an agent scaffolded before `LLM_API_KEY`). `missing`: the `.env` lacks it, or the container is older. Fix: add `      <KEY>: ${<KEY>:-}` under `environment:`, then `make up`.
 ### llm-flavors
 Tags: diagnose. Fix: yes (code). Run: `grep -rnoE '\.(small|medium|large|vision|embed|embedding)\(|model="[a-z_]+"' --include='*.py' --exclude-dir=.venv <agent>` Compare with `llm-models`. Failure: `LLMAliasError: LLM alias 'small' is not available. Available aliases: medium.` (`llm_client/client.py:36-41`). Fix: `medium` under `registry`, an own `LLM_CONFIG_FILE`, or another profile (`llm.md`).
 ### llm-profile-valid

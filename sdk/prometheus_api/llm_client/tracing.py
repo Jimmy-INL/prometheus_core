@@ -26,21 +26,21 @@ from .exceptions import LLMClientError
 
 logger = logging.getLogger("prometheus_api.llm_client")
 
-AMSC_API_KEY_ENV = "AMSC_I2_API_KEY"
+MLFLOW_API_KEY_ENV = "MLFLOW_API_KEY"
 
 _MLFLOW_SETUP_DONE = False
 
 
-def enable_amsc_x_api_key() -> None:
+def enable_mlflow_x_api_key() -> None:
     """
     Inject X-Api-Key into all MLflow REST calls.
     """
     import mlflow.utils.rest_utils as rest_utils  # type: ignore[import-not-found]
 
-    api_key = os.environ.get(AMSC_API_KEY_ENV)
+    api_key = os.environ.get(MLFLOW_API_KEY_ENV)
 
     if not api_key:
-        logger.warning("Warning: %s not found in environment.", AMSC_API_KEY_ENV)
+        logger.warning("Warning: %s not found in environment.", MLFLOW_API_KEY_ENV)
 
     original_http_request = rest_utils.http_request
 
@@ -105,7 +105,7 @@ def setup_mlflow_tracing() -> Any:
         return mlflow
 
     logging.getLogger("mlflow.tracing.export.async_export_queue").setLevel(logging.WARNING)
-    enable_amsc_x_api_key()
+    enable_mlflow_x_api_key()
 
     experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME")
     if experiment_name:

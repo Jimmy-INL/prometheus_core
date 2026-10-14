@@ -1424,7 +1424,7 @@ A PR to `prometheus_api` (base `main`).
 Add `small`/`large`/`vision`/`embedding`/`default` entries to `platform/litellm_config.yaml`, then `make restart`. Every agent on the `registry` profile gets them, with no agent change.
 
 {.small}
-The template compose forwards `LLM_API_KEY` (every profile's key), `EMBEDDING_API_KEY` and `AMSC_I2_API_KEY` from your `.env`. A key of your own needs an `environment:` line.
+The template compose forwards `LLM_API_KEY` (every profile's key) and `EMBEDDING_API_KEY` from your `.env`. A key of your own needs an `environment:` line.
 
 {.small}
 Model strings follow LiteLLM: `openai/…` + `api_base` for OpenAI-compatible gateways, `hosted_vllm/…`, `anthropic/…`.

@@ -338,7 +338,7 @@ import asyncio
 import os
 from anthropic import Anthropic
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+LLM_API_KEY = os.getenv("LLM_API_KEY")  # an Anthropic key, set in .env
 MODEL_NAME = os.getenv("MODEL_NAME", "claude-sonnet-4-6")
 
 class SummarizerAgent(PrometheusAgent):
@@ -349,7 +349,7 @@ class SummarizerAgent(PrometheusAgent):
 
         await self.send_status_update(context, event_queue, message="Summarizing…")
 
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = Anthropic(api_key=LLM_API_KEY)
         # to_thread runs the blocking call off the event loop and awaits the result.
         response = await asyncio.to_thread(
             client.messages.create,
