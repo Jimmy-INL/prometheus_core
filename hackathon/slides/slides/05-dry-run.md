@@ -229,7 +229,7 @@ cd platform            # the stack lives here
 
 make init-env                   # .env with generated secrets
 echo "LOCAL_SDK=true" >> .env   # base image from ../sdk
-# set ANTHROPIC_API_KEY (or your profile's key) in .env
+# set LLM_API_KEY (your profile's key) in .env
 
 make up                   # long first build; make logs to watch
 make ps

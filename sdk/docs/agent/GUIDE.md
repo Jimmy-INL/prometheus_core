@@ -871,7 +871,7 @@ behavior changes, see [Prometheus Agent Migration Guide](AGENT_MIGRATIONS.md).
 | `REGISTRY_URL` | `http://litellm:4000` | LiteLLM gateway URL for registry registration |
 | `REGISTRY_MAX_RETRIES` | `10` | Registration retries after the first attempt, used for both explicit `REGISTRY_URL` and the built-in fallback URL. |
 | `LITELLM_MASTER_KEY` | — | LiteLLM admin key |
-| `ANTHROPIC_API_KEY` | — | If the agent calls Claude directly |
+| `LLM_API_KEY` | — | If the agent calls Claude directly |
 | `REDIS_URL` | `redis://localhost:6379` | Redis for artifact catalog and context state |
 | `REDIS_PASSWORD` | — | Redis auth password |
 | `AGENT_CONTEXT_TTL_SECONDS` | `86400` | TTL for per-context persisted state (24 h) |

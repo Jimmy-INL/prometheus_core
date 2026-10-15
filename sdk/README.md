@@ -121,7 +121,7 @@ class AnalysisAgent(PrometheusAgent):
 
 When `ENABLE_MLFLOW_TRACING=true`, install `mlflow` in the runtime environment
 and configure `MLFLOW_TRACKING_URI` and optionally `MLFLOW_EXPERIMENT_NAME`.
-`AMSC_I2_API_KEY` is forwarded as `X-Api-Key` on MLflow REST calls when present.
+`MLFLOW_API_KEY` is forwarded as `X-Api-Key` on MLflow REST calls when present.
 
 **[Full Environment Setup Guide](docs/ENV_SETUP.md)**
 

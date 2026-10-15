@@ -37,12 +37,12 @@ model_list:
   - model_name: medium
     litellm_params:
       model: openai/test-model
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
 """.strip(),
         encoding="utf-8",
     )
     monkeypatch.setenv("LLM_CONFIG_FILE", str(config_path))
-    monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
+    monkeypatch.setenv("LLM_API_KEY", "provider-key")
     monkeypatch.setenv("LITELLM_MASTER_KEY", "proxy-key")
 
     client = runtime.create_llm()

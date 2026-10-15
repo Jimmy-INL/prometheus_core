@@ -110,14 +110,14 @@ Created .env from .env.example.
 Generated in .env: AGENT_SECRET, REDIS_PASSWORD, LITELLM_MASTER_KEY, …
 
 Choose an LLM profile (up/down, Enter):
-  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry  [ANTHROPIC_API_KEY]
-  amsc         American Science Cloud OpenAI-compatible  [AMSC_I2_API_KEY]
-  anl_asksage  ANL AskSage  [ASKSAGE_API_KEY]
-> anthropic    Anthropic  [ANTHROPIC_API_KEY]
-  inl_hpc      INL HPC OpenAI-compatible  [INL_HPC_API_KEY]
-  inl_litellm  INL LiteLLM proxy  [INL_LITELLM_API_KEY]
-  openai       OpenAI  [OPENAI_API_KEY]
-ANTHROPIC_API_KEY (input hidden):
+  registry     Default Prometheus deployment: route semantic aliases through the LiteLLM registry
+  amsc         American Science Cloud OpenAI-compatible
+  anl_asksage  ANL AskSage
+> anthropic    Anthropic
+  inl_hpc      INL HPC OpenAI-compatible
+  inl_litellm  INL LiteLLM proxy
+  openai       OpenAI
+LLM_API_KEY for anthropic (input hidden):
 Saved LLM_CONFIG_PROFILE=anthropic in .env.
 ```
 
@@ -222,11 +222,11 @@ Read them in `prometheus_core/platform/agents/debug-agents/`. Each is a short, c
 Your code asks for a **flavor** (`small`, `medium`, `large`, `vision`, `embedding`). One line in your agent's `.env` picks a **profile**: a provider plus the model behind each flavor.
 
 {.sm .nw}
-| Profile | Provider | Key in `.env` |
+| Profile | Provider | `LLM_API_KEY` holds |
 |---|---|---|
-| `inl_litellm` | INL LiteLLM | `INL_LITELLM_API_KEY` |
-| `amsc` | American Science Cloud | `AMSC_I2_API_KEY` |
-| `anl_asksage` | ANL AskSage | `ASKSAGE_API_KEY` |
+| `inl_litellm` | INL LiteLLM | your INL LiteLLM key |
+| `amsc` | American Science Cloud | your AMSC I2 key |
+| `anl_asksage` | ANL AskSage | your AskSage static key |
 
 {.small}
 The profiles ship with the SDK in `sdk/prometheus_api/llm_configs/`, AskSage included; its embeddings use Voyage (`EMBEDDING_API_KEY`). Leave `LLM_CONFIG_PROFILE` unset and you get `registry`, which only defines `medium`: `small`, `large` and `vision` raise `LLMAliasError`. Pick one of these three.
@@ -236,20 +236,18 @@ The profiles ship with the SDK in `sdk/prometheus_api/llm_configs/`, AskSage inc
 ```text {.sm}
 # your agent's .env: pick one
 LLM_CONFIG_PROFILE=inl_litellm
-INL_LITELLM_API_KEY=…
+LLM_API_KEY=…
 
 # LLM_CONFIG_PROFILE=amsc
-# AMSC_I2_API_KEY=…
-
 # LLM_CONFIG_PROFILE=anl_asksage
-# ASKSAGE_API_KEY=…
+# (every profile reads LLM_API_KEY)
 ```
 
 {.small}
 Then `make up` in your agent's folder. Keys stay in `.env`, never in code or the repo.
 :::
 
-Note: Assumes the template compose forwards INL_LITELLM_API_KEY, ASKSAGE_API_KEY, EMBEDDING_API_KEY and INL_HPC_API_KEY, and that LiteLLM trusts the INL certificate (registry profile). Check both before presenting.
+Note: The template compose forwards LLM_API_KEY and EMBEDDING_API_KEY. Assumes LiteLLM trusts the INL certificate (registry profile); check before presenting.
 
 ---
 
@@ -352,7 +350,7 @@ For participants whose platform does not start yet: prerequisites, clone, `.env`
 | **GNU make, git, python3** | `make up` runs `scripts/init_env.py` (standard library only) to create `.env`. |
 | **`gh`, the GitHub CLI** | Used for forks and PRs. `brew install gh` (needs admin), or copy the release binary from `github.com/cli/cli/releases` into `~/.local/bin`; then `gh auth login`. |
 | **The `prometheus_api` base image** | Nothing to set up: `LOCAL_SDK=true` in `.env` builds it from `sdk/` on your laptop. |
-| **An LLM credential** | `ANTHROPIC_API_KEY` for the bundled LiteLLM proxy, or a key for another profile (`INL_LITELLM_API_KEY`…). |
+| **An LLM credential** | `LLM_API_KEY`: an Anthropic key for the bundled LiteLLM proxy, or the key for another profile (INL LiteLLM…). |
 | **uv + Python 3.12** | Only for running things outside Docker: tests, a host-run agent, `setup_agent.py`. `uv --version` |
 | Node.js 22 (optional) | Only to run the frontend dev server on the host (`make react-dev`). |
 | Disk space | Several GB for images. No minimum RAM is documented; if builds get killed, raise the Docker Desktop memory limit. |
@@ -399,7 +397,7 @@ Every Python service (backend, client-agent, all agents) is built `FROM` the `pr
 {.sm}
 | In `.env` | Who sets it |
 |---|---|
-| `ANTHROPIC_API_KEY` (or the key of your `LLM_CONFIG_PROFILE`) | **you**: the only value `make up` cannot generate {.hl} |
+| `LLM_API_KEY` (the key for your `LLM_CONFIG_PROFILE`) | **you**: the only value `make up` cannot generate {.hl} |
 | `LOCAL_SDK=true` | **you**: build the base image from `../sdk` {.hl} |
 | `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY` | generated |
 | `LITELLM_DB_PASSWORD`, `ADMIN_DB_PASSWORD` | generated |
@@ -436,7 +434,7 @@ Never commit `.env`. Never paste it into chat or a PR. Back it up: losing `ADMIN
 |---|---|
 | `unauthorized`, `denied` or `invalid reference format` for the base image | `LOCAL_SDK=true` is missing from `.env`, so the build looks for an image registry. Add the line and run `make up` again. |
 | `pull access denied for prometheus_api` | `LOCAL_SDK=true` is set, but `docker compose` ran without make, so `prometheus_api:local` was never built. Run `make base-image`, or always go through `make up`. |
-| `make up` stops: "`ANTHROPIC_API_KEY` is empty" | Set the key for your `LLM_CONFIG_PROFILE` in `.env` (or pick another profile), then `make up` again. |
+| `make up` stops: "`LLM_API_KEY` is empty" | Set `LLM_API_KEY` to the key for your `LLM_CONFIG_PROFILE` in `.env` (or pick another profile), then `make up` again. |
 | Port is already allocated (5150, 8600, 9977, 6379) | Another process or an old stack is using it. `make down`, or change `*_PORT` in `.env`. |
 | Backend exits: "jwt_secret is not configured" | `BACKEND_JWT_SECRET` is empty: you ran `docker compose` without make. Run `make init-env` (an old `CHAINLIT_AUTH_SECRET` is no longer read). |
 | Backend exits during an alembic step | Migrations run in `backend/docker-entrypoint.sh` before uvicorn; `make logs SERVICE=backend`. |
@@ -648,7 +646,8 @@ A port is already taken, for example by a local Redis on 6379? Change the variab
 | `OPTIONAL_AGENTS` | `false` | Include `agents/optional/*` (OSTI research, slow build) |
 | `LLM_CONFIG_PROFILE` | `registry` | Which flavor→model map agents use |
 | `LLM_CONFIG_FILE` | empty | Custom YAML inside the container; overrides the profile |
-| `OPENAI_API_KEY`, `INL_HPC_API_KEY`, `INL_LITELLM_API_KEY`, `AMSC_I2_API_KEY`, `EMBEDDING_API_KEY` | empty | Only what the chosen profile needs |
+| `LLM_API_KEY` | empty | The key for the chosen profile (every profile reads it) |
+| `EMBEDDING_API_KEY` | empty | Embeddings key for `anthropic`, `anl_asksage`, `registry` |
 | `LOCAL_SDK` | `false` | **Set it to `true`**: build the base image from `../sdk` (`prometheus_api:local`) {.hl} |
 | `DEEPLYNX_BASE_URL/KEY/SECRET/ORG_ID/PROJECT_ID` | commented | Storage for uploads and `deeplynx://` |
 | `PROMETHEUS_MAX_UPLOAD_BYTES` | 104857600 | 100 MiB upload cap |
@@ -1074,15 +1073,15 @@ model_list:
   - model_name: medium
     litellm_params:
       model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
   - model_name: small
     litellm_params:
       model: anthropic/claude-haiku-4-5
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
   - model_name: default
     litellm_params:
       model: anthropic/claude-sonnet-4-6
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
   # …likewise large, vision, embedding
 general_settings:   # unchanged
   master_key: "os.environ/LITELLM_MASTER_KEY"
@@ -1098,28 +1097,28 @@ Then `make restart` and check `curl -H "Authorization: Bearer $LITELLM_MASTER_KE
 ## Switching the whole stack to another profile {eyebrow="Other providers"}
 
 {.sm}
-| Profile | Route | Key | default · small · medium · large · vision · embedding |
+| Profile | Route | `LLM_API_KEY` | default · small · medium · large · vision · embedding |
 |---|---|---|---|
 | `registry` | LiteLLM proxy at `$REGISTRY_URL` | proxy master key | whatever `litellm_config.yaml` defines {.hl} |
-| `inl_litellm` | `https://litellm.inl.gov/v1` | `INL_LITELLM_API_KEY` | claude-sonnet-5-awsgov · sonnet-4-5 · sonnet-5 · opus-4-8 · opus-4-8 · text-embedding-3-large-gov-va |
-| `inl_hpc` | `https://api.hpc.inl.gov/llm/v1` (vLLM) | `INL_HPC_API_KEY` | gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed |
-| `anthropic` | direct | `ANTHROPIC_API_KEY` (+ `EMBEDDING_API_KEY`) | opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large |
-| `amsc` | American Science Cloud | `AMSC_I2_API_KEY` | sonnet · haiku · sonnet · opus · opus · ada-002 |
-| `anl_asksage` | ANL AskSage | `ASKSAGE_API_KEY` (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
-| `openai` | direct | `OPENAI_API_KEY` | gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large |
+| `inl_litellm` | `https://litellm.inl.gov/v1` | INL LiteLLM | claude-sonnet-5-awsgov · sonnet-4-5 · sonnet-5 · opus-4-8 · opus-4-8 · text-embedding-3-large-gov-va |
+| `inl_hpc` | `https://api.hpc.inl.gov/llm/v1` (vLLM) | INL HPC | gemma-4-26B-A4B-it ×3 · gemma-4-31B-reasoning · gemma-4-26B · llama-nemotron-embed |
+| `anthropic` | direct | Anthropic (+ `EMBEDDING_API_KEY`) | opus-5 · haiku-4-5 · sonnet-5 · fable-5 · opus-5 · voyage-4-large |
+| `amsc` | American Science Cloud | AMSC I2 | sonnet · haiku · sonnet · opus · opus · ada-002 |
+| `anl_asksage` | ANL AskSage | AskSage static key (+ `EMBEDDING_API_KEY`) | gpt-5.6-terra · gpt-5.4-nano · gpt-5.6-terra · gpt-5.6-sol · gpt-5.6-luna · voyage-4-large |
+| `openai` | direct | OpenAI | gpt-5.6-terra · 5.4-nano · 5.6-terra · 5.6-sol · 5.6-luna · text-embedding-3-large |
 
 :::: grid 2
 ```bash {.sm}
 # .env: all platform agents talk to INL LiteLLM directly
 LLM_CONFIG_PROFILE=inl_litellm
-INL_LITELLM_API_KEY=sk-…
+LLM_API_KEY=sk-…
 make restart
 ```
 
 |||
 
 ::: callout
-Setting `ANTHROPIC_API_KEY` alone does **not** change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.
+Setting `LLM_API_KEY` alone does **not** change routing; only the profile or file does. Installed profiles are scaffolds: the model IDs are replaceable. The next session covers custom YAML files and adding profiles.
 :::
 ::::
 

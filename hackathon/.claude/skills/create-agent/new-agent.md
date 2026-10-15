@@ -115,11 +115,12 @@ The scaffolder copies the platform secrets but not the pin, the LLM key, or
    When `grep -c '^PROMETHEUS_API_BASE_IMAGE_HASH=.' <OUTPUT_DIR>/.env` is 0, append
    `printf '\nPROMETHEUS_API_BASE_IMAGE_HASH=%s\n' <pin> >> <OUTPUT_DIR>/.env`. Without it the agent
    builds from `latest` (deck 02, A5).
-2. The LLM key: read `LLM_CONFIG_PROFILE` from the agent `.env` (empty means `registry`) and find
-   its key in `llm.md` "## Profile to key map". `registry` needs none. Otherwise, when the agent
-   `.env` lacks the key and the platform has a real value, copy the line without showing it:
+2. The LLM key: read `LLM_CONFIG_PROFILE` from the agent `.env` (empty means `registry`).
+   `registry` needs none. Otherwise the key is `LLM_API_KEY` (`llm.md` "## Profile to key map");
+   `setup_agent.py` normally copies it. When the agent `.env` lacks it and the platform has a real
+   value, copy the line without showing it:
    `{ [ -n "$(tail -c 1 <OUTPUT_DIR>/.env)" ] && echo; grep '^<KEY>=' <platform>/.env | tail -n 1; } >> <OUTPUT_DIR>/.env`.
-   Else the user adds it in their editor. Then the compose line of `llm.md` "## Template issue #17".
+   Else the user adds it in their editor.
 3. When `grep '^USER_IDENTITY_REQUIRED=' <platform>/.env` prints `false` and the agent `.env` has
    no such line, append `USER_IDENTITY_REQUIRED=false`. Else every call fails with "No
    'userToken' found" (check `identity-required-match` in `checks.md`).

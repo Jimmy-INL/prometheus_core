@@ -47,17 +47,17 @@ def test_packaged_llm_config_paths_are_readable():
 @pytest.mark.parametrize(
     ("profile", "api_key_references"),
     [
-        ("inl_hpc", {"os.environ/INL_HPC_API_KEY"}),
-        ("inl_litellm", {"os.environ/INL_LITELLM_API_KEY"}),
-        ("amsc", {"os.environ/AMSC_I2_API_KEY"}),
+        ("inl_hpc", {"os.environ/LLM_API_KEY"}),
+        ("inl_litellm", {"os.environ/LLM_API_KEY"}),
+        ("amsc", {"os.environ/LLM_API_KEY"}),
         (
             "anthropic",
-            {"os.environ/ANTHROPIC_API_KEY", "os.environ/EMBEDDING_API_KEY"},
+            {"os.environ/LLM_API_KEY", "os.environ/EMBEDDING_API_KEY"},
         ),
-        ("openai", {"os.environ/OPENAI_API_KEY"}),
+        ("openai", {"os.environ/LLM_API_KEY"}),
         (
             "anl_asksage",
-            {"os.environ/ASKSAGE_API_KEY", "os.environ/EMBEDDING_API_KEY"},
+            {"os.environ/LLM_API_KEY", "os.environ/EMBEDDING_API_KEY"},
         ),
     ],
 )

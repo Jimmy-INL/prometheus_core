@@ -27,7 +27,7 @@ def _load_init_env():
 
 
 REQUIRED_VARS = [
-    "ANTHROPIC_API_KEY",
+    "LLM_API_KEY",
     "AGENT_SECRET",
     "REDIS_PASSWORD",
     "BACKEND_JWT_SECRET",
@@ -40,13 +40,8 @@ REQUIRED_VARS = [
 LLM_CONFIG_VARS = [
     "LLM_CONFIG_PROFILE",
     "LLM_CONFIG_FILE",
-    "ANTHROPIC_API_KEY",
+    "LLM_API_KEY",
     "EMBEDDING_API_KEY",
-    "OPENAI_API_KEY",
-    "INL_HPC_API_KEY",
-    "INL_LITELLM_API_KEY",
-    "AMSC_I2_API_KEY",
-    "ASKSAGE_API_KEY",
 ]
 
 
@@ -83,7 +78,7 @@ def test_required_secrets_have_generator(env_example_path):
     python3 one-liner in its comment block, so every one must have one."""
     init_env = _load_init_env()
     gens = init_env.generators(env_example_path.read_text())
-    missing = [v for v in REQUIRED_VARS if v != "ANTHROPIC_API_KEY" and v not in gens]
+    missing = [v for v in REQUIRED_VARS if v != "LLM_API_KEY" and v not in gens]
     assert not missing, f"Required secrets without a generator one-liner: {missing}"
 
 
@@ -96,15 +91,15 @@ def test_init_env_fills_secrets_and_checks_llm_key(tmp_path, env_example_path, m
     monkeypatch.setattr(init_env, "ENV", env)
     monkeypatch.setattr(init_env, "interactive", lambda: False)
 
-    assert init_env.main() == 1  # ANTHROPIC_API_KEY still blank
+    assert init_env.main() == 1  # LLM_API_KEY still blank
     first = init_env.values(env.read_text())
-    assert all(first[v] for v in REQUIRED_VARS if v != "ANTHROPIC_API_KEY")
+    assert all(first[v] for v in REQUIRED_VARS if v != "LLM_API_KEY")
 
-    env.write_text(env.read_text().replace("ANTHROPIC_API_KEY=\n", "ANTHROPIC_API_KEY=sk-ant-x\n"))
+    env.write_text(env.read_text().replace("LLM_API_KEY=\n", "LLM_API_KEY=sk-ant-x\n"))
     assert init_env.main() == 0
     second = init_env.values(env.read_text())
-    assert {k: v for k, v in second.items() if k != "ANTHROPIC_API_KEY"} == {
-        k: v for k, v in first.items() if k != "ANTHROPIC_API_KEY"
+    assert {k: v for k, v in second.items() if k != "LLM_API_KEY"} == {
+        k: v for k, v in first.items() if k != "LLM_API_KEY"
     }, "existing values must never be overwritten"
 
 
@@ -122,18 +117,17 @@ def test_init_env_prompts_for_profile_and_key(tmp_path, env_example_path, monkey
     assert init_env.main() == 0
     written = init_env.values(env.read_text())
     assert written["LLM_CONFIG_PROFILE"] == "openai"
-    assert written["OPENAI_API_KEY"] == "sk-openai-x"
-    assert written["ANTHROPIC_API_KEY"] == ""
+    assert written["LLM_API_KEY"] == "sk-openai-x"
 
 
 def test_profiles_match_sdk_llm_configs():
-    """Every installed profile is offered, with the key its YAML references."""
+    """Every installed profile is offered, and all of them read LLM_API_KEY."""
     init_env = _load_init_env()
     known = init_env.profiles()
     assert next(iter(known)) == "registry"
     assert sorted(known) == sorted(p.stem for p in init_env.LLM_CONFIGS.glob("*.yaml"))
-    assert known["registry"][0] == "ANTHROPIC_API_KEY"  # via litellm_config.yaml
-    assert known["anl_asksage"][0] == "ASKSAGE_API_KEY"  # not EMBEDDING_API_KEY
+    # registry via litellm_config.yaml; EMBEDDING_API_KEY is never the profile key.
+    assert {key for key, _ in known.values()} == {"LLM_API_KEY"}
 
 
 def test_port_vars_have_values(env_example_vars):

@@ -884,9 +884,9 @@ Older docs show v0.3 syntax (<code>message/send</code>, <code>role: &quot;user&q
 <td>A Fernet key that encrypts OIDC client secrets and signing keys in admin-db. <code>make up</code> (<code>init-env</code>) generates it.</td>
 </tr>
 <tr>
-<td><strong>Provider keys</strong></td>
+<td><strong>Provider key</strong></td>
 <td>LiteLLM / agents → LLM API</td>
-<td><code>ANTHROPIC_API_KEY</code>, <code>INL_LITELLM_API_KEY</code>, <code>OPENAI_API_KEY</code>… The LLM profile decides which one is used.</td>
+<td><code>LLM_API_KEY</code>, the same variable for every profile. The LLM profile decides which provider it is for.</td>
 </tr>
 <tr>
 <td><strong>DeepLynx key + secret</strong></td>

@@ -38,21 +38,22 @@ pick = Pick.model_validate(call.arguments)  # then check the range
 
 `LLM_CONFIG_FILE` wins, then `LLM_CONFIG_PROFILE`, else `registry` (`llm_client/config.py:69-109`).
 
-| profile | key in the container | template compose passes it |
-|---|---|---|
-| `registry` | none: the agent sends `LITELLM_MASTER_KEY` | yes |
-| `inl_litellm` | `INL_LITELLM_API_KEY` | no (#17) |
-| `inl_hpc` | `INL_HPC_API_KEY` | no (#17) |
-| `amsc` | `AMSC_I2_API_KEY` | yes |
-| `anthropic` | `ANTHROPIC_API_KEY` (+ `EMBEDDING_API_KEY`) | yes (embedding: no) |
-| `openai` | `OPENAI_API_KEY` | yes |
-| `anl_asksage` | not in 95c32b5: `ValueError: Unknown LLM config profile` | - |
+Every profile reads its provider key from `LLM_API_KEY`; the template compose forwards it and
+`EMBEDDING_API_KEY`, and `setup_agent.py` copies both from the platform `.env`.
 
-## Template issue #17
+| profile | `LLM_API_KEY` holds |
+|---|---|
+| `registry` | unused: the agent sends `LITELLM_MASTER_KEY` |
+| `inl_litellm` | the INL LiteLLM key |
+| `inl_hpc` | the INL HPC key |
+| `amsc` | the AMSC I2 key |
+| `anthropic` | the Anthropic key (+ `EMBEDDING_API_KEY`) |
+| `openai` | the OpenAI key |
+| `anl_asksage` | the AskSage static key (+ `EMBEDDING_API_KEY`) |
 
-The template compose passes only `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `AMSC_I2_API_KEY`
-(`prometheus_agent_template/agent_template/docker-compose.yml:58-60`), and the scaffolder copies no
-provider key. The maintainers will not fix it. For your `<KEY>`:
+## Key missing in the agent
+
+For `<KEY>` (`LLM_API_KEY`, or `EMBEDDING_API_KEY` for embeddings):
 
 1. `grep -c '^<KEY>=.' .env`. When `0`, copy it: `grep '^<KEY>=' <platform>/.env >> .env`, or add it in your editor.
 2. Add `<KEY>: ${<KEY>:-}` under `environment:` in the agent `docker-compose.yml`, then `make up`.

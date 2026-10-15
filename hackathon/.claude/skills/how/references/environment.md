@@ -9,7 +9,7 @@ network (`registry-login`), and an LLM key (`llm-key`). Keep the three clones si
 
 ## Fill the platform .env
 
-`cp .env.example .env` in the platform folder. Required (deck 03, slide 16): `ANTHROPIC_API_KEY`,
+`cp .env.example .env` in the platform folder. Required (deck 03, slide 16): `LLM_API_KEY`,
 `AGENT_SECRET`, `REDIS_PASSWORD`, `BACKEND_JWT_SECRET` (the backend stops while it is empty or
 `change-me…`), `LITELLM_MASTER_KEY`, `LITELLM_DB_PASSWORD`, `ADMIN_DB_PASSWORD`. Keep
 `REDIS_URL` and `LITELLM_LOCAL_PORT=9977` as they are; leave `ADMIN_DB_ENCRYPTION_KEY` empty
@@ -49,9 +49,8 @@ The agent template defaults to `latest` (`agent_template/docker-compose.yml:8`),
 ## Your agent's .env
 
 `setup_agent.py` copies `AGENT_SECRET`, `REDIS_PASSWORD`, `LITELLM_MASTER_KEY`,
-`USER_IDENTITY_PUBLIC_KEY`, `USER_IDENTITY_ISS`, `USER_IDENTITY_AUD`, `LLM_CONFIG_PROFILE`, and
-`DEEPLYNX_*` (`setup_agent.py:22-36`). Add the pin, the key of the agent's profile (and forward it
-under `environment:`, template issue #17), and `USER_IDENTITY_REQUIRED=false` only when the
+`USER_IDENTITY_PUBLIC_KEY`, `USER_IDENTITY_ISS`, `USER_IDENTITY_AUD`, `LLM_CONFIG_PROFILE`,
+`LLM_API_KEY`, `EMBEDDING_API_KEY`, and `DEEPLYNX_*` (`setup_agent.py`). Add the pin, and `USER_IDENTITY_REQUIRED=false` only when the
 platform sets it. After each edit, `make up` in the agent folder.
 
 ## First login and the signing key

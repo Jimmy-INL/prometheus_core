@@ -101,7 +101,7 @@ Model selection and API keys are now configured on the client-agent and speciali
 | `LLM_CONFIG_PROFILE` | Client-agent + LLM specialists | Installed provider mapping selected by each deployment |
 | `LLM_CONFIG_FILE` | Client-agent + LLM specialists | Optional custom YAML path overriding the installed profile |
 | Provider API keys | Client-agent + LLM specialists | Credentials referenced by the selected profile |
-| `ANTHROPIC_API_KEY` | LiteLLM proxy | Credential for the bundled proxy model mapping |
+| `LLM_API_KEY` | LiteLLM proxy | Credential for the bundled proxy model mapping |
 | `REDIS_URL` | Client-agent + frontend | Conversation state, status polling, and history browser |
 | `REDIS_PASSWORD` | Redis container | Redis auth |
 | `REGISTRY_URL` | All agents | LiteLLM base URL for A2A routing and discovery |

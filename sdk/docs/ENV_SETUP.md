@@ -160,10 +160,10 @@ Configure the tracking server with standard MLflow variables:
 ENABLE_MLFLOW_TRACING=true
 MLFLOW_TRACKING_URI=https://mlflow.example.org
 MLFLOW_EXPERIMENT_NAME=prometheus-llm
-AMSC_I2_API_KEY=your-amsc-api-key
+MLFLOW_API_KEY=your-mlflow-api-key
 ```
 
-When `AMSC_I2_API_KEY` is present, the client injects it into MLflow REST calls as
+When `MLFLOW_API_KEY` is present, the client injects it into MLflow REST calls as
 `X-Api-Key`. If it is absent, the client logs a warning and continues.
 
 Each chat trace includes protected `app_name`, `base_url`, and `model` tags.
@@ -237,26 +237,26 @@ model_list:
   - model_name: default
     litellm_params:
       model: openai/gpt-5-mini
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       # Optional: override the direct provider endpoint
       # api_base: http://localhost:8000/v1
 
   - model_name: small
     litellm_params:
       model: openai/gpt-5-mini
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       # api_base: http://localhost:8000/v1
 
   - model_name: large
     litellm_params:
       model: anthropic/claude-sonnet-4-5-20250929
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
       # api_base: https://api.anthropic.com
 
   - model_name: embedding
     litellm_params:
       model: openai/text-embedding-3-large
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       # api_base: http://localhost:8000/v1
 ```
 
@@ -388,7 +388,7 @@ LLM_DEBUG_LOG_MESSAGES=false
 ENABLE_MLFLOW_TRACING=false
 # MLFLOW_TRACKING_URI=https://mlflow.example.org
 # MLFLOW_EXPERIMENT_NAME=prometheus-llm
-# AMSC_I2_API_KEY=your-amsc-api-key
+# MLFLOW_API_KEY=your-mlflow-api-key  # sent as X-Api-Key (e.g. AMSC MLflow)
 
 # ===== StorageClient Configuration =====
 DEEPLYNX_KEY=your-api-key

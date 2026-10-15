@@ -535,11 +535,11 @@ A string list in `options` becomes a dropdown in the chat's follow-up form, with
 | Make sure… | Why |
 |---|---|
 | `"streaming": true` | So "Parsing 4 tables…" and "Plotting T \[K\] vs t \[min\]…" appear live |
-| Your LLM profile and its key are in `.env`; pick the flavor per call | `LLM_CONFIG_PROFILE=inl_litellm` (or `amsc`, `anl_asksage`) plus its key, copied into the agent's `.env` yourself (`setup_agent.py` copies only the profile name). Attach `LITELLM_MASTER_KEY` only when `cfg.proxy_url` is set (the platform proxy). |
+| Your LLM profile and its key are in `.env`; pick the flavor per call | `LLM_CONFIG_PROFILE=inl_litellm` (or `amsc`, `anl_asksage`) plus its key in `LLM_API_KEY`; `setup_agent.py` copies both from `platform/.env`. Attach `LITELLM_MASTER_KEY` only when `cfg.proxy_url` is set (the platform proxy). |
 | Results stay small | Return the artifact ID, caption, and column names, not 10,000 rows. The data lives in the artifact. |
 | You test with a **fresh conversation** each time | Earlier uploads and results stay in the catalog and transcript the orchestrator LLM sees, and can make it pick the wrong file. |
 
-Note: inl_litellm and anl_asksage assume the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY; check before presenting.
+Note: Every profile reads LLM_API_KEY, which the template compose forwards.
 
 ---
 

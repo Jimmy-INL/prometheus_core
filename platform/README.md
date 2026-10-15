@@ -51,7 +51,7 @@ you which key is missing. To prepare `.env` without starting anything:
 
 ```bash
 python3 scripts/init_env.py   # or: make init-env
-# then set ANTHROPIC_API_KEY (or the key for your chosen profile) in .env
+# then set LLM_API_KEY to the key for your chosen profile in .env
 ```
 
 Section 1 of `.env.example` lists what you must set; everything else has a
@@ -66,7 +66,7 @@ user, generate and activate one under **Admin > Signing Keys** (see
 
 #### Choose an LLM profile
 
-`LLM_CONFIG_PROFILE` tells the agents which LLM provider to use. Set it in `.env`; if you do not change it, the default is `registry`.
+`LLM_CONFIG_PROFILE` tells the agents which LLM provider to use, and `LLM_API_KEY` holds that provider's key -- the same variable for every profile. Set it in `.env`; if you do not change it, the default is `registry`.
 
 ```dotenv
 LLM_CONFIG_PROFILE=registry
@@ -74,21 +74,21 @@ LLM_CONFIG_PROFILE=registry
 
 If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. You can also set them by hand:
 
-| Value | What it uses | Additional variable to fill in |
+| Value | What it uses | Key to put in `LLM_API_KEY` |
 |---|---|---|
-| `registry` | The LiteLLM proxy included with this project. This is the default and the simplest option for most users. | `ANTHROPIC_API_KEY` |
-| `anthropic` | Anthropic directly, without using LiteLLM for model requests. | `ANTHROPIC_API_KEY`; also `EMBEDDING_API_KEY` if an agent uses embeddings |
-| `openai` | OpenAI directly for model and embedding requests. | `OPENAI_API_KEY` |
-| `inl_hpc` | INL HPC's OpenAI-compatible model service. | `INL_HPC_API_KEY` |
-| `inl_litellm` | INL's hosted LiteLLM service. | `INL_LITELLM_API_KEY` |
-| `amsc` | The American Science Cloud I2 model service. | `AMSC_I2_API_KEY` |
-| `anl_asksage` | ANL's AskSage model service (OpenAI-compatible API). | `ASKSAGE_API_KEY` (the AskSage static API key); also `EMBEDDING_API_KEY` if an agent uses embeddings |
+| `registry` | The LiteLLM proxy included with this project. This is the default and the simplest option for most users. | Anthropic |
+| `anthropic` | Anthropic directly, without using LiteLLM for model requests. | Anthropic; also `EMBEDDING_API_KEY` if an agent uses embeddings |
+| `openai` | OpenAI directly for model and embedding requests. | OpenAI |
+| `inl_hpc` | INL HPC's OpenAI-compatible model service. | INL HPC |
+| `inl_litellm` | INL's hosted LiteLLM service. | INL LiteLLM |
+| `amsc` | The American Science Cloud I2 model service. | AMSC I2 |
+| `anl_asksage` | ANL's AskSage model service (OpenAI-compatible API). | The AskSage static API key; also `EMBEDDING_API_KEY` if an agent uses embeddings |
 
 For example, to use OpenAI:
 
 ```dotenv
 LLM_CONFIG_PROFILE=openai
-OPENAI_API_KEY=<your-openai-api-key>
+LLM_API_KEY=<your-openai-api-key>
 ```
 
 Advanced users can set `LLM_CONFIG_FILE` to a custom LLM configuration YAML file. It overrides `LLM_CONFIG_PROFILE`, must be available inside every agent container, and requires any environment variables referenced by that file.

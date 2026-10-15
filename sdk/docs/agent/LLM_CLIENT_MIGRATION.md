@@ -71,7 +71,7 @@ Or select an installed provider profile and export its credentials:
 
 ```bash
 LLM_CONFIG_PROFILE=openai
-OPENAI_API_KEY=...
+LLM_API_KEY=...
 ```
 
 Available profiles are `registry`, `inl_hpc`, `inl_litellm`, `amsc`,
@@ -93,7 +93,7 @@ model_list:
   - model_name: medium
     litellm_params:
       model: openai/gpt-5-mini
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
       # Optional for local OpenAI-compatible endpoints or private gateways:
       # api_base: http://localhost:8000/v1
 ```
@@ -166,7 +166,7 @@ from openai import AsyncOpenAI
 class AnalysisAgent(PrometheusAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.openai = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        self.openai = AsyncOpenAI(api_key=os.environ["LLM_API_KEY"])
 
     async def _execute(self, params, context, event_queue):
         result = await self.openai.chat.completions.create(
@@ -208,7 +208,7 @@ Before:
 import anthropic
 
 
-client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+client = anthropic.AsyncAnthropic(api_key=os.environ["LLM_API_KEY"])
 
 message = await client.messages.create(
     model="claude-sonnet-4-5-20250929",
@@ -240,7 +240,7 @@ model_list:
   - model_name: large
     litellm_params:
       model: anthropic/claude-sonnet-4-5-20250929
-      api_key: os.environ/ANTHROPIC_API_KEY
+      api_key: os.environ/LLM_API_KEY
 ```
 
 ## Before And After: Embeddings

@@ -236,7 +236,7 @@ def env_test_file(project_root: Path):
     test_secret = uuid.uuid4().hex[:16]
     env_path = project_root / ".env.test"
     env_path.write_text(
-        f"ANTHROPIC_API_KEY=sk-ant-test-not-real\n"
+        f"LLM_API_KEY=sk-ant-test-not-real\n"
         f"AGENT_SECRET={test_secret}\n"
         f"REDIS_PASSWORD={test_secret}\n"
         f"REDIS_URL=redis://:{test_secret}@redis:6379\n"

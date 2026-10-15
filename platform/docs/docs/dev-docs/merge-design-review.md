@@ -74,7 +74,7 @@ These are orthogonal concerns. The user's preference for LiteLLM is correct **fo
 - **No health checking.** Agents register once; the registry never verifies they're still alive. The heartbeat endpoint exists but agents don't call it. A crashed agent stays registered forever (until registry restart).
 - **No versioning.** When you deploy a new version of an agent with a changed skill schema, the registry just overwrites. There's no way to do rolling updates where old and new versions coexist.
 
-**Recommendation:** Keep the homemade registry for agent/skill discovery — it's simple and fit for purpose. Add LiteLLM as a separate service that all agents route their LLM calls through. This gives you: unified API key management (agents don't each need `ANTHROPIC_API_KEY`), model fallback chains, spend tracking, and the ability to swap models without redeploying agents. For the registry itself: add a 60-second heartbeat requirement and auto-deregister after 3 missed heartbeats. Store registrations in Redis (you already have it) so they survive restarts.
+**Recommendation:** Keep the homemade registry for agent/skill discovery — it's simple and fit for purpose. Add LiteLLM as a separate service that all agents route their LLM calls through. This gives you: unified API key management (agents don't each need `LLM_API_KEY`), model fallback chains, spend tracking, and the ability to swap models without redeploying agents. For the registry itself: add a 60-second heartbeat requirement and auto-deregister after 3 missed heartbeats. Store registrations in Redis (you already have it) so they survive restarts.
 
 ---
 

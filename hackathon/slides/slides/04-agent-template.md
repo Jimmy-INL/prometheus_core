@@ -361,7 +361,7 @@ answer = r.text
 Which provider answers is set by `LLM_CONFIG_PROFILE` in your agent's `.env`: `inl_litellm`, `amsc`, or `anl_asksage` (deck 03). The master key is attached only for the platform's own proxy; otherwise your profile's key is used.
 :::
 
-Note: Assumes the template compose forwards INL_LITELLM_API_KEY and ASKSAGE_API_KEY (today only the ANTHROPIC, OPENAI and AMSC keys are forwarded), and that the template agent.py LLM example has the proxy_url/with_api_key pattern.
+Note: The template compose forwards LLM_API_KEY, which every profile reads. Assumes the template agent.py LLM example has the proxy_url/with_api_key pattern.
 ::::
 
 ---
@@ -1389,16 +1389,16 @@ model_list:
     litellm_params:
       model: openai/claude-sonnet-5-awsgov
       api_base: https://litellm.inl.gov/v1
-      api_key: os.environ/INL_LITELLM_API_KEY
+      api_key: os.environ/LLM_API_KEY
   - model_name: vision
     litellm_params:
       model: openai/claude-opus-4-8-awsgov
       api_base: https://litellm.inl.gov/v1
-      api_key: os.environ/INL_LITELLM_API_KEY
+      api_key: os.environ/LLM_API_KEY
 ```
 
 {.small}
-Start from `sdk/llm_config.example.yaml`. Mount it into the container and set `LLM_CONFIG_FILE=/app/llm_config.yaml`. The keys must be in the **process** env: add them to compose `environment:`.
+Start from `sdk/llm_config.example.yaml`. Mount it into the container and set `LLM_CONFIG_FILE=/app/llm_config.yaml`. `LLM_API_KEY` is already forwarded; any other key must be added to compose `environment:`.
 :::
 
 ---
@@ -1424,7 +1424,7 @@ A PR to `prometheus_api` (base `main`).
 Add `small`/`large`/`vision`/`embedding`/`default` entries to `platform/litellm_config.yaml`, then `make restart`. Every agent on the `registry` profile gets them, with no agent change.
 
 {.small}
-The template compose forwards every profile key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AMSC_I2_API_KEY`, `INL_LITELLM_API_KEY`, `INL_HPC_API_KEY`, `ASKSAGE_API_KEY`, `EMBEDDING_API_KEY`) from your `.env`. A key of your own needs an `environment:` line.
+The template compose forwards `LLM_API_KEY` (every profile's key) and `EMBEDDING_API_KEY` from your `.env`. A key of your own needs an `environment:` line.
 
 {.small}
 Model strings follow LiteLLM: `openai/…` + `api_base` for OpenAI-compatible gateways, `hosted_vllm/…`, `anthropic/…`.

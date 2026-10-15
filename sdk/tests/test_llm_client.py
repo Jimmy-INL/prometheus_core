@@ -41,7 +41,7 @@ from prometheus_api.llm_client import (
     normalize_messages,
     redact_secrets,
 )
-from prometheus_api.llm_client.tracing import AMSC_API_KEY_ENV, enable_amsc_x_api_key
+from prometheus_api.llm_client.tracing import MLFLOW_API_KEY_ENV, enable_mlflow_x_api_key
 from prometheus_api.llm_configs import get_llm_config_path
 
 
@@ -53,7 +53,7 @@ model_list:
   - model_name: default
     litellm_params:
       model: openai/default-model
-      api_key: os.environ/OPENAI_API_KEY
+      api_key: os.environ/LLM_API_KEY
   - model_name: small
     litellm_params:
       model: openai/small-model
@@ -226,7 +226,7 @@ def test_config_resolves_proxy_url_from_yaml_env_reference(monkeypatch, tmp_path
 
 
 def test_fallback_yaml_parsing_resolves_env_refs(monkeypatch, tmp_path):
-    monkeypatch.setenv("OPENAI_API_KEY", "env-secret")
+    monkeypatch.setenv("LLM_API_KEY", "env-secret")
     config = LLMConfig(config_file=_fallback_yaml(tmp_path))
 
     models = config.load_fallback_models()
@@ -448,7 +448,7 @@ def test_disabled_mlflow_tracing_does_not_import_mlflow(monkeypatch):
 def test_mlflow_tracing_sync_chat_records_span_and_protected_tags(monkeypatch, tmp_path):
     state = _install_fake_mlflow(monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+    monkeypatch.setenv(MLFLOW_API_KEY_ENV, "mlflow-secret")
     monkeypatch.setenv("MLFLOW_EXPERIMENT_NAME", "prometheus-test")
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -511,11 +511,11 @@ def test_mlflow_tracing_sync_chat_records_span_and_protected_tags(monkeypatch, t
     }
 
 
-def test_enable_amsc_x_api_key_injects_header(monkeypatch):
+def test_enable_mlflow_x_api_key_injects_header(monkeypatch):
     state = _install_fake_mlflow(monkeypatch)
-    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+    monkeypatch.setenv(MLFLOW_API_KEY_ENV, "mlflow-secret")
 
-    enable_amsc_x_api_key()
+    enable_mlflow_x_api_key()
     result = state.rest_utils.http_request(
         object(),
         "/api/2.0/mlflow/runs/log-batch",
@@ -525,20 +525,20 @@ def test_enable_amsc_x_api_key_injects_header(monkeypatch):
 
     assert result["kwargs"]["extra_headers"] == {
         "Existing": "yes",
-        "X-Api-Key": "amsc-secret",
+        "X-Api-Key": "mlflow-secret",
     }
 
 
-def test_enable_amsc_x_api_key_logs_when_missing(monkeypatch, caplog):
+def test_enable_mlflow_x_api_key_logs_when_missing(monkeypatch, caplog):
     state = _install_fake_mlflow(monkeypatch)
-    monkeypatch.delenv(AMSC_API_KEY_ENV, raising=False)
+    monkeypatch.delenv(MLFLOW_API_KEY_ENV, raising=False)
 
     with caplog.at_level(logging.WARNING, logger="prometheus_api.llm_client"):
-        enable_amsc_x_api_key()
+        enable_mlflow_x_api_key()
 
     state.rest_utils.http_request(object(), "/api", "GET", headers={"Existing": "yes"})
 
-    assert f"Warning: {AMSC_API_KEY_ENV} not found in environment." in caplog.text
+    assert f"Warning: {MLFLOW_API_KEY_ENV} not found in environment." in caplog.text
     assert state.http_request_kwargs[0]["headers"] == {
         "Existing": "yes",
         "X-Api-Key": None,
@@ -577,7 +577,7 @@ async def test_async_chat_method_uses_proxy():
 async def test_mlflow_tracing_async_chat_records_span(monkeypatch, tmp_path):
     state = _install_fake_mlflow(monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv(AMSC_API_KEY_ENV, "amsc-secret")
+    monkeypatch.setenv(MLFLOW_API_KEY_ENV, "mlflow-secret")
     monkeypatch.delenv("MLFLOW_EXPERIMENT_NAME", raising=False)
 
     async def handler(request: httpx.Request) -> httpx.Response:

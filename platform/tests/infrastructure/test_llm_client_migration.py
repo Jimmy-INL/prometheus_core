@@ -26,7 +26,7 @@ FORBIDDEN_RUNTIME_PATTERNS = (
     "ChatAnthropic",
     "AsyncAnthropic",
     "AsyncOpenAI",
-    "ANTHROPIC_API_KEY =",
+    "LLM_API_KEY =",
     "MODEL_NAME =",
 )
 
@@ -41,13 +41,8 @@ LLM_AGENT_COMPOSE_FILES = (
 )
 
 PROVIDER_KEY_ENV = {
-    "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY:-}",
+    "LLM_API_KEY": "${LLM_API_KEY:-}",
     "EMBEDDING_API_KEY": "${EMBEDDING_API_KEY:-}",
-    "OPENAI_API_KEY": "${OPENAI_API_KEY:-}",
-    "INL_HPC_API_KEY": "${INL_HPC_API_KEY:-}",
-    "INL_LITELLM_API_KEY": "${INL_LITELLM_API_KEY:-}",
-    "AMSC_I2_API_KEY": "${AMSC_I2_API_KEY:-}",
-    "ASKSAGE_API_KEY": "${ASKSAGE_API_KEY:-}",
 }
 
 

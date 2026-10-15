@@ -18,7 +18,7 @@ Run with the default LiteLLM registry profile:
 
 Or an installed direct-provider profile:
 
-    LLM_CONFIG_PROFILE=openai OPENAI_API_KEY=... uv run python examples/llm_client_usage.py
+    LLM_CONFIG_PROFILE=openai LLM_API_KEY=... uv run python examples/llm_client_usage.py
 """
 
 from __future__ import annotations
@@ -33,9 +33,8 @@ def print_setup_help() -> None:
     print("     export REGISTRY_URL=http://localhost:4000")
     print("  2. Or select an installed provider profile:")
     print("     export LLM_CONFIG_PROFILE=openai")
-    print("  3. Export provider keys referenced by the selected YAML:")
-    print("     export OPENAI_API_KEY=...")
-    print("     export ANTHROPIC_API_KEY=...")
+    print("  3. Export the provider key every profile reads:")
+    print("     export LLM_API_KEY=...")
 
 
 def example_list_models(llm: LLMClient) -> None:
