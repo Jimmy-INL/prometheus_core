@@ -127,7 +127,9 @@ def test_profiles_match_sdk_llm_configs():
     assert next(iter(known)) == "registry"
     assert sorted(known) == sorted(p.stem for p in init_env.LLM_CONFIGS.glob("*.yaml"))
     # registry via litellm_config.yaml; EMBEDDING_API_KEY is never the profile key.
-    assert {key for key, _ in known.values()} == {"LLM_API_KEY"}
+    # Keyless local profiles (api_key: none, e.g. Ollama) need no key at all.
+    assert {key for key, _ in known.values()} <= {"LLM_API_KEY", None}
+    assert known["registry"][0] == "LLM_API_KEY"
 
 
 def test_port_vars_have_values(env_example_vars):
