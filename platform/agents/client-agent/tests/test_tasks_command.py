@@ -16,27 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import types
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 CLIENT_AGENT_DIR = Path(__file__).resolve().parents[1]
 if str(CLIENT_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_AGENT_DIR))
-
-# Stub the remaining LangChain tool dependency; the /tasks path never touches it.
-if "langchain_core.tools" not in sys.modules:
-    _tools = types.ModuleType("langchain_core.tools")
-
-    class _StructuredTool:
-        @staticmethod
-        def from_function(*args, **kwargs):
-            return SimpleNamespace(name=kwargs.get("name", "tool"), invoke=lambda a: {})
-
-    _tools.StructuredTool = _StructuredTool
-    sys.modules["langchain_core.tools"] = _tools
 
 import task_graph  # noqa: E402
 from orchestrator import debug_commands, runtime  # noqa: E402

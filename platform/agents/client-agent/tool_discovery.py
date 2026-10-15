@@ -12,9 +12,10 @@
 
 """
 Dynamic tool discovery from A2A registry.
-Creates LangChain tools by discovering agents and their skills from the registry.
+Creates callable tools by discovering agents and their skills from the registry.
 """
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 import json
 import logging
 import os
@@ -22,7 +23,6 @@ import uuid
 from typing import Any, Dict, List, Literal, Optional
 
 import httpx
-from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, create_model
 from prometheus_api.agent import ArtifactReference, PrometheusAgent
 from prometheus_api.a2a_stream import stream_a2a_request
@@ -167,8 +167,8 @@ def create_input_schema_from_skill(skill: Dict) -> type[BaseModel]:
     Create Pydantic model from skill's inputSchema.
 
     Dynamically generates a Pydantic model class from a JSON schema definition
-    in the agent card. This enables LangChain to validate tool inputs and provide
-    proper type information to the LLM.
+    in the agent card. This lets the tool validate inputs and provide proper
+    type information to the LLM.
 
     Handles:
     - Simple schemas (single question parameter)
@@ -605,13 +605,33 @@ async def call_a2a_agent(
         raise
 
 
+@dataclass(frozen=True)
+class StructuredTool:
+    """A discovered A2A skill: name, description, Pydantic input schema, coroutine."""
+
+    name: str
+    description: str
+    args_schema: type[BaseModel]
+    coroutine: Callable[..., Awaitable[str]]
+
+    async def ainvoke(self, tool_input: Dict[str, Any]) -> str:
+        """Validate ``tool_input`` against ``args_schema`` and call the skill.
+
+        Only keys the caller supplied are forwarded (defaults are not injected),
+        and reserved-name fields are dumped under their original JSON alias.
+        Raises ``pydantic.ValidationError`` on invalid input.
+        """
+        validated = self.args_schema.model_validate(tool_input)
+        return await self.coroutine(**validated.model_dump(by_alias=True, exclude_unset=True))
+
+
 async def create_tool_from_skill(
     agent_url: str,
     skill: Dict[str, Any],
     supports_streaming: bool = False,
 ) -> StructuredTool:
     """
-    Create LangChain tool from agent skill definition.
+    Create a tool from an agent skill definition.
 
     Uses skill metadata from agent card:
     - name becomes tool name
@@ -623,45 +643,29 @@ async def create_tool_from_skill(
         skill: Skill dictionary from agent card
 
     Returns:
-        LangChain StructuredTool
+        StructuredTool
     """
     skill_id = skill["id"]
-    skill_name = skill.get("name", skill_id)
     skill_description = skill.get("description", "")
-
-    # Build a map of renamed fields (field_name_ -> original_name) so we can
-    # restore original JSON keys before forwarding params to the downstream agent.
-    input_schema_def = skill.get("inputSchema", {})
-    _reserved = {"model_fields", "model_config", "model_computed_fields"}
-    _rename_map = {
-        f"{name}_": name
-        for name in (input_schema_def.get("properties", {}) or {})
-        if name in _reserved
-    }
 
     # Create async function to call the agent
     async def call_agent(**kwargs) -> str:
         try:
-            # Remap any Pydantic-renamed fields back to their original names
-            remapped = {_rename_map.get(k, k): v for k, v in kwargs.items()}
             result = await call_a2a_agent(
                 agent_url,
                 skill_id,
                 _prefer_streaming=supports_streaming,
-                **remapped,
+                **kwargs,
             )
             return json.dumps(result, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    # Create input schema from skill definition
-    input_schema = create_input_schema_from_skill(skill)
-
-    return StructuredTool.from_function(
-        coroutine=call_agent,
+    return StructuredTool(
         name=skill_id,
         description=skill_description,
-        args_schema=input_schema,
+        args_schema=create_input_schema_from_skill(skill),
+        coroutine=call_agent,
     )
 
 
@@ -671,10 +675,10 @@ async def get_all_tools_dynamic() -> List[StructuredTool]:
 
     This replaces the hardcoded get_all_tools() function.
     Queries the registry for agents, fetches their agent cards,
-    and creates LangChain tools from their skills.
+    and creates tools from their skills.
 
     Returns:
-        List of LangChain tools
+        List of StructuredTool
     """
     try:
         agents = await discover_agents()
