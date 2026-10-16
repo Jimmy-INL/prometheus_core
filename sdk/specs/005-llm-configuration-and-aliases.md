@@ -36,6 +36,7 @@ Let applications select LLM models through stable aliases while using an explici
 ## Interfaces
 - `FallbackModelConfig(alias: str, provider_model: str, litellm_params: dict[str, Any])`
 - `get_llm_config_path(profile: str = "registry") -> Path`
+- `list_llm_config_profiles() -> tuple[str, ...]`
 - `LLMConfig(proxy_url: str | None = None, config_file: Path | None = None, debug_log_messages: bool = False, enable_mlflow_tracing: bool = False, app_name: str | None = None, mlflow_trace_tags: dict[str, str] = {}, api_key: str | None = None, timeout: float = 30.0)`
 - `LLMConfig.from_env(env: Mapping[str, str] | None = None, env_file: Path | None = None) -> LLMConfig`
 - `LLMConfig.with_api_key(api_key: str | None) -> LLMConfig`

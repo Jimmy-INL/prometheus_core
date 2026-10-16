@@ -34,8 +34,9 @@ CONFIG_FILES = sorted(CONFIG_DIR.glob("*.yaml"))
 EXPECTED_FLAVORS = {"default", "small", "medium", "large", "vision", "embedding"}
 INFERENCE_KEY = "os.environ/LLM_API_KEY"
 EMBEDDING_KEY = "os.environ/EMBEDDING_API_KEY"
-# Keyless local providers such as Ollama.
+# REQ-005-16: only keyless local providers may set ``api_key: none``.
 NO_KEY = "none"
+KEYLESS_PROFILES = {"ollama"}
 
 
 def _load(path: Path) -> dict:
@@ -87,11 +88,12 @@ def test_installed_profile_matches_llm_config_schema(config_path):
         params = entry["litellm_params"]
         assert isinstance(params, dict)
         assert isinstance(params.get("model"), str) and params["model"].strip()
-        allowed_keys = (
-            {INFERENCE_KEY, EMBEDDING_KEY, NO_KEY}
-            if entry["model_name"] == "embedding"
-            else {INFERENCE_KEY, NO_KEY}
-        )
+        if config_path.stem in KEYLESS_PROFILES:
+            allowed_keys = {NO_KEY}
+        elif entry["model_name"] == "embedding":
+            allowed_keys = {INFERENCE_KEY, EMBEDDING_KEY}
+        else:
+            allowed_keys = {INFERENCE_KEY}
         assert params.get("api_key") in allowed_keys, (
             f"{entry['model_name']} must read its key from {sorted(allowed_keys)}"
         )
