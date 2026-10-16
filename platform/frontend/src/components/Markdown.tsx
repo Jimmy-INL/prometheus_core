@@ -81,6 +81,11 @@ const markdownComponents = {
     <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>
   ),
   hr: () => <hr className="border-base-300 my-3" />,
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
 };
 
 export function Markdown({ children }: { children: string }) {
