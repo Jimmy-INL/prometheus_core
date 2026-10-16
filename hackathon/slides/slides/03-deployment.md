@@ -813,11 +813,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem \
     UV_SYSTEM_PYTHON=1
 
-# system CAs + every certs/*.pem (INL bundle)
-RUN --mount=type=bind,source=certs,target=/tmp/certs \
-    cp /etc/ssl/certs/ca-certificates.crt \
-       /etc/ssl/certs/ca-bundle.pem; \
-    cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem
+# system CAs + common/certs (INL bundle), validated
+RUN --mount=type=bind,from=certs,target=/tmp/certs \
+    sh /tmp/certs/setup.sh
 
 RUN apt-get install -y --no-install-recommends git
 

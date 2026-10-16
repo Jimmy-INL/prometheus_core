@@ -1085,11 +1085,9 @@ args:
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem <span class="s">\</span>
     UV_SYSTEM_PYTHON=<span class="n">1</span>
 
-<span class="c"># system CAs + every certs/*.pem (INL bundle)</span>
-<span class="k">RUN</span> --mount=type=bind,source=certs,target=/tmp/certs <span class="s">\</span>
-    cp /etc/ssl/certs/ca-certificates.crt <span class="s">\</span>
-       /etc/ssl/certs/ca-bundle.pem; <span class="s">\</span>
-    cat /tmp/certs/*.pem &gt;&gt; /etc/ssl/certs/ca-bundle.pem
+<span class="c"># system CAs + common/certs (INL bundle), validated</span>
+<span class="k">RUN</span> --mount=type=bind,from=certs,target=/tmp/certs <span class="s">\</span>
+    sh /tmp/certs/setup.sh
 
 <span class="k">RUN</span> apt-get install -y --no-install-recommends git
 

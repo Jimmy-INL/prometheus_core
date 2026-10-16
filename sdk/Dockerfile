@@ -7,12 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-bundle.pem \
     UV_SYSTEM_PYTHON=1
 
-# Set up CA certificate bundle: start with system certs, append custom if provided
-RUN --mount=type=bind,source=certs,target=/tmp/certs \
-    cp /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.pem 2>/dev/null || true; \
-    if ls /tmp/certs/*.pem 1>/dev/null 2>&1; then \
-        cat /tmp/certs/*.pem >> /etc/ssl/certs/ca-bundle.pem; \
-    fi
+# Install any custom CA certificates into the system trust store. "certs" is a
+# named build context pointing at common/certs (passed by the Makefile, compose,
+# and CI); see common/certs/setup.sh for details
+RUN --mount=type=bind,from=certs,target=/tmp/certs \
+    sh /tmp/certs/setup.sh
 
 # Install git
 RUN apt-get update && \

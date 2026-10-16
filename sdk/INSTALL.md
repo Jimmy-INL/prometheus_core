@@ -6,8 +6,6 @@ There are three supported ways to use `prometheus-api`, in order of preference:
 2. **[Library](#library)** — install the package into your own Python environment.
 3. **[Development checkout](#development)** — clone the repo and use `uv` to work on `prometheus-api` itself.
 
-> Running on INL's HPC and need CA-bundle / podman details? See [docs/hpc.md](docs/hpc.md).
-
 ---
 
 ## Container (recommended)
@@ -35,6 +33,8 @@ Without access to `containers.github.inl.gov`, build the image from this directo
 ```bash
 make build-local                     # → prometheus_api:local (host architecture)
 ```
+
+The image trusts the CA certificates in [`common/certs`](../common/certs/README.md) (the INL bundle by default). To trust your own, add them there before building.
 
 The platform does this for you with `LOCAL_SDK=true` (see the [platform README](../platform/README.md#2-get-the-base-image)).
 

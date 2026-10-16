@@ -7,13 +7,11 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
-# update-ca-certificates only picks up *.crt files, so normalize the extension
-COPY --from=certs . /tmp/certs/
-RUN for f in /tmp/certs/*.pem /tmp/certs/*.crt; do \
-      [ -e "$f" ] && cp "$f" "/usr/local/share/ca-certificates/$(basename "${f%.*}").crt"; \
-    done; \
-    update-ca-certificates \
- && rm -rf /tmp/certs
+# Install any custom CA certificates into the system trust store. "certs" is a
+# named build context pointing at common/certs (passed by compose and CI); see
+# common/certs/setup.sh for details
+RUN --mount=type=bind,from=certs,target=/tmp/certs \
+    sh /tmp/certs/setup.sh
 
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     NPM_CONFIG_cafile=/etc/ssl/certs/ca-certificates.crt

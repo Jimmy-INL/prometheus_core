@@ -249,7 +249,7 @@ services:
       dockerfile: frontend/Dockerfile
       target: dev
       additional_contexts:
-        certs: ./certs
+        certs: ../common/certs
     container_name: frontend-dev
     ports:
       - "${FRONTEND_DEV_PORT:-5150}:5150"
@@ -273,7 +273,7 @@ services:
       dockerfile: frontend/Dockerfile
       target: prod
       additional_contexts:
-        certs: ./certs
+        certs: ../common/certs
     container_name: frontend-prod
     ports:
       - "${FRONTEND_PROD_PORT:-8080}:8080"
