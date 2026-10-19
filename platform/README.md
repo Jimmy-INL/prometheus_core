@@ -328,7 +328,7 @@ make up LOCAL_SDK=true DEBUG_AGENTS=true PROFILE=prod UP_ARGS="--wait"  # block 
 make wait-agents                                                        # block until every agent is registered with LiteLLM
 ```
 
-A healthy agent is only serving HTTP; LiteLLM registration runs in the background, so `make wait-agents` is what confirms the platform can route to it. Every agent's `docker-compose.yml` must define a `/health` healthcheck (`make test-static` enforces it).
+A healthy agent shows only that it serves HTTP. LiteLLM registration runs in the background, so run `make wait-agents` to confirm that the platform can route to the agent. Every per-agent `docker-compose.yml` must define a `/health` healthcheck, and `make test-static` enforces it.
 
 ## Troubleshooting
 
