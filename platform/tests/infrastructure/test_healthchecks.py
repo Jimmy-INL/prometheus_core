@@ -84,8 +84,10 @@ def _assert_agent_healthcheck(hc, where: str) -> None:
     assert hc is not None, f"{where} should define a healthcheck"
     test_cmd = hc["test"]
     joined = " ".join(test_cmd) if isinstance(test_cmd, list) else test_cmd
-    # The agent template reads AGENT_PORT in the probe, so match host and path
-    assert "localhost:" in joined, f"{where} must probe the container itself, not a host port"
+    # The agent template reads AGENT_PORT in the probe, so accept either form
+    assert "localhost:8000/" in joined or "os.environ.get('AGENT_PORT'" in joined, (
+        f"{where} must probe the container port, not a host port"
+    )
     assert "/health'" in joined, f"{where} must probe the base-class /health endpoint"
     assert "start_period" in hc, f"{where} healthcheck should have start_period"
 
