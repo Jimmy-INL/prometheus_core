@@ -17,9 +17,10 @@
 2. For every variable in .env.example whose comment block carries a
    ``python3 -c "..."`` one-liner, fill a blank value in .env by running it.
    Values that are already set are never touched.
-3. If the API key for the selected LLM_CONFIG_PROFILE is blank and the script
-   runs in a terminal, offer a profile menu (arrow keys, Enter) and prompt for
-   that profile's key. Otherwise exit non-zero.
+3. If the API key for the selected LLM_CONFIG_PROFILE is blank, take it from
+   the environment if it is set there (as in CI). Otherwise, if the script runs
+   in a terminal, offer a profile menu (arrow keys, Enter) and prompt for that
+   profile's key. Otherwise exit non-zero.
 
 Standard library only, so it runs before anything else is installed. Run from
 anywhere; paths resolve relative to this file.
@@ -204,6 +205,11 @@ def main() -> int:
         print(f"Generated in {ENV.name}: {', '.join(filled)}")
 
     env = values(text)
+    if (key := missing_llm_key(env)) and os.environ.get(key):
+        text = set_var(text, key, os.environ[key])
+        ENV.write_text(text)
+        env = values(text)
+        print(f"Saved {key} from the environment in {ENV.name}.")
     if missing_llm_key(env) and interactive():
         text = prompt_llm(text)
         ENV.write_text(text)

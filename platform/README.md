@@ -72,7 +72,7 @@ user, generate and activate one under **Admin > Signing Keys** (see
 LLM_CONFIG_PROFILE=registry
 ```
 
-If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. You can also set them by hand:
+If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. If the key is set in the environment instead (as in CI), it writes that to `.env` without asking. You can also set them by hand:
 
 | Value | What it uses | Key to put in `LLM_API_KEY` |
 |---|---|---|

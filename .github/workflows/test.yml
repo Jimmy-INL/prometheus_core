@@ -347,16 +347,13 @@ jobs:
       DEBUG_AGENTS: "true"
       OPTIONAL_AGENTS: "false"
       PROFILE: prod
+      # make up runs init_env.py, which creates .env from .env.example,
+      # generates every secret, and takes this key from the environment.
+      # Nothing calls an LLM at startup, so a placeholder is enough
+      LLM_API_KEY: sk-ant-test-not-real
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Create .env
-        # Start from the example for its ports and defaults. Nothing calls an
-        # LLM at startup, so a placeholder key is enough to get past
-        # init_env.py, which then generates every other secret
-        run: |
-          cp .env.example .env
-          sed -i 's/^ANTHROPIC_API_KEY=.*/ANTHROPIC_API_KEY=sk-ant-test-not-real/' .env
       - name: Start
         # make up waits for every healthcheck, then runs make check: the
         # backend and frontend on their host ports, the frontend's /api proxy,
