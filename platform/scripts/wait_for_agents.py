@@ -86,6 +86,11 @@ def main() -> int:
     while True:
         try:
             found = registered(url, master_key) & expected
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                print(f"[ERROR] LiteLLM rejected LITELLM_MASTER_KEY: {e}", file=sys.stderr)
+                return 1
+            print(f"  registry not ready: {e}")
         except (urllib.error.URLError, OSError, ValueError) as e:
             print(f"  registry not ready: {e}")
         if found == expected:
