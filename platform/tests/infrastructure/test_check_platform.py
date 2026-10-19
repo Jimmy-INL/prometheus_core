@@ -27,6 +27,7 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
 
 def _load_check_platform():
+    """Import scripts/check_platform.py as a module."""
     # The script imports init_env by name, as running it from scripts/ allows
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
@@ -46,13 +47,14 @@ def server():
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            """Answer with the route's status and body, or 404."""
             status, body = routes.get(self.path, (404, b""))
             self.send_response(status)
             self.end_headers()
             self.wfile.write(body)
 
         def log_message(self, *args):
-            pass
+            """Keep request logs out of the test output."""
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     # A short poll interval keeps shutdown() from waiting the default 0.5s
@@ -66,10 +68,12 @@ def server():
 
 
 def _agents(*names):
+    """Return a /v1/agents route listing ``names``."""
     return 200, json.dumps([{"agent_name": n} for n in names]).encode()
 
 
 def _agent_dir(tmp_path, name):
+    """Create an agent directory whose agent_card.json has ``name``."""
     d = tmp_path / name.lower().replace(" ", "_")
     d.mkdir()
     (d / "agent_card.json").write_text(json.dumps({"name": name}))
@@ -77,15 +81,18 @@ def _agent_dir(tmp_path, name):
 
 
 def _run_main(monkeypatch, *args):
+    """Run main() with ``args`` and no wait between polls; return its exit code."""
     monkeypatch.setattr(sys, "argv", ["check_platform.py", "--interval", "0", *args])
     return cp.main()
 
 
 def test_registry_name_matches_the_sdk(tmp_path):
+    """The card name is lowercased with spaces as hyphens, as the SDK does."""
     assert cp.registry_name(_agent_dir(tmp_path, "Thermal Analysis Agent")) == "thermal-analysis-agent"
 
 
 def test_env_value_prefers_environment_then_env_file(tmp_path, monkeypatch):
+    """The environment wins over .env, and a blank value falls through to the default."""
     env = tmp_path / ".env"
     env.write_text("FROM_FILE=file\nBOTH=file\nBLANK=\n")
     monkeypatch.setattr(cp, "ENV", env)
@@ -99,17 +106,20 @@ def test_env_value_prefers_environment_then_env_file(tmp_path, monkeypatch):
 
 
 def test_env_value_without_env_file(tmp_path, monkeypatch):
+    """With no .env, an unset variable returns the default."""
     monkeypatch.setattr(cp, "ENV", tmp_path / "missing.env")
     monkeypatch.delenv("MISSING", raising=False)
     assert cp.env_value("MISSING", "default") == "default"
 
 
 def test_registered_skips_malformed_entries(server):
+    """Entries that aren't objects with a string agent_name are ignored."""
     server.routes["/v1/agents"] = (200, json.dumps([{"agent_name": "a"}, {"agent_name": None}, {}, 1, "b"]).encode())
     assert cp.registered(f"http://127.0.0.1:{server.port}/v1/agents", "key") == {"a"}
 
 
 def test_registered_rejects_a_non_list_body(server):
+    """A body that isn't a JSON list raises ValueError, so it is retried."""
     server.routes["/v1/agents"] = (200, b'{"detail": "x"}')
     with pytest.raises(ValueError, match="dict"):
         cp.registered(f"http://127.0.0.1:{server.port}/v1/agents", "key")
@@ -117,18 +127,21 @@ def test_registered_rejects_a_non_list_body(server):
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_registered_raises_auth_error_on_a_rejected_key(server, status):
+    """A 401 or 403 raises AuthError instead of being retried."""
     server.routes["/v1/agents"] = (status, b"")
     with pytest.raises(cp.AuthError):
         cp.registered(f"http://127.0.0.1:{server.port}/v1/agents", "key")
 
 
 def test_registered_raises_http_error_on_other_statuses(server):
+    """Other error statuses raise HTTPError, so they are retried."""
     server.routes["/v1/agents"] = (500, b"")
     with pytest.raises(urllib.error.HTTPError):
         cp.registered(f"http://127.0.0.1:{server.port}/v1/agents", "key")
 
 
 def test_agents_check_reports_missing_agents(server):
+    """The check names the missing agents, then passes once all are listed; extra agents are fine."""
     server.routes["/v1/agents"] = _agents("a")
     check = cp.agents_check(f"http://127.0.0.1:{server.port}/v1/agents", "key", {"a", "b", "c"})
     assert check() == "not registered: b, c"
@@ -137,6 +150,7 @@ def test_agents_check_reports_missing_agents(server):
 
 
 def test_http_check_passes_on_2xx_and_raises_otherwise(server):
+    """The check passes on a 200 and raises on a 404."""
     server.routes["/ok"] = (200, b"ok")
     assert cp.http_check(f"http://127.0.0.1:{server.port}/ok")() is None
     with pytest.raises(urllib.error.HTTPError):
@@ -144,6 +158,7 @@ def test_http_check_passes_on_2xx_and_raises_otherwise(server):
 
 
 def test_main_passes_when_everything_is_up(server, tmp_path, monkeypatch, capsys):
+    """Exits 0 once the backend, frontend, proxy and agents all pass."""
     monkeypatch.setenv("LITELLM_MASTER_KEY", "key")
     server.routes.update(
         {
@@ -164,7 +179,7 @@ def test_main_passes_when_everything_is_up(server, tmp_path, monkeypatch, capsys
 
 
 def test_main_skips_the_frontend_and_agents_when_not_given(server, monkeypatch):
-    # No master key needed and no frontend routes: only the backend is checked
+    """Without --frontend-port or agents, only the backend is checked and no master key is needed."""
     monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
     server.routes["/healthz"] = (200, b"ok")
     port = str(server.port)
@@ -172,6 +187,7 @@ def test_main_skips_the_frontend_and_agents_when_not_given(server, monkeypatch):
 
 
 def test_main_times_out_and_names_what_failed(server, tmp_path, monkeypatch, capsys):
+    """On a timeout, exits 1 and lists only the checks that never passed."""
     monkeypatch.setenv("LITELLM_MASTER_KEY", "key")
     server.routes.update({"/": (200, b"<html>"), "/api/setup/status": (502, b""), "/v1/agents": _agents()})
     port = str(server.port)
@@ -190,6 +206,7 @@ def test_main_times_out_and_names_what_failed(server, tmp_path, monkeypatch, cap
 
 
 def test_main_fails_fast_on_a_rejected_master_key(server, tmp_path, monkeypatch, capsys):
+    """A rejected key exits 1 on the first poll, not at the timeout."""
     monkeypatch.setenv("LITELLM_MASTER_KEY", "wrong")
     server.routes.update({"/healthz": (200, b"ok"), "/v1/agents": (401, b"")})
     port = str(server.port)
@@ -206,6 +223,7 @@ def test_main_fails_fast_on_a_rejected_master_key(server, tmp_path, monkeypatch,
 
 
 def test_main_requires_the_master_key_for_agents(tmp_path, monkeypatch, capsys):
+    """With agents to check and no LITELLM_MASTER_KEY, exits 1 at once."""
     monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
     monkeypatch.setattr(cp, "ENV", tmp_path / "missing.env")
     rc = _run_main(

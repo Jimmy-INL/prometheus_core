@@ -53,25 +53,66 @@ class AuthError(Exception):
 
 
 def env_value(name: str, default: str | None = None) -> str | None:
-    """Look up ``name`` in the environment, then .env, else return ``default``."""
+    """Look up ``name`` in the environment, then .env, else return ``default``.
+
+    Args:
+        name: Variable name, e.g. ``LITELLM_MASTER_KEY``.
+        default: Returned when the variable is unset or blank in both places.
+
+    Returns:
+        The first non-blank value found, or ``default``.
+    """
     return os.environ.get(name) or (values(ENV.read_text()).get(name) if ENV.exists() else None) or default
 
 
 def registry_name(agent_dir: Path) -> str:
-    """Return the name the agent registers under in LiteLLM, from its agent card."""
+    """Return the name the agent registers under in LiteLLM, from its agent card.
+
+    Args:
+        agent_dir: Agent directory holding an ``agent_card.json``.
+
+    Returns:
+        The card's ``name``, lowercased with spaces as hyphens, as the SDK
+        derives it.
+    """
     card = json.loads((agent_dir / "agent_card.json").read_text())
     return card["name"].lower().replace(" ", "-")
 
 
 def get(url: str, headers: dict[str, str] | None = None) -> bytes:
-    """GET ``url`` and return the body; raises on a connection error or non-2xx status."""
+    """GET ``url`` and return the body.
+
+    Args:
+        url: URL to fetch.
+        headers: Extra request headers.
+
+    Returns:
+        The response body.
+
+    Raises:
+        urllib.error.HTTPError: The response status is not 2xx.
+        urllib.error.URLError: The connection failed or timed out.
+    """
     request = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(request, timeout=10) as response:
         return response.read()
 
 
 def registered(url: str, master_key: str) -> set[str]:
-    """Return the agent names LiteLLM lists; raises AuthError if it rejects the key."""
+    """Return the agent names LiteLLM lists.
+
+    Args:
+        url: LiteLLM's ``/v1/agents`` URL.
+        master_key: ``LITELLM_MASTER_KEY``, sent as a Bearer token.
+
+    Returns:
+        Each entry's ``agent_name``; malformed entries are skipped.
+
+    Raises:
+        AuthError: LiteLLM answered 401 or 403.
+        ValueError: The body is not a JSON list.
+        urllib.error.URLError: Any other HTTP or connection failure.
+    """
     try:
         entries = json.loads(get(url, {"Authorization": f"Bearer {master_key}"}))
     except urllib.error.HTTPError as e:
@@ -88,10 +129,23 @@ def registered(url: str, master_key: str) -> set[str]:
 
 
 def agents_check(url: str, master_key: str, expected: set[str]) -> Callable[[], str | None]:
-    """Make a check that passes once every expected agent is registered."""
+    """Make a check that passes once every expected agent is registered.
+
+    Args:
+        url: LiteLLM's ``/v1/agents`` URL.
+        master_key: ``LITELLM_MASTER_KEY``.
+        expected: Registry names that must all be listed.
+
+    Returns:
+        A check for ``main()`` to poll.
+    """
 
     def check() -> str | None:
-        """Return None if every agent is registered, else which ones are missing."""
+        """Return None if every agent is registered, else which ones are missing.
+
+        Raises:
+            The same exceptions as ``registered()``.
+        """
         missing = expected - registered(url, master_key)
         return f"not registered: {', '.join(sorted(missing))}" if missing else None
 
@@ -99,10 +153,21 @@ def agents_check(url: str, master_key: str, expected: set[str]) -> Callable[[], 
 
 
 def http_check(url: str) -> Callable[[], str | None]:
-    """Make a check that passes once ``url`` answers with a 2xx status."""
+    """Make a check that passes once ``url`` answers with a 2xx status.
+
+    Args:
+        url: URL to fetch.
+
+    Returns:
+        A check for ``main()`` to poll.
+    """
 
     def check() -> str | None:
-        """Return None on a 2xx; anything else raises."""
+        """Return None on a 2xx status.
+
+        Raises:
+            The same exceptions as ``get()``.
+        """
         get(url)
         return None
 
@@ -110,7 +175,15 @@ def http_check(url: str) -> Callable[[], str | None]:
 
 
 def main() -> int:
-    """Poll every check until all pass or the timeout passes; return the exit code."""
+    """Poll every check until all pass or the timeout passes.
+
+    Each check runs every ``--interval`` seconds until it passes, after which
+    it is dropped. A rejected master key ends the run at once.
+
+    Returns:
+        0 once every check passes; 1 on a timeout, a rejected or missing
+        master key.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("agent_dirs", nargs="*", type=Path, help="agent directories with an agent_card.json")
     parser.add_argument("--backend-port", type=int, required=True, help="host port of the backend")
