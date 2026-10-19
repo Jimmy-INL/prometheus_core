@@ -199,6 +199,7 @@ services:
     container_name: backend
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with BACKEND_PORT in the Makefile (make check)
       - "${BACKEND_PORT:-8600}:8000"
     networks:
       - agent-network
@@ -277,6 +278,7 @@ services:
     container_name: frontend-dev
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with FRONTEND_DEV_PORT in the Makefile (make check)
       - "${FRONTEND_DEV_PORT:-5150}:5150"
     networks:
       - agent-network
@@ -306,6 +308,7 @@ services:
     container_name: frontend-prod
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with FRONTEND_PROD_PORT in the Makefile (make check)
       - "${FRONTEND_PROD_PORT:-8080}:8080"
     networks:
       - agent-network

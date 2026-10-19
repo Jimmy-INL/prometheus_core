@@ -72,7 +72,8 @@ CHECK_TIMEOUT ?= 300
 UP_WAIT := $(if $(filter true,$(CHECK)),--wait --wait-timeout $(WAIT_TIMEOUT),)
 RUN_CHECK := $(if $(filter true,$(CHECK)),$(MAKE) --no-print-directory check,)
 
-# Host ports that `make check` probes; the defaults match docker-compose.yml.
+# Host ports that `make check` probes. The defaults must match the ones in the
+# ports of backend, frontend-dev and frontend-prod in docker-compose.yml.
 BACKEND_PORT ?= 8600
 FRONTEND_DEV_PORT ?= 5150
 FRONTEND_PROD_PORT ?= 8080
