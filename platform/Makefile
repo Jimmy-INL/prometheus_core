@@ -59,9 +59,24 @@ PROMETHEUS_SYSTEM_TEST_LLM_URL ?= http://localhost:$(LITELLM_LOCAL_PORT)
 PROFILE ?= dev
 PROFILE_FLAGS := $(if $(PROFILE),--profile $(PROFILE),)
 
-# Extra flags for `docker compose up` in `make up`, e.g. UP_ARGS="--wait" to
-# block until every service with a healthcheck reports healthy (used by CI).
+# Extra flags for `docker compose up` in `make up`.
 UP_ARGS ?=
+
+# The detached start targets (up, restart, ng-up, ng-restart) wait for every
+# service with a healthcheck to report healthy (`docker compose up --wait`),
+# then run `make check`. Set CHECK=false to return as soon as the containers
+# are started instead.
+CHECK ?= true
+WAIT_TIMEOUT ?= 600
+CHECK_TIMEOUT ?= 300
+UP_WAIT := $(if $(filter true,$(CHECK)),--wait --wait-timeout $(WAIT_TIMEOUT),)
+RUN_CHECK := $(if $(filter true,$(CHECK)),$(MAKE) --no-print-directory check,)
+
+# Host ports that `make check` probes; the defaults match docker-compose.yml.
+BACKEND_PORT ?= 8600
+FRONTEND_DEV_PORT ?= 5150
+FRONTEND_PROD_PORT ?= 8080
+FRONTEND_PORT := $(if $(filter dev,$(PROFILE)),$(FRONTEND_DEV_PORT),$(if $(filter prod,$(PROFILE)),$(FRONTEND_PROD_PORT),))
 
 # All per-agent compose files found on disk (checked-out submodules only).
 AGENT_COMPOSE_FILES := $(shell find agents -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort)
@@ -227,20 +242,24 @@ test-system: export PROMETHEUS_SYSTEM_TEST_LLM_URL := $(PROMETHEUS_SYSTEM_TEST_L
 test-system: ##@ Test the user experience on an already-running platform (start with PROMETHEUS_SYSTEM_TESTING=true)
 	cd tests && uv run python -m pytest -m system system -v
 
-.PHONY: wait-agents
-WAIT_AGENTS_TIMEOUT ?= 300
-wait-agents: ##@ Wait until the client-agent and every included agent have registered with LiteLLM
-	python3 scripts/wait_for_agents.py --timeout $(WAIT_AGENTS_TIMEOUT) \
-		agents/client-agent $(patsubst %/docker-compose.yml,%,$(AGENT_COMPOSE_FILES))
+# The agents come from the generated compose file at run time, so the ng-*
+# targets check the agents they actually started.
+.PHONY: check
+check: ##@ Wait until the running platform answers on its host ports and every agent is registered with LiteLLM
+	python3 -u scripts/check_platform.py --timeout $(CHECK_TIMEOUT) \
+		--backend-port $(BACKEND_PORT) --litellm-port $(LITELLM_LOCAL_PORT) \
+		$(if $(FRONTEND_PORT),--frontend-port $(FRONTEND_PORT),) \
+		agents/client-agent $$(sed -n 's#^  - \(.*\)/docker-compose.yml$$#\1#p' $(COMPOSE_AGENTS) 2>/dev/null)
 
 ##@
 ##@ Compose
 ##@
 
-up: ##@ Clear LiteLLM DB, then build and start all services (detached). Set PROFILE=dev|prod to include the React frontend.
+up: ##@ Clear LiteLLM DB, build and start all services (detached), then wait until they are up (CHECK=false to skip). Set PROFILE=dev|prod to include the React frontend.
 up: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
 up: $(BASE_IMAGE_DEP) generate init-env clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d $(UP_ARGS)
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up --build -d $(UP_WAIT) $(UP_ARGS)
+	$(RUN_CHECK)
 
 up-fg: ##@ Clear LiteLLM DB, then build and start all services (foreground). Set PROFILE=dev|prod to include the React frontend.
 up-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
@@ -250,7 +269,8 @@ up-fg: $(BASE_IMAGE_DEP) generate init-env clear-litellm-db
 restart: ##@ Clear LiteLLM DB, then restart all services without rebuilding.
 restart: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
 restart: generate init-env clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d
+	$(COMPOSE) $(COMPOSE_FILES) $(PROFILE_FLAGS) up -d $(UP_WAIT)
+	$(RUN_CHECK)
 
 restart-fg: ##@ Clear LiteLLM DB, then restart all services without rebuilding (foreground).
 restart-fg: CLEAR_COMPOSE_FILES := $(COMPOSE_FILES) $(PROFILE_FLAGS)
@@ -259,7 +279,8 @@ restart-fg: generate init-env clear-litellm-db
 
 ng-up: ##@ Clear LiteLLM DB, then start without regenerating agents compose.
 ng-up: $(BASE_IMAGE_DEP) init-env clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up --build -d $(UP_WAIT)
+	$(RUN_CHECK)
 
 ng-up-fg: ##@ Clear LiteLLM DB, then start without regenerating (foreground).
 ng-up-fg: $(BASE_IMAGE_DEP) init-env clear-litellm-db
@@ -267,7 +288,8 @@ ng-up-fg: $(BASE_IMAGE_DEP) init-env clear-litellm-db
 
 ng-restart: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating.
 ng-restart: init-env clear-litellm-db
-	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up -d
+	$(COMPOSE) $(COMPOSE_FILES_NG) $(PROFILE_FLAGS) up -d $(UP_WAIT)
+	$(RUN_CHECK)
 
 ng-restart-fg: ##@ Clear LiteLLM DB, then restart without rebuilding or regenerating (foreground).
 ng-restart-fg: init-env clear-litellm-db

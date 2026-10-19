@@ -196,7 +196,7 @@ my-analysis-agent:
   restart: unless-stopped
 ```
 
-The `healthcheck` is required. `make test-static` fails without it in any per-agent `agents/<name>/docker-compose.yml`, and CI's `make up UP_ARGS="--wait"` uses it to know that the agent is serving. It probes the base class's unauthenticated `/health` on the container port with Python, since the image has no `curl`. It does not show that LiteLLM registration succeeded; `make wait-agents` checks that.
+The `healthcheck` is required. `make test-static` fails without it in any per-agent `agents/<name>/docker-compose.yml`, and `make up` waits on it to know that the agent is serving. It probes the base class's unauthenticated `/health` on the container port with Python, since the image has no `curl`. It does not show that LiteLLM registration succeeded; `make up` then runs `make check`, which does.
 
 Once the container starts, it registers with LiteLLM. The client-agent discovers it automatically through LiteLLM's agent directory and loads the full agent card from the specialist's well-known endpoint when needed.
 The agent selects semantic model flavors such as `medium` in code; its selected
