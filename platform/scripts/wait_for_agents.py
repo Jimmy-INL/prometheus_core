@@ -60,7 +60,14 @@ def registry_name(agent_dir: Path) -> str:
 def registered(url: str, master_key: str) -> set[str]:
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {master_key}"})
     with urllib.request.urlopen(request, timeout=10) as response:
-        return {agent["agent_name"] for agent in json.load(response)}
+        entries = json.load(response)
+        if not isinstance(entries, list):
+            raise ValueError(f"unexpected /v1/agents response: {type(entries).__name__}")
+        return {
+            entry["agent_name"]
+            for entry in entries
+            if isinstance(entry, dict) and isinstance(entry.get("agent_name"), str)
+        }
 
 
 def main() -> int:
