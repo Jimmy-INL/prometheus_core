@@ -53,21 +53,25 @@ class AuthError(Exception):
 
 
 def env_value(name: str, default: str | None = None) -> str | None:
+    """Look up ``name`` in the environment, then .env, else return ``default``."""
     return os.environ.get(name) or (values(ENV.read_text()).get(name) if ENV.exists() else None) or default
 
 
 def registry_name(agent_dir: Path) -> str:
+    """Return the name the agent registers under in LiteLLM, from its agent card."""
     card = json.loads((agent_dir / "agent_card.json").read_text())
     return card["name"].lower().replace(" ", "-")
 
 
 def get(url: str, headers: dict[str, str] | None = None) -> bytes:
+    """GET ``url`` and return the body; raises on a connection error or non-2xx status."""
     request = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(request, timeout=10) as response:
         return response.read()
 
 
 def registered(url: str, master_key: str) -> set[str]:
+    """Return the agent names LiteLLM lists; raises AuthError if it rejects the key."""
     try:
         entries = json.loads(get(url, {"Authorization": f"Bearer {master_key}"}))
     except urllib.error.HTTPError as e:
@@ -84,9 +88,10 @@ def registered(url: str, master_key: str) -> set[str]:
 
 
 def agents_check(url: str, master_key: str, expected: set[str]) -> Callable[[], str | None]:
-    """Return None once every expected agent is registered, else what is still missing."""
+    """Make a check that passes once every expected agent is registered."""
 
     def check() -> str | None:
+        """Return None if every agent is registered, else which ones are missing."""
         missing = expected - registered(url, master_key)
         return f"not registered: {', '.join(sorted(missing))}" if missing else None
 
@@ -94,7 +99,10 @@ def agents_check(url: str, master_key: str, expected: set[str]) -> Callable[[], 
 
 
 def http_check(url: str) -> Callable[[], str | None]:
+    """Make a check that passes once ``url`` answers with a 2xx status."""
+
     def check() -> str | None:
+        """Return None on a 2xx; anything else raises."""
         get(url)
         return None
 
@@ -102,6 +110,7 @@ def http_check(url: str) -> Callable[[], str | None]:
 
 
 def main() -> int:
+    """Poll every check until all pass or the timeout passes; return the exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("agent_dirs", nargs="*", type=Path, help="agent directories with an agent_card.json")
     parser.add_argument("--backend-port", type=int, required=True, help="host port of the backend")
