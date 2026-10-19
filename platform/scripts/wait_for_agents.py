@@ -37,19 +37,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-ENV = ROOT / ".env"
+from init_env import ENV, values
 
 
 def env_value(name: str, default: str | None = None) -> str | None:
-    if value := os.environ.get(name):
-        return value
-    if ENV.exists():
-        for line in ENV.read_text().splitlines():
-            key, sep, value = line.partition("=")
-            if sep and key.strip() == name and value.strip():
-                return value.strip()
-    return default
+    return os.environ.get(name) or (values(ENV.read_text()).get(name) if ENV.exists() else None) or default
 
 
 def registry_name(agent_dir: Path) -> str:
