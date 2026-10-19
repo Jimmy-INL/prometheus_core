@@ -180,8 +180,14 @@ services:
   backend:
     build:
       context: ./backend
+      # Built from the checked-out SDK, not the prometheus_api base image.
+      additional_contexts:
+        sdk: ../sdk
+        certs: ../common/certs
       args:
-        <<: *prometheus-api-build-args
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     container_name: backend
     extra_hosts: *host-gateway
     ports:

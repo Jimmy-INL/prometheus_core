@@ -70,11 +70,11 @@ jobs:
       sha: ${{ needs.meta.outputs.sha }}
       context: sdk
       file: sdk/Dockerfile
+      build-contexts: certs=common/certs
 
   backend:
     name: "backend ${{ needs.meta.outputs.tag }}"
-    # Built on the sdk image from the same commit
-    needs: [meta, sdk]
+    needs: meta
     permissions:
       contents: read
       packages: write
@@ -84,11 +84,12 @@ jobs:
       image: ${{ needs.meta.outputs.prefix }}/prometheus_backend-devel
       tag: ${{ needs.meta.outputs.tag }}
       sha: ${{ needs.meta.outputs.sha }}
+      # Same context and sdk/certs contexts as docker-compose.yml
       context: platform/backend
       file: platform/backend/Dockerfile
-      build-args: |
-        PROMETHEUS_API_BASE_IMAGE_REPO=${{ needs.meta.outputs.prefix }}/prometheus_sdk-devel
-        PROMETHEUS_API_BASE_IMAGE_HASH=${{ needs.meta.outputs.tag }}
+      build-contexts: |
+        sdk=sdk
+        certs=common/certs
 
   frontend:
     name: "frontend ${{ needs.meta.outputs.tag }}"
@@ -106,7 +107,7 @@ jobs:
       context: platform
       file: platform/frontend/Dockerfile
       target: prod
-      build-contexts: certs=platform/certs
+      build-contexts: certs=common/certs
 
   summary:
     name: "summary"
