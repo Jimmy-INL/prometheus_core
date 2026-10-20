@@ -165,7 +165,7 @@ If the platform is running in multi-user mode, every request carries a verified
 
 ```python
 async def _execute(self, params, context, event_queue):
-    user_id = params["user_id"]   # verified by the base class; never spoofable
+    user_id = params["user_id"]  # verified by the base class; never spoofable
 ```
 
 Signing is RS256 only, so this agent never needs (or should have) a private
