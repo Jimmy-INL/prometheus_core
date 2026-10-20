@@ -187,8 +187,16 @@ my-analysis-agent:
       condition: service_healthy
   volumes:
     - ./shared:/app/shared
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+    interval: 15s
+    timeout: 10s
+    retries: 5
+    start_period: 20s
   restart: unless-stopped
 ```
+
+The `healthcheck` is required. `make test-static` fails without it in any per-agent `agents/<name>/docker-compose.yml`, and `make up` waits on it to know that the agent is serving. It probes the base class's unauthenticated health endpoint on the container port with Python, since the image has no `curl`. It does not show that LiteLLM registration succeeded; `make up` then runs `make check`, which does.
 
 Once the container starts, it registers with LiteLLM. The client-agent discovers it automatically through LiteLLM's agent directory and loads the full agent card from the specialist's well-known endpoint when needed.
 The agent selects semantic model flavors such as `medium` in code; its selected
@@ -287,7 +295,7 @@ Workflow IDs are global. Prefer an agent-scoped prefix such as `thermal_agent.qu
 If a platform-local YAML workflow and an agent-provided workflow use the same `id:version`, the local
 workflow wins and the duplicate is reported in the workflow refresh errors.
 Before an agent-provided workflow starts, the client-agent calls the contributing agent's direct
-`/health` endpoint. If the contributing agent has been disconnected or scaled down, the workflow start is
+`/healthz` endpoint. If the contributing agent has been disconnected or scaled down, the workflow start is
 rejected instead of executing a stale catalog entry.
 
 ## Agent endpoints
@@ -296,7 +304,7 @@ Every PrometheusAgent exposes:
 
 | Path | Auth | Description |
 |------|------|-------------|
-| `GET /health` | No | Health check |
+| `GET /healthz` | No | Health check |
 | `GET /.well-known/agent.json` | No | Agent card (A2A discovery) |
 | `POST /` | Yes | A2A JSON-RPC 2.0 message endpoint |
 

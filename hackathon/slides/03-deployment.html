@@ -1306,7 +1306,7 @@ curl -s http://localhost:8600/healthz                          <span class="c">#
 curl -s http://localhost:8600/.well-known/jwks.json            <span class="c"># → your active signing key</span>
 
 docker exec client-agent python -c <span class="s">&quot;import urllib.request as u; \</span>
-<span class="s">  print(u.urlopen(&#x27;http://synthesis-agent:8000/health&#x27;).read())&quot;</span>   <span class="c"># → {&quot;ok&quot;: true, &quot;status&quot;: &quot;healthy&quot;, …}</span></pre>
+<span class="s">  print(u.urlopen(&#x27;http://synthesis-agent:8000/healthz&#x27;).read())&quot;</span>   <span class="c"># → {&quot;ok&quot;: true, &quot;status&quot;: &quot;healthy&quot;, …}</span></pre>
 <div class="grid g3">
 <div class="card">
 <h4>401 from LiteLLM?</h4>

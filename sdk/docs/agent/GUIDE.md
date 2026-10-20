@@ -891,7 +891,7 @@ from starting the HTTP server.
 | `POST` | `/` | A2A v1 `SendMessage` and `SendStreamingMessage` |
 | `GET` | `/.well-known/agent-card.json` | Canonical A2A v1 agent card (public, unauthenticated) |
 | `GET` | `/.well-known/agent.json` | Canonical v1 card at the legacy discovery alias |
-| `GET` | `/health` | Health check — `{"ok": true}` (unauthenticated) |
+| `GET` | `/healthz` | Health check — `{"ok": true}` (unauthenticated) |
 | `GET` | `/api/agent-card` | Raw agent card JSON |
 | `POST` | `/api/chat` | Debug endpoint: same execution path as A2A but simpler request/response |
 | `GET` | `/api/artifacts/{conversation_id}` | List artifact catalog for a conversation |

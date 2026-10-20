@@ -72,7 +72,7 @@ user, generate and activate one under **Admin > Signing Keys** (see
 LLM_CONFIG_PROFILE=registry
 ```
 
-If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. You can also set them by hand:
+If the profile's API key is blank, `make up` (via `scripts/init_env.py`) shows a menu of the profiles in `../sdk/prometheus_api/llm_configs/` (use the up/down arrows, then Enter), asks for the matching key, and writes both to `.env`. If the key is set in the environment instead (as in CI), it writes that to `.env` without asking. You can also set them by hand:
 
 | Value | What it uses | Key to put in `LLM_API_KEY` |
 |---|---|---|
@@ -143,12 +143,12 @@ NAME                  IMAGE                                     SERVICE         
 admin-db              postgres:16-alpine                        admin-db              Up (healthy)
 agent-valkey          valkey/valkey-bundle:9.1.0                 redis                 Up
 backend               prometheus_platform-backend                backend               Up (healthy)
-client-agent          prometheus_platform-client-agent           client-agent          Up
-form-filler-agent     prometheus_platform-form-filler-agent      form-filler-agent     Up
+client-agent          prometheus_platform-client-agent           client-agent          Up (healthy)
+form-filler-agent     prometheus_platform-form-filler-agent      form-filler-agent     Up (healthy)
 frontend-dev          prometheus_platform-frontend-dev           frontend-dev          Up
 litellm-db            postgres:16-alpine                         litellm-db            Up (healthy)
 litellm-proxy         ghcr.io/berriai/litellm:v1.92.0            litellm               Up (healthy)
-synthesis-agent       prometheus_platform-synthesis-agent        synthesis-agent       Up
+synthesis-agent       prometheus_platform-synthesis-agent        synthesis-agent       Up (healthy)
 ```
 
 Services and host ports:
@@ -318,6 +318,12 @@ make test-static       # Static checks of compose, env vars, ports — no Docker
 make test-integration  # Hits running containers (start the stack first via make up)
 make test-infra        # Both
 ```
+
+### Startup check
+
+`make up` returns only once the platform is up. It first waits for every service with a healthcheck to report healthy (`docker compose up --wait`), then runs `make check`. That checks the backend and frontend on their host ports, the frontend's `/api` proxy, and that the client-agent and every included agent have registered with LiteLLM. `restart`, `ng-up` and `ng-restart` do the same, and the `-fg` targets can't, since they never return. Set `CHECK=false` to return as soon as the containers start, and run `make check` later against a running stack. CI's `platform: up` job runs the same `make up`.
+
+A healthy agent shows only that it serves HTTP. LiteLLM registration runs in the background, so `make check` is what confirms that the platform can route to the agent. Every per-agent `docker-compose.yml` must define a healthcheck on the base class's health endpoint, and `make test-static` enforces it.
 
 ## Troubleshooting
 

@@ -26,6 +26,9 @@ from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+# Health check path served by PrometheusAgent.build_app() and exempt from auth.
+HEALTH_PATH = "/healthz"
+
 
 class A2AContentSizeLimitMiddleware:
     """Raise HTTP 413 while an oversized request body is read.
@@ -82,7 +85,8 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         AGENT_SECRET_REQUIRED: Whether to enforce authentication (default: true)
 
     Security Notes:
-        - Health check (/health) and agent card (/.well-known/agent.json) endpoints are exempt
+        - Health check (/healthz) and agent card (/.well-known/agent.json) endpoints
+          are exempt
         - Token values are never logged (only validation status)
         - Returns 401 Unauthorized with JSON-RPC 2.0 error format on failure
         - `PrometheusAgent.build_app()` validates required auth before adding this middleware,
@@ -132,7 +136,7 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         # endpoints.  JWKS must be unauthenticated so third-party agents can
         # fetch the platform's public key without holding the agent secret.
         if request.url.path in [
-            "/health",
+            HEALTH_PATH,
             "/.well-known/agent.json",
             "/.well-known/agent-card.json",
             "/.well-known/jwks.json",

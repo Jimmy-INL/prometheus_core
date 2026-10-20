@@ -1021,7 +1021,7 @@ curl -s -X POST localhost:8000/api/chat \
 ```
 
 {.tiny}
-With `AGENT_SECRET_REQUIRED=true`, add `-H "Authorization: Bearer $AGENT_SECRET"` to every call except `/health` and the card routes.
+With `AGENT_SECRET_REQUIRED=true`, add `-H "Authorization: Bearer $AGENT_SECRET"` to every call except `/healthz` and the card routes.
 :::
 
 ---
@@ -1065,7 +1065,7 @@ curl -s -X POST http://localhost:8000/ \
 | Route | Auth | What |
 |---|---|---|
 | `POST /` | bearer | A2A JSON-RPC: `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`… |
-| `GET /health` | none | `{"ok": true, "status": "healthy", "timestamp": …}` |
+| `GET /healthz` | none | `{"ok": true, "status": "healthy", "timestamp": …}` |
 | `GET /api/agent-card` | none | the raw card with extensions |
 | `GET /.well-known/agent-card.json` | none | the strict v1 card (also `/.well-known/agent.json`) |
 | `GET /.well-known/jwks.json` | none | public keys from this agent's env |
@@ -1525,7 +1525,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 - The client-agent compiles them at discovery. Each becomes an orchestrator tool (`workflow_<id slug>`, parameters = `inputs.required`) **and** a slash command: `/neutron.step_to_checked_mesh` or `/step_to_checked_mesh`.
 - **Bindings**: `from: input.<x>`, `from: step.<id>.result`, `from: context.<key>`, `literal: <v>`, `optional: true`. `conversation_id` and `artifacts` are added automatically.
 - `mode`: `sequential`, `parallel`, or `dag` (use `depends_on`); `on_error`: `fail_fast` or `continue_with_partial`.
-- Before starting, the client-agent calls the owning agent's `/health`.
+- Before starting, the client-agent calls the owning agent's `/healthz`.
 - If a step pauses for input, the whole template **re-runs** with the answers merged into its inputs: bind them as optional inputs (`{from: input.x_column, optional: true}`).
 
 {.small}

@@ -66,7 +66,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from .middleware import A2AContentSizeLimitMiddleware, BearerTokenMiddleware
+from .middleware import HEALTH_PATH, A2AContentSizeLimitMiddleware, BearerTokenMiddleware
 from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
@@ -1912,7 +1912,7 @@ class PrometheusAgent:
         """
         Optional hook to register additional routes or middleware on the Starlette app.
 
-        Override in subclasses that need custom HTTP endpoints beyond A2A + /health + /api/chat.
+        Override in subclasses that need custom HTTP endpoints beyond A2A + /healthz + /api/chat.
         Override `lifespan()` for startup/shutdown behavior.
         """
         return
@@ -2065,9 +2065,9 @@ class PrometheusAgent:
         ]
         app = Starlette(routes=routes, lifespan=app_lifespan)
 
-        # add health endpoint
+        # add health endpoint; /healthz matches the platform's other services
         app.add_route(
-            "/health",
+            HEALTH_PATH,
             lambda request: JSONResponse(
                 {
                     "ok": True,

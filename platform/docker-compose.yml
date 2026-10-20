@@ -172,6 +172,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # /healthz is served by the PrometheusAgent base class once uvicorn is up.
+    # It does not cover LiteLLM registration, which retries in the background.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   # Standalone FastAPI backend (replaces Chainlit's server role; see backend/).
@@ -191,6 +199,7 @@ services:
     container_name: backend
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with BACKEND_PORT in the Makefile (make check)
       - "${BACKEND_PORT:-8600}:8000"
     networks:
       - agent-network
@@ -269,6 +278,7 @@ services:
     container_name: frontend-dev
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with FRONTEND_DEV_PORT in the Makefile (make check)
       - "${FRONTEND_DEV_PORT:-5150}:5150"
     networks:
       - agent-network
@@ -298,10 +308,19 @@ services:
     container_name: frontend-prod
     extra_hosts: *host-gateway
     ports:
+      # Keep the default in sync with FRONTEND_PROD_PORT in the Makefile (make check)
       - "${FRONTEND_PROD_PORT:-8080}:8080"
     networks:
       - agent-network
     depends_on:
       backend:
         condition: service_healthy
+    # Probes nginx's own /healthz, not /api/, so a slow backend doesn't mark the
+    # frontend unhealthy. nginx:alpine ships busybox wget, not python.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped

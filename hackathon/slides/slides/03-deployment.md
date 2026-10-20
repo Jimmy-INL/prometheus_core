@@ -944,7 +944,7 @@ curl -s http://localhost:8600/healthz                          # → {"status":"
 curl -s http://localhost:8600/.well-known/jwks.json            # → your active signing key
 
 docker exec client-agent python -c "import urllib.request as u; \
-  print(u.urlopen('http://synthesis-agent:8000/health').read())"   # → {"ok": true, "status": "healthy", …}
+  print(u.urlopen('http://synthesis-agent:8000/healthz').read())"   # → {"ok": true, "status": "healthy", …}
 ```
 
 :::: grid 3

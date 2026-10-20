@@ -157,7 +157,7 @@ Tags: diagnose. Fix: yes. Run: `cd <agent> && ls *.py; grep -n '^COPY' Dockerfil
 ### card-in-image
 Tags: diagnose. Fix: safe. Run: `for f in agent_card.json agent.py; do docker exec <container> cat /app/$f | cmp -s - <agent>/$f && echo "$f same" || echo "$f differs"; done` Expect `same` twice. `differs`: an old image (`docker restart` keeps it). Fix: `make up` in the agent folder, then `discovery-refresh`.
 ### client-agent-reaches-agent
-Tags: diagnose. Fix: yes. Run: `docker exec client-agent python -c "import urllib.request as u; print(u.urlopen('<url>/health', timeout=5).read())"` (`<url>` from `registry-details`) Expect `b'{"ok":true,...}'`. A connection error: the LiteLLM card has no `inputSchema` (`tool_discovery.py:118-143`). Fix: the internal network mode (no `EXTERNAL_AGENT_*` lines), then `make up` (`run-and-register.md`).
+Tags: diagnose. Fix: yes. Run: `docker exec client-agent python -c "import urllib.request as u; print(u.urlopen('<url>/healthz', timeout=5).read())"` (`<url>` from `registry-details`) Expect `b'{"ok":true,...}'`. A connection error: the LiteLLM card has no `inputSchema` (`tool_discovery.py:118-143`). Fix: the internal network mode (no `EXTERNAL_AGENT_*` lines), then `make up` (`run-and-register.md`).
 
 ## Discovery
 
