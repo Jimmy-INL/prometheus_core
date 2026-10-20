@@ -155,8 +155,12 @@ jobs:
         run: uv run --frozen pytest --color=yes
 
   agent-template:
-    name: "agent-template"
+    name: "agent-template: python ${{ matrix.python }}"
     needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
     runs-on: ubuntu-26.04
     defaults:
       run:
@@ -168,7 +172,7 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: "0.11.25"
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - name: Sync environment
         run: uv sync --frozen
       - name: Test
