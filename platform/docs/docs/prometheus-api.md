@@ -365,7 +365,7 @@ Every agent automatically exposes:
 
 | Path | Description |
 |------|-------------|
-| `/health` | Health check (exempt from auth) |
+| `/healthz` | Health check (exempt from auth). `/health` is a deprecated alias |
 | `/.well-known/agent.json` | Agent card (exempt from auth) |
 | `/message` | A2A message endpoint (JSON-RPC 2.0) |
 

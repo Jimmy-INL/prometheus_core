@@ -235,7 +235,7 @@ Every generated agent exposes:
 
 | Path | Auth | Description |
 |------|------|-------------|
-| `GET /health` | No | Health check |
+| `GET /healthz` | No | Health check. `/health` is a deprecated alias |
 | `GET /.well-known/agent.json` | No | Agent card (A2A discovery) |
 | `POST /message` | Yes | A2A JSON-RPC 2.0 message endpoint |
 
