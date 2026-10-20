@@ -122,9 +122,7 @@ def registered(url: str, master_key: str) -> set[str]:
     if not isinstance(entries, list):
         raise ValueError(f"unexpected /v1/agents response: {type(entries).__name__}")
     return {
-        entry["agent_name"]
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("agent_name"), str)
+        entry["agent_name"] for entry in entries if isinstance(entry, dict) and isinstance(entry.get("agent_name"), str)
     }
 
 

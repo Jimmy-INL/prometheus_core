@@ -226,8 +226,6 @@ def test_main_requires_the_master_key_for_agents(tmp_path, monkeypatch, capsys):
     """With agents to check and no LITELLM_MASTER_KEY, exits 1 at once."""
     monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
     monkeypatch.setattr(cp, "ENV", tmp_path / "missing.env")
-    rc = _run_main(
-        monkeypatch, "--backend-port", "1", "--litellm-port", "1", str(_agent_dir(tmp_path, "Client Agent"))
-    )
+    rc = _run_main(monkeypatch, "--backend-port", "1", "--litellm-port", "1", str(_agent_dir(tmp_path, "Client Agent")))
     assert rc == 1
     assert "LITELLM_MASTER_KEY is not set" in capsys.readouterr().err
