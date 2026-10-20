@@ -177,6 +177,9 @@ jobs:
         run: uv sync --frozen
       - name: Test
         run: uv run --frozen pytest --color=yes
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: uv run --frozen mypy setup_agent.py
 
   sdk-docker:
     name: "sdk: docker ${{ matrix.platform }}"
