@@ -325,6 +325,8 @@ jobs:
         run: |
           uv sync --frozen --no-install-package prometheus-api
           uv pip install --no-deps ../../sdk
+      - name: Type check
+        run: uv run --frozen --no-sync mypy app
       - name: Test
         run: uv run --frozen --no-sync pytest --color=yes
 
