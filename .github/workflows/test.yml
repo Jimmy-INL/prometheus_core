@@ -181,6 +181,53 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --frozen mypy setup_agent.py
 
+  agent-template-scaffold:
+    name: "agent-template: scaffold python ${{ matrix.python }}"
+    needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        # For agent-template's locked ruff
+        working-directory: agent-template
+        run: uv sync --frozen --only-dev
+      - name: Scaffold
+        working-directory: agent-template
+        run: uv run --frozen --no-sync python setup_agent.py --yes "Smoke Test" "$RUNNER_TEMP/smoke-test"
+      - name: Check for placeholders
+        working-directory: ${{ runner.temp }}/smoke-test
+        run: |
+          if grep -rn 'TEMPLATE_[A-Z]' .; then
+            echo "::error::The scaffolded agent still has template placeholders"
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: ${{ runner.temp }}/smoke-test
+        run: |
+          uv venv
+          uv pip install -r pyproject.toml pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+      - name: Lint
+        working-directory: ${{ runner.temp }}/smoke-test
+        env:
+          UV_PROJECT: ${{ github.workspace }}/agent-template
+        run: |
+          uv run --frozen --no-sync ruff check --output-format=github .
+          uv run --frozen --no-sync ruff format --check --diff .
+      - name: Test
+        if: ${{ !cancelled() }}
+        working-directory: ${{ runner.temp }}/smoke-test
+        run: .venv/bin/python -m pytest --color=yes
+
   sdk-docker:
     name: "sdk: docker ${{ matrix.platform }}"
     needs: gitleaks

@@ -39,6 +39,7 @@ git clone git@github.com:idaholab/prometheus_core.git
 cd prometheus_core/agent-template
 python setup_agent.py                        # prompts for everything
 python setup_agent.py "Plant Analysis" ../plant-agent   # name and output dir given
+python setup_agent.py --yes "Plant Analysis" ../plant-agent   # every other value defaulted, no prompts
 python setup_agent.py --env-only ../plant-agent         # only the .env, for an agent you cloned
 ```
 
