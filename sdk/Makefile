@@ -64,14 +64,19 @@ test-install: ##@ Verify package installs and imports correctly in a clean venv
 	uv venv --python 3.12 "$$TMPVENV" --quiet && \
 	VIRTUAL_ENV="$$TMPVENV" uv pip install --quiet dist/prometheus_api-*.whl && \
 	echo "Testing imports..." && \
-	"$$TMPVENV/bin/python" -c "\
+	"$$TMPVENV/bin/python" -I -c "\
+import importlib, pathlib, sys; \
+packages = sorted(str(p.parent).replace('/', '.') for p in pathlib.Path('prometheus_api').rglob('__init__.py')); \
+modules = [importlib.import_module(name) for name in packages]; \
+outside = [m.__name__ for m in modules if not m.__file__.startswith(sys.prefix)]; \
+assert not outside, f'not imported from the wheel: {outside}'; \
 from prometheus_api import __version__; \
 from prometheus_api.llm_configs import get_llm_config_path, list_llm_config_profiles; \
 from prometheus_api.storage_client import StorageClient, AsyncStorageClient, ConnectionConfig; \
 from prometheus_api.agent import PrometheusAgent; \
 assert 'registry' in list_llm_config_profiles(); \
 assert all(get_llm_config_path(profile).is_file() for profile in list_llm_config_profiles()); \
-print(f'prometheus-api {__version__} OK')" && \
+print(f'prometheus-api {__version__} OK ({len(packages)} packages)')" && \
 	rm -rf "$$TMPVENV" dist/ *.egg-info && \
 	echo "Install check passed" || \
 	(rm -rf "$$TMPVENV" dist/ *.egg-info; echo "Install check FAILED"; exit 1)

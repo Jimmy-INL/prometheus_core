@@ -400,3 +400,21 @@ def test_jwks_route_served_unauthenticated(monkeypatch):
     body = resp.json()
     assert len(body["keys"]) == 1
     assert body["keys"][0]["kty"] == "RSA"
+
+
+def test_agent_current_user_id_returns_none_outside_scope():
+    """PrometheusAgent.current_user_id() returns None when no identity is bound."""
+    from prometheus_api.agent import PrometheusAgent
+
+    assert get_current_identity() is None
+    assert PrometheusAgent.current_user_id() is None
+
+
+def test_agent_current_user_id_returns_bound_user():
+    """PrometheusAgent.current_user_id() returns the bound user, then None after the scope exits."""
+    from prometheus_api.agent import PrometheusAgent
+
+    identity = verify_user_token(mint_user_token("rita"))
+    with identity_scope(identity):
+        assert PrometheusAgent.current_user_id() == "rita"
+    assert PrometheusAgent.current_user_id() is None

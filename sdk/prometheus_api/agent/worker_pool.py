@@ -53,6 +53,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import multiprocessing
+from multiprocessing.process import BaseProcess
 import os
 import time
 from dataclasses import dataclass, field
@@ -166,7 +167,8 @@ def _worker_loop(
 
         async def _run_with_scope() -> Dict[str, Any]:
             with identity_scope(identity):
-                return await execute_fn(task.params, task.context_data)
+                task_result: Dict[str, Any] = await execute_fn(task.params, task.context_data)
+                return task_result
 
         try:
             result = loop.run_until_complete(_run_with_scope())
@@ -206,7 +208,7 @@ class WorkerHandle:
         self.user_id = user_id
         self.request_queue: multiprocessing.Queue = multiprocessing.Queue()
         self.response_queue: multiprocessing.Queue = multiprocessing.Queue()
-        self.process: Optional[multiprocessing.Process] = None
+        self.process: Optional[BaseProcess] = None
         self.last_used: float = time.monotonic()
         self._pending: Dict[str, asyncio.Future] = {}
 

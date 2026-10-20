@@ -63,7 +63,8 @@ def _create_broker() -> CredentialBroker:
             import importlib
 
             mod = importlib.import_module("prometheus_api_credentials_bespoke")
-            return mod.Broker()
+            broker: CredentialBroker = mod.Broker()
+            return broker
         except ImportError as exc:
             raise CredentialError(
                 "CREDENTIAL_BROKER=bespoke but the bespoke backend package "

@@ -1520,7 +1520,8 @@ class PrometheusAgent:
         :meth:`PrometheusAgentExecutor._extract_identity` before ``_execute``
         is called.  Always returns ``None`` outside an active request context.
         """
-        return get_current_identity().user_id if get_current_identity() else None
+        identity = get_current_identity()
+        return identity.user_id if identity is not None else None
 
     def identity_metadata(self) -> Dict[str, str]:
         """Return A2A message metadata carrying the current user token.

@@ -97,9 +97,11 @@ def get_conversation_owner(conversation_id: str) -> Optional[str]:
         if r is None:
             return None
         value = r.get(_owner_key(conversation_id))
+        if value is None:
+            return None
         if isinstance(value, bytes):
             return value.decode("utf-8")
-        return value  # type: ignore[return-value]
+        return str(value)
     except Exception as exc:
         logger.warning(
             "get_conversation_owner: failed to fetch owner for %r: %s",
