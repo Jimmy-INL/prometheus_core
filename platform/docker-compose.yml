@@ -315,10 +315,10 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    # Probes nginx itself (the SPA index), not /api/, so a slow backend doesn't
-    # mark the frontend unhealthy. nginx:alpine ships busybox wget, not python.
+    # Probes nginx's own /healthz, not /api/, so a slow backend doesn't mark the
+    # frontend unhealthy. nginx:alpine ships busybox wget, not python.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 15s
       timeout: 5s
       retries: 5

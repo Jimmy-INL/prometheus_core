@@ -114,10 +114,10 @@ def test_agent_compose_files_have_healthchecks(project_root):
 
 
 def test_frontend_prod_has_healthcheck(compose_data):
-    """Probes nginx on its container port; the image has wget but no python."""
+    """Probes nginx's /healthz on its container port; the image has wget but no python."""
     hc = _get_healthcheck(compose_data, "frontend-prod")
     assert hc is not None, "frontend-prod should define a healthcheck"
     test_cmd = hc["test"]
     joined = " ".join(test_cmd) if isinstance(test_cmd, list) else test_cmd
     assert "wget" in joined
-    assert "127.0.0.1:8080" in joined, "must probe the container port, not the host port"
+    assert "127.0.0.1:8080/healthz" in joined, "must probe nginx's /healthz on the container port"
