@@ -108,6 +108,7 @@ def compose_var_refs(compose_path: Path) -> list[tuple[str, bool]]:
 # Integration test fixtures
 # ---------------------------------------------------------------------------
 
+
 def _docker_available() -> bool:
     """Check if Docker CLI is available and the daemon is running."""
     try:
@@ -286,9 +287,12 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
         pytest.skip("Docker is not available")
 
     compose_cmd = [
-        "docker", "compose",
-        "-f", "docker-compose.yml",
-        "--env-file", str(env_test_file),
+        "docker",
+        "compose",
+        "-f",
+        "docker-compose.yml",
+        "--env-file",
+        str(env_test_file),
     ]
 
     # Start in phases so frontend/client-agent don't fail while LiteLLM is still booting.
@@ -358,10 +362,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
             ok_statuses=(200,),
         ):
             logs = _get_container_logs("litellm-proxy")
-            pytest.fail(
-                "LiteLLM readiness endpoint did not return HTTP 200 within 120s.\n"
-                f"Recent logs:\n{logs}"
-            )
+            pytest.fail(f"LiteLLM readiness endpoint did not return HTTP 200 within 120s.\nRecent logs:\n{logs}")
 
         if not _wait_for_http_ready(
             f"http://localhost:{backend_port}/healthz",
@@ -369,10 +370,7 @@ def docker_compose_up(project_root: Path, env_test_file: Path, test_ports: dict[
             ok_statuses=(200,),
         ):
             logs = _get_container_logs("backend")
-            pytest.fail(
-                "backend /healthz did not return HTTP 200 within 180s.\n"
-                f"Recent logs:\n{logs}"
-            )
+            pytest.fail(f"backend /healthz did not return HTTP 200 within 180s.\nRecent logs:\n{logs}")
 
         yield test_ports
 

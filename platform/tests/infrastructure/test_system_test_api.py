@@ -74,9 +74,7 @@ def test_prompt_and_submit_parameters_return_assertion_friendly_results() -> Non
     assert first.progress == ("Working...",)
     assert first.parameters[0].path == "input_data.rod_diameter"
 
-    second = asyncio.run(
-        prometheus.submit_parameters(chat, {"rod_diameter": 0.08})
-    )
+    second = asyncio.run(prometheus.submit_parameters(chat, {"rod_diameter": 0.08}))
     assert second.text == "Created the requested valve."
     assert [artifact.type for artifact in second.artifacts] == [
         "application/step",

@@ -114,6 +114,7 @@ async def _resolve_deeplynx(
     try:
         from prometheus_api.storage_client.async_client import AsyncStorageClient
         from prometheus_api.storage_client.connection import ConnectionConfig
+
         storage_config = ConnectionConfig.from_env()
     except (ImportError, ValueError) as exc:
         logger.warning("Cannot resolve deeplynx:// URI — credentials unavailable: %s", exc)

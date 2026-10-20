@@ -22,10 +22,7 @@ def test_litellm_config_has_model_list(litellm_config_data):
 
 
 def test_litellm_config_defines_medium_alias(litellm_config_data):
-    models = {
-        entry.get("model_name"): entry.get("litellm_params", {})
-        for entry in litellm_config_data["model_list"]
-    }
+    models = {entry.get("model_name"): entry.get("litellm_params", {}) for entry in litellm_config_data["model_list"]}
     assert models["medium"]["model"] == "anthropic/claude-sonnet-5-5"
     assert models["medium"]["api_key"] == "os.environ/LLM_API_KEY"
 
