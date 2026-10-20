@@ -133,7 +133,9 @@ async def mint_for_user(user_id: str) -> Optional[str]:
         from prometheus_api.agent.identity import mint_user_token
 
         ttl = int(os.environ.get("USER_IDENTITY_TTL", "7200"))
-        return mint_user_token(user_id, ttl_seconds=ttl)
+        # prometheus_api ships no py.typed, so mypy sees this call as Any
+        token: str = mint_user_token(user_id, ttl_seconds=ttl)
+        return token
     except Exception as exc:
         logger.warning("Failed to mint user token for %r: %s", user_id, exc)
         return None
