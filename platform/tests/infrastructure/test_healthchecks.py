@@ -88,7 +88,7 @@ def _assert_agent_healthcheck(hc, where: str) -> None:
     assert "localhost:8000/" in joined or "os.environ.get('AGENT_PORT'" in joined, (
         f"{where} must probe the container port, not a host port"
     )
-    assert "/health'" in joined, f"{where} must probe the base-class /health endpoint"
+    assert "/healthz'" in joined, f"{where} must probe the base-class /healthz endpoint"
     assert "start_period" in hc, f"{where} healthcheck should have start_period"
 
 

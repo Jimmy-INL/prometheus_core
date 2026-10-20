@@ -811,12 +811,12 @@ workflows:
         assert isinstance(agent.executor, PrometheusAgentExecutor)
         route_paths = {getattr(route, "path", None) for route in app.routes}
         assert "/healthz" in route_paths
-        assert "/health" in route_paths
+        assert "/health" not in route_paths
         assert "/api/chat" in route_paths
         assert "/api/agent-card" in route_paths
 
     async def test_build_app_health_paths_skip_auth(self, monkeypatch):
-        """REQ-008-07, REQ-008-10: /healthz and its /health alias answer without a token."""
+        """REQ-008-07, REQ-008-10: /healthz answers without a token; /health is gone."""
 
         class TestAgent(PrometheusAgent):
             async def _execute(self, params, context, event_queue):
@@ -830,10 +830,11 @@ workflows:
 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            for path in ("/healthz", "/health"):
-                response = await client.get(path)
-                assert response.status_code == 200, path
-                assert response.json()["status"] == "healthy"
+            response = await client.get("/healthz")
+            assert response.status_code == 200
+            assert response.json()["status"] == "healthy"
+            # The old /health route was removed, not left as an unauthenticated alias
+            assert (await client.get("/health")).status_code == 401
             # A non-exempt route still needs the token
             assert (await client.post("/", json={})).status_code == 401
 

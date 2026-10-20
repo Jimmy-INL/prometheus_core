@@ -60,21 +60,15 @@ def test_probes_healthz(monkeypatch) -> None:
     assert hits == ["/healthz"]
 
 
-def test_falls_back_to_health_for_older_agents(monkeypatch) -> None:
-    """An agent on an older SDK with only /health is still found healthy."""
-    result, hits = _check(monkeypatch, {"/health": 200})
-    assert result is None
-    assert hits == ["/healthz", "/health"]
-
-
-def test_reports_unhealthy_without_falling_back(monkeypatch) -> None:
-    """A non-404 error on /healthz is reported, without trying /health."""
-    result, hits = _check(monkeypatch, {"/healthz": 503, "/health": 200})
+def test_reports_unhealthy(monkeypatch) -> None:
+    """An error on /healthz is reported."""
+    result, hits = _check(monkeypatch, {"/healthz": 503})
     assert result is not None and "GET http://provider-agent:8000/healthz returned 503" in result
     assert hits == ["/healthz"]
 
 
-def test_reports_the_fallback_url_when_both_fail(monkeypatch) -> None:
-    """When neither path is served, the error names /health, the last URL tried."""
-    result, _ = _check(monkeypatch, {})
-    assert result is not None and "GET http://provider-agent:8000/health returned 404" in result
+def test_does_not_fall_back_to_health(monkeypatch) -> None:
+    """An agent serving only the removed /health route is reported unhealthy."""
+    result, hits = _check(monkeypatch, {"/health": 200})
+    assert result is not None and "GET http://provider-agent:8000/healthz returned 404" in result
+    assert hits == ["/healthz"]

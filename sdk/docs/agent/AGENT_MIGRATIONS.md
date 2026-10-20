@@ -5,6 +5,25 @@ changes. When a base-agent change requires downstream agent updates, add a short
 section here under the relevant version heading with migration steps and a
 minimal code example.
 
+## Unreleased
+
+### The Health Endpoint Moved from `/health` to `/healthz`
+
+`PrometheusAgent.build_app()` now serves its health check at `/healthz`, matching the
+platform's backend and nginx. The old `/health` route was removed, with no alias: it now
+falls through to the auth middleware and answers 401 (or 404 with auth disabled).
+
+Migration steps:
+
+1. Point every container healthcheck, probe, and monitor at `/healthz`.
+2. Build agents on a base image that includes this change. A healthcheck probing
+   `/healthz` against an older image fails.
+
+```yaml
+healthcheck:
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+```
+
 ## 0.13.0
 
 ### Use the Built-in LLM Tool-Calling Helpers

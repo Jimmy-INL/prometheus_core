@@ -66,7 +66,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from .middleware import HEALTH_PATHS, A2AContentSizeLimitMiddleware, BearerTokenMiddleware
+from .middleware import HEALTH_PATH, A2AContentSizeLimitMiddleware, BearerTokenMiddleware
 from .artifact_resolver import ArtifactResolver
 from .artifacts import ArtifactReference, ArtifactRegistry
 from .context_state import ContextStateStore
@@ -2064,19 +2064,18 @@ class PrometheusAgent:
         ]
         app = Starlette(routes=routes, lifespan=app_lifespan)
 
-        # add health endpoint; /healthz matches the platform's other services and
-        # /health is a deprecated alias kept for callers and images that use it
-        def health(request):
-            return JSONResponse(
+        # add health endpoint; /healthz matches the platform's other services
+        app.add_route(
+            HEALTH_PATH,
+            lambda request: JSONResponse(
                 {
                     "ok": True,
                     "status": "healthy",
                     "timestamp": datetime.utcnow().isoformat(),
                 }
-            )
-
-        for health_path in HEALTH_PATHS:
-            app.add_route(health_path, health, methods=["GET"])
+            ),
+            methods=["GET"],
+        )
 
         add_debug_chat_route(app, agent=self, executor=executor)
 

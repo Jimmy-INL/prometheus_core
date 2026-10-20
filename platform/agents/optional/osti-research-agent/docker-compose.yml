@@ -47,10 +47,10 @@ services:
       - osti-model-cache:/root/.cache/datalab
       - huggingface-cache:/root/.cache/huggingface
       - torch-cache:/root/.cache/torch
-    # /health is served by the PrometheusAgent base class once uvicorn is up.
+    # /healthz is served by the PrometheusAgent base class once uvicorn is up.
     # It does not cover LiteLLM registration, which retries in the background.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 15s
       timeout: 10s
       retries: 5

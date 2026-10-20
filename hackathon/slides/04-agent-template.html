@@ -1285,7 +1285,7 @@ curl -s -X POST localhost:8000/api/chat <span class="s">\</span>
   -d <span class="s">&#x27;{&quot;params&quot;: {&quot;input_data&quot;: &quot;hi&quot;,</span>
 <span class="s">       &quot;skill_id&quot;: &quot;hello_world_analysis&quot;},</span>
 <span class="s">       &quot;conversation_id&quot;: &quot;conv-1&quot;}&#x27;</span></pre>
-<p class="tiny">With <code>AGENT_SECRET_REQUIRED=true</code>, add <code>-H &quot;Authorization: Bearer $AGENT_SECRET&quot;</code> to every call except <code>/health</code> and the card routes.</p>
+<p class="tiny">With <code>AGENT_SECRET_REQUIRED=true</code>, add <code>-H &quot;Authorization: Bearer $AGENT_SECRET&quot;</code> to every call except <code>/healthz</code> and the card routes.</p>
 </div>
 
   </div>
@@ -1341,7 +1341,7 @@ curl -s -X POST localhost:8000/api/chat <span class="s">\</span>
 <td>A2A JSON-RPC: <code>SendMessage</code>, <code>SendStreamingMessage</code>, <code>GetTask</code>, <code>CancelTask</code>…</td>
 </tr>
 <tr>
-<td><code>GET /health</code></td>
+<td><code>GET /healthz</code></td>
 <td>none</td>
 <td><code>{&quot;ok&quot;: true, &quot;status&quot;: &quot;healthy&quot;, &quot;timestamp&quot;: …}</code></td>
 </tr>
@@ -1980,7 +1980,7 @@ ui: {category: Meshing, display_name: STEP → checked mesh,
 <li>The client-agent compiles them at discovery. Each becomes an orchestrator tool (<code>workflow_&lt;id slug&gt;</code>, parameters = <code>inputs.required</code>) <strong>and</strong> a slash command: <code>/neutron.step_to_checked_mesh</code> or <code>/step_to_checked_mesh</code>.</li>
 <li><strong>Bindings</strong>: <code>from: input.&lt;x&gt;</code>, <code>from: step.&lt;id&gt;.result</code>, <code>from: context.&lt;key&gt;</code>, <code>literal: &lt;v&gt;</code>, <code>optional: true</code>. <code>conversation_id</code> and <code>artifacts</code> are added automatically.</li>
 <li><code>mode</code>: <code>sequential</code>, <code>parallel</code>, or <code>dag</code> (use <code>depends_on</code>); <code>on_error</code>: <code>fail_fast</code> or <code>continue_with_partial</code>.</li>
-<li>Before starting, the client-agent calls the owning agent's <code>/health</code>.</li>
+<li>Before starting, the client-agent calls the owning agent's <code>/healthz</code>.</li>
 <li>If a step pauses for input, the whole template <strong>re-runs</strong> with the answers merged into its inputs: bind them as optional inputs (<code>{from: input.x_column, optional: true}</code>).</li>
 </ul>
 <p class="small">Full schema: <code>platform/docs/docs/workflow-templates.md</code>. Examples: <code>platform/agents/debug-agents/artifact-debug-agent/workflows/patriotic_usa_png.yaml</code> and <code>platform/agents/client-agent/workflows/comprehensive_material_analysis.yaml</code> (DAG, approval).</p>
