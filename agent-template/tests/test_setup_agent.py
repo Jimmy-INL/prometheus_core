@@ -47,6 +47,7 @@ def test_create_agent_copies_prompt_and_workflow_template_dirs(tmp_path, monkeyp
     assert workflow_example.is_file()
     assert "id: demo-agent.example_workflow" in workflow_example.read_text(encoding="utf-8")
     assert "skill_id: demo_analysis" in workflow_example.read_text(encoding="utf-8")
+    assert (output_dir / ".python-version").read_text(encoding="utf-8").strip() == "3.12"
 
     dockerfile = (output_dir / "Dockerfile").read_text(encoding="utf-8")
     assert "COPY prompts /app/prompts" in dockerfile

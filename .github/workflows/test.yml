@@ -213,8 +213,11 @@ jobs:
           fi
       - name: Install dependencies
         working-directory: ${{ runner.temp }}/smoke-test
+        env:
+          # The scaffold pins .python-version to 3.12; test the matrix version
+          PYTHON: ${{ matrix.python }}
         run: |
-          uv venv
+          uv venv --python "$PYTHON"
           uv pip install -r pyproject.toml pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
       - name: Lint
         working-directory: ${{ runner.temp }}/smoke-test
