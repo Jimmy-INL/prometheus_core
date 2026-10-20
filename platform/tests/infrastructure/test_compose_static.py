@@ -38,9 +38,7 @@ def test_compose_has_services_key(compose_data):
 def test_infrastructure_services_defined(compose_data, infrastructure_services):
     """All five infrastructure services exist under 'services'."""
     defined = set(compose_data["services"].keys())
-    assert infrastructure_services.issubset(defined), (
-        f"Missing services: {infrastructure_services - defined}"
-    )
+    assert infrastructure_services.issubset(defined), f"Missing services: {infrastructure_services - defined}"
 
 
 def test_no_specialist_agents_in_base_compose(compose_data):
@@ -53,9 +51,7 @@ def test_no_specialist_agents_in_base_compose(compose_data):
 def test_each_service_has_image_or_build(compose_data, infrastructure_services):
     for svc_name in infrastructure_services:
         svc = compose_data["services"][svc_name]
-        assert "image" in svc or "build" in svc, (
-            f"Service '{svc_name}' has neither 'image' nor 'build'"
-        )
+        assert "image" in svc or "build" in svc, f"Service '{svc_name}' has neither 'image' nor 'build'"
 
 
 def test_postgres_image_version(compose_data):
@@ -100,9 +96,7 @@ def test_client_agent_port_is_published_only_by_system_test_override(
 
     override_path = project_root / "docker-compose.system-test.yml"
     override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
-    assert override["services"]["client-agent"]["ports"] == [
-        "${CLIENT_AGENT_PORT:-8001}:8000"
-    ]
+    assert override["services"]["client-agent"]["ports"] == ["${CLIENT_AGENT_PORT:-8001}:8000"]
 
 
 def test_system_test_target_does_not_start_or_reconfigure_docker(project_root):

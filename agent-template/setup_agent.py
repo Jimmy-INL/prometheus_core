@@ -19,15 +19,18 @@ placeholders with your custom values.
 
 Usage:
     python setup_agent.py [agent_name] [output_directory]
+    python setup_agent.py --yes <agent_name> [output_directory]
     python setup_agent.py --env-only <agent_directory>
 
 Arguments given on the command line are not prompted for; everything else
 is (press Enter to accept a default). With no arguments, every value is
-prompted for.
+prompted for. --yes accepts every default without prompting, for scripts and
+CI; it needs the agent name, and fails if the output directory exists.
 
 Example:
     python setup_agent.py "Plant Analysis" ./plant-agent
     python setup_agent.py "Data Validator"
+    python setup_agent.py --yes "Data Validator" /tmp/data-validator
     python setup_agent.py
     python setup_agent.py --env-only ../../my-team-agent
 
@@ -90,25 +93,38 @@ def to_kebab_case(text: str) -> str:
     return text.lower()
 
 
-def get_user_input(prompt: str, default: str = "") -> str:
-    """Get user input with optional default value."""
+def get_user_input(prompt: str, default: str = "", assume_defaults: bool = False) -> str:
+    """Get user input with optional default value.
+
+    With ``assume_defaults`` (--yes), the default is used without reading stdin.
+    """
+    if assume_defaults:
+        print(f"{prompt}: {default}")
+        return default
     if default:
         response = input(f"{prompt} [{default}]: ").strip()
         return response if response else default
     return input(f"{prompt}: ").strip()
 
 
-def confirm_action(prompt: str, default: str = "yes") -> bool:
+def confirm_action(prompt: str, default: str = "yes", assume_defaults: bool = False) -> bool:
     """Prompt the user for a yes/no confirmation."""
-    return get_user_input(prompt, default).lower() in {"yes", "y"}
+    return get_user_input(prompt, default, assume_defaults).lower() in {"yes", "y"}
 
 
-def collect_agent_info(agent_name: str | None = None, output_dir: str | None = None) -> dict[str, str]:
+def collect_agent_info(
+    agent_name: str | None = None, output_dir: str | None = None, assume_defaults: bool = False
+) -> dict[str, str]:
     """Interactively collect agent information from the user.
 
     ``agent_name`` and ``output_dir`` come from the command line; when given,
-    they are used as-is instead of being prompted for.
+    they are used as-is instead of being prompted for. With ``assume_defaults``
+    (--yes), every other value takes its default.
     """
+
+    def ask(prompt: str, default: str = "") -> str:
+        return get_user_input(prompt, default, assume_defaults)
+
     print("\n" + "=" * 70)
     print("  Agent Template Setup")
     print("=" * 70)
@@ -119,7 +135,7 @@ def collect_agent_info(agent_name: str | None = None, output_dir: str | None = N
     if agent_name:
         print(f"Agent name: {agent_name}")
     while not agent_name:
-        agent_name = get_user_input("Agent name (e.g., 'Plant Analysis', 'Data Validator')")
+        agent_name = ask("Agent name (e.g., 'Plant Analysis', 'Data Validator')")
         if not agent_name:
             print("Error: Agent name is required.\n")
 
@@ -128,15 +144,15 @@ def collect_agent_info(agent_name: str | None = None, output_dir: str | None = N
     default_class = to_pascal_case(agent_name)
 
     # Get description
-    description = get_user_input(
+    description = ask(
         "\nAgent description (brief summary of what it does)", f"A specialized agent for {agent_name.lower()}"
     )
 
     # Get slug (for directories, files, etc.)
-    slug = get_user_input("\nAgent slug (used for directories and Docker)", default_slug)
+    slug = ask("\nAgent slug (used for directories and Docker)", default_slug)
 
     # Get class name
-    class_name = get_user_input(
+    class_name = ask(
         "\nAgent class name (PascalCase, without an 'Agent' suffix — it is appended automatically)",
         default_class,
     )
@@ -146,18 +162,18 @@ def collect_agent_info(agent_name: str | None = None, output_dir: str | None = N
     print("  Primary Skill Configuration")
     print("-" * 70)
 
-    skill_id = get_user_input("\nPrimary skill ID (snake_case)", f"{to_snake_case(agent_name)}_analysis")
+    skill_id = ask("\nPrimary skill ID (snake_case)", f"{to_snake_case(agent_name)}_analysis")
 
-    skill_name = get_user_input("\nPrimary skill name", f"{agent_name} Analysis")
+    skill_name = ask("\nPrimary skill name", f"{agent_name} Analysis")
 
-    skill_description = get_user_input("\nPrimary skill description", f"Performs analysis using {agent_name.lower()}")
+    skill_description = ask("\nPrimary skill description", f"Performs analysis using {agent_name.lower()}")
 
     # Get output directory
     if not output_dir:
-        output_dir = get_user_input("\nOutput directory", f"../{slug}")
+        output_dir = ask("\nOutput directory", f"../{slug}")
 
     # Keep comments in the copied agent.py
-    trim_comments = get_user_input(prompt="\nTrim agent.py comments", default="False")
+    trim_comments = ask("\nTrim agent.py comments", "False")
 
     # Confirm
     print("\n" + "=" * 70)
@@ -173,7 +189,7 @@ def collect_agent_info(agent_name: str | None = None, output_dir: str | None = N
     print(f"Trim Comments:     {trim_comments}")
     print()
 
-    confirm = get_user_input("Proceed with these settings? (yes/no)", "yes")
+    confirm = ask("Proceed with these settings? (yes/no)", "yes")
     if confirm.lower() not in ["yes", "y"]:
         print("\nSetup cancelled.")
         sys.exit(0)
@@ -299,7 +315,7 @@ def ensure_secret_gitignore_entries(output_dir: Path) -> None:
     print("  ✓ .gitignore")
 
 
-def create_env_from_platform_if_requested(output_dir: Path) -> None:
+def create_env_from_platform_if_requested(output_dir: Path, assume_defaults: bool = False) -> None:
     """Create an agent .env from selected platform secrets if requested."""
     if not PLATFORM_ENV_PATH.exists():
         return
@@ -316,6 +332,7 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
         "LLM_CONFIG_PROFILE, LLM_API_KEY, EMBEDDING_API_KEY, and USER_IDENTITY_* values"
         f"{' (and the locally built base image, LOCAL_SDK=true)' if local_sdk else ''}? (yes/no)",
         "yes",
+        assume_defaults,
     )
     if not create_env:
         if local_sdk:
@@ -327,7 +344,9 @@ def create_env_from_platform_if_requested(output_dir: Path) -> None:
 
     env_path = output_dir / ".env"
     if env_path.exists():
-        overwrite = confirm_action(f"\nWarning: '{env_path}' already exists. Replace it? (yes/no)", "no")
+        overwrite = confirm_action(
+            f"\nWarning: '{env_path}' already exists. Replace it? (yes/no)", "no", assume_defaults
+        )
         if not overwrite:
             return
 
@@ -400,8 +419,12 @@ def process_file(file_path: Path, replacements: dict[str, str], output_dir: Path
     print(f"  ✓ {relative_path}")
 
 
-def create_agent(replacements: dict[str, str]) -> None:
-    """Create a new agent from the template."""
+def create_agent(replacements: dict[str, str], assume_defaults: bool = False) -> None:
+    """Create a new agent from the template.
+
+    With ``assume_defaults`` (--yes), an existing output directory is an error
+    rather than a prompt to overwrite it.
+    """
     template_dir = Path(__file__).parent / "agent_template"
     output_dir = Path(replacements["OUTPUT_DIR"])
 
@@ -411,6 +434,9 @@ def create_agent(replacements: dict[str, str]) -> None:
         sys.exit(1)
 
     # Check if output directory already exists
+    if output_dir.exists() and assume_defaults:
+        print(f"\nError: Directory '{output_dir}' already exists; --yes never overwrites it.")
+        sys.exit(1)
     if output_dir.exists():
         overwrite = get_user_input(
             f"\nWarning: Directory '{output_dir}' already exists.\n"
@@ -434,7 +460,9 @@ def create_agent(replacements: dict[str, str]) -> None:
         if not file_path.is_file():
             continue
         relative_parts = file_path.relative_to(template_dir).parts
-        if file_path.name != ".env.example" and any(part.startswith(".") for part in relative_parts):
+        if file_path.name not in {".env.example", ".python-version"} and any(
+            part.startswith(".") for part in relative_parts
+        ):
             continue
         if "__pycache__" in file_path.parts:
             continue
@@ -453,7 +481,7 @@ def create_agent(replacements: dict[str, str]) -> None:
                 f.write(strip_comments(content))
             print("  ✓ Trimmed comments from agent.py")
 
-    create_env_from_platform_if_requested(output_dir)
+    create_env_from_platform_if_requested(output_dir, assume_defaults)
 
     print()
     message_file = Path(__file__).parent / "success_message.txt"
@@ -476,9 +504,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         metavar="AGENT_DIR",
         help="only write AGENT_DIR/.env from ../platform/.env (for an agent you already have)",
     )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="accept every default without prompting (needs agent_name; never overwrites)",
+    )
     args = parser.parse_args(argv)
-    if args.env_only and (args.agent_name or args.output_directory):
+    if args.env_only and (args.agent_name or args.output_directory or args.yes):
         parser.error("--env-only takes no other arguments")
+    if args.yes and not args.agent_name:
+        parser.error("--yes needs the agent name")
     return args
 
 
@@ -491,10 +527,10 @@ def main(argv: list[str] | None = None):
         return
 
     # Collect agent information
-    replacements = collect_agent_info(args.agent_name, args.output_directory)
+    replacements = collect_agent_info(args.agent_name, args.output_directory, args.yes)
 
     # Create the agent
-    create_agent(replacements)
+    create_agent(replacements, args.yes)
 
 
 if __name__ == "__main__":

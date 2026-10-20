@@ -49,10 +49,18 @@ jobs:
         project:
           - sdk
           - platform/backend
+          - platform/tests
+          - platform/scripts
           - agent-template
+        include:
+          # Not a uv project; linted with platform/tests' locked ruff
+          - project: platform/scripts
+            uv-project: ../tests
     defaults:
       run:
         working-directory: ${{ matrix.project }}
+    env:
+      UV_PROJECT: ${{ matrix.uv-project || '.' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -153,6 +161,102 @@ jobs:
         run: uv sync --frozen
       - name: Test
         run: uv run --frozen pytest --color=yes
+
+  sdk-install:
+    name: "sdk: install"
+    needs: gitleaks
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: "3.12"
+      - name: Test install
+        # Builds the wheel and imports every package from a clean venv
+        run: make test-install
+
+  agent-template:
+    name: "agent-template: python ${{ matrix.python }}"
+    needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: agent-template
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Test
+        run: uv run --frozen pytest --color=yes
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: uv run --frozen mypy setup_agent.py
+
+  agent-template-scaffold:
+    name: "agent-template: scaffold python ${{ matrix.python }}"
+    needs: gitleaks
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.25"
+          python-version: ${{ matrix.python }}
+      - name: Sync environment
+        # For agent-template's locked ruff
+        working-directory: agent-template
+        run: uv sync --frozen --only-dev
+      - name: Scaffold
+        working-directory: agent-template
+        run: uv run --frozen --no-sync python setup_agent.py --yes "Smoke Test" "$RUNNER_TEMP/smoke-test"
+      - name: Check for placeholders
+        working-directory: ${{ runner.temp }}/smoke-test
+        run: |
+          if grep -rn 'TEMPLATE_[A-Z]' .; then
+            echo "::error::The scaffolded agent still has template placeholders"
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: ${{ runner.temp }}/smoke-test
+        env:
+          # The scaffold pins .python-version to 3.12; test the matrix version
+          PYTHON: ${{ matrix.python }}
+        run: |
+          uv venv --python "$PYTHON"
+          uv pip install -r pyproject.toml pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+      - name: Lint
+        working-directory: ${{ runner.temp }}/smoke-test
+        env:
+          UV_PROJECT: ${{ github.workspace }}/agent-template
+        run: |
+          uv run --frozen --no-sync ruff check --output-format=github .
+          uv run --frozen --no-sync ruff format --check --diff .
+      - name: Test
+        if: ${{ !cancelled() }}
+        working-directory: ${{ runner.temp }}/smoke-test
+        run: .venv/bin/python -m pytest --color=yes
 
   sdk-docker:
     name: "sdk: docker ${{ matrix.platform }}"
@@ -306,6 +410,8 @@ jobs:
         run: |
           uv sync --frozen --no-install-package prometheus-api
           uv pip install --no-deps ../../sdk
+      - name: Type check
+        run: uv run --frozen --no-sync mypy app
       - name: Test
         run: uv run --frozen --no-sync pytest --color=yes
 
@@ -393,6 +499,8 @@ jobs:
             path: platform/agents/debug-agents/corrosion-agent
           - agent: thermal-agent
             path: platform/agents/debug-agents/thermal-agent
+          - agent: agent-template
+            path: agent-template/agent_template
     defaults:
       run:
         working-directory: ${{ matrix.path }}

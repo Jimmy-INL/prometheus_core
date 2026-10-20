@@ -47,6 +47,7 @@ def test_create_agent_copies_prompt_and_workflow_template_dirs(tmp_path, monkeyp
     assert workflow_example.is_file()
     assert "id: demo-agent.example_workflow" in workflow_example.read_text(encoding="utf-8")
     assert "skill_id: demo_analysis" in workflow_example.read_text(encoding="utf-8")
+    assert (output_dir / ".python-version").read_text(encoding="utf-8").strip() == "3.12"
 
     dockerfile = (output_dir / "Dockerfile").read_text(encoding="utf-8")
     assert "COPY prompts /app/prompts" in dockerfile
@@ -193,13 +194,15 @@ def test_main_passes_positional_arguments_through(monkeypatch):
     monkeypatch.setattr(
         setup_agent,
         "collect_agent_info",
-        lambda agent_name, output_dir: received.update(name=agent_name, out=output_dir) or {},
+        lambda agent_name, output_dir, assume_defaults: (
+            received.update(name=agent_name, out=output_dir, yes=assume_defaults) or {}
+        ),
     )
-    monkeypatch.setattr(setup_agent, "create_agent", lambda replacements: None)
+    monkeypatch.setattr(setup_agent, "create_agent", lambda replacements, assume_defaults: None)
 
     setup_agent.main(["Plant Analysis", "./plant-agent"])
 
-    assert received == {"name": "Plant Analysis", "out": "./plant-agent"}
+    assert received == {"name": "Plant Analysis", "out": "./plant-agent", "yes": False}
 
 
 def test_platform_env_path_points_at_monorepo_platform_dir():
@@ -254,3 +257,35 @@ def test_env_only_rejects_a_directory_without_agent_card(tmp_path, monkeypatch):
 def test_env_only_takes_no_positional_arguments():
     with pytest.raises(SystemExit):
         setup_agent.parse_args(["--env-only", "x", "Plant Analysis"])
+
+
+def test_yes_scaffolds_without_prompting(tmp_path, monkeypatch):
+    """--yes creates the agent from defaults with no prompts and no leftover placeholders."""
+    output_dir = tmp_path / "plant-agent"
+    monkeypatch.setattr(setup_agent, "PLATFORM_ENV_PATH", tmp_path / "missing-platform.env")
+    monkeypatch.setattr("builtins.input", lambda prompt="": pytest.fail(f"unexpected prompt: {prompt}"))
+
+    setup_agent.main(["--yes", "Plant Analysis", str(output_dir)])
+
+    agent_py = (output_dir / "agent.py").read_text()
+    assert "class PlantAnalysisAgent" in agent_py
+    assert "TEMPLATE_" not in agent_py
+
+
+def test_yes_refuses_to_overwrite_an_existing_directory(tmp_path, monkeypatch):
+    """--yes exits with an error and leaves an existing output directory untouched."""
+    output_dir = tmp_path / "plant-agent"
+    output_dir.mkdir()
+    (output_dir / "keep.txt").write_text("mine")
+
+    with pytest.raises(SystemExit) as excinfo:
+        setup_agent.main(["--yes", "Plant Analysis", str(output_dir)])
+
+    assert excinfo.value.code == 1
+    assert (output_dir / "keep.txt").read_text() == "mine"
+
+
+def test_yes_needs_the_agent_name():
+    """--yes without an agent name is a usage error, since there is no default name."""
+    with pytest.raises(SystemExit):
+        setup_agent.parse_args(["--yes"])

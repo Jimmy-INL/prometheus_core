@@ -59,14 +59,16 @@ def _host_mounts(svc: dict) -> set[str]:
 
 
 def test_host_mounts_sees_every_bind_form():
-    svc = {"volumes": [
-        {"type": "bind", "source": "./shared", "target": "/app/shared"},
-        {"type": "volume", "source": "mesh-cache", "target": "/cache"},
-        "~/src:/app/src",
-        "${HOME}/src:/app/home",
-        "mesh-cache:/cache",
-        "/app/node_modules",
-    ]}
+    svc = {
+        "volumes": [
+            {"type": "bind", "source": "./shared", "target": "/app/shared"},
+            {"type": "volume", "source": "mesh-cache", "target": "/cache"},
+            "~/src:/app/src",
+            "${HOME}/src:/app/home",
+            "mesh-cache:/cache",
+            "/app/node_modules",
+        ]
+    }
     assert _host_mounts(svc) == {"./shared:/app/shared", "~/src:/app/src", "${HOME}/src:/app/home"}
 
 
@@ -91,9 +93,7 @@ def test_no_host_bind_mounts_in_agent_compose_files(project_root):
     for path in paths:
         data = yaml.safe_load(path.read_text()) or {}
         for name, svc in (data.get("services") or {}).items():
-            assert not _host_mounts(svc), (
-                f"{path.relative_to(project_root)}: service '{name}' bind-mounts a host path"
-            )
+            assert not _host_mounts(svc), f"{path.relative_to(project_root)}: service '{name}' bind-mounts a host path"
 
 
 def test_named_volumes_declared(compose_data):

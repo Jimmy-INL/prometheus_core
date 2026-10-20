@@ -28,3 +28,8 @@ markers = [
     "system: requires an already-running full platform with the client-agent port published",
 ]
 testpaths = ["infrastructure"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16",
+]

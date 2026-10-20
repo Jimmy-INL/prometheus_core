@@ -136,11 +136,7 @@ async def start_chat(
     secret = str(agent_secret or os.getenv("AGENT_SECRET") or "").strip()
     if not secret:
         raise RuntimeError("AGENT_SECRET is required; run tests through make test-system")
-    url = str(
-        base_url
-        or os.getenv("PROMETHEUS_SYSTEM_TEST_URL")
-        or "http://localhost:8001"
-    ).rstrip("/")
+    url = str(base_url or os.getenv("PROMETHEUS_SYSTEM_TEST_URL") or "http://localhost:8001").rstrip("/")
     client = A2AClient(agent_url=url, agent_secret=secret, timeout=timeout)
     return Chat(client.start_chat(conversation_id))
 
@@ -163,15 +159,12 @@ async def approve_plan(chat: Chat) -> Result:
 def expect_parameter_request(result: Result, expected: Sequence[str]) -> None:
     """Assert that a response requests exactly the named leaf parameters."""
     if result.status != "needs_info":
-        raise AssertionError(
-            f"Expected a parameter request, got status {result.status!r}: {result.text}"
-        )
+        raise AssertionError(f"Expected a parameter request, got status {result.status!r}: {result.text}")
     expected_names = {str(name).rsplit(".", 1)[-1] for name in expected}
     actual_names = set(result.requested_parameters)
     if actual_names != expected_names:
         raise AssertionError(
-            "Requested parameters differ: "
-            f"expected {sorted(expected_names)}, got {sorted(actual_names)}"
+            f"Requested parameters differ: expected {sorted(expected_names)}, got {sorted(actual_names)}"
         )
 
 
@@ -204,8 +197,7 @@ async def expect_similar(
     judgment = await _judge_similarity(actual, expected, model=model)
     if not judgment.similar:
         raise AssertionError(
-            f"Responses are not semantically similar: {judgment.reason}\n"
-            f"Expected: {expected}\nActual: {actual}"
+            f"Responses are not semantically similar: {judgment.reason}\nExpected: {expected}\nActual: {actual}"
         )
 
 
@@ -220,9 +212,7 @@ async def _judge_similarity(
     config = LLMConfig.from_env()
     if judge_url is not None or config.proxy_url:
         config.proxy_url = str(
-            judge_url
-            or os.getenv("PROMETHEUS_SYSTEM_TEST_LLM_URL")
-            or "http://localhost:9977"
+            judge_url or os.getenv("PROMETHEUS_SYSTEM_TEST_LLM_URL") or "http://localhost:9977"
         ).rstrip("/")
         key = str(api_key or os.getenv("LITELLM_MASTER_KEY") or "").strip()
         if not key:
@@ -271,19 +261,12 @@ def _result_from_response(
     parameter_payloads = list(response.followup_questions or [])
     if not parameter_payloads and isinstance(response.plan, dict):
         parameter_payloads = [
-            {"field": path, "question": path, "type": "text"}
-            for path in response.plan.get("missing_info", [])
+            {"field": path, "question": path, "type": "text"} for path in response.plan.get("missing_info", [])
         ]
-    parameters = tuple(
-        _parameter_from_payload(item)
-        for item in parameter_payloads
-        if isinstance(item, dict)
-    )
+    parameters = tuple(_parameter_from_payload(item) for item in parameter_payloads if isinstance(item, dict))
     artifacts = _artifacts_from_payloads(response.artifacts or response.new_artifacts or [])
     new_artifacts = _artifacts_from_payloads(
-        response.new_artifacts
-        if response.new_artifacts is not None
-        else response.artifacts or []
+        response.new_artifacts if response.new_artifacts is not None else response.artifacts or []
     )
     text = next(
         (
