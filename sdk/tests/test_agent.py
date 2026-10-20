@@ -810,9 +810,32 @@ workflows:
         assert agent.agent_card is agent_card
         assert isinstance(agent.executor, PrometheusAgentExecutor)
         route_paths = {getattr(route, "path", None) for route in app.routes}
+        assert "/healthz" in route_paths
         assert "/health" in route_paths
         assert "/api/chat" in route_paths
         assert "/api/agent-card" in route_paths
+
+    async def test_build_app_health_paths_skip_auth(self, monkeypatch):
+        """REQ-008-07, REQ-008-10: /healthz and its /health alias answer without a token."""
+
+        class TestAgent(PrometheusAgent):
+            async def _execute(self, params, context, event_queue):
+                return {"ok": True}
+
+        agent = TestAgent(agent_name="MyAgent")
+        monkeypatch.setattr(agent, "load_agent_card", _test_agent_card)
+        monkeypatch.setenv("AGENT_SECRET", "secret")
+        monkeypatch.setenv("AGENT_SECRET_REQUIRED", "true")
+        app = agent.build_app(register_on_startup=False)
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            for path in ("/healthz", "/health"):
+                response = await client.get(path)
+                assert response.status_code == 200, path
+                assert response.json()["status"] == "healthy"
+            # A non-exempt route still needs the token
+            assert (await client.post("/", json={})).status_code == 401
 
     async def test_build_app_debug_chat_route_executes_agent(self, monkeypatch):
         class TestAgent(PrometheusAgent):
