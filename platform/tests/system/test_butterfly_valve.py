@@ -54,10 +54,7 @@ async def test_create_butterfly_valve(tmp_path: Path) -> None:
         "application/step",
         "application/stl",
     }
-    downloads = [
-        await chat.download(artifact, tmp_path / artifact.name)
-        for artifact in result.artifacts
-    ]
+    downloads = [await chat.download(artifact, tmp_path / artifact.name) for artifact in result.artifacts]
     assert all(download.stat().st_size > 0 for download in downloads)
     await expect_similar(
         result.text,
@@ -70,10 +67,7 @@ async def test_create_revise_and_mesh_butterfly_valve() -> None:
 
     result = await prompt(
         chat,
-        (
-            "Create a butterfly valve with a pipe diameter of 0.9 m, 4 holes, "
-            "and a hole diameter of 0.05 m."
-        ),
+        ("Create a butterfly valve with a pipe diameter of 0.9 m, 4 holes, and a hole diameter of 0.05 m."),
     )
     expect_parameter_request(result, ["rod_diameter"])
 

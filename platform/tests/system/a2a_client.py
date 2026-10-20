@@ -17,6 +17,7 @@ Test-owned copy used by the full-system suite (``tests/system``) and the static
 contract tests (``tests/infrastructure``). Kept independent of the Chainlit
 ``frontend/`` package so that directory can be removed without breaking tests.
 """
+
 import asyncio
 import json
 import shutil
@@ -303,30 +304,22 @@ class A2AClient:
             raise ValueError("Malformed A2A v1 response: task.status.message must be an object")
         parts = message.get("parts")
         if not isinstance(parts, list) or len(parts) != 1:
-            raise ValueError(
-                "Malformed A2A v1 response: task.status.message.parts must contain one part"
-            )
+            raise ValueError("Malformed A2A v1 response: task.status.message.parts must contain one part")
         part = parts[0]
         if not isinstance(part, dict):
             raise ValueError("Malformed A2A v1 response: status part must be an object")
         unexpected = set(part) - {"text", "metadata", "filename", "mediaType"}
         if unexpected:
-            raise ValueError(
-                f"Malformed A2A v1 response: unsupported status part fields {sorted(unexpected)}"
-            )
+            raise ValueError(f"Malformed A2A v1 response: unsupported status part fields {sorted(unexpected)}")
         text = part.get("text")
         if not isinstance(text, str):
             raise ValueError("Malformed A2A v1 response: status Part.text must be a string")
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                "Malformed client-agent response: status Part.text must contain JSON"
-            ) from exc
+            raise ValueError("Malformed client-agent response: status Part.text must contain JSON") from exc
         if not isinstance(data, dict) or "status" not in data:
-            raise ValueError(
-                "Malformed client-agent response: final payload must be an object with status"
-            )
+            raise ValueError("Malformed client-agent response: final payload must be an object with status")
         return self._dict_to_response(data)
 
     def _dict_to_response(self, data: Dict) -> ConversationResponse:
@@ -418,21 +411,13 @@ class ChatSession:
     async def download_artifact(self, artifact_id: str, destination: Path) -> Path:
         """Download one catalog artifact by ID."""
         artifact = next(
-            (
-                item
-                for item in self._artifacts
-                if str(item.get("artifact_id") or "") == artifact_id
-            ),
+            (item for item in self._artifacts if str(item.get("artifact_id") or "") == artifact_id),
             None,
         )
         if artifact is None:
             await self.list_artifacts()
             artifact = next(
-                (
-                    item
-                    for item in self._artifacts
-                    if str(item.get("artifact_id") or "") == artifact_id
-                ),
+                (item for item in self._artifacts if str(item.get("artifact_id") or "") == artifact_id),
                 None,
             )
         if artifact is None:

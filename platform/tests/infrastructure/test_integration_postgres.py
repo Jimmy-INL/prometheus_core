@@ -50,8 +50,16 @@ def test_postgres_accepts_connection(docker_compose_up):
     """Connect to PostgreSQL and run a simple query."""
     result = subprocess.run(
         [
-            "docker", "exec", "litellm-db",
-            "psql", "-U", "litellm", "-d", "litellm", "-c", "SELECT 1;",
+            "docker",
+            "exec",
+            "litellm-db",
+            "psql",
+            "-U",
+            "litellm",
+            "-d",
+            "litellm",
+            "-c",
+            "SELECT 1;",
         ],
         capture_output=True,
         text=True,
@@ -62,9 +70,16 @@ def test_postgres_accepts_connection(docker_compose_up):
 def test_postgres_litellm_database_exists(docker_compose_up):
     result = subprocess.run(
         [
-            "docker", "exec", "litellm-db",
-            "psql", "-U", "litellm", "-d", "postgres",
-            "-c", "SELECT datname FROM pg_database WHERE datname = 'litellm';",
+            "docker",
+            "exec",
+            "litellm-db",
+            "psql",
+            "-U",
+            "litellm",
+            "-d",
+            "postgres",
+            "-c",
+            "SELECT datname FROM pg_database WHERE datname = 'litellm';",
         ],
         capture_output=True,
         text=True,
@@ -76,9 +91,16 @@ def test_postgres_litellm_database_exists(docker_compose_up):
 def test_postgres_litellm_user_exists(docker_compose_up):
     result = subprocess.run(
         [
-            "docker", "exec", "litellm-db",
-            "psql", "-U", "litellm", "-d", "postgres",
-            "-c", "SELECT rolname FROM pg_roles WHERE rolname = 'litellm';",
+            "docker",
+            "exec",
+            "litellm-db",
+            "psql",
+            "-U",
+            "litellm",
+            "-d",
+            "postgres",
+            "-c",
+            "SELECT rolname FROM pg_roles WHERE rolname = 'litellm';",
         ],
         capture_output=True,
         text=True,

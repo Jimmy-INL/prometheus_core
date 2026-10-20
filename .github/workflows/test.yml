@@ -49,10 +49,18 @@ jobs:
         project:
           - sdk
           - platform/backend
+          - platform/tests
+          - platform/scripts
           - agent-template
+        include:
+          # Not a uv project; linted with platform/tests' locked ruff
+          - project: platform/scripts
+            uv-project: ../tests
     defaults:
       run:
         working-directory: ${{ matrix.project }}
+    env:
+      UV_PROJECT: ${{ matrix.uv-project || '.' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

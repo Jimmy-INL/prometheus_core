@@ -68,12 +68,10 @@ include = ["app*"]
 asyncio_mode = "auto"
 
 [tool.ruff]
-lint.select = ["E", "F"]
-lint.ignore = ["E501"]
+# Shared platform settings; only the backend's additions are here
+extend = "../ruff.toml"
 lint.per-file-ignores = { "tests/*" = ["E402"] }
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-line-length = 120
-target-version = "py312"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

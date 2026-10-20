@@ -64,6 +64,4 @@ def test_litellm_health_readiness(litellm_base_url):
 def test_litellm_requires_auth_for_protected_routes(litellm_base_url):
     """Protected routes should require Authorization header."""
     resp = httpx.get(f"{litellm_base_url}/key/info", timeout=10)
-    assert resp.status_code in (401, 403), (
-        f"Expected 401/403 without auth, got {resp.status_code}"
-    )
+    assert resp.status_code in (401, 403), f"Expected 401/403 without auth, got {resp.status_code}"

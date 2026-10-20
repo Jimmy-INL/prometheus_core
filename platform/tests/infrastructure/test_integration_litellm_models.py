@@ -101,9 +101,7 @@ class TestModelCRUD:
         try:
             models = _list_models(litellm_client)
             model_ids = [m.get("id", "") for m in models]
-            assert name in model_ids or any(name in str(m) for m in models), (
-                f"Model {name} not found in models list"
-            )
+            assert name in model_ids or any(name in str(m) for m in models), f"Model {name} not found in models list"
         finally:
             _delete_model(litellm_client, model_id)
 

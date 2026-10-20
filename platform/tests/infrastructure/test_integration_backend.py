@@ -46,4 +46,3 @@ def test_backend_healthz(backend_base_url):
     """The backend should serve its health endpoint."""
     resp = httpx.get(f"{backend_base_url}/healthz", timeout=15, follow_redirects=True)
     assert resp.status_code == 200
-
