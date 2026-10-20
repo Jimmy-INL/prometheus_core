@@ -28,3 +28,14 @@ markers = [
     "system: requires an already-running full platform with the client-agent port published",
 ]
 testpaths = ["infrastructure"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16",
+]
+
+[tool.ruff]
+lint.select = ["E", "F"]
+lint.ignore = ["E501"]
+line-length = 120
+target-version = "py312"
