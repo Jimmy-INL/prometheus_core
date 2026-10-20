@@ -380,6 +380,8 @@ jobs:
             path: platform/agents/debug-agents/corrosion-agent
           - agent: thermal-agent
             path: platform/agents/debug-agents/thermal-agent
+          - agent: agent-template
+            path: agent-template/agent_template
     defaults:
       run:
         working-directory: ${{ matrix.path }}
