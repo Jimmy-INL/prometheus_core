@@ -57,13 +57,16 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional
 
 import hashlib
 import json
 
 import jwt
 from jwt import PyJWKClient
+
+if TYPE_CHECKING:
+    from jwt.types import Options
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -200,7 +203,7 @@ def verify_user_token(token: str) -> UserIdentity:
     iss = _env("USER_IDENTITY_ISS", _DEFAULT_ISS)
     aud = _env("USER_IDENTITY_AUD", _DEFAULT_AUD)
 
-    decode_options = {"require": ["sub", "exp", "iat", "iss", "aud"]}
+    decode_options: Options = {"require": ["sub", "exp", "iat", "iss", "aud"]}
 
     try:
         jwks_url = _env("JWKS_URL")
@@ -367,10 +370,14 @@ def get_jwks_document() -> dict:
             return {"keys": []}
 
     try:
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
         from cryptography.hazmat.primitives.serialization import load_pem_public_key
         from jwt.algorithms import RSAAlgorithm
 
         public_key = load_pem_public_key(pub_pem.encode())
+        if not isinstance(public_key, RSAPublicKey):
+            # Only RS256 is supported, so a non-RSA key can't be published
+            return {"keys": []}
         jwk_str = RSAAlgorithm.to_jwk(public_key)
         key_dict = json.loads(jwk_str)
         key_dict["use"] = "sig"
