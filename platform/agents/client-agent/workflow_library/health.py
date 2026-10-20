@@ -58,10 +58,15 @@ async def verify_workflow_source_health(workflow: Any, *, timeout_seconds: float
     if not source_agent_url:
         return f"Workflow provider agent '{label}' has no health-check URL."
 
-    health_url = f"{source_agent_url.rstrip('/')}/health"
+    # /healthz is canonical; agents on an SDK older than the /healthz route
+    # still serve only /health, so fall back to it on a 404
+    health_url = f"{source_agent_url.rstrip('/')}/healthz"
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.get(health_url)
+            if response.status_code == 404:
+                health_url = f"{source_agent_url.rstrip('/')}/health"
+                response = await client.get(health_url)
     except httpx.RequestError as exc:
         return f"Workflow provider agent '{label}' is unavailable: {exc}"
 
