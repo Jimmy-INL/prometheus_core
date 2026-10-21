@@ -1,0 +1,19 @@
+codecov:
+  notify:
+    # One upload per unit that reports coverage; raise it as units are added
+    after_n_builds: 1
+
+coverage:
+  status:
+    # No coverage floors yet
+    project: off
+    patch: off
+
+# Each unit's report is relative to its own directory; map to the repo root
+fixes:
+  - "prometheus_api/::sdk/prometheus_api/"
+
+flags:
+  sdk:
+    paths:
+      - sdk/prometheus_api/

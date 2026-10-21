@@ -90,6 +90,16 @@ markers = [
     "slow: Slow running tests",
 ]
 
+[tool.coverage.run]
+source_pkgs = ["prometheus_api"]
+relative_files = true
+omit = ["tests/*"]
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 69.7
+precision = 2
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
