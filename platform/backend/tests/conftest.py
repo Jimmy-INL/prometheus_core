@@ -135,6 +135,23 @@ def no_real_oidc_provider_registration(monkeypatch):
     security_mod._PROVIDERS[security_mod.password_provider.name] = security_mod.password_provider
 
 
+@pytest.fixture(autouse=True)
+def no_real_signing_key_bootstrap(monkeypatch):
+    """app.main.lifespan() also ensures one active identity signing key in
+    admin-db at startup (app.signing_keys.ensure_active_signing_key). No live
+    admin-db in tests -- stub the lifespan's reference to a no-op, like
+    ``no_real_oidc_provider_registration`` above. test_signing_key_bootstrap.py
+    calls ``app.signing_keys.ensure_active_signing_key`` directly, so this
+    patch on ``app.main`` does not reach it.
+    """
+    import app.main as main_mod
+
+    async def _no_op(db) -> None:
+        return None
+
+    monkeypatch.setattr(main_mod, "ensure_active_signing_key", _no_op)
+
+
 # --------------------------------------------------------------------------- #
 # Valkey-backed state (sessions, SSE event bus, revocation)
 # --------------------------------------------------------------------------- #
