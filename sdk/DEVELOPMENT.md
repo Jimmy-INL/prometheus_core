@@ -19,7 +19,7 @@ The project is `uv`-managed (see `uv.lock`). The Makefile wraps the common targe
 make lint        # ruff check .
 make format      # ruff format --check .
 make typecheck   # mypy prometheus_api/
-make test        # unit tests only (excludes integration)
+make test        # unit tests only (excludes integration), with the coverage floor
 make test-integration # DeepLynx integration tests (requires .env)
 make test-all    # all tests, including integration
 make fix         # ruff check --fix . && ruff format .
@@ -35,8 +35,10 @@ make test                                                   # unit only (no .env
 uv run pytest -m "not integration"                            # unit only (no .env required)
 make test-integration                                        # integration (requires .env w/ DeepLynx creds)
 uv run pytest tests/test_agent.py::TestPrometheusAgentExecutor::test_execute_calls_enqueue_event
-uv run pytest --cov=prometheus_api --cov-report=html
+uv run pytest --cov --cov-report=html
 ```
+
+`make test`, `make test-all`, and CI fail if coverage drops below `fail_under` in `[tool.coverage.report]`, the lowest total across the supported Python versions. Raise it as coverage improves; never lower it. Running a subset of tests with `--cov` will fail the floor, so leave `--cov` off for targeted runs.
 
 `pyproject.toml` sets `asyncio_mode = "auto"`, so async tests do **not** need `@pytest.mark.asyncio`. Tests in `test_integration.py` are auto-marked `integration` by `tests/conftest.py`.
 

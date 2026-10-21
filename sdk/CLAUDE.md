@@ -29,9 +29,9 @@ make lint             # ruff check .
 make format           # ruff format --check .
 make typecheck        # mypy prometheus_api/
 make test             # alias for `test-unit` (skips integration)
-make test-unit        # pytest -m "not integration"
+make test-unit        # pytest -m "not integration" --cov (enforces the coverage floor)
 make test-integration # pytest -m integration (requires .env)
-make test-all         # pytest (every marker, including integration)
+make test-all         # pytest --cov (every marker, including integration)
 make fix              # ruff check --fix . && ruff format .
 make check            # lint + format + typecheck
 make hooks            # install pre-commit + pre-push hooks
@@ -46,8 +46,10 @@ make test-install     # build wheel via `uv build`, install in clean venv, smoke
 uv run pytest -m "not integration"                          # unit only (no .env required)
 uv run pytest -m integration                                # integration (requires .env w/ DeepLynx creds)
 uv run pytest tests/test_agent.py::TestPrometheusAgentExecutor::test_execute_calls_enqueue_event
-uv run pytest --cov=prometheus_api --cov-report=html
+uv run pytest --cov --cov-report=html
 ```
+
+`make test`, `make test-all`, and CI fail if coverage drops below `fail_under` in `[tool.coverage.report]`, the lowest total across the supported Python versions. Raise it as coverage improves; never lower it. Running a subset of tests with `--cov` will fail the floor, so leave `--cov` off for targeted runs.
 
 `pyproject.toml` sets `asyncio_mode = "auto"`, so async tests do **not** need `@pytest.mark.asyncio`. Tests in `test_integration.py` are auto-marked `integration` by `tests/conftest.py`.
 

@@ -160,7 +160,25 @@ jobs:
       - name: Sync environment
         run: uv sync --frozen
       - name: Test
-        run: uv run --frozen pytest --color=yes
+        # Fails below fail_under in pyproject.toml on every version
+        run: uv run --frozen pytest --color=yes --cov --cov-report=xml
+      # Report and upload only on 3.12, so the sdk reports once per commit
+      - name: Coverage summary
+        if: ${{ !cancelled() && matrix.python == '3.12' }}
+        run: |
+          # The Test step already enforces the floor
+          total=$(uv run --frozen --no-sync coverage report --format=total --fail-under=0)
+          echo "sdk line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage
+        if: ${{ !cancelled() && matrix.python == '3.12' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          # Empty on fork PRs, which falls back to a tokenless upload
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: sdk
+          files: sdk/coverage.xml
+          disable_search: true
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   sdk-install:
     name: "sdk: install"

@@ -38,13 +38,13 @@ test: ##@ Run unit tests (default test target)
 test: test-unit
 
 test-unit: ##@ Run unit tests without integration tests
-	uv run pytest -m "not integration"
+	uv run pytest -m "not integration" --cov
 
 test-integration: ##@ Run integration tests (requires .env with DeepLynx credentials)
 	uv run pytest -m integration
 
 test-all: ##@ Run all tests, including integration tests
-	uv run pytest
+	uv run pytest --cov
 
 fix: ##@ Auto-fix ruff lint issues and format
 	uv run ruff check --fix .
