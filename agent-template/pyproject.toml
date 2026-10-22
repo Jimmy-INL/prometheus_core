@@ -10,10 +10,20 @@ dev = [
   "ruff>=0.9.0",
   "mypy>=1.14.0",
   "pytest>=8.0.0",
+  "pytest-cov>=4.0.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+include = ["setup_agent.py"]
+relative_files = true
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 73.3
+precision = 2
 
 [tool.ruff]
 target-version = "py312"
