@@ -162,23 +162,14 @@ jobs:
       - name: Test
         # Fails below fail_under in pyproject.toml on every version
         run: uv run --frozen pytest --color=yes --cov --cov-report=xml
-      # Report and upload only on 3.12, so the sdk reports once per commit
-      - name: Coverage summary
+      - name: Coverage
+        # Report and upload only on 3.12, so the sdk reports once per commit
         if: ${{ !cancelled() && matrix.python == '3.12' }}
-        run: |
-          # The Test step already enforces the floor
-          total=$(uv run --frozen --no-sync coverage report --format=total --fail-under=0)
-          echo "sdk line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload coverage
-        if: ${{ !cancelled() && matrix.python == '3.12' }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        uses: ./.github/actions/coverage
         with:
-          # Empty on fork PRs, which falls back to a tokenless upload
+          directory: sdk
+          flag: sdk
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: sdk
-          files: sdk/coverage.xml
-          disable_search: true
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   sdk-install:
     name: "sdk: install"
@@ -223,27 +214,14 @@ jobs:
       - name: Test
         # Fails below fail_under in pyproject.toml on every version
         run: uv run --frozen pytest --color=yes --cov --cov-report=xml
-      # Report and upload only on 3.12, so the scaffolder reports once per commit
-      - name: Coverage summary
+      - name: Coverage
+        # Report and upload only on 3.12, so the scaffolder reports once per commit
         if: ${{ !cancelled() && matrix.python == '3.12' }}
-        run: |
-          # The Test step already enforces the floor
-          total=$(uv run --frozen --no-sync coverage report --format=total --fail-under=0)
-          echo "agent-template line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Prefix coverage paths
-        if: ${{ !cancelled() && matrix.python == '3.12' }}
-        # setup_agent.py is top-level, so make its name repo-root-relative
-        run: sed -i 's#filename="#filename="agent-template/#' coverage.xml
-      - name: Upload coverage
-        if: ${{ !cancelled() && matrix.python == '3.12' }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        uses: ./.github/actions/coverage
         with:
-          # Empty on fork PRs, which falls back to a tokenless upload
+          directory: agent-template
+          flag: agent-template
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: agent-template
-          files: agent-template/coverage.xml
-          disable_search: true
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
       - name: Typecheck
         if: ${{ !cancelled() }}
         run: uv run --frozen mypy setup_agent.py
@@ -455,23 +433,14 @@ jobs:
       - name: Test
         # Fails below fail_under in pyproject.toml on every version
         run: uv run --frozen --no-sync pytest --color=yes --cov --cov-report=xml
-      # Report and upload only on 3.12, so the backend reports once per commit
-      - name: Coverage summary
+      - name: Coverage
+        # Report and upload only on 3.12, so the backend reports once per commit
         if: ${{ !cancelled() && matrix.python == '3.12' }}
-        run: |
-          # The Test step already enforces the floor
-          total=$(uv run --frozen --no-sync coverage report --format=total --fail-under=0)
-          echo "backend line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload coverage
-        if: ${{ !cancelled() && matrix.python == '3.12' }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        uses: ./.github/actions/coverage
         with:
-          # Empty on fork PRs, which falls back to a tokenless upload
+          directory: platform/backend
+          flag: backend
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: backend
-          files: platform/backend/coverage.xml
-          disable_search: true
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   platform-infrastructure:
     name: "platform: infrastructure"
@@ -587,28 +556,10 @@ jobs:
       - name: Test
         # Agents with a flag fail below fail_under in their pyproject.toml
         run: .venv/bin/python -m pytest --color=yes ${{ matrix.flag && '--cov --cov-report=xml' || '' }}
-      - name: Coverage summary
+      - name: Coverage
         if: ${{ !cancelled() && matrix.flag }}
-        env:
-          AGENT: ${{ matrix.agent }}
-        run: |
-          # The Test step already enforces the floor
-          total=$(.venv/bin/python -m coverage report --format=total --fail-under=0)
-          echo "$AGENT line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Prefix coverage paths
-        if: ${{ !cancelled() && matrix.flag }}
-        env:
-          AGENT_PATH: ${{ matrix.path }}
-        # Agent modules are top-level, so their report names (agent.py) would
-        # clash across agents; make them repo-root-relative instead
-        run: sed -i "s#filename=\"#filename=\"$AGENT_PATH/#" coverage.xml
-      - name: Upload coverage
-        if: ${{ !cancelled() && matrix.flag }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        uses: ./.github/actions/coverage
         with:
-          # Empty on fork PRs, which falls back to a tokenless upload
+          directory: ${{ matrix.path }}
+          flag: ${{ matrix.flag }}
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: ${{ matrix.flag }}
-          files: ${{ matrix.path }}/coverage.xml
-          disable_search: true
-          fail_ci_if_error: ${{ github.event_name == 'push' }}

@@ -9,11 +9,6 @@ coverage:
     project: off
     patch: off
 
-# Each unit's report is relative to its own directory; map to the repo root
-fixes:
-  - "prometheus_api/::sdk/prometheus_api/"
-  - "app/::platform/backend/app/"
-
 flags:
   sdk:
     paths:
