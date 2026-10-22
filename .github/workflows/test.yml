@@ -528,14 +528,18 @@ jobs:
             flag: client-agent
           - agent: osti-research-agent
             path: platform/agents/optional/osti-research-agent
+            flag: osti-research-agent
             # marker-pdf pulls in PyTorch with CUDA and the tests don't use it
             overrides: "marker-pdf; sys_platform == 'never'"
           - agent: code-render-debug-agent
             path: platform/agents/debug-agents/code-render-debug-agent
+            flag: code-render-debug-agent
           - agent: corrosion-agent
             path: platform/agents/debug-agents/corrosion-agent
+            flag: corrosion-agent
           - agent: thermal-agent
             path: platform/agents/debug-agents/thermal-agent
+            flag: thermal-agent
           - agent: agent-template
             path: agent-template/agent_template
     defaults:

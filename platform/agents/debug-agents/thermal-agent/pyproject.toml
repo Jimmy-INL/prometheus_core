@@ -6,3 +6,13 @@ requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.26.0",
 ]
+
+[tool.coverage.run]
+source = ["."]
+relative_files = true
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 29.3
+precision = 2

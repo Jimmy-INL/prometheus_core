@@ -1,7 +1,7 @@
 codecov:
   notify:
     # One upload per unit that reports coverage; raise it as units are added
-    after_n_builds: 3
+    after_n_builds: 7
 
 coverage:
   status:
@@ -24,3 +24,15 @@ flags:
   client-agent:
     paths:
       - platform/agents/client-agent/
+  osti-research-agent:
+    paths:
+      - platform/agents/optional/osti-research-agent/
+  code-render-debug-agent:
+    paths:
+      - platform/agents/debug-agents/code-render-debug-agent/
+  corrosion-agent:
+    paths:
+      - platform/agents/debug-agents/corrosion-agent/
+  thermal-agent:
+    paths:
+      - platform/agents/debug-agents/thermal-agent/
