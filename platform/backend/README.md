@@ -35,8 +35,10 @@ curl localhost:8600/readyz           # 200 if Valkey + admin-db answer, else 503
 
 uv run ruff check
 uv run mypy app/
-uv run pytest
+uv run pytest --cov
 ```
+
+CI fails if coverage drops below `fail_under` in `[tool.coverage.report]`, the lowest total across the supported Python versions. Raise it as coverage improves; never lower it. Running a subset of tests with `--cov` will fail the floor, so leave `--cov` off for targeted runs.
 
 The `alembic upgrade head` step is **not optional locally**: the app used to migrate
 itself from its lifespan, and no longer does (see *Multi-worker* below). Skipping it

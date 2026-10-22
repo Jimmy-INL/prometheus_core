@@ -3,6 +3,9 @@
 */.pytest_cache/
 */.ruff_cache/
 */.venv
+*/.coverage
+*/coverage.xml
+*/htmlcov/
 
 frontend/.files/
 frontend/public/mesh-data/*/*

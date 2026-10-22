@@ -34,6 +34,7 @@ dev = [
     "mypy>=1.15",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.25.0",
+    "pytest-cov>=4.0.0",
     "ruff>=0.11",
     "types-pyyaml>=6.0.12.20250915",
     # Local dev/tests import prometheus_api.contract; in Docker the package is
@@ -66,6 +67,18 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source_pkgs = ["app"]
+relative_files = true
+omit = ["tests/*"]
+# SQLAlchemy's async engine runs queries in greenlets
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 82.5
+precision = 2
 
 [tool.ruff]
 # Shared platform settings; only the backend's additions are here
