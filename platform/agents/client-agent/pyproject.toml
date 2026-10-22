@@ -17,3 +17,13 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["orchestrator*", "workflow_library*"]
+
+[tool.coverage.run]
+source = ["."]
+relative_files = true
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 77.2
+precision = 2

@@ -1,7 +1,7 @@
 codecov:
   notify:
     # One upload per unit that reports coverage; raise it as units are added
-    after_n_builds: 2
+    after_n_builds: 3
 
 coverage:
   status:
@@ -21,3 +21,6 @@ flags:
   backend:
     paths:
       - platform/backend/app/
+  client-agent:
+    paths:
+      - platform/agents/client-agent/

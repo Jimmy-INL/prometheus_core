@@ -525,6 +525,7 @@ jobs:
         include:
           - agent: client-agent
             path: platform/agents/client-agent
+            flag: client-agent
           - agent: osti-research-agent
             path: platform/agents/optional/osti-research-agent
             # marker-pdf pulls in PyTorch with CUDA and the tests don't use it
@@ -555,6 +556,32 @@ jobs:
           printf '%s\n' "$OVERRIDES" > "$RUNNER_TEMP/overrides.txt"
           uv venv
           uv pip install -r pyproject.toml --overrides "$RUNNER_TEMP/overrides.txt" \
-            pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+            pytest pytest-asyncio pytest-cov "$GITHUB_WORKSPACE/sdk"
       - name: Test
-        run: .venv/bin/python -m pytest --color=yes
+        # Agents with a flag fail below fail_under in their pyproject.toml
+        run: .venv/bin/python -m pytest --color=yes ${{ matrix.flag && '--cov --cov-report=xml' || '' }}
+      - name: Coverage summary
+        if: ${{ !cancelled() && matrix.flag }}
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          # The Test step already enforces the floor
+          total=$(.venv/bin/python -m coverage report --format=total --fail-under=0)
+          echo "$AGENT line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
+      - name: Prefix coverage paths
+        if: ${{ !cancelled() && matrix.flag }}
+        env:
+          AGENT_PATH: ${{ matrix.path }}
+        # Agent modules are top-level, so their report names (agent.py) would
+        # clash across agents; make them repo-root-relative instead
+        run: sed -i "s#filename=\"#filename=\"$AGENT_PATH/#" coverage.xml
+      - name: Upload coverage
+        if: ${{ !cancelled() && matrix.flag }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          # Empty on fork PRs, which falls back to a tokenless upload
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.flag }}
+          files: ${{ matrix.path }}/coverage.xml
+          disable_search: true
+          fail_ci_if_error: ${{ github.event_name == 'push' }}

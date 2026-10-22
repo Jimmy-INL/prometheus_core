@@ -372,6 +372,8 @@ The plugin-autoload-disabled form avoids unrelated pytest plugins from the ambie
 Python environment. Use `python -m pytest` so pytest runs under this agent's uv
 environment instead of an ambient executable on PATH.
 
+To measure coverage, add `-p pytest_cov.plugin --cov`. CI fails if coverage drops below `fail_under` in `[tool.coverage.report]`, the lowest total across the supported Python versions. Raise it as coverage improves; never lower it. Running a subset of tests with `--cov` will fail the floor, so leave `--cov` off for targeted runs.
+
 Useful focused runs:
 
 ```bash
