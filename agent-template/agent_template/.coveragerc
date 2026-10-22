@@ -1,0 +1,13 @@
+# Coverage for the template's own CI run. setup_agent.py skips dotfiles, so
+# scaffolded agents don't inherit this floor.
+[run]
+source = .
+relative_files = true
+omit =
+    tests/*
+    .venv/*
+
+[report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 88.2
+precision = 2

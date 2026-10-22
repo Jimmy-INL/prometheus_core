@@ -126,6 +126,8 @@ make fix        # auto-fix lint + format
 make test       # pytest
 ```
 
+CI runs `pytest --cov` and fails if coverage drops below `fail_under` in `[tool.coverage.report]`, the lowest total across the supported Python versions. Raise it as coverage improves; never lower it. Running a subset of tests with `--cov` will fail the floor, so leave `--cov` off for targeted runs.
+
 ## Further reading
 
 These live in the SDK ([`sdk/`](https://github.com/idaholab/prometheus_core/tree/devel/sdk)) directory of the monorepo:

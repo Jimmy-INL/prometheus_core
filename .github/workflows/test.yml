@@ -162,23 +162,14 @@ jobs:
       - name: Test
         # Fails below fail_under in pyproject.toml on every version
         run: uv run --frozen pytest --color=yes --cov --cov-report=xml
-      # Report and upload only on 3.12, so the sdk reports once per commit
-      - name: Coverage summary
+      - name: Coverage
+        # Report and upload only on 3.12, so the sdk reports once per commit
         if: ${{ !cancelled() && matrix.python == '3.12' }}
-        run: |
-          # The Test step already enforces the floor
-          total=$(uv run --frozen --no-sync coverage report --format=total --fail-under=0)
-          echo "sdk line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload coverage
-        if: ${{ !cancelled() && matrix.python == '3.12' }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        uses: ./.github/actions/coverage
         with:
-          # Empty on fork PRs, which falls back to a tokenless upload
+          directory: sdk
+          flag: sdk
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: sdk
-          files: sdk/coverage.xml
-          disable_search: true
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   sdk-install:
     name: "sdk: install"
@@ -221,7 +212,16 @@ jobs:
       - name: Sync environment
         run: uv sync --frozen
       - name: Test
-        run: uv run --frozen pytest --color=yes
+        # Fails below fail_under in pyproject.toml on every version
+        run: uv run --frozen pytest --color=yes --cov --cov-report=xml
+      - name: Coverage
+        # Report and upload only on 3.12, so the scaffolder reports once per commit
+        if: ${{ !cancelled() && matrix.python == '3.12' }}
+        uses: ./.github/actions/coverage
+        with:
+          directory: agent-template
+          flag: agent-template
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Typecheck
         if: ${{ !cancelled() }}
         run: uv run --frozen mypy setup_agent.py
@@ -431,7 +431,16 @@ jobs:
       - name: Type check
         run: uv run --frozen --no-sync mypy app
       - name: Test
-        run: uv run --frozen --no-sync pytest --color=yes
+        # Fails below fail_under in pyproject.toml on every version
+        run: uv run --frozen --no-sync pytest --color=yes --cov --cov-report=xml
+      - name: Coverage
+        # Report and upload only on 3.12, so the backend reports once per commit
+        if: ${{ !cancelled() && matrix.python == '3.12' }}
+        uses: ./.github/actions/coverage
+        with:
+          directory: platform/backend
+          flag: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   platform-infrastructure:
     name: "platform: infrastructure"
@@ -507,18 +516,24 @@ jobs:
         include:
           - agent: client-agent
             path: platform/agents/client-agent
+            flag: client-agent
           - agent: osti-research-agent
             path: platform/agents/optional/osti-research-agent
+            flag: osti-research-agent
             # marker-pdf pulls in PyTorch with CUDA and the tests don't use it
             overrides: "marker-pdf; sys_platform == 'never'"
           - agent: code-render-debug-agent
             path: platform/agents/debug-agents/code-render-debug-agent
+            flag: code-render-debug-agent
           - agent: corrosion-agent
             path: platform/agents/debug-agents/corrosion-agent
+            flag: corrosion-agent
           - agent: thermal-agent
             path: platform/agents/debug-agents/thermal-agent
+            flag: thermal-agent
           - agent: agent-template
             path: agent-template/agent_template
+            flag: template-agent
     defaults:
       run:
         working-directory: ${{ matrix.path }}
@@ -537,6 +552,14 @@ jobs:
           printf '%s\n' "$OVERRIDES" > "$RUNNER_TEMP/overrides.txt"
           uv venv
           uv pip install -r pyproject.toml --overrides "$RUNNER_TEMP/overrides.txt" \
-            pytest pytest-asyncio "$GITHUB_WORKSPACE/sdk"
+            pytest pytest-asyncio pytest-cov "$GITHUB_WORKSPACE/sdk"
       - name: Test
-        run: .venv/bin/python -m pytest --color=yes
+        # Agents with a flag fail below fail_under in their pyproject.toml
+        run: .venv/bin/python -m pytest --color=yes ${{ matrix.flag && '--cov --cov-report=xml' || '' }}
+      - name: Coverage
+        if: ${{ !cancelled() && matrix.flag }}
+        uses: ./.github/actions/coverage
+        with:
+          directory: ${{ matrix.path }}
+          flag: ${{ matrix.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}

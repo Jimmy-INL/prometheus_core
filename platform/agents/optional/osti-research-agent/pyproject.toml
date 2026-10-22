@@ -12,3 +12,13 @@ dependencies = [
     "lxml>=4.9.0",
     "pymupdf>=1.23.0",
 ]
+
+[tool.coverage.run]
+source = ["."]
+relative_files = true
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+# The lowest total across the supported Python versions; never lower it
+fail_under = 18.7
+precision = 2

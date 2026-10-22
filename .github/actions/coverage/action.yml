@@ -1,0 +1,39 @@
+name: Coverage
+description: Write a unit's total to the job summary and upload it to Codecov
+inputs:
+  directory:
+    description: The unit's directory, relative to the repo root
+    required: true
+  flag:
+    description: The Codecov flag
+    required: true
+  token:
+    description: CODECOV_TOKEN; empty on fork PRs, which upload tokenless
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Coverage summary
+      shell: bash
+      working-directory: ${{ inputs.directory }}
+      env:
+        FLAG: ${{ inputs.flag }}
+      run: |
+        # The Test step already enforces the floor
+        total=$(.venv/bin/python -m coverage report --format=total --fail-under=0)
+        echo "$FLAG line coverage: **${total}%**" >> "$GITHUB_STEP_SUMMARY"
+    - name: Prefix coverage paths
+      shell: bash
+      working-directory: ${{ inputs.directory }}
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+      # Report names are relative to the unit; make them repo-root-relative
+      run: sed -i "s#filename=\"#filename=\"$DIRECTORY/#" coverage.xml
+    - name: Upload coverage
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      with:
+        token: ${{ inputs.token }}
+        flags: ${{ inputs.flag }}
+        files: ${{ inputs.directory }}/coverage.xml
+        disable_search: true
+        fail_ci_if_error: ${{ github.event_name == 'push' }}
